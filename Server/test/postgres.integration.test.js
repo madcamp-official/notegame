@@ -404,4 +404,132 @@ test("PostgreSQL adapter atomically commits mechanics and validated director sta
   reopenedApplication = await createApplication(applicationOptions);
   const afterRestartDto = JSON.parse(JSON.stringify(await reopenedApplication.service.getRun(USER_ID, run.id)));
   assert.deepEqual(afterRestartDto, beforeRestartDto, "a fresh store process must reconstruct the identical public run DTO");
+  assert.equal(afterRestartDto.worldId, "WORLD_CODRIA");
+});
+
+test("PostgreSQL persists ordered administrator access and the mapped Root clue", { skip: !databaseUrl }, async (t) => {
+  const config = loadConfig({
+    STORAGE: "postgres",
+    DATABASE_URL: databaseUrl,
+    DATABASE_SSL: "false",
+    AUTH_MODE: "required",
+    LOG_LEVEL: "silent"
+  });
+  const application = await createApplication({ config, d20Source: new FixedD20Source(20), logger: silentLogger, narrator: fakeNarrator });
+  t.after(async () => {
+    await application.store.pool.query("delete from keyboard_wanderer.profiles where id = $1", [ADMIN_USER_ID]);
+    await application.close();
+  });
+  const campaign = await application.service.createCampaign(ADMIN_USER_ID, { worldSeed: 88, turnLimit: 40 });
+  const created = await application.service.createRun(ADMIN_USER_ID, campaign.id, { worldSeed: 88, turnLimit: 40 });
+  const activateBeat = (state, beatId) => {
+    const activeIndex = state.requiredStoryBeats.findIndex((beat) => beat.id === beatId);
+    assert.ok(activeIndex >= 0);
+    state.requiredStoryBeats.forEach((beat, index) => {
+      beat.status = index < activeIndex ? "completed" : index === activeIndex ? "active" : "pending";
+    });
+    state.currentStoryBeat = structuredClone(state.requiredStoryBeats[activeIndex]);
+    state.currentAct = state.currentStoryBeat.phaseId;
+    state.campaignPhase = state.currentStoryBeat.phaseId;
+  };
+  const stagePlayerNear = (state, target) => {
+    const player = state.entities.find((entity) => entity.id === state.playerEntityId);
+    player.position = { x: target.position.x - 1, y: target.position.y };
+  };
+  const commit = async ({ beatId, skillId, targetId, secondaryTargetId = null, destination = null, resolvesDebtEntryId = null, key }) => {
+    const before = await application.store.getRun(ADMIN_USER_ID, created.id);
+    const request = normalizeTurnRequest({
+      inputType: "USE_SKILL",
+      idempotencyKey: key,
+      expectedRunVersion: before.version,
+      skillId,
+      targetIds: [targetId, secondaryTargetId].filter(Boolean),
+      ...(destination ? { destination } : {}),
+      ...(resolvesDebtEntryId ? { resolvesDebtEntryId } : {})
+    });
+    return application.store.commitTurn({
+      ownerId: ADMIN_USER_ID,
+      runId: created.id,
+      idempotencyKey: key,
+      requestFingerprint: turnFingerprint(request),
+      expectedRunVersion: before.version,
+      resolve: (state) => {
+        activateBeat(state, beatId);
+        stagePlayerNear(state, state.entities.find((entity) => entity.id === targetId));
+        return resolveTurn({ run: state, request, forcedD20: 20, now: `2026-07-17T00:00:0${state.currentTurn + 1}.000Z` });
+      }
+    });
+  };
+
+  let state = await application.store.getRun(ADMIN_USER_ID, created.id);
+  const candidateFor = (level) => state.adminAccessCandidates
+    .filter((candidate) => candidate.accessLevelId === level && candidate.skillId !== "CONNECT")
+    .sort((left, right) => ({ COPY: 1, DELETE: 1, RESTORE: 3 }[left.skillId] - { COPY: 1, DELETE: 1, RESTORE: 3 }[right.skillId]))[0];
+  const entityForCandidate = (candidate) => state.entities.find((entity) => entity.state?.candidateId === candidate.id);
+  for (const [level, beatId, key] of [
+    ["ADMIN_ACCESS_LEVEL_1", "beat.admin_access_1", "admin-access-v4-0001"],
+    ["ADMIN_ACCESS_LEVEL_2", "beat.admin_access_2", "admin-access-v4-0002"]
+  ]) {
+    const candidate = candidateFor(level);
+    assert.ok(candidate);
+    const committed = await commit({ beatId, skillId: candidate.skillId, targetId: entityForCandidate(candidate).id, key });
+    state = committed.run;
+  }
+
+  const clue = state.entities.find((entity) => entity.kind === "prop" && entity.cloneable && entity.state?.evidenceKey === "STORY_REVELATION");
+  const clueDestination = { x: clue.position.x + 1, y: clue.position.y };
+  state = (await commit({ beatId: "beat.internal_cause", skillId: "COPY", targetId: clue.id, destination: clueDestination, key: "root-clue-v4-0001" })).run;
+  const recovery = state.entities.find((entity) => entity.kind === "prop" && entity.state?.evidenceKey === "LEGACY_RECOVERY_RECORD");
+  state = (await commit({ beatId: "beat.technical_debt_return", skillId: "CONNECT", targetId: recovery.id, secondaryTargetId: state.playerEntityId, key: "debt-return-v4-0001" })).run;
+  const finalCandidate = candidateFor("ADMIN_ACCESS_LEVEL_3");
+  state = (await commit({ beatId: "beat.admin_access_3", skillId: finalCandidate.skillId, targetId: entityForCandidate(finalCandidate).id, key: "admin-access-v4-0003" })).run;
+
+  const repairTarget = state.entities.find((entity) => entity.active && entity.kind === "prop" && entity.state?.temporary === true);
+  state = (await commit({ beatId: "beat.root_system_entry", skillId: "DELETE", targetId: repairTarget.id, key: "debt-cause-v4-0001" })).run;
+  const debtMetricBeforeRecovery = state.metrics.technicalDebt;
+  const debtToResolve = state.technicalDebtEntries.find((entry) => entry.turnNo === state.currentTurn && entry.resolvedAt === null);
+  assert.ok(debtToResolve);
+  state = (await commit({
+    beatId: "beat.root_system_entry",
+    skillId: "RESTORE",
+    targetId: repairTarget.id,
+    resolvesDebtEntryId: debtToResolve.id,
+    key: "debt-recovery-v4-0001"
+  })).run;
+  assert.equal(state.metrics.technicalDebt, debtMetricBeforeRecovery - 2);
+  assert.equal(state.technicalDebtEntries.find((entry) => entry.id === debtToResolve.id).resolvedAt, state.currentTurn);
+
+  assert.equal(state.adminAccessAcquisitionHistory.length, 3);
+  assert.equal(state.canonicalFacts.find((fact) => fact.subject === "collapse_origin").value, true);
+  const projection = await application.store.pool.query(
+    `select * from keyboard_wanderer.run_admin_access_states where run_id = $1 and owner_id = $2`,
+    [created.id, ADMIN_USER_ID]
+  );
+  assert.equal(Number(projection.rows[0].acquired_level_count), 3);
+  assert.equal(projection.rows[0].all_admin_access_acquired, true);
+  assert.equal(projection.rows[0].essential_clue_acquired, true);
+  assert.equal(projection.rows[0].root_system_eligible, true);
+  const persisted = await application.service.getRun(ADMIN_USER_ID, created.id);
+  assert.equal(persisted.rootSystemGate.eligible, true);
+  const history = await application.store.pool.query(
+    `select admin_access_code from keyboard_wanderer.admin_access_acquisition_history where run_id = $1 order by turn_no`,
+    [created.id]
+  );
+  assert.deepEqual(history.rows.map((row) => row.admin_access_code), ["ADMIN_ACCESS_LEVEL_1", "ADMIN_ACCESS_LEVEL_2", "ADMIN_ACCESS_LEVEL_3"]);
+  const histories = await application.store.pool.query(
+    `select
+       (select count(*)::int from keyboard_wanderer.major_choices where run_id = $1) as major_choice_count,
+       (select count(*)::int from keyboard_wanderer.region_outcomes where run_id = $1) as region_outcome_count,
+       (select count(*)::int from keyboard_wanderer.ability_usage_history where run_id = $1) as ability_usage_count,
+       (select count(*)::int from keyboard_wanderer.technical_debt_entries where run_id = $1 and debt_delta > 0) as debt_entry_count,
+       (select count(*)::int from keyboard_wanderer.technical_debt_entries where run_id = $1 and resolved_at is not null and resolution_type = 'RECOVERY') as resolved_debt_count,
+       (select count(*)::int from keyboard_wanderer.world_facts where run_id = $1 and predicate = 'ROOT_CAUSE_ESSENTIAL_CLUE_ACQUIRED' and object_json @> '{"acquired":true}'::jsonb) as clue_fact_count`,
+    [created.id]
+  );
+  assert.equal(histories.rows[0].major_choice_count, 3);
+  assert.equal(histories.rows[0].region_outcome_count, 3);
+  assert.equal(histories.rows[0].ability_usage_count, 7);
+  assert.ok(histories.rows[0].debt_entry_count >= 6);
+  assert.equal(histories.rows[0].resolved_debt_count, 1);
+  assert.equal(histories.rows[0].clue_fact_count, 1);
 });
