@@ -183,4 +183,45 @@ select
 from turn_records
 where command_schema_version = 'codria-action.v4';
 
+create table admin_access_acquisition_history (
+    id uuid primary key default gen_random_uuid(),
+    run_id uuid not null,
+    owner_id uuid not null,
+    world_id uuid not null,
+    turn_id uuid not null,
+    turn_no smallint not null,
+    admin_access_code text not null references admin_access_level_catalog(code),
+    region_axis_code text not null references campaign_region_axis_catalog(code),
+    area_id uuid not null,
+    action_context text not null,
+    acquisition_method text not null,
+    skill_id text not null references ability_catalog(code),
+    evidence jsonb not null default '{}'::jsonb,
+    acquired_at timestamptz not null default now(),
+    constraint admin_access_acquisition_history_run_fk
+        foreign key (run_id, owner_id, world_id)
+        references runs(id, owner_id, world_id) on delete cascade,
+    constraint admin_access_acquisition_history_turn_fk
+        foreign key (turn_id, owner_id, run_id)
+        references turn_records(id, owner_id, run_id) on delete cascade,
+    constraint admin_access_acquisition_history_axis_fk
+        foreign key (world_id, owner_id, region_axis_code)
+        references world_region_axis_bindings(world_id, owner_id, region_axis_code) on delete cascade,
+    constraint admin_access_acquisition_history_area_fk
+        foreign key (area_id, owner_id, world_id)
+        references areas(id, owner_id, world_id) on delete restrict,
+    constraint admin_access_acquisition_history_run_level_unique
+        unique (run_id, admin_access_code),
+    constraint admin_access_acquisition_history_run_turn_unique unique (run_id, turn_id),
+    constraint admin_access_acquisition_history_turn check (turn_no between 1 and 50),
+    constraint admin_access_acquisition_history_context check (
+        action_context in ('COMBAT', 'INVESTIGATION', 'NEGOTIATION', 'DEPLOYMENT')
+    ),
+    constraint admin_access_acquisition_history_method check (btrim(acquisition_method) <> ''),
+    constraint admin_access_acquisition_history_evidence check (jsonb_typeof(evidence) = 'object')
+);
+
+create index admin_access_acquisition_history_owner_run_idx
+    on admin_access_acquisition_history (owner_id, run_id, turn_no);
+
 commit;
