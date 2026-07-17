@@ -1537,6 +1537,73 @@ async function persistRelationshipHistory(client, beforeRun, run, turn) {
   }
 }
 
+async function persistHookTransitions(client, run, turn) {
+  for (const hook of turn.stateDelta?.openLoops || []) {
+    await insertUnresolvedHook(client, run, hook, turn.id, turn.createdAt);
+  }
+  for (const event of turn.events || []) {
+    if (event.type !== "open_loop_closed") continue;
+    await client.query(
+      `update ${SCHEMA}.unresolved_hooks
+          set status = 'RESOLVED', resolution_turn_id = $4,
+              resolution_turn_no = $5, resolution_kind = $6,
+              resolved_at = $7, updated_at = $7
+        where id = $1 and run_id = $2 and owner_id = $3 and status = 'OPEN'`,
+      [event.loopId, run.id, run.ownerId, turn.id, turn.turnNo,
+        choiceKeyPart(event.reason || "campaign_resolution").toUpperCase(), turn.createdAt]
+    );
+  }
+}
+
+function debtResolutionType(skillId) {
+  return skillId === "RESTORE" ? "RECOVERY" : "ACCEPT_RESPONSIBILITY";
+}
+
+async function persistTechnicalDebt(client, run, turn) {
+  for (const entry of turn.stateDelta?.technicalDebtEntries || []) {
+    if (entry.turnNo === turn.turnNo && entry.debtDelta > 0) {
+      await client.query(
+        `insert into ${SCHEMA}.technical_debt_entries
+           (id, run_id, owner_id, turn_id, turn_no, skill_id, operation_type,
+            target_id, forced_override, debt_delta, deferred_consequence_type,
+            metadata, created_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13)`,
+        [entry.id, run.id, run.ownerId, turn.id, turn.turnNo, entry.skillId,
+          entry.operationType, entry.targetId, entry.forcedOverride === true,
+          entry.debtDelta, entry.deferredConsequenceType,
+          JSON.stringify({ actionContext: entry.actionContext || turn.actionContext }), turn.createdAt]
+      );
+    }
+    if (entry.resolvedAt === turn.turnNo) {
+      const result = await client.query(
+        `update ${SCHEMA}.technical_debt_entries
+            set resolved_at = $4, resolved_by_turn_id = $5, resolution_type = $6
+          where id = $1 and run_id = $2 and owner_id = $3 and resolved_at is null`,
+        [entry.id, run.id, run.ownerId, turn.createdAt, turn.id,
+          debtResolutionType(turn.request.skillId)]
+      );
+      if (result.rowCount !== 1) {
+        throw new AppError(500, "TECHNICAL_DEBT_HISTORY_MISSING", "A resolved technical-debt cause was not present in PostgreSQL.");
+      }
+    }
+  }
+}
+
+async function persistCodriaTurnHistory(client, beforeRun, run, turn) {
+  const areaRows = await loadDatabaseAreas(client, run);
+  const areaIds = new Map(areaRows.map((row) => [row.area_key, row.id]));
+  for (const fact of turn.stateDelta?.facts || []) {
+    await persistWorldFact(client, run, fact, turn.createdAt);
+  }
+  await persistRelationshipHistory(client, beforeRun, run, turn);
+  await persistAbilityUsage(client, run, turn);
+  await persistAdminAccessHistory(client, run, turn, areaIds);
+  await persistMajorChoices(client, run, turn);
+  await persistRegionOutcomes(client, run, turn);
+  await persistHookTransitions(client, run, turn);
+  await persistTechnicalDebt(client, run, turn);
+}
+
 async function synchronizeReversibleActions(client, run, turn) {
   for (const entry of run.reversibleLedger) {
     await client.query(
@@ -1619,6 +1686,11 @@ function eventCatalogCode(type) {
     resource_changed: "CONSEQUENCE_APPLIED",
     progress_token_granted: "PROGRESS_STATE_CHANGED",
     progress_level_changed: "PROGRESS_STATE_CHANGED",
+    admin_access_acquired: "ADMIN_ACCESS_ACQUIRED",
+    major_choice_recorded: "MAJOR_CHOICE_RECORDED",
+    canonical_fact_confirmed: "FACT_ESTABLISHED",
+    technical_debt_recorded: "TECHNICAL_DEBT_CHANGED",
+    technical_debt_resolved: "DEFERRED_CONSEQUENCE_RESOLVED",
     campaign_metrics_changed: "CAMPAIGN_METRICS_CHANGED",
     encounter_resolved: "ENCOUNTER_RESOLVED",
     finale_puzzle_matched: "PROGRESS_STATE_CHANGED",
@@ -1659,8 +1731,16 @@ function rowToNavigation(row) {
     expectedRunVersion: Number(row.expected_run_version),
     committedRunVersion: Number(row.committed_run_version),
     from: { x: Number(row.from_x), y: Number(row.from_y) },
-    requestedDestination: { x: Number(row.requested_x), y: Number(row.requested_y) },
-    to: { x: Number(row.to_x), y: Number(row.to_y) },
+    requestedDestination: {
+      ...(row.turn_context?.requestedAreaKey ? { areaId: row.turn_context.requestedAreaKey } : {}),
+      x: Number(row.requested_x),
+      y: Number(row.requested_y)
+    },
+    to: {
+      ...(row.turn_context?.enteredAreaKey ? { areaId: row.turn_context.enteredAreaKey } : {}),
+      x: Number(row.to_x),
+      y: Number(row.to_y)
+    },
     path: row.path_json,
     pathCost: Number(row.path_cost),
     travelTimeUnits: Number(row.travel_time_units),
