@@ -5,6 +5,7 @@ import { generateWorld, publicWorld } from "../domain/world.js";
 import { DeterministicD20Source, createRunState, directorContext, normalizeTravelRequest, normalizeTurnRequest, publicRun, publicTurn, resolveSafeTravel, resolveTurn, travelFingerprint, turnFingerprint } from "../domain/turn-engine.js";
 import { applyCampaignPlanEnrichment, createCampaignPlanContext, createCampaignPlanFallback, createDeterministicCampaignPreview, validateCampaignPlanOutput } from "../llm/campaign-planning.js";
 import { createFallbackNarration, validateNarrationContext, validateNarrationOutput } from "../llm/narration.js";
+import { PRODUCT_CONTRACT } from "../domain/codria-contract.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -27,7 +28,7 @@ export class GameService {
     const storage = await this.store.health();
     return {
       status: "ok",
-      service: "keyboard-wanderer",
+      service: "codria-v4-game-server",
       storage: storage.storage,
       authoritativeTurns: true,
       campaignDirector: true,
@@ -36,6 +37,9 @@ export class GameService {
       runCampaignPlanMode: "one_request_with_at_most_one_retry",
       immutableWorlds: true,
       safeTravelSeparateFromCampaignTurns: true,
+      productContract: PRODUCT_CONTRACT,
+      canonicalInputTypes: ["MOVE", "USE_SKILL"],
+      consumingActionContexts: ["COMBAT", "INVESTIGATION", "NEGOTIATION", "DEPLOYMENT"],
       narrationProfile: this.narrator?.modelProfiles?.fast?.model || "configured-or-fallback",
       campaignPlanningProfile: this.narrator?.modelProfiles?.fast?.model || "configured-or-fallback"
     };
@@ -240,6 +244,8 @@ function publicCampaign(campaign) {
   return {
     id: campaign.id,
     title: campaign.title,
+    gameTitle: campaign.gameTitle,
+    worldId: campaign.worldId,
     generatedTitle: campaign.generatedTitle,
     generatedTitleKo: campaign.generatedTitleKo,
     worldSeed: campaign.worldSeed,
@@ -254,6 +260,12 @@ function publicCampaign(campaign) {
     premiseKo: campaign.premiseKo,
     tone: campaign.tone,
     worldName: campaign.worldName || campaign.genome?.worldName || campaign.scenarioPlan?.genome?.worldName,
+    protagonistId: campaign.protagonistId,
+    protagonistName: campaign.protagonistName,
+    artifactId: campaign.artifactId,
+    artifactName: campaign.artifactName,
+    adminAccessLevels: campaign.adminAccessLevels,
+    regionAxes: campaign.regionAxes,
     generationMetadata: campaign.generationMetadata || campaign.progressionMetadata || campaign.scenarioPlan?.generationMetadata,
     genome: campaign.genome || campaign.scenarioPlan?.genome,
     questSeeds: campaign.questSeeds || campaign.scenarioPlan?.questSeeds || [],

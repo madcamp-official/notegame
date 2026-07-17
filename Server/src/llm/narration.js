@@ -8,7 +8,7 @@ export const LEGACY_NARRATIVE_OPS = Object.freeze(["fact_hint", "rumor_hint", "n
 const OUTCOME_VALUES = new Set(["critical_failure", "failure", "partial_success", "success", "critical_success"]);
 const ABILITY_PATTERN = /^[a-z][a-z0-9_]{1,31}$/;
 const METRIC_MECHANICAL_ASSERTION = /(?:\b(?:world[\s._-]*stability|world[\s._-]*autonomy|public[\s._-]*trust|technical[\s._-]*debt|companion[\s._-]*bond|turn[\s._-]*pressure)\b|세계\s*안정성|세계\s*자율성|공공\s*신뢰|기술\s*부채|동료\s*유대|턴\s*압박)/i;
-const NARRATIVE_MECHANICAL_ASSERTION = /(?:\bprogress\s*level\b|\bmilestone\s*token.{0,80}\b(?:grant(?:ed)?|gain(?:ed)?|receive[ds]?|award(?:ed)?|unlock(?:ed)?)\b|\bfinale\s*(?:is\s*)?(?:resolved|completed|unlocked|confirmed)\b|\bending\s*(?:is\s*)?(?:chosen|confirmed|locked|reached)\b|\b(?:hp|health|focus|damage|turn|version|reward)\s*(?::|=|is|to|became|changed)?\s*[+-]?\d+\b|\bcoordinate\s*\(|\bposition\s*(?:is|=|became|changed)\b|진행\s*(?:레벨|단계).{0,40}(?:\d+|획득|상승|확정|부여)|이정표\s*(?:조각|토큰|증표).{0,60}(?:획득|지급|부여|해금)|피날레.{0,40}(?:해결|완료|해금|확정)|결말.{0,40}(?:선택|확정|도달|고정)|(?:체력|집중|피해|턴|버전|보상)\s*(?::|=|은|는|이|가)?\s*[+-]?\d+|좌표\s*\(|위치\s*(?:는|가|은|이)?\s*\()/i;
+const NARRATIVE_MECHANICAL_ASSERTION = /(?:\bprogress\s*level\b|\badmin\s*access.{0,80}\b(?:grant(?:ed)?|gain(?:ed)?|unlock(?:ed)?)\b|\bmilestone\s*token.{0,80}\b(?:grant(?:ed)?|gain(?:ed)?|receive[ds]?|award(?:ed)?|unlock(?:ed)?)\b|\bfinale\s*(?:is\s*)?(?:resolved|completed|unlocked|confirmed)\b|\bending\s*(?:is\s*)?(?:chosen|confirmed|locked|reached)\b|\b(?:hp|health|focus|damage|turn|version|reward)\s*(?::|=|is|to|became|changed)?\s*[+-]?\d+\b|\bcoordinate\s*\(|\bposition\s*(?:is|=|became|changed)\b|진행\s*(?:레벨|단계).{0,40}(?:\d+|획득|상승|확정|부여)|관리자\s*권한.{0,60}(?:획득|지급|부여|해금)|이정표\s*(?:조각|토큰|증표).{0,60}(?:획득|지급|부여|해금)|피날레.{0,40}(?:해결|완료|해금|확정)|결말.{0,40}(?:선택|확정|도달|고정)|(?:체력|집중|피해|턴|버전|보상)\s*(?::|=|은|는|이|가)?\s*[+-]?\d+|좌표\s*\(|위치\s*(?:는|가|은|이)?\s*\()/i;
 
 function exactKeys(object, allowed, code, status = 400) {
   const unknown = Object.keys(object).filter((key) => !allowed.includes(key));
@@ -48,19 +48,24 @@ export function validateNarrationContext(input) {
 }
 
 function validateDirectorContext(input) {
-  exactKeys(input, ["schemaVersion", "requestType", "campaign", "progression", "turnNo", "remainingTurns", "act", "currentStoryBeat", "area", "areaSummary", "intent", "ability", "normalizedAttempt", "intentAnalysis", "d20", "outcome", "dice", "consequenceBudget", "rulesetVersion", "stateHashBefore", "stateHashAfter", "allowedEffects", "allowedEntityIds", "allowedQuestIds", "allowedQuestTemplateIds", "activeQuests", "visibleEntities", "placementSlots", "readOnlyPlaces", "readOnlySlots", "geometryPolicy", "canonicalFacts", "openLoops", "rumors", "npcRelationships", "recentMemories"], "NARRATION_CONTEXT_INVALID");
+  exactKeys(input, ["schemaVersion", "requestType", "campaign", "progression", "turnNo", "remainingTurns", "act", "currentStoryBeat", "area", "areaSummary", "intent", "playerNote", "ability", "skillId", "actionContext", "normalizedAttempt", "intentAnalysis", "d20", "outcome", "dice", "consequenceBudget", "rulesetVersion", "stateHashBefore", "stateHashAfter", "allowedEffects", "allowedEntityIds", "allowedQuestIds", "allowedQuestTemplateIds", "activeQuests", "visibleEntities", "placementSlots", "readOnlyPlaces", "readOnlySlots", "geometryPolicy", "canonicalFacts", "openLoops", "rumors", "npcRelationships", "recentMemories", "majorChoices", "regionOutcomes", "abilityUsageHistory", "adminAccessHistory", "technicalDebtEntries", "unresolvedHooks", "endingFactors"], "NARRATION_CONTEXT_INVALID");
   const base = validateBase(input);
   assert(input.schemaVersion === "2.0" && input.requestType === "TURN_NARRATION", 400, "NARRATION_CONTEXT_INVALID", "Director context version or type is invalid.");
+  assert(["COPY", "DELETE", "CONNECT", "RESTORE", "UNDO"].includes(input.skillId), 400, "NARRATION_CONTEXT_INVALID", "skillId must be a keyboard skill.");
+  assert(["COMBAT", "INVESTIGATION", "NEGOTIATION", "DEPLOYMENT"].includes(input.actionContext), 400, "NARRATION_CONTEXT_INVALID", "actionContext must be server classified.");
+  assert(input.playerNote === null || (typeof input.playerNote === "string" && input.playerNote.length >= 1 && input.playerNote.length <= 400), 400, "NARRATION_CONTEXT_INVALID", "playerNote must be null or bounded optional flavor text.");
   assert(Number.isInteger(input.consequenceBudget) && input.consequenceBudget >= 0 && input.consequenceBudget <= 4, 400, "NARRATION_CONTEXT_INVALID", "consequenceBudget is invalid.");
   assert(Array.isArray(input.allowedEffects) && input.allowedEffects.every((effect) => DIRECTOR_OPS.includes(effect)), 400, "NARRATION_EFFECT_FORBIDDEN", "Director allowedEffects contains an unsupported operation.");
   assert(input.campaign && typeof input.campaign === "object" && typeof input.campaign.title === "string" && typeof input.campaign.premise === "string", 400, "NARRATION_CONTEXT_INVALID", "campaign must contain the sealed run premise.");
-  assert(input.progression && typeof input.progression === "object" && Number.isInteger(input.progression.level) && Array.isArray(input.progression.tokens), 400, "NARRATION_CONTEXT_INVALID", "progression must contain server-owned milestone state.");
+  assert(input.progression && typeof input.progression === "object" && Number.isInteger(input.progression.level) && Array.isArray(input.progression.tokens), 400, "NARRATION_CONTEXT_INVALID", "progression must contain server-owned administrator-access state.");
   assert(typeof input.rulesetVersion === "string" && input.rulesetVersion.length >= 3 && input.rulesetVersion.length <= 80, 400, "NARRATION_CONTEXT_INVALID", "rulesetVersion is invalid.");
   assert(/^[0-9a-f]{64}$/.test(input.stateHashBefore || "") && /^[0-9a-f]{64}$/.test(input.stateHashAfter || ""), 400, "NARRATION_CONTEXT_INVALID", "Director state hashes must be canonical SHA-256 values.");
-  for (const field of ["allowedEntityIds", "allowedQuestIds", "allowedQuestTemplateIds", "activeQuests", "visibleEntities", "placementSlots", "readOnlyPlaces", "readOnlySlots", "canonicalFacts", "openLoops", "rumors", "npcRelationships", "recentMemories"]) assert(Array.isArray(input[field]), 400, "NARRATION_CONTEXT_INVALID", `${field} must be an array.`);
+  for (const field of ["allowedEntityIds", "allowedQuestIds", "allowedQuestTemplateIds", "activeQuests", "visibleEntities", "placementSlots", "readOnlyPlaces", "readOnlySlots", "canonicalFacts", "openLoops", "rumors", "npcRelationships", "recentMemories", "majorChoices", "regionOutcomes", "abilityUsageHistory", "adminAccessHistory", "technicalDebtEntries", "unresolvedHooks"]) assert(Array.isArray(input[field]), 400, "NARRATION_CONTEXT_INVALID", `${field} must be an array.`);
   assert(input.intentAnalysis && typeof input.intentAnalysis === "object" && typeof input.intentAnalysis.score === "number" && input.intentAnalysis.score >= 0 && input.intentAnalysis.score <= 1, 400, "NARRATION_CONTEXT_INVALID", "intentAnalysis is invalid.");
   assert(input.geometryPolicy === "read_only_ids_and_visual_intent_only", 400, "NARRATION_CONTEXT_INVALID", "geometryPolicy must forbid model geometry mutation.");
-  assert(input.activeQuests.length <= 6 && input.visibleEntities.length <= 32 && input.placementSlots.length <= 8 && input.readOnlyPlaces.length <= 24 && input.readOnlySlots.length <= 12 && input.canonicalFacts.length <= 16, 400, "NARRATION_CONTEXT_INVALID", "Director context exceeds its bounded collection limits.");
+  assert(input.activeQuests.length <= 6 && input.visibleEntities.length <= 32 && input.placementSlots.length <= 8 && input.readOnlyPlaces.length <= 24 && input.readOnlySlots.length <= 12 && input.canonicalFacts.length <= 16
+    && input.majorChoices.length <= 8 && input.regionOutcomes.length <= 6 && input.abilityUsageHistory.length <= 8 && input.adminAccessHistory.length <= 3 && input.technicalDebtEntries.length <= 8 && input.unresolvedHooks.length <= 8,
+  400, "NARRATION_CONTEXT_INVALID", "Director context exceeds its bounded collection limits.");
   return { mode: "director", ...input, ...base, allowedEffects: [...new Set(input.allowedEffects)] };
 }
 
@@ -70,6 +75,10 @@ export function validateNarrationOutput(input, contextInput) {
   exactKeys(input, ["summary", "body", "dialogue", "proposedOps"], "LLM_OUTPUT_INVALID", 502);
   const summary = boundedString(input.summary, { name: "summary", minimum: 1, maximum: 160, status: 502 });
   const body = boundedString(input.body, { name: "body", minimum: 1, maximum: 700, status: 502 });
+  if (context.mode === "director") {
+    const sentenceCount = body.split(/(?<=[.!?。！？])\s*/u).map((item) => item.trim()).filter(Boolean).length;
+    assert(sentenceCount >= 2 && sentenceCount <= 4, 502, "LLM_NARRATIVE_LENGTH_INVALID", "Turn narration body must contain 2-4 sentences.");
+  }
   validateNarrativeMechanicalClaims(summary, body, context);
   if (!Array.isArray(input.proposedOps) || input.proposedOps.length > 5) throw new AppError(502, "LLM_OUTPUT_INVALID", "proposedOps must contain at most 5 items.");
   if (context.mode === "legacy") return validateLegacyOutput({ summary, body, dialogue: input.dialogue, proposedOps: input.proposedOps }, context);
@@ -159,7 +168,7 @@ function validateDirectorOperation(operation, context) {
 
 export function createFallbackNarration(contextInput) {
   const context = contextInput?.mode ? contextInput : validateNarrationContext(contextInput);
-  const korean = /[가-힣]/.test(context.intent);
+  const korean = /[가-힣]/.test(context.playerNote || context.intent);
   const outcomeText = korean ? {
     critical_success: "명령이 서버 규칙 안에서 가장 의도에 가깝게 실현됐다.",
     success: "세계가 합법적인 명령을 받아들였다.",

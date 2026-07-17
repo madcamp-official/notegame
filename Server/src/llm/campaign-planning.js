@@ -1,6 +1,7 @@
 import { assert } from "../errors.js";
 import { clone } from "../domain/serialization.js";
 import { computeCampaignContentHash } from "../domain/campaign.js";
+import { GAME_TITLE } from "../domain/codria-contract.js";
 
 export const CAMPAIGN_PLAN_CONTEXT_VERSION = "campaign-plan.v1";
 
@@ -241,6 +242,7 @@ export function validateCampaignPlanOutput(input, contextInput) {
     description: text(input.campaign.description, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "campaign.description", maximum: 480 }),
     tone: input.campaign.tone.map((value) => text(value, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "campaign.tone", maximum: 32 }))
   };
+  assert(campaign.title === GAME_TITLE, 502, "CAMPAIGN_PLAN_PRODUCT_IDENTITY_FORBIDDEN", "Campaign planning cannot rename the product.");
   const ids = context.immutableIds;
   const beats = validateKeyedEntries(input.beats, { allowedIds: new Set(ids.beatIds), entryKeys: ["id", "title", "description"], textFields: { title: 80, description: 320 }, code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "beats" });
   const npcs = validateKeyedEntries(input.npcs, { allowedIds: new Set(ids.npcIds), entryKeys: ["id", "title", "description"], textFields: { title: 60, description: 320 }, code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "npcs" });
@@ -285,8 +287,8 @@ function refreshPersistenceMirrors(campaign) {
 
 export function applyCampaignPlanEnrichment(blueprint, proposal, { model = "configured-campaign-planner", modelProfile = "campaign-lite" } = {}) {
   const campaign = clone(blueprint);
-  campaign.generatedTitle = proposal.campaign.title;
-  campaign.generatedTitleKo = proposal.campaign.title;
+  campaign.generatedTitle = GAME_TITLE;
+  campaign.generatedTitleKo = GAME_TITLE;
   campaign.premise = proposal.campaign.description;
   campaign.premiseKo = proposal.campaign.description;
   campaign.tone = clone(proposal.campaign.tone);
