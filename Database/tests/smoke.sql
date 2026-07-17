@@ -280,7 +280,7 @@ begin
         display_name, is_protected, is_cloneable, is_active, state_json
     ) values
     (test_player, test_owner, test_run, test_world, 'PLAYER', 'player.ninja.green.v1',
-     'Keyboard Warrior', true, false, true, '{"hp":10,"maxHp":10,"blocking":true}'::jsonb),
+     '넙죽이', true, false, true, '{"canonicalIdentity":"PROTAGONIST_NUPJUKYI","hp":10,"maxHp":10,"blocking":true}'::jsonb),
     (test_npc, test_owner, test_run, test_world, 'NPC', 'npc.villager.green.v1',
      'Arrival Witness', true, false, true,
      jsonb_build_object('slotId', 'slot.0123456789abcdefabcd', 'campaignRole', 'ARRIVAL_CATALYST', 'blocking', false));
@@ -290,6 +290,15 @@ begin
     ) values
     (test_player, test_owner, test_run, 'player', 10, 10, 8, 8),
     (test_npc, test_owner, test_run, 'npc', 8, 8, 0, 0);
+
+    insert into npc_relationships (
+        id, owner_id, run_id, subject_actor_id, object_actor_id,
+        affinity, trust, fear, relationship_state, notes, last_changed_turn,
+        created_at, updated_at
+    ) values (
+        test_relationship, test_owner, test_run, test_npc, test_player,
+        0, 0, 0, 'neutral', '{}'::jsonb, 0, test_time, test_time
+    );
 
     insert into entity_positions (
         entity_id, owner_id, run_id, world_id, area_id, x, y, blocks_movement
@@ -316,13 +325,24 @@ begin
         raise exception 'the player binding did not advance the run version';
     end if;
 
-    insert into turn_records (
-        id, run_id, owner_id, idempotency_key, request_fingerprint,
-        expected_run_version, request_json, received_at, created_at, updated_at
+    insert into safe_travels (
+        id, run_id, owner_id, sequence_no, idempotency_key, request_fingerprint,
+        expected_run_version, committed_run_version, from_x, from_y,
+        requested_x, requested_y, to_x, to_y, path_cost, travel_time_units,
+        cumulative_travel_time_units, entered_area_key, entered_biome_id,
+        campaign_role, traversed_area_ids, reached_poi_ids, path_json,
+        encounter_opened, encounter_json, campaign_turn_consumed,
+        campaign_turn_before, campaign_turn_after, layout_hash,
+        command_schema_version, input_type, world_id, destination_area_id,
+        turn_context, created_at
     ) values (
-        test_turn, test_run, test_owner, 'generative-smoke-turn-0001', repeat('f', 64),
-        2, '{"ability":"move","abilitySource":"explicit_selection","destination":{"x":2,"y":1},"intent":"Move to the next legal tile."}'::jsonb,
-        test_time, test_time, test_time
+        test_safe_travel, test_run, test_owner, 1, 'codria-smoke-move-0001', repeat('8', 64),
+        2, 3, 1, 1, 2, 1, 2, 1, 1, 1, 1,
+        'area.bug-forest', 'temperate_forest_field', 'ARRIVAL_CATALYST',
+        jsonb_build_array(area_arrival::text), '[]'::jsonb,
+        '[[1,1],[2,1]]'::jsonb, false, null, false, 0, 0, expected_layout_hash,
+        'codria-action.v4', 'MOVE', test_world, area_arrival,
+        '{"safe":true,"encounterOpened":false}'::jsonb, test_time
     );
 
     update entity_positions
@@ -330,26 +350,55 @@ begin
      where entity_id = test_player and owner_id = test_owner and run_id = test_run;
 
     update runs
-       set current_turn = 1,
-           version = 3,
-           world_state = world_state || '{"currentTurn":1,"version":3,"lastAbility":"move"}'::jsonb
+       set version = 3,
+           world_state = world_state || '{"currentTurn":0,"version":3,"lastInputType":"MOVE"}'::jsonb
      where id = test_run and owner_id = test_owner and version = 2;
     if not found then
-        raise exception 'the committed turn did not advance the authoritative run';
+        raise exception 'safe MOVE did not advance the run version';
+    end if;
+
+    insert into turn_records (
+        id, run_id, owner_id, idempotency_key, request_fingerprint,
+        expected_run_version, request_json, command_schema_version, input_type,
+        skill_id, target_ids, action_context, turn_context,
+        campaign_turn_before, campaign_turn_after, campaign_turn_consumed,
+        received_at, created_at, updated_at
+    ) values (
+        test_turn, test_run, test_owner, 'codria-smoke-action-0001', repeat('f', 64),
+        3,
+        jsonb_build_object(
+            'inputType', 'USE_SKILL', 'skillId', 'CONNECT',
+            'targetIds', jsonb_build_array(test_npc::text)
+        ),
+        'codria-action.v4', 'USE_SKILL', 'CONNECT',
+        jsonb_build_array(test_npc::text), 'NEGOTIATION',
+        jsonb_build_object('areaId', area_arrival, 'regionAxis', 'REGION_BUG_FOREST'),
+        0, 0, false, test_time, test_time, test_time
+    );
+
+    update runs
+       set current_turn = 1,
+           version = 4,
+           world_state = world_state || '{"currentTurn":1,"version":4,"lastInputType":"USE_SKILL","lastSkillId":"CONNECT"}'::jsonb
+     where id = test_run and owner_id = test_owner and version = 3;
+    if not found then
+        raise exception 'the meaningful USE_SKILL action did not advance the campaign turn';
     end if;
 
     update turn_records
        set status = 'committed',
            turn_no = 1,
-           committed_run_version = 3,
+           committed_run_version = 4,
+           campaign_turn_after = 1,
+           campaign_turn_consumed = true,
            result_json = jsonb_build_object(
                'outcome', 'success',
                'd20', 12,
-               'rulesetVersion', 'keyboard-wanderer-rules.v3',
+               'rulesetVersion', 'codria-rules.v4',
                'stateHashBefore', state_hash_before,
                'stateHashAfter', state_hash_after
            ),
-           narrative_json = '{"summary":"The legal move settles into the sealed world.","proposedOps":[],"appliedOps":[],"rejectedOps":[]}'::jsonb,
+           narrative_json = '{"summary":"넙죽이의 CONNECT가 버그 숲의 목격자와 신뢰를 연결했다.","proposedOps":[],"appliedOps":[],"rejectedOps":[]}'::jsonb,
            fallback_used = false,
            model = 'smoke-rule-director',
            completed_at = test_time
