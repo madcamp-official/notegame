@@ -79,15 +79,15 @@ namespace KeyboardWanderer.Demo
         private Guid? _lastRestorableTarget;
         private GridCoord? _lastRestorableCoord;
         private string _lastRestorableName;
-        private string _intent = string.Empty;
-        private string _lastNarrative = "생성된 장면이 당신의 첫 선언을 기다립니다.";
-        private string _lastAttempt = "목적지나 대상을 고르고, 무엇을 시도할지 직접 적으세요.";
+        private string _lastNarrative = "코드리아의 봉인된 세계가 넙죽이의 첫 선택을 기다립니다.";
+        private string _lastAttempt = "목적지 또는 스킬과 대상을 선택하세요.";
+        private string _lastStateChanges = "아직 확정된 상태 변화가 없습니다.";
         private int _lastD20;
         private int _lastModifier;
         private string _lastModifierBreakdown = "--";
         private int _lastDifficulty;
         private int _lastMechanicalScore;
-        private string _lastIntentAlignment = "--";
+        private string _lastActionContext = "--";
         private string _lastOutcome = "READY";
         private string _lastExplanation = "서버는 입력을 가장 가까운 합법적 시도로 정규화합니다.";
         private string[] _lastDialogue = Array.Empty<string>();
@@ -100,7 +100,6 @@ namespace KeyboardWanderer.Demo
         private string _encounterReason;
         private string _serverStatus = "권위 서버 확인 전";
         private bool _showPause;
-        private bool _intentFocused;
         private int _runGeneration;
         private long _worldSeed;
         private Vector2 _logScroll;
@@ -275,7 +274,7 @@ namespace KeyboardWanderer.Demo
             var panel = new Rect(385f, 54f, 670f, 790f);
             DrawWoodPanel(panel, true);
             GUI.Label(new Rect(420f, 82f, 600f, 64f), CampaignCatalog.CampaignTitle, _titleStyle);
-            GUI.Label(new Rect(420f, 140f, 600f, 30f), "Seed 캠페인 × 고정 월드 탐색 × 사건 D20", _subtitleStyle);
+            GUI.Label(new Rect(420f, 140f, 600f, 30f), "코드리아 × 관리자 키보드 × 선택 회수", _subtitleStyle);
             DrawOrnament(new Rect(465f, 184f, 510f, 2f));
 
             DrawSprite(_playerSprite, new Rect(604f, 198f, 196f, 196f), Color.white);
@@ -379,7 +378,7 @@ namespace KeyboardWanderer.Demo
             GUI.Label(new Rect(400f, 7f, 570f, 25f), "◆  " + area + "  ◆", _centerStyle);
             GUI.Label(new Rect(400f, 33f, 570f, 20f), CurrentBiomeLabel(view) + " · " + CampaignPhaseLabel(view), _mutedStyle);
             GUI.Label(new Rect(978f, 7f, 444f, 22f),
-                "의미 턴 " + CurrentTurn(view) + "/" + TurnLimit(view) + "  ·  핵심 표식 " + MilestoneProgress(view) + "/3", _smallStyle);
+                "캠페인 턴 " + CurrentTurn(view) + "/" + TurnLimit(view) + "  ·  관리자 권한 " + AdminAccessLevel(view) + "/3", _smallStyle);
             GUI.Label(new Rect(978f, 32f, 444f, 22f), MetricsLine(view), _mutedStyle);
         }
 
@@ -401,20 +400,20 @@ namespace KeyboardWanderer.Demo
             int maxFocus = MaxFocus(view);
             DrawMeter(new Rect(18f, 217f, 224f, 23f), health, maxHealth, Ruby, "HP");
             DrawMeter(new Rect(18f, 247f, 224f, 23f), focus, maxFocus, FocusBlue, "FOCUS");
-            GUI.Label(new Rect(18f, 272f, 224f, 18f), "표식 " + MilestoneProgress(view) + "/3 · 토큰 " + AccessTokenCount(view) + "/3 · 이동 " + TravelCount(view), _mutedStyle);
+            GUI.Label(new Rect(18f, 272f, 224f, 18f), "권한 " + AdminAccessLevel(view) + "/3 · 안전 이동 " + TravelCount(view), _mutedStyle);
 
-            GUI.Label(new Rect(18f, 294f, 224f, 24f), "생성된 프리미스", _headerStyle);
-            DrawRect(new Rect(16f, 323f, 228f, 104f), new Color(0.04f, 0.03f, 0.02f, 0.74f));
-            DrawBorder(new Rect(16f, 323f, 228f, 104f), GoldDim, 1f);
-            GUI.Label(new Rect(26f, 331f, 208f, 88f), CampaignPremise(view), _smallStyle);
+            GUI.Label(new Rect(18f, 294f, 224f, 24f), "메인 목표 · 1", _headerStyle);
+            DrawRect(new Rect(16f, 323f, 228f, 86f), new Color(0.04f, 0.03f, 0.02f, 0.74f));
+            DrawBorder(new Rect(16f, 323f, 228f, 86f), GoldDim, 1f);
+            GUI.Label(new Rect(26f, 331f, 208f, 70f), StoryBeat(view) + "\n" + StoryBeatObjective(view), _smallStyle);
 
-            GUI.Label(new Rect(18f, 441f, 224f, 24f), "현재 스토리 비트", _headerStyle);
-            GUI.Label(new Rect(20f, 472f, 220f, 58f), StoryBeat(view), _smallStyle);
-            GUI.Label(new Rect(20f, 532f, 220f, 44f), StoryBeatObjective(view), _mutedStyle);
-            GUI.Label(new Rect(18f, 578f, 224f, 38f), FinaleGateLabel(view), _smallStyle);
-            if (GUI.Button(new Rect(18f, 622f, 104f, 28f), "◀ POI", _buttonStyle)) CyclePoi(-1);
-            if (GUI.Button(new Rect(138f, 622f, 104f, 28f), "POI ▶", _buttonStyle)) CyclePoi(1);
-            GUI.Label(new Rect(18f, 652f, 224f, 18f), _poiLabel + " · [ ] 키", _mutedStyle);
+            GUI.Label(new Rect(18f, 421f, 224f, 24f), "보조 목표 · 최대 2", _headerStyle);
+            GUI.Label(new Rect(20f, 450f, 220f, 64f), SecondaryObjectiveText(view), _mutedStyle);
+            GUI.Label(new Rect(18f, 520f, 224f, 24f), "권한 / 부채 / 선택 회수", _headerStyle);
+            GUI.Label(new Rect(20f, 549f, 220f, 68f), ProgressLedgerText(view), _smallStyle);
+            GUI.Label(new Rect(18f, 618f, 224f, 32f), FinaleGateLabel(view), _mutedStyle);
+            if (GUI.Button(new Rect(18f, 653f, 104f, 24f), "◀ POI", _buttonStyle)) CyclePoi(-1);
+            if (GUI.Button(new Rect(138f, 653f, 104f, 24f), "POI ▶", _buttonStyle)) CyclePoi(1);
         }
 
         private void DrawRightPanel(RunView view)
@@ -423,21 +422,8 @@ namespace KeyboardWanderer.Demo
             var rect = new Rect(x, TopHeight, RightWidth, LogicalHeight - TopHeight - BottomHeight);
             DrawWoodPanel(rect, false);
 
-            GUI.Label(new Rect(x + 18f, 74f, RightWidth - 36f, 28f), "현재 장면 · 검증된 서술", _headerStyle);
-            var narrationRect = new Rect(x + 16f, 106f, RightWidth - 32f, 116f);
-            DrawRect(narrationRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
-            DrawBorder(narrationRect, GoldDim, 1f);
-            DrawScrollableText(NarrativeWithDialogue(), new Rect(narrationRect.x + 8f, narrationRect.y + 8f,
-                narrationRect.width - 16f, narrationRect.height - 16f), ref _narrativeScroll);
-
-            GUI.Label(new Rect(x + 18f, 228f, RightWidth - 36f, 26f), "서버가 실행한 실제 시도", _headerStyle);
-            var attemptRect = new Rect(x + 16f, 256f, RightWidth - 32f, 122f);
-            DrawRect(attemptRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
-            DrawBorder(attemptRect, GoldDim, 1f);
-            GUI.Label(new Rect(attemptRect.x + 10f, attemptRect.y + 7f, attemptRect.width - 20f, 38f), _lastAttempt, _smallStyle);
-            GUI.Label(new Rect(attemptRect.x + 10f, attemptRect.y + 46f, attemptRect.width - 20f, 70f), _lastExplanation, _mutedStyle);
-
-            var diceRect = new Rect(x + 16f, 382f, RightWidth - 32f, 116f);
+            GUI.Label(new Rect(x + 18f, 74f, RightWidth - 36f, 28f), "1 · 판정", _headerStyle);
+            var diceRect = new Rect(x + 16f, 104f, RightWidth - 32f, 116f);
             DrawRect(diceRect, new Color(0.11f, 0.07f, 0.035f, 0.94f));
             DrawBorder(diceRect, Gold, 2f);
             DrawSprite(_d20Sprite, new Rect(diceRect.x + 12f, diceRect.y + 16f, 76f, 76f), Color.white);
@@ -446,12 +432,26 @@ namespace KeyboardWanderer.Demo
             GUI.Label(new Rect(diceRect.x + 96f, diceRect.y + 46f, 258f, 22f),
                 "수정 " + Signed(_lastModifier) + "  ·  난이도 " + DisplayNumber(_lastDifficulty), _smallStyle);
             GUI.Label(new Rect(diceRect.x + 96f, diceRect.y + 70f, 258f, 22f),
-                "총점 " + DisplayNumber(_lastMechanicalScore) + "  ·  의도 정렬 " + _lastIntentAlignment, _smallStyle);
+                "총점 " + DisplayNumber(_lastMechanicalScore) + "  ·  문맥 " + _lastActionContext, _smallStyle);
             GUI.Label(new Rect(diceRect.x + 10f, diceRect.y + 94f, diceRect.width - 20f, 17f),
-                _serverPending || _gmPending ? "권위 턴을 커밋하고 장면을 검증하는 중…" : _serverStatus, _mutedStyle);
+                _serverPending || _gmPending ? "권위 판정과 짧은 서사를 검증하는 중…" : _serverStatus, _mutedStyle);
 
-            GUI.Label(new Rect(x + 18f, 510f, RightWidth - 36f, 26f), "세계 기억 · 사실 / 미회수 훅 / NPC", _headerStyle);
-            var memoryRect = new Rect(x + 16f, 540f, RightWidth - 32f, 123f);
+            GUI.Label(new Rect(x + 18f, 230f, RightWidth - 36f, 26f), "2 · 상태 변화", _headerStyle);
+            var attemptRect = new Rect(x + 16f, 258f, RightWidth - 32f, 112f);
+            DrawRect(attemptRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
+            DrawBorder(attemptRect, GoldDim, 1f);
+            GUI.Label(new Rect(attemptRect.x + 10f, attemptRect.y + 7f, attemptRect.width - 20f, 42f), _lastStateChanges, _smallStyle);
+            GUI.Label(new Rect(attemptRect.x + 10f, attemptRect.y + 50f, attemptRect.width - 20f, 55f), _lastExplanation, _mutedStyle);
+
+            GUI.Label(new Rect(x + 18f, 380f, RightWidth - 36f, 26f), "3 · 짧은 서사 · 2–4문장", _headerStyle);
+            var narrationRect = new Rect(x + 16f, 408f, RightWidth - 32f, 116f);
+            DrawRect(narrationRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
+            DrawBorder(narrationRect, GoldDim, 1f);
+            DrawScrollableText(ShortNarrative(NarrativeWithDialogue()), new Rect(narrationRect.x + 8f, narrationRect.y + 8f,
+                narrationRect.width - 16f, narrationRect.height - 16f), ref _narrativeScroll);
+
+            GUI.Label(new Rect(x + 18f, 534f, RightWidth - 36f, 26f), "기억 · 권한 / 부채 / 선택 회수", _headerStyle);
+            var memoryRect = new Rect(x + 16f, 562f, RightWidth - 32f, 101f);
             DrawRect(memoryRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
             DrawBorder(memoryRect, GoldDim, 1f);
             DrawMemory(view, new Rect(memoryRect.x + 8f, memoryRect.y + 7f, memoryRect.width - 16f, memoryRect.height - 14f));
@@ -461,7 +461,7 @@ namespace KeyboardWanderer.Demo
         {
             var rect = new Rect(0f, LogicalHeight - BottomHeight, LogicalWidth, BottomHeight);
             DrawWoodPanel(rect, false);
-            GUI.Label(new Rect(18f, 690f, 570f, 25f), "6개 키보드 능력 · 세계를 편집하는 실행 수단", _headerStyle);
+            GUI.Label(new Rect(18f, 690f, 570f, 25f), "MOVE + 관리자 키보드 5 스킬", _headerStyle);
 
             string[] names = { "Move", "Copy", "Delete", "Connect", "Restore", "Undo" };
             string[] korean = { "이동", "복제", "삭제", "연결", "복원", "되돌림" };
@@ -472,21 +472,37 @@ namespace KeyboardWanderer.Demo
                 DrawAbilityButton(buttonRect, names[i], korean[i], keys[i]);
             }
 
-            DrawAuxiliaryAction(new Rect(18f, 823f, 130f, 42f), AbilityKind.Attack, "공격");
-            DrawAuxiliaryAction(new Rect(154f, 823f, 130f, 42f), AbilityKind.Interact, "상호작용/조사");
-            DrawAuxiliaryAction(new Rect(290f, 823f, 130f, 42f), AbilityKind.Negotiate, "협상");
-            DrawAuxiliaryAction(new Rect(426f, 823f, 134f, 42f), AbilityKind.Rest, "휴식");
+            GUI.Label(new Rect(18f, 823f, 570f, 20f), "추천 행동 · 2–3", _mutedStyle);
+            AbilityKind[] recommendations = RecommendedActions(view);
+            for (int i = 0; i < recommendations.Length && i < 3; i++)
+            {
+                AbilityKind recommended = recommendations[i];
+                if (GUI.Button(new Rect(18f + i * 182f, 846f, 172f, 34f),
+                        ContextPreview(recommended, view) + " · " + recommended,
+                        _ability == recommended ? _selectedButtonStyle : _buttonStyle))
+                    SetAbility(recommended);
+            }
 
-            GUI.Label(new Rect(620f, 690f, 590f, 25f), "무엇을 시도할지 직접 쓰세요 · 원문은 판정 기록에 보존됩니다", _headerStyle);
-            GUI.SetNextControlName("IntentField");
-            _intent = GUI.TextArea(new Rect(620f, 720f, 590f, 145f), _intent, 500, _textAreaStyle);
-            _intentFocused = GUI.GetNameOfFocusedControl() == "IntentField";
+            GUI.Label(new Rect(620f, 690f, 590f, 25f), "실행 전 확인", _headerStyle);
+            var previewRect = new Rect(620f, 720f, 590f, 145f);
+            DrawRect(previewRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
+            DrawBorder(previewRect, GoldDim, 1f);
+            GUI.Label(new Rect(636f, 734f, 558f, 120f), ExecutionPreview(view), _smallStyle);
 
-            GUI.enabled = RunIsPlaying(view) && !_showPause && !_serverPending;
+            GUI.enabled = RunIsPlaying(view) && !_showPause && !_serverPending && CanSubmitCurrentSelection();
             if (GUI.Button(new Rect(1226f, 720f, 196f, 145f), SubmissionButtonLabel(view), _selectedButtonStyle))
                 Submit();
             GUI.enabled = true;
             GUI.Label(new Rect(620f, 869f, 802f, 18f), SelectionHint(view), _mutedStyle);
+        }
+
+        private bool CanSubmitCurrentSelection()
+        {
+            if (_ability == AbilityKind.Move) return _selectedCoord.HasValue;
+            if (_ability == AbilityKind.Undo) return true;
+            if (_ability == AbilityKind.Connect)
+                return _selectedTarget.HasValue && _selectedSecondaryTarget.HasValue;
+            return _selectedTarget.HasValue && IsSkillEnabledForCurrentTarget(_ability);
         }
 
         private void DrawPauseOverlay()
@@ -513,7 +529,7 @@ namespace KeyboardWanderer.Demo
             DrawRect(new Rect(0f, 0f, LogicalWidth, LogicalHeight), new Color(0f, 0f, 0f, 0.72f));
             var panel = new Rect(435f, 145f, 570f, 610f);
             DrawWoodPanel(panel, true);
-            GUI.Label(new Rect(475f, 185f, 490f, 52f), "생성된 캠페인의 결말", _titleStyle);
+            GUI.Label(new Rect(475f, 185f, 490f, 52f), "코드리아의 결말", _titleStyle);
             DrawSprite(_d20Sprite, new Rect(640f, 255f, 160f, 160f), Color.white);
             string endingCode = EndingCode(view);
             GUI.Label(new Rect(485f, 425f, 470f, 42f), EndingTitle(endingCode), _headerStyle);
@@ -583,22 +599,53 @@ namespace KeyboardWanderer.Demo
             GUI.EndScrollView();
         }
 
-        private void DrawAuxiliaryAction(Rect rect, AbilityKind ability, string label)
-        {
-            bool selected = _ability == ability;
-            if (GUI.Button(rect, label, selected ? _selectedButtonStyle : _buttonStyle))
-                SetAbility(ability);
-        }
-
         private void DrawAbilityButton(Rect rect, string abilityName, string label, string key)
         {
             AbilityKind value = AbilityByName(abilityName);
             bool selected = _ability.ToString() == abilityName;
+            bool enabled = IsSkillEnabledForCurrentTarget(value);
+            GUI.enabled = enabled;
             if (GUI.Button(rect, GUIContent.none, selected ? _selectedButtonStyle : _buttonStyle))
                 SetAbility(value);
+            GUI.enabled = true;
             DrawSprite(AbilityIcon(abilityName), new Rect(rect.x + 28f, rect.y + 8f, 34f, 34f), selected ? Color.white : new Color(0.9f, 0.84f, 0.67f, 1f));
             GUI.Label(new Rect(rect.x + 4f, rect.y + 47f, rect.width - 8f, 19f), label, _centerStyle);
-            GUI.Label(new Rect(rect.x + 4f, rect.y + 67f, rect.width - 8f, 15f), key, _mutedStyle);
+            GUI.Label(new Rect(rect.x + 4f, rect.y + 67f, rect.width - 8f, 15f), enabled ? key : "사용 불가", _mutedStyle);
+        }
+
+        private bool IsSkillEnabledForCurrentTarget(AbilityKind skill)
+        {
+            if (_service == null) return false;
+            if (skill == AbilityKind.Move) return true;
+            RunView view = _service.CurrentView;
+            int focus = _serverOnline && _serverRun != null ? _serverRun.focus : view.Focus;
+            int focusCost = skill == AbilityKind.Copy || skill == AbilityKind.Delete ? 1
+                : skill == AbilityKind.Connect || skill == AbilityKind.Restore ? 2
+                : skill == AbilityKind.Undo ? 3 : int.MaxValue;
+            if (focus < focusCost) return false;
+            if (skill == AbilityKind.Undo)
+            {
+                if (_serverOnline) return _serverRun != null && _serverRun.currentTurn > 0;
+                RunState state = _service.CreateSnapshot();
+                return state.LastReversibleTurn != null && !state.LastReversibleTurn.IsConsumed &&
+                       state.LastReversibleTurn.SourceTurn == state.CurrentTurn;
+            }
+            if (!_selectedTarget.HasValue)
+                return true;
+            for (int i = 0; i < view.Entities.Count; i++)
+            {
+                EntityView target = view.Entities[i];
+                if (target.EntityId != _selectedTarget.Value) continue;
+                if (skill == AbilityKind.Copy)
+                    return target.Kind != EntityKind.Player && target.Kind != EntityKind.Npc;
+                if (skill == AbilityKind.Delete)
+                    return !target.IsProtected && target.Kind != EntityKind.Player && target.Kind != EntityKind.Npc;
+                if (skill == AbilityKind.Connect) return !target.IsHostile;
+                if (skill == AbilityKind.Restore)
+                    return _lastRestorableTarget == target.EntityId ||
+                           target.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal);
+            }
+            return true;
         }
 
         private void DrawMeter(Rect rect, int value, int max, Color color, string label)
@@ -636,7 +683,7 @@ namespace KeyboardWanderer.Demo
                 PlaySfx(_showPause ? AssetClip("UiCancelSound") : AssetClip("UiAcceptSound"));
                 return;
             }
-            if (_showPause || _intentFocused || !RunIsPlaying(_service.CurrentView) || _serverPending)
+            if (_showPause || !RunIsPlaying(_service.CurrentView) || _serverPending)
                 return;
 
             if (keyboard.digit1Key.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame) SetAbility(AbilityKind.Move);
@@ -645,10 +692,6 @@ namespace KeyboardWanderer.Demo
             if (keyboard.digit4Key.wasPressedThisFrame || keyboard.cKey.wasPressedThisFrame) SetAbility(AbilityKind.Connect);
             if (keyboard.digit5Key.wasPressedThisFrame || keyboard.qKey.wasPressedThisFrame) SetAbility(AbilityKind.Restore);
             if (keyboard.digit6Key.wasPressedThisFrame || keyboard.zKey.wasPressedThisFrame) SetAbility(AbilityKind.Undo);
-            if (keyboard.tKey.wasPressedThisFrame) SetAbility(AbilityKind.Attack);
-            if (keyboard.spaceKey.wasPressedThisFrame) SetAbility(AbilityKind.Interact);
-            if (keyboard.iKey.wasPressedThisFrame) SetAbility(AbilityKind.Rest);
-            if (keyboard.nKey.wasPressedThisFrame) SetAbility(AbilityKind.Negotiate);
             if (keyboard.leftBracketKey.wasPressedThisFrame) CyclePoi(-1);
             if (keyboard.rightBracketKey.wasPressedThisFrame) CyclePoi(1);
             if (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame) Submit();
@@ -707,15 +750,7 @@ namespace KeyboardWanderer.Demo
                 }
                 _selectedCoord = coord;
             }
-            else if (abilityName == "Attack" || abilityName == "Interact" || abilityName == "Negotiate")
-            {
-                _selectedCoord = coord;
-                _selectedSecondaryTarget = null;
-                _selectedTarget = clickedEntity.HasValue && IsValidAuxiliaryTarget(view, clickedEntity.Value, _ability)
-                    ? clickedEntity
-                    : null;
-            }
-            else if (abilityName != "Rest" && abilityName != "Undo")
+            else if (abilityName != "Undo")
             {
                 _selectedCoord = coord;
                 _selectedTarget = clickedEntity;
@@ -784,29 +819,19 @@ namespace KeyboardWanderer.Demo
             if (!RunIsPlaying(view))
                 return;
 
-            string intent = (_intent ?? string.Empty).Trim();
-            if (intent.Length == 0)
-            {
-                _lastOutcome = "INPUT REQUIRED";
-                _lastAttempt = "자유 선언이 비어 있어 턴을 제출하지 않았습니다.";
-                _lastExplanation = "무엇을 이루려는지 직접 적어야 서버가 합법적 시도로 정규화할 수 있습니다.";
-                PlaySfx(AssetClip("UiCancelSound"));
-                return;
-            }
-
             if (_serverOnline && _serverRun != null && _gameApi != null)
             {
-                if (_ability == AbilityKind.Move && !ShouldResolveMoveAsEncounter(view))
-                    StartCoroutine(SubmitServerTravel(intent));
+                if (_ability == AbilityKind.Move)
+                    StartCoroutine(SubmitServerTravel());
                 else
-                    StartCoroutine(SubmitServerTurn(intent));
+                    StartCoroutine(SubmitServerAction());
                 return;
             }
 
-            SubmitLocalTurn(intent);
+            SubmitLocalTurn();
         }
 
-        private void SubmitLocalTurn(string intent)
+        private void SubmitLocalTurn()
         {
             RunView view = _service.CurrentView;
 
