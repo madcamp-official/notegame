@@ -5,11 +5,24 @@ import { advanceStoryDirector, campaignAct, chooseEnding, resolveFinale } from "
 import { TILE, areaAt, isWalkable, movementCost, publicWorld, tileAt } from "./world.js";
 import { analyzeIntent, detectIntentActions, realizationAlignment } from "./intent.js";
 import { containsProtectedFactReference } from "./protected-mechanics.js";
+import {
+  ADMIN_ACCESS_LEVELS,
+  ARTIFACT_ADMIN_KEYBOARD,
+  CAMPAIGN_ACTION_CONTEXTS,
+  GAME_TITLE,
+  KEYBOARD_SKILLS,
+  PROTAGONIST_NAME_KO,
+  PROTAGONIST_NUPJUKYI,
+  ROOT_SYSTEM,
+  WORLD_CODRIA,
+  WORLD_NAME_KO,
+  rootSystemGate,
+  technicalDebtDelta
+} from "./codria-contract.js";
 
-export const CORE_ABILITIES = Object.freeze(["move", "copy", "delete", "connect", "restore", "undo"]);
-export const CONTEXT_ACTIONS = Object.freeze(["attack", "interact", "investigate", "negotiate", "rest"]);
+export const CORE_ABILITIES = Object.freeze(KEYBOARD_SKILLS.map((item) => item.toLowerCase()));
+export const CONTEXT_ACTIONS = CAMPAIGN_ACTION_CONTEXTS;
 export const ABILITIES = CORE_ABILITIES;
-const REQUEST_ACTIONS = Object.freeze([...CORE_ABILITIES, ...CONTEXT_ACTIONS]);
 export const RUN_STATUSES = Object.freeze(["active", "abandoned", "completed"]);
 export const OUTCOMES = Object.freeze(["critical_failure", "failure", "partial_success", "success", "critical_success"]);
 export const DIRECTOR_OPS = Object.freeze(["SET_WORLD_FACT", "ADD_RUMOR", "ADD_NPC_MEMORY", "CHANGE_AFFINITY", "CREATE_HOOK", "START_QUEST", "ADVANCE_QUEST", "SET_VISUAL_INTENT", "BIND_SLOT_ENTITY"]);
@@ -40,76 +53,91 @@ function exactKeys(object, allowed, code) {
 
 function point(value, fieldName) {
   assert(value && typeof value === "object" && !Array.isArray(value), 400, "DESTINATION_INVALID", `${fieldName} must be an object.`);
-  exactKeys(value, ["x", "y"], "DESTINATION_INVALID");
+  exactKeys(value, ["areaId", "x", "y"], "DESTINATION_INVALID");
   assert(Number.isInteger(value.x) && Number.isInteger(value.y), 400, "DESTINATION_INVALID", `${fieldName} requires integer x and y.`);
-  return { x: value.x, y: value.y };
+  assert(value.areaId === undefined || (typeof value.areaId === "string" && value.areaId.length >= 1 && value.areaId.length <= 120), 400, "DESTINATION_INVALID", `${fieldName}.areaId must be a bounded string.`);
+  return { ...(value.areaId === undefined ? {} : { areaId: value.areaId }), x: value.x, y: value.y };
 }
 
 export function normalizeTravelRequest(input) {
   assert(input && typeof input === "object" && !Array.isArray(input), 400, "TRAVEL_REQUEST_INVALID", "A JSON travel request is required.");
-  exactKeys(input, ["idempotencyKey", "expectedRunVersion", "destination", "intent"], "TRAVEL_REQUEST_INVALID");
+  exactKeys(input, ["inputType", "idempotencyKey", "expectedRunVersion", "destination", "playerNote"], "TRAVEL_REQUEST_INVALID");
+  assert(["TRAVEL", "MOVE"].includes(String(input.inputType || "").toUpperCase()), 400, "INPUT_TYPE_INVALID", "Travel inputType must be MOVE (TRAVEL is accepted as an HTTP compatibility alias).");
   assert(typeof input.idempotencyKey === "string" && IDEMPOTENCY_PATTERN.test(input.idempotencyKey), 400, "IDEMPOTENCY_KEY_INVALID", "idempotencyKey must be 8-128 safe characters.");
   assert(Number.isSafeInteger(input.expectedRunVersion) && input.expectedRunVersion >= 1, 400, "RUN_VERSION_INVALID", "expectedRunVersion must be a positive integer.");
-  const intent = input.intent === undefined ? "safe exploration travel" : input.intent;
-  assert(typeof intent === "string" && intent.trim().length >= 1 && intent.length <= 240, 400, "INTENT_INVALID", "travel intent must contain 1-240 characters.");
-  return { idempotencyKey: input.idempotencyKey, expectedRunVersion: input.expectedRunVersion, destination: point(input.destination, "destination"), intent: intent.trim() };
+  const playerNote = input.playerNote ?? null;
+  assert(playerNote === null || (typeof playerNote === "string" && playerNote.trim().length <= 240), 400, "PLAYER_NOTE_INVALID", "playerNote must contain at most 240 characters.");
+  return {
+    inputType: "MOVE",
+    idempotencyKey: input.idempotencyKey,
+    expectedRunVersion: input.expectedRunVersion,
+    destination: point(input.destination, "destination"),
+    playerNote: playerNote?.trim() || null,
+    intent: "server-authorized safe travel"
+  };
 }
 
 export function travelFingerprint(request) {
-  return fingerprint({ expectedRunVersion: request.expectedRunVersion, destination: request.destination, intent: request.intent });
+  return fingerprint({ inputType: "MOVE", expectedRunVersion: request.expectedRunVersion, destination: request.destination, playerNote: request.playerNote || null });
 }
 
 export function normalizeTurnRequest(input) {
   assert(input && typeof input === "object" && !Array.isArray(input), 400, "TURN_REQUEST_INVALID", "A JSON turn request is required.");
-  exactKeys(input, ["idempotencyKey", "expectedRunVersion", "ability", "targetEntityId", "secondaryTargetEntityId", "destination", "intent"], "TURN_REQUEST_INVALID");
+  exactKeys(input, ["inputType", "idempotencyKey", "expectedRunVersion", "skillId", "targetIds", "destination", "playerNote", "forcedOverride", "resolvesDebtEntryId"], "TURN_REQUEST_INVALID");
   assert(typeof input.idempotencyKey === "string" && IDEMPOTENCY_PATTERN.test(input.idempotencyKey), 400, "IDEMPOTENCY_KEY_INVALID", "idempotencyKey must be 8-128 safe characters.");
   assert(Number.isSafeInteger(input.expectedRunVersion) && input.expectedRunVersion >= 1, 400, "RUN_VERSION_INVALID", "expectedRunVersion must be a positive integer.");
-  assert(typeof input.intent === "string" && input.intent.trim().length >= 1 && input.intent.length <= 800, 400, "INTENT_INVALID", "intent must contain 1-800 characters.");
 
   const normalizeEntityId = (value, name) => {
     if (value === undefined || value === null) return null;
     assert(typeof value === "string" && UUID_PATTERN.test(value), 400, "TARGET_INVALID", `${name} must be a UUID.`);
     return value.toLowerCase();
   };
-  const targetEntityId = normalizeEntityId(input.targetEntityId, "targetEntityId");
-  const secondaryTargetEntityId = normalizeEntityId(input.secondaryTargetEntityId, "secondaryTargetEntityId");
+  assert(String(input.inputType || "").toUpperCase() === "USE_SKILL", 400, "INPUT_TYPE_INVALID", "Campaign actions require inputType USE_SKILL.");
+  assert(Array.isArray(input.targetIds) && input.targetIds.length <= 2, 400, "TARGET_INVALID", "targetIds must contain at most two entity UUIDs.");
+  const targetIds = input.targetIds.map((value, index) => normalizeEntityId(value, `targetIds[${index}]`));
+  const targetEntityId = targetIds[0] || null;
+  const secondaryTargetEntityId = targetIds[1] || null;
   const destination = input.destination === undefined || input.destination === null ? null : point(input.destination, "destination");
-  const explicitAbility = typeof input.ability === "string" ? input.ability.toLowerCase() : "";
-  const detectedActions = detectIntentActions(input.intent).map((item) => item === "investigate" ? "interact" : item);
-  let requestedAbility = explicitAbility;
-  if (!requestedAbility) {
-    const structurallyPreferred = secondaryTargetEntityId
-      ? "connect"
-      : targetEntityId && destination
-        ? "copy"
-        : destination
-          ? "move"
-          : detectedActions.find((action) => ["delete", "restore", "attack", "interact", "negotiate", "undo", "rest", "copy", "connect", "move"].includes(action));
-    requestedAbility = structurallyPreferred || "";
-  }
-  assert(REQUEST_ACTIONS.includes(requestedAbility), 400, "ABILITY_INVALID", `ability must be explicit or inferable from intent as one of: ${REQUEST_ACTIONS.join(", ")}.`);
-  const ability = requestedAbility === "investigate" ? "interact" : requestedAbility;
+  const skillId = String(input.skillId || "").toUpperCase();
+  assert(KEYBOARD_SKILLS.includes(skillId), 400, "SKILL_INVALID", `skillId must be one of: ${KEYBOARD_SKILLS.join(", ")}. Movement and generic interactions must use travel or a keyboard skill.`);
+  const expectedTargets = skillId === "CONNECT" ? 2 : skillId === "UNDO" ? 0 : 1;
+  assert([targetEntityId, secondaryTargetEntityId].filter(Boolean).length === expectedTargets, 400, "TARGET_INVALID", `${skillId} requires exactly ${expectedTargets} selected target(s).`);
+  const playerNote = input.playerNote ?? null;
+  assert(playerNote === null || (typeof playerNote === "string" && playerNote.trim().length <= 400), 400, "PLAYER_NOTE_INVALID", "playerNote must contain at most 400 characters.");
+  assert(input.forcedOverride === undefined || typeof input.forcedOverride === "boolean", 400, "FORCED_OVERRIDE_INVALID", "forcedOverride must be boolean.");
+  const resolvesDebtEntryId = input.resolvesDebtEntryId === undefined || input.resolvesDebtEntryId === null ? null : normalizeEntityId(input.resolvesDebtEntryId, "resolvesDebtEntryId");
+  const ability = skillId.toLowerCase();
+  const targetSummary = [targetEntityId, secondaryTargetEntityId].filter(Boolean).join(" and ") || "the last reversible operation";
   return {
+    inputType: "USE_SKILL",
     idempotencyKey: input.idempotencyKey,
     expectedRunVersion: input.expectedRunVersion,
+    skillId,
     ability,
     targetEntityId,
     secondaryTargetEntityId,
     destination,
-    intent: input.intent.trim(),
-    abilitySource: explicitAbility ? "explicit_selection" : "natural_language_grounding"
+    intent: `Use ${skillId} on ${targetSummary}`,
+    playerNote: playerNote?.trim() || null,
+    abilitySource: "structured_selection",
+    forcedOverride: input.forcedOverride === true,
+    resolvesDebtEntryId
   };
 }
 
 export function turnFingerprint(request) {
   return fingerprint({
     expectedRunVersion: request.expectedRunVersion,
+    inputType: request.inputType,
+    skillId: request.skillId,
     ability: request.ability,
     targetEntityId: request.targetEntityId,
     secondaryTargetEntityId: request.secondaryTargetEntityId,
     destination: request.destination,
-    intent: request.intent,
-    abilitySource: request.abilitySource
+    playerNote: request.playerNote || null,
+    abilitySource: request.abilitySource,
+    forcedOverride: request.forcedOverride === true,
+    resolvesDebtEntryId: request.resolvesDebtEntryId || null
   });
 }
 
@@ -120,7 +148,7 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   const npcSlots = world.placementSlots.filter((slot) => slot.kind === "npc");
   const propSlots = world.placementSlots.filter((slot) => slot.kind === "prop");
   const enemySlots = world.placementSlots.filter((slot) => slot.kind === "enemy");
-  const entities = [entity(playerId, "player", "player.ninja-green.v1", campaign.protagonistName || "키보드 워리어", entry, true, true, false, { hp: 12, maxHp: 12, role: "keyboard warrior", signatureArtifact: "keyboard" })];
+  const entities = [entity(playerId, "player", "player.ninja-green.v1", PROTAGONIST_NAME_KO, entry, true, true, false, { hp: 12, maxHp: 12, protagonistId: PROTAGONIST_NUPJUKYI, role: "developer", signatureArtifact: ARTIFACT_ADMIN_KEYBOARD })];
   for (let index = 0; index < campaign.npcRoles.length; index += 1) {
     const role = campaign.npcRoles[index];
     const roleSlots = npcSlots.filter((slot) => slot.campaignRole === role.campaignRole);
@@ -134,26 +162,47 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   const roadTiles = [];
   for (let y = 0; y < world.height; y += 1) for (let x = 0; x < world.width; x += 1) if (tileAt(world, { x, y }) === TILE.ROAD) roadTiles.push({ x, y });
   const distanceFromRoad = (slot) => roadTiles.reduce((minimum, road) => Math.min(minimum, manhattan(slot, road)), Number.POSITIVE_INFINITY);
-  const enemySlot = [...enemySlots].sort((left, right) => distanceFromRoad(right) - distanceFromRoad(left) || left.id.localeCompare(right.id))[0];
+  const enemySlot = enemySlots.filter((slot) => !slot.tags.includes("admin_access_candidate")).sort((left, right) => distanceFromRoad(right) - distanceFromRoad(left) || left.id.localeCompare(right.id))[0];
   const enemyNames = ["안개 슬라임", "가시 그림자", "황혼 포식자", "메아리 짐승", "잿빛 도깨비"];
   entities.push(entity(deterministicUuid(`${runId}:enemy:first`), "enemy", enemySlot.allowedAssetIds[0], enemyNames[Math.abs(Number(campaign.worldSeed || 0)) % enemyNames.length], enemySlot, true, false, false, { hp: 5, maxHp: 5, slotId: enemySlot.id }));
   const evidenceNames = {
-    MILESTONE_TOKEN_1: "첫 여정의 증표", MILESTONE_TOKEN_2: "관계의 증표", MILESTONE_TOKEN_3: "되돌아온 결과의 증표", STORY_REVELATION: "숨겨진 진실의 기록"
+    ADMIN_ACCESS_LEVEL_1: "관리자 권한 I 후보", ADMIN_ACCESS_LEVEL_2: "관리자 권한 II 후보", ADMIN_ACCESS_LEVEL_3: "관리자 권한 III 후보", STORY_REVELATION: "관리자 통제 시스템의 내부 기록"
   };
   for (const beat of campaign.requiredStoryBeats || []) if (beat.requiredEvidenceKey) evidenceNames[beat.requiredEvidenceKey] = `${beat.title} 증거`;
-  const evidenceSlots = world.placementSlots.filter((slot) => slot.tags.includes("milestone_candidate") || slot.tags.includes("revelation_candidate"));
+  const evidenceSlots = world.placementSlots.filter((slot) => !slot.tags.includes("admin_access_candidate") && slot.tags.includes("revelation_candidate"));
   for (const [index, slot] of evidenceSlots.entries()) {
     const evidenceKey = slot.reservedFor;
-    entities.push(entity(deterministicUuid(`${runId}:evidence:${slot.id}`), "prop", slot.allowedAssetIds[index % slot.allowedAssetIds.length], evidenceNames[evidenceKey] || "여정의 증거", slot, false, true, false, {
+    entities.push(entity(deterministicUuid(`${runId}:evidence:${slot.id}`), "prop", slot.allowedAssetIds[index % slot.allowedAssetIds.length], evidenceNames[evidenceKey] || "여정의 증거", slot, false, evidenceKey !== "STORY_REVELATION", evidenceKey === "STORY_REVELATION", {
       slotId: slot.id, campaignRole: slot.campaignRole, evidenceKey, designatedCampaignEvidence: true, immutableAnchor: true
     }));
   }
+  for (const candidate of world.adminAccessCandidates || []) {
+    const slot = world.placementSlots.find((item) => item.id === candidate.slotId);
+    const kind = candidate.actionContext === "COMBAT" ? "enemy" : candidate.actionContext === "NEGOTIATION" ? "npc" : "prop";
+    const candidateId = deterministicUuid(`${runId}:admin-access:${candidate.id}`);
+    const access = ADMIN_ACCESS_LEVELS.find((item) => item.id === candidate.accessLevelId);
+    entities.push(entity(candidateId, kind, slot.allowedAssetIds[0], `${access.nameKo} · ${candidate.regionAxis}`, slot, kind === "enemy", false, false, {
+      hp: kind === "enemy" ? 6 : undefined,
+      maxHp: kind === "enemy" ? 6 : undefined,
+      slotId: slot.id,
+      candidateId: candidate.id,
+      adminAccessLevelId: candidate.accessLevelId,
+      requiredSkillId: candidate.skillId,
+      actionContext: candidate.actionContext,
+      regionAxis: candidate.regionAxis,
+      designatedCampaignEvidence: true,
+      evidenceKey: candidate.accessLevelId
+    }));
+  }
   const fixtureDefinitions = [
-    { evidenceKey: "MILESTONE_TOKEN_1", campaignRole: "LOCAL_STAKES", name: "복제 가능한 현장 기록", fixtureType: "copy_fixture", cloneable: true },
-    { evidenceKey: "MILESTONE_TOKEN_3", campaignRole: "CONSEQUENCE_RETURN", name: "복구 가능한 기억 조각", fixtureType: "restore_fixture", cloneable: false }
+    { evidenceKey: "LOCAL_DEBUG_RECORD", campaignRole: "LOCAL_STAKES", name: "복제 가능한 현장 기록", fixtureType: "copy_fixture", cloneable: true },
+    { evidenceKey: "LEGACY_RECOVERY_RECORD", campaignRole: "CONSEQUENCE_RETURN", name: "복구 가능한 기억 조각", fixtureType: "restore_fixture", cloneable: false }
   ];
   for (const definition of fixtureDefinitions) {
-    const slot = world.placementSlots.find((item) => item.kind === "loot" && item.campaignRole === definition.campaignRole);
+    const slot = world.placementSlots.find((item) => ["loot", "prop", "quest"].includes(item.kind)
+      && item.campaignRole === definition.campaignRole
+      && !item.tags.includes("admin_access_candidate")
+      && !entities.some((itemEntity) => samePoint(itemEntity.position, item)));
     assert(slot, 500, "CAMPAIGN_FIXTURE_MISSING", `No deterministic fixture slot exists for ${definition.evidenceKey}.`);
     entities.push(entity(deterministicUuid(`${runId}:fixture:${definition.fixtureType}`), "prop", slot.allowedAssetIds[0], definition.name, slot, false, false, definition.cloneable, {
       slotId: slot.id, campaignRole: definition.campaignRole, evidenceKey: definition.evidenceKey, designatedCampaignEvidence: true, fixtureType: definition.fixtureType
@@ -186,8 +235,13 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   return {
     id: runId,
     campaignId: campaign.id,
-    campaignTitle: campaign.generatedTitle || campaign.title,
-    worldName: campaign.worldName || world.worldNameKo || "이름 없는 경계",
+    campaignTitle: GAME_TITLE,
+    gameTitle: GAME_TITLE,
+    worldId: WORLD_CODRIA,
+    worldName: WORLD_NAME_KO,
+    protagonistId: PROTAGONIST_NUPJUKYI,
+    protagonistName: PROTAGONIST_NAME_KO,
+    artifactId: ARTIFACT_ADMIN_KEYBOARD,
     archetype: campaign.archetype,
     premise: campaign.premise,
     templateId: campaign.templateId,
@@ -213,6 +267,9 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     progressLevel: 0,
     progressTokens: [],
     progressTokenDefinitions: clone(campaign.progressTokenDefinitions || campaign.accessTokenDefinitions || []),
+    adminAccessLevels: clone(ADMIN_ACCESS_LEVELS),
+    adminAccessCandidates: clone(world.adminAccessCandidates || []),
+    adminAccessAcquisitionHistory: [],
     metrics: { worldStability: 55, worldAutonomy: 45, publicTrust: 50, technicalDebt: 25, companionBond: 10, turnPressure: 0 },
     navigationSequence: 0,
     safeTravelCount: 0,
