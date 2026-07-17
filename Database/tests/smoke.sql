@@ -521,8 +521,8 @@ begin
            last_turn_no = 1,
            completed_node_keys = '["beat.arrival_catalyst"]'::jsonb,
            current_node_key = 'beat.local_stakes',
-           progress_state = '{"level":1,"tokens":["MILESTONE_TOKEN_1"]}'::jsonb,
-           rule_state = '{"focus":8,"pressure":0,"lastOutcome":"success"}'::jsonb
+           progress_state = '{"adminAccess":["ADMIN_ACCESS_LEVEL_1"],"regionAxis":"REGION_BUG_FOREST"}'::jsonb,
+           rule_state = '{"focus":6,"pressure":0,"lastOutcome":"success","technicalDebt":2}'::jsonb
      where run_id = test_run and owner_id = test_owner;
 
     insert into save_slots (
@@ -537,12 +537,12 @@ begin
         snapshot_kind, world_id, generation_plan_id, plan_hash, layout_hash,
         last_turn_record_id, last_event_id, resume_metadata, created_at
     ) values (
-        test_snapshot, test_save_slot, test_owner, test_campaign, test_run, 3,
-        1, 'keyboard-wanderer-save.v3',
+        test_snapshot, test_save_slot, test_owner, test_campaign, test_run, 4,
+        1, 'codria-save.v4',
         jsonb_build_object(
             'campaignContentHash', expected_plan_hash,
             'currentTurn', 1,
-            'version', 3,
+            'version', 4,
             'world', jsonb_build_object('layoutHash', expected_layout_hash),
             'secretFieldsRedacted', jsonb_build_array('resolutionSeed')
         ),
@@ -570,11 +570,28 @@ begin
     if (select count(*) from world_area_descriptors where world_id = test_world) <> 6 then
         raise exception 'the sealed run world did not persist all six biome areas';
     end if;
+    if (
+        select count(*) = 6 and count(distinct terrain_biome_id) = 6
+          from world_region_axis_bindings
+         where world_id = test_world and owner_id = test_owner
+    ) is not true then
+        raise exception 'the run world did not seal exactly six axis-to-area/biome/POI bindings';
+    end if;
     if not exists (
         select 1 from worlds
          where id = test_world and world_scope = 'run' and run_scope_key = test_run
     ) then
         raise exception 'the run-scoped world reservation was not persisted';
+    end if;
+    if not exists (
+        select 1 from runs
+         where id = test_run
+           and world_contract_code = 'WORLD_CODRIA'
+           and protagonist_contract_code = 'PROTAGONIST_NUPJUKYI'
+           and artifact_contract_code = 'ARTIFACT_ADMIN_KEYBOARD'
+           and product_contract_version = 'codria.v4'
+    ) then
+        raise exception 'the run does not retain the fixed Codria product identities';
     end if;
     if not exists (
         select 1 from run_generation_plans
@@ -594,10 +611,61 @@ begin
         select 1 from turn_records tr
         join turn_rule_resolutions rr on rr.turn_record_id = tr.id
          where tr.id = test_turn and tr.status = 'committed'
-           and tr.committed_run_version = 3 and rr.d20_raw = 12
+           and tr.committed_run_version = 4 and tr.input_type = 'USE_SKILL'
+           and tr.skill_id = 'CONNECT' and tr.action_context = 'NEGOTIATION'
+           and tr.campaign_turn_before = 0 and tr.campaign_turn_after = 1
+           and tr.campaign_turn_consumed and rr.d20_raw = 12
            and rr.roll_total = 15 and rr.outcome = 'success'
     ) then
         raise exception 'the committed turn is missing its authoritative Rule Engine resolution';
+    end if;
+    if not exists (
+        select 1 from safe_travels
+         where id = test_safe_travel and input_type = 'MOVE'
+           and command_schema_version = 'codria-action.v4'
+           and expected_run_version = 2 and committed_run_version = 3
+           and campaign_turn_before = 0 and campaign_turn_after = 0
+           and campaign_turn_consumed = false
+    ) then
+        raise exception 'the structured MOVE was not persisted as non-turn-consuming safe travel';
+    end if;
+    if (
+        select array_agg(input_type order by input_type)
+          from structured_action_history
+         where run_id = test_run and owner_id = test_owner
+    ) is distinct from array['MOVE', 'USE_SKILL']::text[] then
+        raise exception 'the unified structured action history must expose MOVE and USE_SKILL';
+    end if;
+    if not exists (
+        select 1
+          from admin_access_acquisition_history a
+          join major_choices c on c.run_id = a.run_id and c.turn_id = a.turn_id
+          join current_region_outcomes o on o.run_id = a.run_id and o.turn_id = a.turn_id
+          join npc_relationship_history n on n.run_id = a.run_id and n.turn_id = a.turn_id
+          join ability_usage_history u on u.run_id = a.run_id and u.turn_id = a.turn_id
+         where a.run_id = test_run and a.admin_access_code = 'ADMIN_ACCESS_LEVEL_1'
+           and a.region_axis_code = 'REGION_BUG_FOREST'
+           and c.choice_key = 'choice.bug-forest.coexist'
+           and o.outcome_status = 'STABILIZED'
+           and n.relationship_state_after = 'cooperative'
+           and u.skill_id = 'CONNECT'
+    ) then
+        raise exception 'the authoritative choice, region, relationship, skill, and access histories are incomplete';
+    end if;
+    if not exists (
+        select 1 from unresolved_hooks
+         where id = test_hook and status = 'OPEN' and deadline_turn = 20
+    ) or not exists (
+        select 1 from technical_debt_entries
+         where id = test_debt_entry and operation_type = 'CONNECT'
+           and debt_delta = 2 and deferred_consequence_type = 'RELATIONSHIP_FEEDBACK'
+           and resolved_at is null
+    ) or not exists (
+        select 1 from technical_debt_summaries
+         where run_id = test_run and net_technical_debt = 2
+           and unresolved_consequence_count = 1
+    ) then
+        raise exception 'the unresolved hook and causal technical debt ledgers are incomplete';
     end if;
     if not exists (
         select 1 from save_snapshots ss
@@ -611,7 +679,7 @@ begin
     end if;
     if not exists (
         select 1 from run_summaries
-         where id = test_run and version = 3 and current_turn = 1
+         where id = test_run and version = 4 and current_turn = 1
     ) then
         raise exception 'the client-safe run summary did not expose committed state';
     end if;
@@ -630,6 +698,24 @@ begin
            set x = 4
          where id = test_slot;
         raise exception 'immutable placement slot was unexpectedly updated';
+    exception when sqlstate '55000' then
+        null;
+    end;
+
+    begin
+        update world_region_axis_bindings
+           set binding_seed = 999
+         where world_id = test_world and region_axis_code = 'REGION_BUG_FOREST';
+        raise exception 'immutable region axis binding was unexpectedly updated';
+    exception when sqlstate '55000' then
+        null;
+    end;
+
+    begin
+        update technical_debt_entries
+           set debt_delta = 1
+         where id = test_debt_entry;
+        raise exception 'technical debt cause was unexpectedly rewritten';
     exception when sqlstate '55000' then
         null;
     end;
