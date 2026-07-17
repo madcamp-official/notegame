@@ -77,5 +77,96 @@ values
     ('ADMIN_ACCESS_LEVEL_2', 2, '관리자 권한 II', '{"fixedAcrossRuns":true}'::jsonb),
     ('ADMIN_ACCESS_LEVEL_3', 3, '관리자 권한 III', '{"fixedAcrossRuns":true}'::jsonb);
 
+alter table runs
+    add column world_contract_code text not null default 'WORLD_CODRIA'
+        references product_identity_catalog(code),
+    add column protagonist_contract_code text not null default 'PROTAGONIST_NUPJUKYI'
+        references product_identity_catalog(code),
+    add column artifact_contract_code text not null default 'ARTIFACT_ADMIN_KEYBOARD'
+        references product_identity_catalog(code),
+    add column product_contract_version text not null default 'codria.v4',
+    add constraint runs_fixed_product_contract check (
+        world_contract_code = 'WORLD_CODRIA'
+        and protagonist_contract_code = 'PROTAGONIST_NUPJUKYI'
+        and artifact_contract_code = 'ARTIFACT_ADMIN_KEYBOARD'
+        and product_contract_version = 'codria.v4'
+    );
+
+-- Region axes are semantic product anchors. Areas, terrain biomes, and POIs are
+-- still selected by the seed, then this six-row permutation is sealed.
+create table world_region_axis_bindings (
+    world_id uuid not null,
+    owner_id uuid not null,
+    region_axis_code text not null references campaign_region_axis_catalog(code),
+    area_id uuid not null,
+    terrain_biome_id text not null references biome_catalog(code),
+    primary_poi_id uuid not null,
+    binding_seed bigint not null,
+    binding_metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    primary key (world_id, region_axis_code),
+    constraint world_region_axis_bindings_world_fk
+        foreign key (world_id, owner_id) references worlds(id, owner_id) on delete cascade,
+    constraint world_region_axis_bindings_area_fk
+        foreign key (area_id, owner_id, world_id)
+        references areas(id, owner_id, world_id) on delete cascade,
+    constraint world_region_axis_bindings_poi_fk
+        foreign key (primary_poi_id, owner_id, world_id)
+        references world_pois(id, owner_id, world_id) on delete cascade,
+    constraint world_region_axis_bindings_identity_unique
+        unique (world_id, owner_id, region_axis_code),
+    constraint world_region_axis_bindings_area_unique unique (world_id, area_id),
+    constraint world_region_axis_bindings_poi_unique unique (world_id, primary_poi_id),
+    constraint world_region_axis_bindings_metadata check (jsonb_typeof(binding_metadata) = 'object')
+);
+
+create index world_region_axis_bindings_owner_world_idx
+    on world_region_axis_bindings (owner_id, world_id, region_axis_code);
+
+create or replace function keyboard_wanderer.validate_region_axis_binding()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+declare
+    poi_area_id uuid;
+    poi_biome_id text;
+begin
+    select area_id, biome_id
+      into strict poi_area_id, poi_biome_id
+      from keyboard_wanderer.world_pois
+     where id = new.primary_poi_id
+       and owner_id = new.owner_id
+       and world_id = new.world_id;
+
+    if poi_area_id <> new.area_id or poi_biome_id <> new.terrain_biome_id then
+        raise exception using
+            errcode = '23514',
+            message = 'region axis area, biome, and primary POI must describe the same sealed location';
+    end if;
+
+    if not exists (
+        select 1
+          from keyboard_wanderer.world_area_descriptors
+         where area_id = new.area_id
+           and owner_id = new.owner_id
+           and world_id = new.world_id
+           and biome_id = new.terrain_biome_id
+    ) then
+        raise exception using
+            errcode = '23514',
+            message = 'region axis binding must match the sealed area biome descriptor';
+    end if;
+    return new;
+end
+$$;
+
+create trigger world_region_axis_bindings_validate
+before insert or update on world_region_axis_bindings
+for each row execute function keyboard_wanderer.validate_region_axis_binding();
+
+create trigger world_region_axis_bindings_immutable
+before update or delete on world_region_axis_bindings
+for each row execute function keyboard_wanderer.reject_generated_world_mutation();
 
 commit;
