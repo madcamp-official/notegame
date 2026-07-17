@@ -1,8 +1,18 @@
 import { createHash } from "node:crypto";
 import { assert } from "../errors.js";
 import { CAMPAIGN_ALLOWED_ABILITIES_BY_ROLE } from "./campaign.js";
+import {
+  ADMIN_ACCESS_LEVELS,
+  CAMPAIGN_ACTION_CONTEXTS,
+  CAMPAIGN_REGION_AXES,
+  KEYBOARD_SKILLS,
+  ROOT_SYSTEM,
+  WORLD_CODRIA,
+  WORLD_NAME_KO,
+  validateAdminAccessCandidates
+} from "./codria-contract.js";
 
-export const WORLD_GENERATOR_VERSION = "keyboard-wanderer-world.v6";
+export const WORLD_GENERATOR_VERSION = "codria-world.v7";
 export const DEFAULT_WORLD_SIZE = Object.freeze({ width: 160, height: 160 });
 export const TILE = Object.freeze({ GRASS: 0, WALL: 1, HAZARD: 2, ROAD: 3, WATER: 4, RUIN: 5 });
 export const TILE_NAMES = Object.freeze(["grass", "wall", "hazard", "road", "water", "ruin"]);
@@ -17,12 +27,12 @@ export const BIOME_DESCRIPTORS = Object.freeze([
 ]);
 
 export const CAMPAIGN_REGION_ROLES = Object.freeze([
-  { id: "ARRIVAL_CATALYST", phase: 1, landmarkNames: ["새벽 관문", "바람든 숲길", "낯선 초원"] },
-  { id: "LOCAL_STAKES", phase: 2, landmarkNames: ["이끼등불 마을", "물레방앗길", "갈대 피난처"] },
-  { id: "RELATIONSHIP_CONFLICT", phase: 3, landmarkNames: ["쌍둥이 성문", "맹세의 다리", "유리 시장"] },
-  { id: "HIDDEN_TRUTH", phase: 4, landmarkNames: ["메아리 기록원", "별빛 서고", "침묵 제단"] },
-  { id: "CONSEQUENCE_RETURN", phase: 5, landmarkNames: ["되돌림 성채", "계절 탑", "기억 법정"] },
-  { id: "FINAL_CONVERGENCE", phase: 6, landmarkNames: ["운명의 원환", "심장 정원", "마지막 교차로"] }
+  { id: "ARRIVAL_CATALYST", regionAxis: "REGION_BUG_FOREST", phase: 1, landmarkNames: ["스택 이끼길", "예외 포자 군락", "디버그 초원"] },
+  { id: "LOCAL_STAKES", regionAxis: "REGION_BUFFER_VILLAGE", phase: 2, landmarkNames: ["캐시 광장", "대기열 수로", "버퍼 피난처"] },
+  { id: "RELATIONSHIP_CONFLICT", regionAxis: "REGION_DEADLOCK_CITY", phase: 3, landmarkNames: ["교착 성문", "뮤텍스 다리", "스레드 시장"] },
+  { id: "HIDDEN_TRUTH", regionAxis: "REGION_DATA_GRAND_LIBRARY", phase: 4, landmarkNames: ["아카이브 코어", "인덱스 서고", "불변 기록실"] },
+  { id: "CONSEQUENCE_RETURN", regionAxis: "REGION_LEGACY_CITADEL", phase: 5, landmarkNames: ["레거시 성벽", "리팩터 탑", "부채 법정"] },
+  { id: "FINAL_CONVERGENCE", regionAxis: ROOT_SYSTEM, phase: 6, landmarkNames: ["루트 콘솔", "권한 커널", "최종 배치실"] }
 ]);
 
 const AREA_COLUMNS = 4;
@@ -30,9 +40,9 @@ const AREA_ROWS = 3;
 const AREA_COUNT = AREA_COLUMNS * AREA_ROWS;
 const FINALE_ROLE = "FINAL_CONVERGENCE";
 const ARRIVAL_ROLE = "ARRIVAL_CATALYST";
-const MILESTONE_TOKENS = Object.freeze(["MILESTONE_TOKEN_1", "MILESTONE_TOKEN_2", "MILESTONE_TOKEN_3"]);
+const ADMIN_ACCESS_TOKENS = Object.freeze(ADMIN_ACCESS_LEVELS.map((item) => item.id));
 const SUPPORTED_ACQUISITION_MODES = Object.freeze(new Set([
-  "copy", "delete", "connect", "restore", "interact", "negotiate"
+  "copy", "delete", "connect", "restore", "undo"
 ]));
 const DIRECTIONS = Object.freeze([[1, 0], [-1, 0], [0, 1], [0, -1]]);
 const FINALE_COMPONENTS = Object.freeze([
@@ -161,13 +171,13 @@ function encodeRle(values) {
 
 function createProgressionGraph() {
   return {
-    version: "keyboard-wanderer-progression.v2",
+    version: "codria-progression.v4",
     nodes: [
       { id: "arrival", campaignRole: ARRIVAL_ROLE, requires: [] },
-      { id: "stakes", campaignRole: "LOCAL_STAKES", requires: ["arrival"], rewardProgressLevel: 1, rewardProgressToken: "MILESTONE_TOKEN_1" },
-      { id: "bonds", campaignRole: "RELATIONSHIP_CONFLICT", requires: ["stakes"], rewardProgressLevel: 2, rewardProgressToken: "MILESTONE_TOKEN_2" },
+      { id: "stakes", campaignRole: "LOCAL_STAKES", requires: ["arrival"], rewardProgressLevel: 1, rewardProgressToken: "ADMIN_ACCESS_LEVEL_1" },
+      { id: "bonds", campaignRole: "RELATIONSHIP_CONFLICT", requires: ["stakes"], rewardProgressLevel: 2, rewardProgressToken: "ADMIN_ACCESS_LEVEL_2" },
       { id: "truth", campaignRole: "HIDDEN_TRUTH", requires: ["bonds"] },
-      { id: "consequence", campaignRole: "CONSEQUENCE_RETURN", requires: ["truth"], rewardProgressLevel: 3, rewardProgressToken: "MILESTONE_TOKEN_3" },
+      { id: "consequence", campaignRole: "CONSEQUENCE_RETURN", requires: ["truth"], rewardProgressLevel: 3, rewardProgressToken: "ADMIN_ACCESS_LEVEL_3" },
       { id: "finale", campaignRole: FINALE_ROLE, requires: ["consequence"] }
     ],
     edges: [
@@ -179,7 +189,12 @@ function createProgressionGraph() {
     ],
     finalGate: {
       requiresProgressLevel: 3,
-      requiresProgressTokens: [...MILESTONE_TOKENS],
+      requiresProgressTokens: [...ADMIN_ACCESS_TOKENS],
+      requiresCanonicalFact: {
+        subject: "collapse_origin",
+        predicate: "inside_admin_control_system",
+        value: true
+      },
       requiresCompletedNodes: ["truth", "consequence"]
     }
   };
@@ -250,11 +265,12 @@ function createAreaAnchors(worldSeed, width, height, random) {
       kind: "campaign_region",
       biomeId: item.biome.id,
       campaignRole: role ? role.id : "",
+      regionAxis: role ? role.regionAxis : "",
       anchor: { ...item.anchor },
       bounds: { x: item.anchor.x, y: item.anchor.y, width: 1, height: 1 },
       tileCount: 0,
       neighborAreaIds: [],
-      summary: item.biome.nameKo + " 지형에 " + roleText + " 역할이 독립적으로 배정된 생성 권역."
+      summary: item.biome.nameKo + " 지형에 " + (role?.regionAxis || roleText) + " 지역 축과 " + roleText + " 캠페인 역할이 독립적으로 배정된 생성 권역."
     };
   });
 }
@@ -546,7 +562,10 @@ function createRoutes(worldSeed, areas, areaMap, width, height) {
       isLoop: edge.isLoop,
       gated: incidentToFinale,
       requiresProgressLevel: incidentToFinale ? 3 : 0,
-      requiresProgressTokens: incidentToFinale ? [...MILESTONE_TOKENS] : [],
+      requiresProgressTokens: incidentToFinale ? [...ADMIN_ACCESS_TOKENS] : [],
+      requiresCanonicalFact: incidentToFinale
+        ? { subject: "collapse_origin", predicate: "inside_admin_control_system", value: true }
+        : null,
       campaignTurnConsumed: false,
       path
     };
@@ -601,7 +620,7 @@ function findUniqueAreaPosition(area, preferred, areaMap, width, height, reserve
 function createPoints(worldSeed, areas, areaMap, width, height) {
   const reserved = new Set();
   const arrivalArea = areas.find((area) => area.campaignRole === ARRIVAL_ROLE);
-  const entry = { id: "entry", kind: "entry", name: "Wanderer's Threshold", nameKo: "방랑자의 문턱", ...arrivalArea.anchor, areaId: arrivalArea.id, biomeId: arrivalArea.biomeId, campaignRole: ARRIVAL_ROLE, clearingRadius: 4, encounterSpace: { width: 9, height: 9 } };
+  const entry = { id: "entry", kind: "entry", name: "Codria Crash Site", nameKo: "코드리아 추락지", ...arrivalArea.anchor, areaId: arrivalArea.id, biomeId: arrivalArea.biomeId, campaignRole: ARRIVAL_ROLE, regionAxis: arrivalArea.regionAxis, clearingRadius: 4, encounterSpace: { width: 9, height: 9 } };
   reserved.add(positionKey(entry));
 
   const hubs = areas.map((area, index) => {
@@ -617,6 +636,7 @@ function createPoints(worldSeed, areas, areaMap, width, height) {
       areaId: area.id,
       biomeId: area.biomeId,
       campaignRole: area.campaignRole,
+      regionAxis: area.regionAxis,
       orderHint: index,
       clearingRadius: 3
     };
@@ -642,6 +662,7 @@ function createPoints(worldSeed, areas, areaMap, width, height) {
       areaId: area.id,
       biomeId: area.biomeId,
       campaignRole: role.id,
+      regionAxis: role.regionAxis,
       phase: role.phase,
       visualIntent: biome.visualIntent + "; landmark role " + role.id,
       clearingRadius: 4,
@@ -667,6 +688,7 @@ function createPoints(worldSeed, areas, areaMap, width, height) {
       areaId: area.id,
       biomeId: biome.id,
       campaignRole: area.campaignRole,
+      regionAxis: area.regionAxis,
       visualIntent: biome.visualIntent + "; navigable biome landmark",
       clearingRadius: 4,
       encounterSpace: { width: 9, height: 9 }
@@ -857,7 +879,7 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
   const reserved = new Set(points.map(positionKey));
   const slots = [];
 
-  const addSlot = ({ area, kind, label, tags, allowedAssetIds, reservedFor = null, offset = 0, clearanceRadius = 1, acquisitionModes = [] }) => {
+  const addSlot = ({ area, kind, label, tags, allowedAssetIds, reservedFor = null, offset = 0, clearanceRadius = 1, acquisitionModes = [], actionContext = null }) => {
     const preferred = {
       x: clamp(area.anchor.x + ((offset * 7) % 17) - 8, 2, width - 3),
       y: clamp(area.anchor.y + ((offset * 11) % 17) - 8, 2, height - 3)
@@ -894,6 +916,7 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
       areaId: area.id,
       biomeId: area.biomeId,
       campaignRole: area.campaignRole,
+      regionAxis: area.regionAxis,
       kind,
       purpose: reservedFor ? "campaign_candidate" : "ambient",
       reservedFor,
@@ -905,7 +928,8 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
       reachability: "entry_component",
       reachable: true,
       visualIntents: slotVisualIntents(area, kind),
-      acquisitionModes: [...acquisitionModes]
+      acquisitionModes: [...acquisitionModes],
+      actionContext
     });
   };
 
@@ -930,38 +954,63 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
     }
   }
 
-  const promoteSupportSlot = (campaignRole, kind, reservedFor, acquisitionModes) => {
+  const promoteSupportSlot = (campaignRole, kind, reservedFor, acquisitionModes, actionContext = null) => {
     const area = areas.find((item) => item.campaignRole === campaignRole);
     const slot = slots.find((item) => item.areaId === area.id && item.kind === kind && item.purpose === "ambient");
     assert(slot, 500, "WORLD_RECOVERY_SLOT_MISSING", "A generated progression recovery slot is missing.");
     slot.purpose = "campaign_candidate";
     slot.reservedFor = reservedFor;
     slot.tags.push("progression_candidate", "recovery_candidate");
+    if (reservedFor.startsWith("ADMIN_ACCESS_LEVEL_")) slot.tags.push("admin_access_candidate");
     slot.acquisitionModes = [...acquisitionModes];
+    slot.actionContext = actionContext;
   };
-  promoteSupportSlot(ARRIVAL_ROLE, "npc", "ARRIVAL_GUIDE", ["interact", "negotiate"]);
-  promoteSupportSlot("LOCAL_STAKES", "loot", "MILESTONE_TOKEN_1", ["copy"]);
-  promoteSupportSlot("RELATIONSHIP_CONFLICT", "npc", "MILESTONE_TOKEN_2", ["connect", "negotiate"]);
-  promoteSupportSlot("HIDDEN_TRUTH", "npc", "STORY_REVELATION", ["interact", "negotiate"]);
-  promoteSupportSlot("CONSEQUENCE_RETURN", "loot", "MILESTONE_TOKEN_3", ["restore"]);
+  promoteSupportSlot(ARRIVAL_ROLE, "npc", "ARRIVAL_GUIDE", ["connect"]);
+  const preRootRoles = CAMPAIGN_REGION_ROLES.filter((role) => role.regionAxis !== ROOT_SYSTEM).map((role) => role.id);
+  const alternateCandidate = (level, primaryRole, kind, paths) => {
+    const roles = preRootRoles.filter((role) => role !== primaryRole);
+    const index = seed32(worldSeed, `admin-access:${level}`) % roles.length;
+    const path = paths[index % paths.length];
+    promoteSupportSlot(roles[index], kind, `ADMIN_ACCESS_LEVEL_${level}`, [path.skillId.toLowerCase()], path.actionContext);
+  };
+  alternateCandidate(1, "LOCAL_STAKES", "loot", [
+    { skillId: "RESTORE", actionContext: "DEPLOYMENT" },
+    { skillId: "DELETE", actionContext: "COMBAT" },
+    { skillId: "CONNECT", actionContext: "NEGOTIATION" },
+    { skillId: "DELETE", actionContext: "COMBAT" }
+  ]);
+  alternateCandidate(2, "RELATIONSHIP_CONFLICT", "quest", [
+    { skillId: "DELETE", actionContext: "COMBAT" },
+    { skillId: "COPY", actionContext: "INVESTIGATION" },
+    { skillId: "RESTORE", actionContext: "DEPLOYMENT" },
+    { skillId: "COPY", actionContext: "INVESTIGATION" }
+  ]);
+  promoteSupportSlot("HIDDEN_TRUTH", "npc", "STORY_REVELATION", ["connect"]);
+  alternateCandidate(3, "CONSEQUENCE_RETURN", "enemy", [
+    { skillId: "CONNECT", actionContext: "INVESTIGATION" },
+    { skillId: "DELETE", actionContext: "COMBAT" },
+    { skillId: "COPY", actionContext: "NEGOTIATION" },
+    { skillId: "DELETE", actionContext: "COMBAT" }
+  ]);
 
-  const milestoneDefinitions = [
-    { reservedFor: "MILESTONE_TOKEN_1", campaignRole: "LOCAL_STAKES", modes: ["interact"] },
-    { reservedFor: "MILESTONE_TOKEN_2", campaignRole: "RELATIONSHIP_CONFLICT", modes: ["connect"] },
-    { reservedFor: "MILESTONE_TOKEN_3", campaignRole: "CONSEQUENCE_RETURN", modes: ["interact"] }
+  const primaryAccessDefinitions = [
+    { reservedFor: "ADMIN_ACCESS_LEVEL_1", campaignRole: "LOCAL_STAKES", modes: ["copy"], actionContext: "INVESTIGATION" },
+    { reservedFor: "ADMIN_ACCESS_LEVEL_2", campaignRole: "RELATIONSHIP_CONFLICT", modes: ["connect"], actionContext: "NEGOTIATION" },
+    { reservedFor: "ADMIN_ACCESS_LEVEL_3", campaignRole: "CONSEQUENCE_RETURN", modes: ["restore"], actionContext: "DEPLOYMENT" }
   ];
-  for (const [index, definition] of milestoneDefinitions.entries()) {
+  for (const [index, definition] of primaryAccessDefinitions.entries()) {
     const area = areas.find((item) => item.campaignRole === definition.campaignRole);
     addSlot({
       area,
       kind: "quest",
-      label: "milestone:" + definition.reservedFor,
-      tags: ["milestone_candidate", "read_only_candidate", "required_slot"],
+      label: "admin-access:" + definition.reservedFor,
+      tags: ["primary_admin_access_candidate", "admin_access_candidate", "read_only_candidate", "required_slot"],
       allowedAssetIds: ["prop.sign.v1", "prop.altar.v1"],
       reservedFor: definition.reservedFor,
       offset: 80 + index,
       clearanceRadius: 2,
-      acquisitionModes: definition.modes
+      acquisitionModes: definition.modes,
+      actionContext: definition.actionContext
     });
   }
 
@@ -976,7 +1025,7 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
       reservedFor: "STORY_REVELATION",
       offset: 90 + index,
       clearanceRadius: 2,
-      acquisitionModes: ["interact"]
+      acquisitionModes: ["copy"]
     });
   }
 
