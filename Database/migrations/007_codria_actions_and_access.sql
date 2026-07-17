@@ -308,4 +308,73 @@ begin
 end
 $$;
 
+create trigger admin_access_acquisition_history_validate
+before insert on admin_access_acquisition_history
+for each row execute function keyboard_wanderer.validate_admin_access_acquisition();
+
+create trigger admin_access_acquisition_history_append_only
+before update or delete on admin_access_acquisition_history
+for each row execute function keyboard_wanderer.reject_generative_history_mutation();
+
+alter table admin_access_acquisition_history enable row level security;
+alter table admin_access_acquisition_history force row level security;
+
+create policy admin_access_acquisition_history_owner_select on admin_access_acquisition_history
+for select using (owner_id = (select keyboard_wanderer.current_app_user_id()));
+
+create policy admin_access_acquisition_history_owner_insert on admin_access_acquisition_history
+for insert with check (owner_id = (select keyboard_wanderer.current_app_user_id()));
+
+create view run_admin_access_states
+with (security_invoker = true, security_barrier = true)
+as
+select
+    r.id as run_id,
+    r.owner_id,
+    count(h.id)::smallint as acquired_level_count,
+    coalesce(max(c.access_level), 0)::smallint as highest_access_level,
+    (count(h.id) = 3 and coalesce(max(c.access_level), 0) = 3) as all_admin_access_acquired,
+    exists (
+        select 1
+          from world_facts f
+         where f.run_id = r.id and f.owner_id = r.owner_id
+           and f.subject_key = 'REGION_DATA_GRAND_LIBRARY'
+           and f.predicate = 'ROOT_CAUSE_ESSENTIAL_CLUE_ACQUIRED'
+           and f.object_json @> '{"acquired":true}'::jsonb
+           and f.superseded_by_fact_id is null
+           and f.valid_until_turn is null
+    ) as essential_clue_acquired,
+    (
+        count(h.id) = 3 and coalesce(max(c.access_level), 0) = 3
+        and exists (
+            select 1
+              from world_facts f
+             where f.run_id = r.id and f.owner_id = r.owner_id
+               and f.subject_key = 'REGION_DATA_GRAND_LIBRARY'
+               and f.predicate = 'ROOT_CAUSE_ESSENTIAL_CLUE_ACQUIRED'
+               and f.object_json @> '{"acquired":true}'::jsonb
+               and f.superseded_by_fact_id is null
+               and f.valid_until_turn is null
+        )
+    ) as root_system_eligible
+from runs r
+left join admin_access_acquisition_history h
+    on h.run_id = r.id and h.owner_id = r.owner_id
+left join admin_access_level_catalog c on c.code = h.admin_access_code
+group by r.id, r.owner_id;
+
+comment on table admin_access_acquisition_history is
+    'Append-only proof of the three ordered access acquisitions, including seeded region and chosen approach.';
+comment on view structured_action_history is
+    'Unified read model over MOVE safe travel and USE_SKILL meaningful-turn idempotency ledgers.';
+comment on view run_admin_access_states is
+    'Derived access and REGION_ROOT_SYSTEM eligibility projection; eligibility requires all three levels and the canonical essential-clue fact.';
+comment on column turn_records.turn_context is
+    'Server-classified scene and target context; raw natural language is never authoritative.';
+
+revoke all on structured_action_history, admin_access_acquisition_history,
+    run_admin_access_states from public;
+revoke execute on function keyboard_wanderer.assert_committed_v4_action(uuid, uuid, uuid, smallint) from public;
+revoke execute on function keyboard_wanderer.validate_admin_access_acquisition() from public;
+
 commit;
