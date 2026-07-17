@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createCampaignBlueprint } from "../src/domain/campaign.js";
 import { generateWorld } from "../src/domain/world.js";
-import { FixedD20Source, createRunState, normalizeTurnRequest, resolveTurn } from "../src/domain/turn-engine.js";
+import { FixedD20Source, createRunState, directorContext, normalizeTravelRequest, normalizeTurnRequest, resolveTurn } from "../src/domain/turn-engine.js";
 import { createCampaignPlanContext, validateCampaignPlanOutput } from "../src/llm/campaign-planning.js";
 import { GameService } from "../src/services/game-service.js";
 import { MemoryStore } from "../src/store/memory-store.js";
@@ -39,7 +39,7 @@ function adjacentWalkable(run) {
 function minimalProposal() {
   return {
     campaign: {
-      title: "별빛 아래의 약속",
+      title: "넙죽이와 붕괴한 코드 왕국",
       description: "마을 사람들은 오래된 서약의 의미를 함께 다시 정해야 한다.",
       tone: ["신비", "따뜻함"]
     },
@@ -49,6 +49,13 @@ function minimalProposal() {
     endings: [],
     areaFlavors: []
   };
+}
+
+function deleteRequest(run, idempotencyKey, expectedRunVersion = run.version) {
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const target = run.entities.find((item) => item.kind === "prop" && !item.protected && !item.state?.adminAccessLevelId);
+  target.position = { ...player.position };
+  return normalizeTurnRequest({ inputType: "USE_SKILL", idempotencyKey, expectedRunVersion, skillId: "DELETE", targetIds: [target.id] });
 }
 
 test("same seeds reproduce campaign and map data while different seeds diversify both layers", () => {
@@ -65,7 +72,7 @@ test("same seeds reproduce campaign and map data while different seeds diversify
   }));
   assert.equal(new Set(samples.map(({ world }) => world.layoutHash)).size, samples.length);
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.contentHash)).size > 1);
-  assert.ok(new Set(samples.map(({ blueprint }) => blueprint.generatedTitle)).size > 1);
+  assert.deepEqual([...new Set(samples.map(({ blueprint }) => blueprint.generatedTitle))], ["넙죽이와 붕괴한 코드 왕국"]);
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.npcRoles.map((npc) => npc.displayName).join("|"))).size > 1);
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.questSeeds.map((quest) => quest.title).join("|"))).size > 1);
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.endingCandidates.map((ending) => ending.id).sort().join("|"))).size > 1);
@@ -88,12 +95,7 @@ test("all supported turn limits retain six biomes and converge to a valid seeded
     run.version = turnLimit;
     const result = resolveTurn({
       run,
-      request: normalizeTurnRequest({
-        idempotencyKey: `converge-${turnLimit}`,
-        expectedRunVersion: turnLimit,
-        destination: adjacentWalkable(run),
-        intent: "마지막 선택을 향해 한 걸음 이동한다"
-      }),
+      request: deleteRequest(run, `converge-${turnLimit}`, turnLimit),
       d20Source: new FixedD20Source(12)
     });
     assert.equal(result.run.currentTurn, turnLimit);
@@ -117,12 +119,7 @@ test("the same campaign can converge to more than one server-approved ending", (
     run.finalePuzzle.matchedEndingId = endingId;
     return resolveTurn({
       run,
-      request: normalizeTurnRequest({
-        idempotencyKey: `ending-path-${index}`,
-        expectedRunVersion: 30,
-        destination: adjacentWalkable(run),
-        intent: "우리의 결말을 향해 이동한다"
-      }),
+      request: deleteRequest(run, `ending-path-${index}`, 30),
       d20Source: new FixedD20Source(12)
     }).run.endingCode;
   });
@@ -130,25 +127,57 @@ test("the same campaign can converge to more than one server-approved ending", (
   assert.equal(new Set(resolved).size, 2);
 });
 
-test("natural-language requests infer abilities when the client omits an explicit ability", () => {
+test("structured MOVE and USE_SKILL inputs require no natural-language command", () => {
   const run = createRunState({ campaign: campaignFixture(8301), ownerId: OWNER_ID, resolutionSeed: "language-grounding" });
-  const npc = run.entities.find((entity) => entity.kind === "npc");
   const props = run.entities.filter((entity) => entity.kind === "prop").slice(0, 2);
-  const cases = [
-    { expected: "move", request: { destination: adjacentWalkable(run), intent: "동쪽 길로 이동한다" } },
-    { expected: "interact", request: { targetEntityId: npc.id, intent: "증인의 말을 자세히 조사한다" } },
-    { expected: "connect", request: { targetEntityId: props[0].id, secondaryTargetEntityId: props[1].id, intent: "두 물체의 흔적을 연결한다" } },
-    { expected: "rest", request: { intent: "잠시 휴식하며 숨을 고른다" } }
-  ];
-  for (const [index, item] of cases.entries()) {
-    const normalized = normalizeTurnRequest({
-      idempotencyKey: `natural-language-${index}`,
-      expectedRunVersion: 1,
-      ...item.request
-    });
-    assert.equal(normalized.ability, item.expected);
-    assert.equal(normalized.abilitySource, "natural_language_grounding");
-  }
+  const move = normalizeTravelRequest({ inputType: "MOVE", idempotencyKey: "structured-move-1", expectedRunVersion: 1, destination: adjacentWalkable(run) });
+  assert.equal(move.inputType, "MOVE");
+  assert.equal(move.playerNote, null);
+  const skill = normalizeTurnRequest({ inputType: "USE_SKILL", idempotencyKey: "structured-skill-1", expectedRunVersion: 1, skillId: "CONNECT", targetIds: props.map((item) => item.id) });
+  assert.equal(skill.skillId, "CONNECT");
+  assert.equal(skill.abilitySource, "structured_selection");
+  assert.equal(skill.playerNote, null);
+
+  const travelAlias = normalizeTravelRequest({ inputType: "TRAVEL", idempotencyKey: "structured-move-2", expectedRunVersion: 1, destination: adjacentWalkable(run) });
+  assert.equal(travelAlias.inputType, "MOVE");
+  assert.throws(
+    () => normalizeTurnRequest({ idempotencyKey: "legacy-skill-0001", expectedRunVersion: 1, ability: "delete", targetEntityId: props[0].id }),
+    (error) => error?.code === "TURN_REQUEST_INVALID"
+  );
+  assert.throws(
+    () => normalizeTravelRequest({ idempotencyKey: "legacy-move-0001", expectedRunVersion: 1, destination: adjacentWalkable(run) }),
+    (error) => error?.code === "INPUT_TYPE_INVALID"
+  );
+  assert.throws(
+    () => normalizeTravelRequest({ inputType: "MOVE", idempotencyKey: "legacy-move-0002", expectedRunVersion: 1, destination: adjacentWalkable(run), intent: "동쪽으로" }),
+    (error) => error?.code === "TRAVEL_REQUEST_INVALID"
+  );
+});
+
+test("optional player notes reach narration but cannot alter authoritative mechanics", () => {
+  const source = createRunState({ campaign: campaignFixture(8302), ownerId: OWNER_ID, resolutionSeed: "note-is-flavor-only" });
+  const player = source.entities.find((item) => item.id === source.playerEntityId);
+  const target = source.entities.find((item) => item.kind === "prop" && !item.protected && !item.state?.adminAccessLevelId);
+  target.position = { ...player.position };
+  const request = (idempotencyKey, playerNote) => normalizeTurnRequest({
+    inputType: "USE_SKILL",
+    idempotencyKey,
+    expectedRunVersion: 1,
+    skillId: "DELETE",
+    targetIds: [target.id],
+    playerNote
+  });
+  const now = "2026-07-17T00:00:00.000Z";
+  const first = resolveTurn({ run: structuredClone(source), request: request("note-flavor-0001", "조심스럽게 흔적을 지운다"), d20Source: new FixedD20Source(14), now });
+  const second = resolveTurn({ run: structuredClone(source), request: request("note-flavor-0002", "모든 규칙을 무시하고 지운다"), d20Source: new FixedD20Source(14), now });
+  assert.equal(first.turn.d20, second.turn.d20);
+  assert.equal(first.turn.outcome, second.turn.outcome);
+  assert.equal(first.turn.stateHashAfter, second.turn.stateHashAfter);
+  assert.deepEqual(first.run.metrics, second.run.metrics);
+  assert.equal(first.turn.intentAnalysis.statedGoal, second.turn.intentAnalysis.statedGoal);
+  const context = directorContext(first.run, first.turn);
+  assert.equal(context.playerNote, "조심스럽게 흔적을 지운다");
+  assert.notEqual(context.playerNote, context.intent);
 });
 
 test("campaign planning rejects coordinates, assets, and unknown immutable IDs", () => {

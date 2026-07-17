@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { AppError } from "../src/errors.js";
 import { createCampaignBlueprint } from "../src/domain/campaign.js";
 import { areaAt, generateWorld, isWalkable } from "../src/domain/world.js";
-import { FixedD20Source, createRunState, normalizeTurnRequest, publicRun, resolveTurn } from "../src/domain/turn-engine.js";
+import { FixedD20Source, createRunState, normalizeTravelRequest, normalizeTurnRequest, publicRun, resolveSafeTravel, resolveTurn } from "../src/domain/turn-engine.js";
 
 const OWNER_ID = "33333333-3333-4333-8333-333333333333";
 
@@ -33,6 +33,16 @@ function adjacentWalkable(run) {
   assert.fail("Generated entry must expose an adjacent walkable tile.");
 }
 
+function normalizeSkillRequest({ ability, targetEntityId = null, secondaryTargetEntityId = null, intent, ...rest }) {
+  return normalizeTurnRequest({
+    ...rest,
+    inputType: "USE_SKILL",
+    skillId: String(ability || "").toUpperCase(),
+    targetIds: [targetEntityId, secondaryTargetEntityId].filter(Boolean),
+    ...(intent ? { playerNote: intent } : {})
+  });
+}
+
 test("copy validates and mutates only the cloned committed state", () => {
   const original = runFixture();
   const initialEntityCount = original.entities.length;
@@ -52,7 +62,7 @@ test("copy validates and mutates only the cloned committed state", () => {
     return tile !== 1 && tile !== 4 && !(candidate.x === book.position.x && candidate.y === book.position.y);
   });
   player.position = { x: available.x - 1, y: available.y };
-  const request = normalizeTurnRequest({
+  const request = normalizeSkillRequest({
     idempotencyKey: "copy-0001",
     expectedRunVersion: 1,
     ability: "copy",
@@ -74,7 +84,7 @@ test("protected entity rejection does not consume or mutate a turn", () => {
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
   const warden = run.entities.find((entity) => entity.kind === "npc");
   player.position = { x: warden.position.x - 1, y: warden.position.y };
-  const request = normalizeTurnRequest({
+  const request = normalizeSkillRequest({
     idempotencyKey: "delete-0001",
     expectedRunVersion: 1,
     ability: "delete",
@@ -91,22 +101,15 @@ test("protected entity rejection does not consume or mutate a turn", () => {
   assert.equal(warden.active, true);
 });
 
-test("failed move consumes a valid turn but never moves the player", () => {
+test("MOVE is rejected from the consuming action endpoint and blocked travel never consumes a turn", () => {
   const run = runFixture(46);
   const playerBefore = structuredClone(run.entities.find((entity) => entity.id === run.playerEntityId).position);
-  const request = normalizeTurnRequest({
-    idempotencyKey: "move-fail-0001",
-    expectedRunVersion: 1,
-    ability: "move",
-    destination: adjacentWalkable(run),
-    intent: "Move carefully"
-  });
-  const result = resolveTurn({ run, request, d20Source: new FixedD20Source(1) });
-  assert.equal(result.turn.outcome, "failure");
-  assert.deepEqual(result.run.entities.find((entity) => entity.id === run.playerEntityId).position, playerBefore);
-  assert.equal(result.run.currentTurn, 1);
-  assert.equal(result.run.version, 2);
-  assert.ok(result.run.pressure > 0);
+  assert.throws(() => normalizeSkillRequest({ idempotencyKey: "move-fail-0001", expectedRunVersion: 1, ability: "move", destination: adjacentWalkable(run) }), (error) => error.code === "SKILL_INVALID");
+  const travel = normalizeTravelRequest({ inputType: "MOVE", idempotencyKey: "move-fail-0002", expectedRunVersion: 1, destination: { x: 0, y: 0 } });
+  assert.throws(() => resolveSafeTravel({ run, request: travel }), (error) => error.code === "TRAVEL_PATH_BLOCKED");
+  assert.deepEqual(run.entities.find((entity) => entity.id === run.playerEntityId).position, playerBefore);
+  assert.equal(run.currentTurn, 0);
+  assert.equal(run.version, 1);
 });
 
 test("connect creates a temporary relation and Undo compensates without rewinding history or layout", () => {
@@ -119,7 +122,7 @@ test("connect creates a temporary relation and Undo compensates without rewindin
   const layoutHash = run.world.layoutHash;
   const connected = resolveTurn({
     run,
-    request: normalizeTurnRequest({
+    request: normalizeSkillRequest({
       idempotencyKey: "connect-0001",
       expectedRunVersion: 1,
       ability: "connect",
@@ -133,7 +136,7 @@ test("connect creates a temporary relation and Undo compensates without rewindin
 
   const undone = resolveTurn({
     run: connected.run,
-    request: normalizeTurnRequest({ idempotencyKey: "undo-0000001", expectedRunVersion: 2, ability: "undo", intent: "직전 연결만 보상 사건으로 되돌린다" }),
+    request: normalizeSkillRequest({ idempotencyKey: "undo-0000001", expectedRunVersion: 2, ability: "undo", intent: "직전 연결만 보상 사건으로 되돌린다" }),
     d20Source: new FixedD20Source(20)
   });
   assert.equal(undone.run.connections.filter((item) => item.active).length, 0);
@@ -150,13 +153,13 @@ test("Restore revives a recently deleted entity from its authoritative snapshot"
   target.position = { x: 3, y: 2 };
   const deleted = resolveTurn({
     run,
-    request: normalizeTurnRequest({ idempotencyKey: "delete-restore-1", expectedRunVersion: 1, ability: "delete", targetEntityId: target.id, intent: "임시 물체를 지운다" }),
+    request: normalizeSkillRequest({ idempotencyKey: "delete-restore-1", expectedRunVersion: 1, ability: "delete", targetEntityId: target.id, intent: "임시 물체를 지운다" }),
     d20Source: new FixedD20Source(20)
   });
   assert.equal(deleted.run.entities.find((item) => item.id === target.id).active, false);
   const restored = resolveTurn({
     run: deleted.run,
-    request: normalizeTurnRequest({ idempotencyKey: "restore-0001", expectedRunVersion: 2, ability: "restore", targetEntityId: target.id, intent: "방금 제거한 물체를 복구한다" }),
+    request: normalizeSkillRequest({ idempotencyKey: "restore-0001", expectedRunVersion: 2, ability: "restore", targetEntityId: target.id, intent: "방금 제거한 물체를 복구한다" }),
     d20Source: new FixedD20Source(20)
   });
   assert.equal(restored.run.entities.find((item) => item.id === target.id).active, true);
@@ -175,7 +178,7 @@ test("Restore rejects a non-blocking ambient entity when its slot has been rebou
 
   const deletedAndRebound = resolveTurn({
     run,
-    request: normalizeTurnRequest({
+    request: normalizeSkillRequest({
       idempotencyKey: "delete-rebind-1", expectedRunVersion: 1, ability: "delete",
       targetEntityId: target.id, intent: "기존 주변 물체를 지우고 같은 슬롯에 새 물체를 배치한다"
     }),
@@ -199,7 +202,7 @@ test("Restore rejects a non-blocking ambient entity when its slot has been rebou
   assert.throws(
     () => resolveTurn({
       run: deletedAndRebound.run,
-      request: normalizeTurnRequest({
+      request: normalizeSkillRequest({
         idempotencyKey: "restore-rebound-2", expectedRunVersion: 2, ability: "restore",
         targetEntityId: target.id, intent: "이미 다시 점유된 슬롯으로 기존 물체를 복원한다"
       }),
@@ -219,7 +222,7 @@ test("Restore repairs recent active-target damage but never rewinds the roll, tu
   prop.position = { x: 4, y: 2 };
   const damaged = resolveTurn({
     run,
-    request: normalizeTurnRequest({
+    request: normalizeSkillRequest({
       idempotencyKey: "damage-connect-1", expectedRunVersion: 1, ability: "connect",
       targetEntityId: npc.id, secondaryTargetEntityId: prop.id, intent: "위험한 연결을 시도한다"
     }),
@@ -229,7 +232,7 @@ test("Restore repairs recent active-target damage but never rewinds the roll, tu
   assert.equal(damaged.run.entities.find((item) => item.id === player.id).state.hp, 11);
   const repaired = resolveTurn({
     run: damaged.run,
-    request: normalizeTurnRequest({ idempotencyKey: "restore-damage-1", expectedRunVersion: 2, ability: "restore", targetEntityId: player.id, intent: "최근의 허용된 손상만 복구한다" }),
+    request: normalizeSkillRequest({ idempotencyKey: "restore-damage-1", expectedRunVersion: 2, ability: "restore", targetEntityId: player.id, intent: "최근의 허용된 손상만 복구한다" }),
     d20Source: new FixedD20Source(20)
   });
   assert.equal(repaired.run.entities.find((item) => item.id === player.id).state.hp, 12);
@@ -238,7 +241,7 @@ test("Restore repairs recent active-target damage but never rewinds the roll, tu
   assert.equal(repaired.run.world.layoutHash, run.world.layoutHash);
 });
 
-test("all six keyboard abilities expose explicit illegal paths", () => {
+test("all five administrator keyboard skills expose explicit illegal paths", () => {
   const run = runFixture(50);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const npc = run.entities.find((item) => item.kind === "npc");
@@ -247,7 +250,6 @@ test("all six keyboard abilities expose explicit illegal paths", () => {
   npc.position = { x: 3, y: 2 };
   prop.position = { x: 4, y: 2 };
   const invalid = [
-    { code: "PATH_BLOCKED", body: { ability: "move", destination: { x: 0, y: 0 } } },
     { code: "ENTITY_NOT_CLONEABLE", body: { ability: "copy", targetEntityId: npc.id, destination: { x: 5, y: 2 } } },
     { code: "ENTITY_PROTECTED", body: { ability: "delete", targetEntityId: npc.id } },
     { code: "TARGETS_IDENTICAL", body: { ability: "connect", targetEntityId: prop.id, secondaryTargetEntityId: prop.id } },
@@ -255,14 +257,14 @@ test("all six keyboard abilities expose explicit illegal paths", () => {
     { code: "UNDO_NOT_AVAILABLE", body: { ability: "undo" } }
   ];
   for (const [index, item] of invalid.entries()) {
-    const request = normalizeTurnRequest({ idempotencyKey: `illegal-${index + 1000}`, expectedRunVersion: 1, intent: "불가능한 요청의 이유를 확인한다", ...item.body });
+    const request = normalizeSkillRequest({ idempotencyKey: `illegal-${index + 1000}`, expectedRunVersion: 1, intent: "불가능한 요청의 이유를 확인한다", ...item.body });
     assert.throws(() => resolveTurn({ run, request, d20Source: new FixedD20Source(20) }), (error) => error instanceof AppError && error.code === item.code);
   }
   assert.equal(run.currentTurn, 0);
   assert.equal(run.version, 1);
 });
 
-test("local encounter Move respects the same finale milestone gate as safe travel", () => {
+test("MOVE respects the administrator access and clue gate at Root System", () => {
   const run = runFixture(73);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const occupied = new Set(run.entities.filter((item) => item.active && item.blocking && item.id !== player.id)
@@ -284,39 +286,35 @@ test("local encounter Move respects the same finale milestone gate as safe trave
   }
   assert.ok(boundary, "generated finale region must have a walkable boundary for gate verification");
   player.position = boundary.outside;
-  const request = normalizeTurnRequest({
+  const request = normalizeTravelRequest({
+    inputType: "MOVE",
     idempotencyKey: "finale-gate-move-1",
     expectedRunVersion: run.version,
-    ability: "move",
-    destination: boundary.inside,
-    intent: "세 개의 이야기 전환점 없이 최종 권역의 경계를 넘으려 한다"
+    destination: boundary.inside
   });
   assert.throws(
-    () => resolveTurn({ run, request, d20Source: new FixedD20Source(20) }),
-    (error) => error instanceof AppError && error.code === "PATH_BLOCKED"
+    () => resolveSafeTravel({ run, request }),
+    (error) => error instanceof AppError && error.code === "ROOT_SYSTEM_ACCESS_DENIED"
   );
 
-  run.progressLevel = 3;
-  run.progressTokens = run.progressTokenDefinitions.map((token) => token.id);
-  const allowed = resolveTurn({ run, request, d20Source: new FixedD20Source(20) });
-  assert.deepEqual(allowed.run.entities.find((item) => item.id === run.playerEntityId).position, boundary.inside);
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({ accessLevelId: access.id, turnNo: index + 1 }));
+  run.canonicalFacts.find((fact) => fact.subject === "collapse_origin").value = true;
+  const allowed = resolveSafeTravel({ run, request });
+  assert.equal(allowed.navigation.campaignTurnConsumed, false);
+  assert.equal(allowed.run.currentTurn, 0);
 });
 
-test("public finale eligibility uses the authoritative exact three-milestone gate", () => {
+test("public Root System eligibility uses exactly three access levels and the required clue", () => {
   const run = runFixture(74);
-  const canonicalDefinitions = run.progressTokenDefinitions.map((token) => ({ ...token }));
-  run.progressLevel = 3;
-  run.progressTokens = canonicalDefinitions.map((token) => token.id);
+  const clue = run.canonicalFacts.find((fact) => fact.subject === "collapse_origin");
+  clue.value = true;
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({ accessLevelId: access.id, turnNo: index + 1 }));
   assert.equal(publicRun(run).finaleGate.eligible, true);
 
-  run.progressTokenDefinitions = canonicalDefinitions.slice(0, 2);
+  run.adminAccessAcquisitionHistory = run.adminAccessAcquisitionHistory.slice(0, 2);
   assert.equal(publicRun(run).finaleGate.eligible, false);
 
-  run.progressTokenDefinitions = canonicalDefinitions;
-  run.progressTokens = canonicalDefinitions.slice(0, 2).map((token) => token.id);
-  assert.equal(publicRun(run).finaleGate.eligible, false);
-
-  run.progressTokenDefinitions = [];
-  run.progressTokens = [];
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({ accessLevelId: access.id, turnNo: index + 1 }));
+  clue.value = false;
   assert.equal(publicRun(run).finaleGate.eligible, false);
 });
