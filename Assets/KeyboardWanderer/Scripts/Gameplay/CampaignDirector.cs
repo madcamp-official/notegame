@@ -31,16 +31,16 @@ namespace KeyboardWanderer.Gameplay
 
     public static class CampaignDirector
     {
-        private static readonly AbilityKind[] ArrivalAbilities =
-            { AbilityKind.Interact, AbilityKind.Negotiate };
-        private static readonly AbilityKind[] AdaptationAbilities =
-            { AbilityKind.Copy, AbilityKind.Interact };
-        private static readonly AbilityKind[] ExpansionAbilities =
-            { AbilityKind.Connect, AbilityKind.Negotiate };
-        private static readonly AbilityKind[] TruthAbilities =
-            { AbilityKind.Interact, AbilityKind.Negotiate };
-        private static readonly AbilityKind[] BackflowAbilities =
-            { AbilityKind.Restore, AbilityKind.Interact };
+        private static readonly AbilityKind[] InvestigationAbilities =
+            { AbilityKind.Copy };
+        private static readonly AbilityKind[] AccessOneAbilities =
+            { AbilityKind.Connect, AbilityKind.Copy };
+        private static readonly AbilityKind[] AccessTwoAbilities =
+            { AbilityKind.Delete, AbilityKind.Connect };
+        private static readonly AbilityKind[] AccessThreeAbilities =
+            { AbilityKind.Restore, AbilityKind.Copy };
+        private static readonly AbilityKind[] DeploymentAbilities =
+            { AbilityKind.Connect, AbilityKind.Restore, AbilityKind.Undo, AbilityKind.Delete };
         private static readonly AbilityKind[] FinaleAbilities =
             { AbilityKind.Connect, AbilityKind.Delete };
 
@@ -50,19 +50,39 @@ namespace KeyboardWanderer.Gameplay
                 throw new ArgumentOutOfRangeException(nameof(turnLimit), "Campaign turn limit must be between 30 and 50.");
             meaningfulTurns = Math.Max(0, meaningfulTurns);
             int remaining = Math.Max(0, turnLimit - meaningfulTurns);
-            CampaignPhase phase;
-            int deadline;
-            if (meaningfulTurns <= 4) { phase = CampaignPhase.Introduction; deadline = 4; }
-            else if (meaningfulTurns <= 15) { phase = CampaignPhase.Adaptation; deadline = 15; }
-            else if (meaningfulTurns <= 25) { phase = CampaignPhase.Expansion; deadline = 25; }
-            else if (meaningfulTurns <= 35) { phase = CampaignPhase.Truth; deadline = 35; }
-            else if (meaningfulTurns <= 42) { phase = CampaignPhase.Backflow; deadline = 42; }
-            else { phase = CampaignPhase.Finale; deadline = turnLimit; }
-
-            CampaignAct act = phase == CampaignPhase.Introduction ? CampaignAct.Introduction
-                : phase == CampaignPhase.Adaptation || phase == CampaignPhase.Expansion ? CampaignAct.Exploration
-                : phase == CampaignPhase.Truth ? CampaignAct.Pressure
-                : phase == CampaignPhase.Backflow ? CampaignAct.Convergence
+            int[] starts =
+            {
+                0,
+                Math.Max(3, (int)Math.Round(turnLimit * 0.10d)),
+                Math.Max(5, (int)Math.Round(turnLimit * 0.18d)),
+                Math.Max(8, (int)Math.Round(turnLimit * 0.30d)),
+                Math.Max(12, (int)Math.Round(turnLimit * 0.45d)),
+                Math.Max(17, (int)Math.Round(turnLimit * 0.60d)),
+                Math.Max(21, (int)Math.Round(turnLimit * 0.72d)),
+                Math.Max(25, (int)Math.Round(turnLimit * 0.84d)),
+                Math.Max(28, (int)Math.Round(turnLimit * 0.94d))
+            };
+            CampaignPhase[] phases =
+            {
+                CampaignPhase.ArrivalAndKeyboardAwakening,
+                CampaignPhase.FirstRegionProblem,
+                CampaignPhase.AdminAccessOne,
+                CampaignPhase.AdminAccessTwo,
+                CampaignPhase.InternalFailureTruth,
+                CampaignPhase.TechnicalDebtBackflow,
+                CampaignPhase.AdminAccessThree,
+                CampaignPhase.RootSystemEntry,
+                CampaignPhase.FinalDeployment
+            };
+            int phaseIndex = 0;
+            for (int i = 1; i < starts.Length; i++)
+                if (meaningfulTurns >= starts[i]) phaseIndex = i;
+            CampaignPhase phase = phases[phaseIndex];
+            int deadline = phaseIndex + 1 < starts.Length ? starts[phaseIndex + 1] - 1 : turnLimit;
+            CampaignAct act = phaseIndex == 0 ? CampaignAct.Introduction
+                : phaseIndex <= 3 ? CampaignAct.Exploration
+                : phaseIndex <= 5 ? CampaignAct.Pressure
+                : phaseIndex <= 7 ? CampaignAct.Convergence
                 : CampaignAct.Ending;
             bool nearDeadline = deadline - meaningfulTurns <= 2;
             return new CampaignConstraints(act, phase, remaining, deadline, nearDeadline || remaining <= 10,
@@ -106,18 +126,19 @@ namespace KeyboardWanderer.Gameplay
             UpdateEndingEligibility(state);
         }
 
-        public static void ProcessCommittedTurn(RunState state, TurnRequest request, RuleOutcome outcome,
-            int turnNo, List<string> events)
+        public static void ProcessCommittedTurn(RunState state, TurnRequest request, ActionContext actionContext,
+            RuleOutcome outcome, int turnNo, List<string> events)
         {
             if (state == null || request == null || events == null) return;
             bool applied = outcome == RuleOutcome.PartialSuccess || outcome == RuleOutcome.Success ||
                            outcome == RuleOutcome.CriticalSuccess;
             CampaignBeatState beat = state.CurrentBeat;
-            if (beat != null && applied && AbilityAllowedForBeat(beat.Id, request.Ability) &&
-                IsRequiredCampaignRole(state, beat.Id) && HasDesignatedEvidence(state, beat.Id, request, events))
-                CompleteBeat(state, beat, request, turnNo, events);
+            if (beat != null && applied && IsCampaignAction(actionContext) &&
+                AbilityAllowedForBeat(beat, request.Ability, actionContext) &&
+                IsRequiredCampaignRegion(state, beat) && HasDesignatedEvidence(state, beat, request, events))
+                CompleteBeat(state, beat, request, actionContext, turnNo, events);
 
-            ApplyMetricDelta(state, request.Ability, outcome, events);
+            ApplyMetricDelta(state, request, actionContext, outcome, turnNo, events);
             state.TurnPressure = RunState.ClampMetric((int)Math.Round(turnNo * 100d / Math.Max(1, state.TurnLimit)));
             state.QuestStage = state.CurrentBeatIndex;
             UpdateEndingEligibility(state);
@@ -126,39 +147,42 @@ namespace KeyboardWanderer.Gameplay
         public static string SelectEnding(RunState state)
         {
             if (state == null) return CampaignCatalog.FallbackEndingCode;
-            if (state.WorldStability <= 5 || state.MilestoneProgress < 3 ||
+            if (state.WorldStability <= 5 || !CanEnterRootSystem(state) ||
                 (state.CurrentTurn >= state.TurnLimit && state.CurrentBeat != null))
                 return CampaignCatalog.FallbackEndingCode;
 
-            bool anchorToSafeguard = HasConnection(state, "finale.anchor", "finale.safeguard");
-            bool safeguardToPassage = HasConnection(state, "finale.safeguard", "finale.passage");
-            bool safeguardToWitness = HasConnection(state, "finale.safeguard", "finale.witness");
-            bool playerToAnchor = HasPlayerConnectionToAsset(state, "finale.anchor");
-            bool anchorToFreedom = HasConnection(state, "finale.anchor", "finale.freedom");
-            bool anchorToMemory = HasConnection(state, "finale.anchor", "finale.memory");
-            bool memoryToSafeguard = HasConnection(state, "finale.memory", "finale.safeguard");
             bool threatActive = HasActiveAsset(state, "finale.threat");
             bool freedomActive = HasActiveAsset(state, "finale.freedom");
-
-            if (anchorToSafeguard && safeguardToPassage && !threatActive &&
-                state.WorldStability >= 45 && state.TechnicalDebt <= 60 &&
-                HasEndingCandidate(state, "SAFE_PASSAGE"))
-                return "SAFE_PASSAGE";
-            if (anchorToSafeguard && safeguardToWitness && threatActive && !playerToAnchor &&
-                state.WorldStability >= 25 && state.PublicTrust >= 35 &&
-                HasEndingCandidate(state, "SHARED_GUARDIANSHIP"))
-                return "SHARED_GUARDIANSHIP";
-            if (playerToAnchor && anchorToFreedom && freedomActive &&
-                state.WorldAutonomy >= 45 && state.PublicTrust >= 40 &&
-                HasEndingCandidate(state, "FREE_WORLD"))
-                return "FREE_WORLD";
-            if (anchorToMemory && memoryToSafeguard &&
-                state.CompanionBond >= 35 && state.TechnicalDebt >= 15 &&
-                HasEndingCandidate(state, "MEMORY_REWEAVE"))
-                return "MEMORY_REWEAVE";
-            if (!threatActive && safeguardToWitness && !safeguardToPassage &&
-                HasEndingCandidate(state, "THREAT_SEAL"))
-                return "THREAT_SEAL";
+            if (HasConnection(state, "finale.anchor", "finale.safeguard") &&
+                HasPlayerConnectionToAsset(state, "finale.memory") && !threatActive &&
+                !HasPlayerConnectionToAsset(state, "finale.freedom") && state.PublicTrust >= 45 &&
+                state.TechnicalDebt <= 65 && HasEndingCandidate(state, "ENDING_REWEAVE_TOGETHER"))
+                return "ENDING_REWEAVE_TOGETHER";
+            if (HasConnection(state, "finale.anchor", "finale.freedom") && !threatActive &&
+                HasActiveAsset(state, "finale.passage") &&
+                !HasConnection(state, "finale.anchor", "finale.safeguard") && state.WorldAutonomy >= 50 &&
+                HasEndingCandidate(state, "ENDING_OPEN_FRONTIER"))
+                return "ENDING_OPEN_FRONTIER";
+            if (HasPlayerConnectionToAsset(state, "finale.safeguard") &&
+                HasConnection(state, "finale.memory", "finale.anchor") && !threatActive &&
+                !HasPlayerConnectionToAsset(state, "finale.passage") && state.CompanionBond >= 45 &&
+                HasEndingCandidate(state, "ENDING_KEEP_THE_PROMISE"))
+                return "ENDING_KEEP_THE_PROMISE";
+            if (HasConnection(state, "finale.anchor", "finale.passage") && !threatActive &&
+                !freedomActive && HasActiveAsset(state, "finale.witness") &&
+                !HasPlayerConnectionToAsset(state, "finale.safeguard") && state.TechnicalDebt <= 55 &&
+                HasEndingCandidate(state, "ENDING_CUT_THE_CYCLE"))
+                return "ENDING_CUT_THE_CYCLE";
+            if (HasConnection(state, "finale.memory", "finale.safeguard") &&
+                HasPlayerConnectionToAsset(state, "finale.witness") && !freedomActive && threatActive &&
+                !HasConnection(state, "finale.anchor", "finale.threat") && state.WorldStability >= 35 &&
+                state.PublicTrust >= 40 && HasEndingCandidate(state, "ENDING_PRESERVE_THE_SCARS"))
+                return "ENDING_PRESERVE_THE_SCARS";
+            if (HasPlayerConnectionToAsset(state, "finale.passage") &&
+                HasConnection(state, "finale.anchor", "finale.safeguard") && !threatActive &&
+                !HasPlayerConnectionToAsset(state, "finale.freedom") && state.WorldStability >= 45 &&
+                state.CompanionBond >= 35 && HasEndingCandidate(state, "ENDING_WALK_BETWEEN_WORLDS"))
+                return "ENDING_WALK_BETWEEN_WORLDS";
             return CampaignCatalog.FallbackEndingCode;
         }
 
@@ -168,37 +192,45 @@ namespace KeyboardWanderer.Gameplay
             {
                 EndingCandidateState candidate = state.EndingCandidates[i];
                 candidate.IsEligible = candidate.Code == CampaignCatalog.FallbackEndingCode ||
-                    (state.MilestoneProgress >= 3 && state.CompletedBeatCount >= candidate.MinimumCompletedBeats);
+                    (CanEnterRootSystem(state) &&
+                     state.CompletedBeatCount >= candidate.MinimumCompletedBeats);
             }
         }
 
         private static void CompleteBeat(RunState state, CampaignBeatState beat, TurnRequest request,
-            int turnNo, List<string> events)
+            ActionContext actionContext, int turnNo, List<string> events)
         {
             beat.IsCompleted = true;
             beat.ResolvedTurn = turnNo;
-            beat.Resolution = string.IsNullOrWhiteSpace(request.IntentText)
-                ? request.Ability + " 명령으로 해결했다."
-                : "\"" + request.IntentText.Trim() + "\"라는 의도로 해결했다.";
+            beat.Resolution = CampaignCatalog.ContextLabel(actionContext) + " 문맥에서 " +
+                request.Ability + " 스킬과 선택된 대상만으로 해결했다.";
             state.ResolveOpenLoop(beat.Objective);
             state.AddCanonicalFact(beat.Title + " — " + beat.Resolution);
             state.QuestAccepted = true;
             events.Add("CAMPAIGN_BEAT_COMPLETED:" + beat.Id);
-            if (!string.IsNullOrWhiteSpace(beat.MilestoneTokenId) && state.MilestoneProgress < 3)
+            if (!string.IsNullOrWhiteSpace(beat.AdminAccessRewardId) && state.AdminAccess < 3)
             {
-                state.MilestoneProgress++;
-                string token = beat.MilestoneTokenId;
-                if (!state.HasItem(token)) state.Inventory.Add(token);
-                state.AddCanonicalFact("핵심 표식 " + state.MilestoneProgress + "/3을 획득했다: " + token);
-                events.Add("MILESTONE_TOKEN_ACQUIRED:" + state.MilestoneProgress + ":" + token);
+                int level = Array.IndexOf(CampaignCatalog.AdminAccessLevelIds, beat.AdminAccessRewardId) + 1;
+                if (level == state.AdminAccess + 1)
+                {
+                    state.AdminAccess = level;
+                    string accessId = beat.AdminAccessRewardId;
+                    if (!state.HasItem(accessId)) state.Inventory.Add(accessId);
+                    state.AdminAccessAcquisitionHistory.Add(new AdminAccessAcquisitionRecord(level,
+                        accessId, beat.RoleId, actionContext, request.Ability, turnNo));
+                    state.AddCanonicalFact("관리자 권한 " + level + "/3 획득: " + accessId + " · " +
+                        CampaignCatalog.RegionLabel(beat.RoleId) + " · " + CampaignCatalog.ContextLabel(actionContext));
+                    events.Add("ADMIN_ACCESS_ACQUIRED:" + level + ":" + accessId + ":" +
+                        beat.RoleId + ":" + actionContext.ToString().ToUpperInvariant());
+                }
             }
             if (beat.Id == "truth")
-                state.AddCanonicalFact("감춰진 기록과 증언이 이번 세계의 위기가 내부 선택에서 비롯되었음을 확정했다.");
+                state.AddCanonicalFact("붕괴 원인이 관리자 통제 시스템 내부에 있음을 확정했다.");
             AdvanceBeatPointer(state);
         }
 
-        private static void ApplyMetricDelta(RunState state, AbilityKind ability, RuleOutcome outcome,
-            List<string> events)
+        private static void ApplyMetricDelta(RunState state, TurnRequest request, ActionContext actionContext,
+            RuleOutcome outcome, int turnNo, List<string> events)
         {
             bool success = outcome == RuleOutcome.PartialSuccess || outcome == RuleOutcome.Success ||
                            outcome == RuleOutcome.CriticalSuccess;
@@ -206,17 +238,13 @@ namespace KeyboardWanderer.Gameplay
             if (!success) { stability = -2; trust = -1; debt = 2; }
             else
             {
-                switch (ability)
+                switch (request.Ability)
                 {
                     case AbilityKind.Copy: stability = -1; autonomy = 2; debt = 3; break;
                     case AbilityKind.Delete: stability = 1; autonomy = -1; trust = -1; debt = 2; break;
                     case AbilityKind.Connect: stability = 2; autonomy = 2; trust = 1; break;
                     case AbilityKind.Restore: stability = 3; debt = -2; trust = 1; break;
                     case AbilityKind.Undo: stability = 1; debt = 3; trust = -1; break;
-                    case AbilityKind.Attack: stability = -1; debt = 1; break;
-                    case AbilityKind.Interact: trust = 2; bond = 2; autonomy = 1; break;
-                    case AbilityKind.Rest: stability = 1; bond = 1; break;
-                    case AbilityKind.Negotiate: trust = 3; bond = 2; autonomy = 1; break;
                 }
             }
             state.WorldStability = RunState.ClampMetric(state.WorldStability + stability);
