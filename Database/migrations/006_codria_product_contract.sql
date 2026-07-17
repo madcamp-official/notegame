@@ -169,4 +169,73 @@ create trigger world_region_axis_bindings_immutable
 before update or delete on world_region_axis_bindings
 for each row execute function keyboard_wanderer.reject_generated_world_mutation();
 
+create or replace function keyboard_wanderer.validate_run_codria_axis_contract()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+declare
+    stored_scope text;
+    binding_count integer;
+    world_biome_count integer;
+begin
+    select world_scope
+      into strict stored_scope
+      from keyboard_wanderer.worlds
+     where id = new.world_id
+       and owner_id = new.owner_id
+       and campaign_id = new.campaign_id;
+
+    if stored_scope <> 'run' then
+        raise exception using
+            errcode = '23514',
+            message = 'Codria v4 runs require a world sealed for that run';
+    end if;
+
+    select count(*)
+      into binding_count
+      from keyboard_wanderer.world_region_axis_bindings
+     where world_id = new.world_id and owner_id = new.owner_id;
+
+    select count(distinct biome_id)
+      into world_biome_count
+      from keyboard_wanderer.world_area_descriptors
+     where world_id = new.world_id and owner_id = new.owner_id;
+
+    if binding_count <> 6 or world_biome_count <> 6 then
+        raise exception using
+            errcode = '23514',
+            message = 'a Codria run world must bind all six region axes and contain all six terrain biomes';
+    end if;
+    return new;
+end
+$$;
+
+create constraint trigger runs_validate_codria_axis_contract
+after insert or update of world_id, owner_id, campaign_id on runs
+deferrable initially deferred
+for each row execute function keyboard_wanderer.validate_run_codria_axis_contract();
+
+alter table world_region_axis_bindings enable row level security;
+alter table world_region_axis_bindings force row level security;
+
+create policy world_region_axis_bindings_owner_select on world_region_axis_bindings
+for select using (owner_id = (select keyboard_wanderer.current_app_user_id()));
+
+create policy world_region_axis_bindings_owner_insert on world_region_axis_bindings
+for insert with check (owner_id = (select keyboard_wanderer.current_app_user_id()));
+
+comment on table product_identity_catalog is
+    'Fixed Codria product identities; seeds may never replace the world, protagonist, or administrator keyboard.';
+comment on table campaign_region_axis_catalog is
+    'The six fixed semantic region axes, kept separate from seeded physical terrain biomes.';
+comment on table admin_access_level_catalog is
+    'Exactly three ordered administrator access levels required by every run.';
+comment on table world_region_axis_bindings is
+    'Immutable per-world binding from each Codria region axis to a seeded area, its terrain biome, and primary POI; axes and biomes remain separate layers.';
+revoke all on product_identity_catalog, campaign_region_axis_catalog,
+    admin_access_level_catalog, world_region_axis_bindings from public;
+revoke execute on function keyboard_wanderer.validate_region_axis_binding() from public;
+revoke execute on function keyboard_wanderer.validate_run_codria_axis_contract() from public;
+
 commit;
