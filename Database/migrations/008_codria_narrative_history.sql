@@ -120,4 +120,99 @@ create table npc_relationship_history (
 create index npc_relationship_history_owner_run_turn_idx
     on npc_relationship_history (owner_id, run_id, turn_no desc);
 
+create table ability_usage_history (
+    id uuid primary key default gen_random_uuid(),
+    run_id uuid not null,
+    owner_id uuid not null,
+    turn_id uuid not null,
+    turn_no smallint not null,
+    skill_id text not null references ability_catalog(code),
+    action_context text not null,
+    target_ids jsonb not null,
+    outcome text not null,
+    effects_json jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    constraint ability_usage_history_run_fk
+        foreign key (run_id, owner_id) references runs(id, owner_id) on delete cascade,
+    constraint ability_usage_history_turn_fk
+        foreign key (turn_id, owner_id, run_id)
+        references turn_records(id, owner_id, run_id) on delete cascade,
+    constraint ability_usage_history_run_turn_unique unique (run_id, turn_id),
+    constraint ability_usage_history_turn check (turn_no between 1 and 50),
+    constraint ability_usage_history_context check (
+        action_context in ('COMBAT', 'INVESTIGATION', 'NEGOTIATION', 'DEPLOYMENT')
+    ),
+    constraint ability_usage_history_skill check (
+        skill_id in ('COPY', 'DELETE', 'CONNECT', 'RESTORE', 'UNDO')
+    ),
+    constraint ability_usage_history_targets check (jsonb_typeof(target_ids) = 'array'),
+    constraint ability_usage_history_outcome check (
+        outcome in ('critical_failure', 'failure', 'partial_success', 'success', 'critical_success')
+    ),
+    constraint ability_usage_history_effects check (jsonb_typeof(effects_json) = 'object')
+);
+
+create index ability_usage_history_owner_run_skill_idx
+    on ability_usage_history (owner_id, run_id, skill_id, turn_no);
+
+create table unresolved_hooks (
+    id uuid primary key default gen_random_uuid(),
+    run_id uuid not null,
+    owner_id uuid not null,
+    hook_key text not null,
+    region_axis_code text references campaign_region_axis_catalog(code),
+    npc_actor_id uuid,
+    introduced_turn_id uuid,
+    introduced_turn_no smallint not null,
+    summary text not null,
+    hook_payload jsonb not null default '{}'::jsonb,
+    status text not null default 'OPEN',
+    deadline_turn smallint,
+    resolution_turn_id uuid,
+    resolution_turn_no smallint,
+    resolution_kind text,
+    resolved_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint unresolved_hooks_run_fk
+        foreign key (run_id, owner_id) references runs(id, owner_id) on delete cascade,
+    constraint unresolved_hooks_npc_fk
+        foreign key (npc_actor_id, owner_id, run_id)
+        references actors(entity_id, owner_id, run_id) on delete set null (npc_actor_id),
+    constraint unresolved_hooks_introduced_turn_fk
+        foreign key (introduced_turn_id, owner_id, run_id)
+        references turn_records(id, owner_id, run_id) on delete cascade,
+    constraint unresolved_hooks_resolution_turn_fk
+        foreign key (resolution_turn_id, owner_id, run_id)
+        references turn_records(id, owner_id, run_id) on delete restrict,
+    constraint unresolved_hooks_run_key_unique unique (run_id, hook_key),
+    constraint unresolved_hooks_key check (hook_key ~ '^[a-z][a-z0-9_.:-]{2,159}$'),
+    constraint unresolved_hooks_turns check (
+        introduced_turn_no between 0 and 50
+        and (
+            (introduced_turn_no = 0 and introduced_turn_id is null)
+            or (introduced_turn_no > 0 and introduced_turn_id is not null)
+        )
+        and (deadline_turn is null or deadline_turn between introduced_turn_no and 50)
+        and (resolution_turn_no is null or resolution_turn_no between introduced_turn_no and 50)
+    ),
+    constraint unresolved_hooks_summary check (btrim(summary) <> ''),
+    constraint unresolved_hooks_payload check (jsonb_typeof(hook_payload) = 'object'),
+    constraint unresolved_hooks_status check (status in ('OPEN', 'RESOLVED', 'EXPIRED')),
+    constraint unresolved_hooks_resolution_shape check (
+        (
+            status = 'OPEN' and resolution_turn_id is null and resolution_turn_no is null
+            and resolution_kind is null and resolved_at is null
+        )
+        or (
+            status in ('RESOLVED', 'EXPIRED') and resolution_turn_id is not null
+            and resolution_turn_no is not null and resolution_kind is not null
+            and btrim(resolution_kind) <> '' and resolved_at is not null
+        )
+    )
+);
+
+create index unresolved_hooks_owner_open_idx
+    on unresolved_hooks (owner_id, run_id, deadline_turn) where status = 'OPEN';
+
 commit;
