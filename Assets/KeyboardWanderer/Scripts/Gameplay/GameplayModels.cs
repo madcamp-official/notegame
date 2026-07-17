@@ -6,17 +6,30 @@ namespace KeyboardWanderer.Gameplay
 {
     public enum AbilityKind
     {
-        // Existing numeric values are retained for compatibility with saves/UI.
         Move = 0,
         Copy = 1,
         Delete = 2,
         Connect = 3,
-        Attack = 4,
-        Interact = 5,
-        Rest = 6,
+        // Numeric values 4..6 and 9 were legacy public actions. They intentionally remain
+        // unassigned so old payloads deserialize to an unknown value and are rejected.
         Restore = 7,
-        Undo = 8,
-        Negotiate = 9
+        Undo = 8
+    }
+
+    public enum PlayerInputType
+    {
+        MOVE,
+        USE_SKILL
+    }
+
+    public enum ActionContext
+    {
+        None,
+        SafeTravel,
+        Combat,
+        Investigation,
+        Negotiation,
+        Deployment
     }
 
     public enum RuleOutcome
@@ -48,12 +61,15 @@ namespace KeyboardWanderer.Gameplay
 
     public enum CampaignPhase
     {
-        Introduction,
-        Adaptation,
-        Expansion,
-        Truth,
-        Backflow,
-        Finale
+        ArrivalAndKeyboardAwakening,
+        FirstRegionProblem,
+        AdminAccessOne,
+        AdminAccessTwo,
+        InternalFailureTruth,
+        TechnicalDebtBackflow,
+        AdminAccessThree,
+        RootSystemEntry,
+        FinalDeployment
     }
 
     public enum TurnErrorCode
@@ -87,6 +103,9 @@ namespace KeyboardWanderer.Gameplay
         public Guid? TargetEntityId { get; }
         public Guid? SecondaryTargetEntityId { get; }
         public GridCoord? Destination { get; }
+        public PlayerInputType InputType { get; }
+        public string SkillId => Ability == AbilityKind.Move ? string.Empty : Ability.ToString().ToUpperInvariant();
+        /// <summary>Optional flavour note. It is never required or used as rules authority.</summary>
         public string IntentText { get; }
 
         public TurnRequest(string idempotencyKey, long expectedRunVersion, AbilityKind ability,
@@ -104,13 +123,96 @@ namespace KeyboardWanderer.Gameplay
             TargetEntityId = targetEntityId;
             SecondaryTargetEntityId = secondaryTargetEntityId;
             Destination = destination;
+            InputType = ability == AbilityKind.Move ? PlayerInputType.MOVE : PlayerInputType.USE_SKILL;
             IntentText = intentText ?? string.Empty;
+        }
+
+        public static TurnRequest Move(string idempotencyKey, long expectedRunVersion, GridCoord destination)
+        {
+            return new TurnRequest(idempotencyKey, expectedRunVersion, AbilityKind.Move, null, null,
+                destination, string.Empty);
+        }
+
+        public static TurnRequest UseSkill(string idempotencyKey, long expectedRunVersion, AbilityKind skill,
+            Guid? targetEntityId = null, Guid? secondaryTargetEntityId = null, GridCoord? destination = null)
+        {
+            if (!IsPublicKeyboardSkill(skill))
+                throw new ArgumentException(
+                    "USE_SKILL accepts only COPY, DELETE, CONNECT, RESTORE, or UNDO.", nameof(skill));
+            return new TurnRequest(idempotencyKey, expectedRunVersion, skill, targetEntityId,
+                secondaryTargetEntityId, destination, string.Empty);
+        }
+
+        public static bool IsPublicKeyboardSkill(AbilityKind skill)
+        {
+            return skill == AbilityKind.Copy || skill == AbilityKind.Delete ||
+                   skill == AbilityKind.Connect || skill == AbilityKind.Restore ||
+                   skill == AbilityKind.Undo;
         }
 
         public string Fingerprint()
         {
-            return ExpectedRunVersion + "|" + Ability + "|" + TargetEntityId + "|" + SecondaryTargetEntityId +
+            return ExpectedRunVersion + "|" + InputType + "|" + Ability + "|" + TargetEntityId + "|" + SecondaryTargetEntityId +
                    "|" + Destination + "|" + IntentText;
+        }
+    }
+
+    public sealed class TechnicalDebtEntry
+    {
+        public string Id { get; }
+        public int TurnNo { get; }
+        public AbilityKind Skill { get; }
+        public string OperationType { get; }
+        public string TargetId { get; }
+        public bool ForcedOverride { get; }
+        public int DebtDelta { get; }
+        public string DeferredConsequenceType { get; }
+        public int ResolvedTurn { get; set; }
+        public bool IsResolved => ResolvedTurn > 0;
+
+        public TechnicalDebtEntry(string id, int turnNo, AbilityKind skill, string operationType,
+            string targetId, bool forcedOverride, int debtDelta, string deferredConsequenceType)
+        {
+            Id = id ?? string.Empty;
+            TurnNo = turnNo;
+            Skill = skill;
+            OperationType = operationType ?? string.Empty;
+            TargetId = targetId ?? string.Empty;
+            ForcedOverride = forcedOverride;
+            DebtDelta = debtDelta;
+            DeferredConsequenceType = deferredConsequenceType ?? string.Empty;
+        }
+
+        public TechnicalDebtEntry Clone()
+        {
+            return new TechnicalDebtEntry(Id, TurnNo, Skill, OperationType, TargetId, ForcedOverride,
+                DebtDelta, DeferredConsequenceType) { ResolvedTurn = ResolvedTurn };
+        }
+    }
+
+    public sealed class AdminAccessAcquisitionRecord
+    {
+        public int Level { get; }
+        public string AccessId { get; }
+        public string RegionAxis { get; }
+        public ActionContext Context { get; }
+        public AbilityKind Skill { get; }
+        public int TurnNo { get; }
+
+        public AdminAccessAcquisitionRecord(int level, string accessId, string regionAxis,
+            ActionContext context, AbilityKind skill, int turnNo)
+        {
+            Level = Math.Max(1, Math.Min(3, level));
+            AccessId = accessId ?? string.Empty;
+            RegionAxis = regionAxis ?? string.Empty;
+            Context = context;
+            Skill = skill;
+            TurnNo = turnNo;
+        }
+
+        public AdminAccessAcquisitionRecord Clone()
+        {
+            return new AdminAccessAcquisitionRecord(Level, AccessId, RegionAxis, Context, Skill, TurnNo);
         }
     }
 
@@ -120,8 +222,9 @@ namespace KeyboardWanderer.Gameplay
         public string Title { get; }
         public string Objective { get; }
         public AbilityKind TriggerAbility { get; }
+        public ActionContext RequiredContext { get; }
         public string RoleId { get; }
-        public string MilestoneTokenId { get; }
+        public string AdminAccessRewardId { get; }
         public bool IsRequired { get; }
         public bool IsCompleted { get; set; }
         public bool IsSkipped { get; set; }
@@ -129,14 +232,16 @@ namespace KeyboardWanderer.Gameplay
         public string Resolution { get; set; }
 
         public CampaignBeatState(string id, string title, string objective, AbilityKind triggerAbility,
-            bool isRequired = true, string roleId = "", string milestoneTokenId = "")
+            bool isRequired = true, string roleId = "", string adminAccessRewardId = "",
+            ActionContext requiredContext = ActionContext.None)
         {
             Id = id ?? string.Empty;
             Title = title ?? string.Empty;
             Objective = objective ?? string.Empty;
             TriggerAbility = triggerAbility;
+            RequiredContext = requiredContext;
             RoleId = roleId ?? string.Empty;
-            MilestoneTokenId = milestoneTokenId ?? string.Empty;
+            AdminAccessRewardId = adminAccessRewardId ?? string.Empty;
             IsRequired = isRequired;
             Resolution = string.Empty;
         }
@@ -144,7 +249,7 @@ namespace KeyboardWanderer.Gameplay
         public CampaignBeatState Clone()
         {
             return new CampaignBeatState(Id, Title, Objective, TriggerAbility, IsRequired, RoleId,
-                MilestoneTokenId)
+                AdminAccessRewardId, RequiredContext)
             {
                 IsCompleted = IsCompleted,
                 IsSkipped = IsSkipped,
