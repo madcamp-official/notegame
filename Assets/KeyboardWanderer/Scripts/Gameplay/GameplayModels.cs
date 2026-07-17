@@ -489,11 +489,14 @@ namespace KeyboardWanderer.Gameplay
         public string CurrentAreaName { get; }
         public string CurrentAreaDescription { get; }
         public int AdminAccess { get; }
-        public int MilestoneProgress => AdminAccess;
         public int WorldStability { get; }
         public int WorldAutonomy { get; }
         public int PublicTrust { get; }
         public int TechnicalDebt { get; }
+        public IReadOnlyList<TechnicalDebtEntry> TechnicalDebtEntries { get; }
+        public IReadOnlyList<AdminAccessAcquisitionRecord> AdminAccessAcquisitionHistory { get; }
+        public IReadOnlyList<string> MajorChoices { get; }
+        public IReadOnlyList<string> RegionOutcomes { get; }
         public int CompanionBond { get; }
         public int TurnPressure { get; }
         public int TravelTime { get; }
@@ -577,6 +580,16 @@ namespace KeyboardWanderer.Gameplay
             WorldAutonomy = state.WorldAutonomy;
             PublicTrust = state.PublicTrust;
             TechnicalDebt = state.TechnicalDebt;
+            var debtEntries = new List<TechnicalDebtEntry>();
+            for (int i = 0; i < state.TechnicalDebtEntries.Count; i++)
+                debtEntries.Add(state.TechnicalDebtEntries[i].Clone());
+            TechnicalDebtEntries = debtEntries;
+            var accessHistory = new List<AdminAccessAcquisitionRecord>();
+            for (int i = 0; i < state.AdminAccessAcquisitionHistory.Count; i++)
+                accessHistory.Add(state.AdminAccessAcquisitionHistory[i].Clone());
+            AdminAccessAcquisitionHistory = accessHistory;
+            MajorChoices = new List<string>(state.MajorChoices);
+            RegionOutcomes = new List<string>(state.RegionOutcomes);
             CompanionBond = state.CompanionBond;
             TurnPressure = state.TurnPressure;
             TravelTime = state.TravelTime;
@@ -659,11 +672,13 @@ namespace KeyboardWanderer.Gameplay
         public IReadOnlyList<string> Events { get; }
         public RunView Run { get; }
         public bool ConsumesCampaignTurn { get; }
+        public ActionContext ActionContext { get; }
 
         private TurnResponse(bool isSuccess, bool fromCache, TurnErrorCode errorCode, string errorMessage,
             int turnNo, int d20, int modifier, int difficulty, int mechanicalScore, int intentAlignment,
             RuleOutcome outcome, string outcomeExplanation, string normalizedAttempt, string narrative,
-            int consequenceBudget, IReadOnlyList<string> events, RunView run, bool consumesCampaignTurn)
+            int consequenceBudget, IReadOnlyList<string> events, RunView run, bool consumesCampaignTurn,
+            ActionContext actionContext)
         {
             IsSuccess = isSuccess;
             FromIdempotencyCache = fromCache;
@@ -683,29 +698,31 @@ namespace KeyboardWanderer.Gameplay
             Events = events ?? Array.Empty<string>();
             Run = run;
             ConsumesCampaignTurn = consumesCampaignTurn;
+            ActionContext = actionContext;
         }
 
         public static TurnResponse Failure(TurnErrorCode code, string message, RunView run)
         {
             return new TurnResponse(false, false, code, message, 0, 0, 0, 0, 0, 0,
-                RuleOutcome.Failure, string.Empty, string.Empty, string.Empty, 0, Array.Empty<string>(), run, false);
+                RuleOutcome.Failure, string.Empty, string.Empty, string.Empty, 0, Array.Empty<string>(), run, false,
+                ActionContext.None);
         }
 
         public static TurnResponse Success(int turnNo, int d20, int modifier, int difficulty, int mechanicalScore,
             int intentAlignment, RuleOutcome outcome, string outcomeExplanation, string normalizedAttempt,
             string narrative, int consequenceBudget, IReadOnlyList<string> events, RunView run,
-            bool consumesCampaignTurn = true)
+            bool consumesCampaignTurn = true, ActionContext actionContext = ActionContext.None)
         {
             return new TurnResponse(true, false, TurnErrorCode.None, null, turnNo, d20, modifier, difficulty,
                 mechanicalScore, intentAlignment, outcome, outcomeExplanation, normalizedAttempt, narrative,
-                consequenceBudget, events, run, consumesCampaignTurn);
+                consequenceBudget, events, run, consumesCampaignTurn, actionContext);
         }
 
         public TurnResponse AsCached()
         {
             return new TurnResponse(IsSuccess, true, ErrorCode, ErrorMessage, TurnNo, D20, Modifier, Difficulty,
                 MechanicalScore, IntentAlignment, Outcome, OutcomeExplanation, NormalizedAttempt, Narrative,
-                ConsequenceBudget, Events, Run, ConsumesCampaignTurn);
+                ConsequenceBudget, Events, Run, ConsumesCampaignTurn, ActionContext);
         }
     }
 
@@ -728,15 +745,14 @@ namespace KeyboardWanderer.Gameplay
         public Guid PlayerEntityId { get; }
 
         public int AdminAccess { get; set; }
-        public int MilestoneProgress
-        {
-            get => AdminAccess;
-            set => AdminAccess = value;
-        }
         public int WorldStability { get; set; }
         public int WorldAutonomy { get; set; }
         public int PublicTrust { get; set; }
         public int TechnicalDebt { get; set; }
+        public List<TechnicalDebtEntry> TechnicalDebtEntries { get; }
+        public List<AdminAccessAcquisitionRecord> AdminAccessAcquisitionHistory { get; }
+        public List<string> MajorChoices { get; }
+        public List<string> RegionOutcomes { get; }
         public int CompanionBond { get; set; }
         public int TurnPressure { get; set; }
         public int TravelTime { get; set; }
@@ -831,6 +847,10 @@ namespace KeyboardWanderer.Gameplay
             LastOutcomeExplanation = string.Empty;
             IntentHistory = new List<string>();
             RestorationLedger = new List<RestorationRecord>();
+            TechnicalDebtEntries = new List<TechnicalDebtEntry>();
+            AdminAccessAcquisitionHistory = new List<AdminAccessAcquisitionRecord>();
+            MajorChoices = new List<string>();
+            RegionOutcomes = new List<string>();
             Inventory = new List<string>();
             Connections = new List<string>();
             GmLog = new List<string>();
@@ -976,6 +996,12 @@ namespace KeyboardWanderer.Gameplay
             for (int i = 0; i < NpcStories.Count; i++) clone.NpcStories.Add(NpcStories[i].Clone());
             clone.IntentHistory.AddRange(IntentHistory);
             for (int i = 0; i < RestorationLedger.Count; i++) clone.RestorationLedger.Add(RestorationLedger[i].Clone());
+            for (int i = 0; i < TechnicalDebtEntries.Count; i++)
+                clone.TechnicalDebtEntries.Add(TechnicalDebtEntries[i].Clone());
+            for (int i = 0; i < AdminAccessAcquisitionHistory.Count; i++)
+                clone.AdminAccessAcquisitionHistory.Add(AdminAccessAcquisitionHistory[i].Clone());
+            clone.MajorChoices.AddRange(MajorChoices);
+            clone.RegionOutcomes.AddRange(RegionOutcomes);
             clone.LastReversibleTurn = LastReversibleTurn == null ? null : LastReversibleTurn.Clone();
             clone.Inventory.AddRange(Inventory);
             clone.Connections.AddRange(Connections);
