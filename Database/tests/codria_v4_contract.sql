@@ -74,4 +74,77 @@ begin
 end
 $$;
 
+do $$
+declare
+    actual_tables text[];
+    actual_columns text[];
+begin
+
+    select array_agg(tablename order by tablename)
+      into actual_tables
+      from pg_catalog.pg_tables
+     where schemaname = 'keyboard_wanderer'
+       and tablename = any (array[
+           'world_region_axis_bindings', 'admin_access_acquisition_history',
+           'major_choices', 'region_outcomes', 'npc_relationship_history',
+           'ability_usage_history', 'unresolved_hooks', 'technical_debt_entries'
+       ]::text[]);
+    if actual_tables is distinct from array[
+        'ability_usage_history', 'admin_access_acquisition_history', 'major_choices',
+        'npc_relationship_history', 'region_outcomes', 'technical_debt_entries',
+        'unresolved_hooks', 'world_region_axis_bindings'
+    ]::text[] then
+        raise exception 'Codria v4 authoritative tables are incomplete: %', actual_tables;
+    end if;
+
+    select array_agg(column_name order by column_name)
+      into actual_columns
+      from information_schema.columns
+     where table_schema = 'keyboard_wanderer'
+       and table_name = 'technical_debt_entries';
+    if not array[
+        'id', 'run_id', 'turn_id', 'skill_id', 'operation_type', 'target_id',
+        'forced_override', 'debt_delta', 'deferred_consequence_type', 'resolved_at'
+    ]::text[] <@ actual_columns then
+        raise exception 'technical_debt_entries is missing a required causal-ledger field: %', actual_columns;
+    end if;
+
+    select array_agg(column_name order by column_name)
+      into actual_columns
+      from information_schema.columns
+     where table_schema = 'keyboard_wanderer'
+       and table_name = 'turn_records';
+    if not array[
+        'command_schema_version', 'input_type', 'skill_id', 'target_ids',
+        'action_context', 'turn_context', 'campaign_turn_before',
+        'campaign_turn_after', 'campaign_turn_consumed', 'idempotency_key'
+    ]::text[] <@ actual_columns then
+        raise exception 'turn_records is missing structured USE_SKILL authority: %', actual_columns;
+    end if;
+
+    select array_agg(column_name order by column_name)
+      into actual_columns
+      from information_schema.columns
+     where table_schema = 'keyboard_wanderer'
+       and table_name = 'safe_travels';
+    if not array[
+        'command_schema_version', 'input_type', 'world_id',
+        'destination_area_id', 'turn_context', 'idempotency_key',
+        'campaign_turn_before', 'campaign_turn_after', 'campaign_turn_consumed'
+    ]::text[] <@ actual_columns then
+        raise exception 'safe_travels is missing structured MOVE authority: %', actual_columns;
+    end if;
+
+    if to_regclass('keyboard_wanderer.turn_actions') is not null then
+        raise exception 'v1.1 TURN_ACTIONS must not be duplicated beside the two authoritative idempotency ledgers';
+    end if;
+    if to_regclass('keyboard_wanderer.structured_action_history') is null
+       or to_regclass('keyboard_wanderer.run_admin_access_states') is null
+       or to_regclass('keyboard_wanderer.current_region_outcomes') is null
+       or to_regclass('keyboard_wanderer.technical_debt_summaries') is null then
+        raise exception 'one or more Codria v4 read projections are missing';
+    end if;
+end
+$$;
+
 rollback;
