@@ -1,6 +1,8 @@
-# Keyboard Wanderer
+# 넙죽이와 붕괴한 코드 왕국
 
-몰입캠프 26s-w3-c3-03 프로젝트입니다. Keyboard Wanderer는 매 런 새로운 세계와 캠페인 조합을 만드는 서버 권위형 30~50턴 TRPG 로그라이크입니다. 플레이어는 NinjaAdventure의 `NinjaGreen` 캐릭터로 시작하며, 키보드의 여섯 편집 능력과 자연어 의도를 함께 사용합니다.
+몰입캠프 26s-w3-c3-03 프로젝트입니다. 현실에서 코드리아로 추락한 개발자 **넙죽이**가 관리자 키보드로 세계의 객체와 관계를 편집하고, 관리자 권한 3단계를 획득해 루트 시스템에 진입하는 저인지부하 생성형 어드벤처입니다.
+
+Seed는 코드리아나 주인공을 바꾸지 않습니다. 런마다 필수 지역 축의 실제 위치, 물리 바이옴, 경로, NPC, 사건, 권한 획득 방식과 에필로그를 바꿉니다.
 
 ## 팀원
 
@@ -10,96 +12,142 @@
 | 박지호 | 울산과학기술원 |  |  |
 | 서영빈 | 한국과학기술원 |  |  |
 
-현재 제품 계약은 v3입니다. 세계관·인물·지역·갈등·퀘스트·결말 후보는 seed 기반 캠페인 genome과 검증된 LLM 보강으로 달라집니다. 특정 왕국, 특정 주인공 이름, 특정 권한 체계나 고정 결말을 제품 전제로 사용하지 않습니다.
+## 제품 계약 v4
 
-## 문서 권위
-
-1. 제품 소유자의 최신 명시적 지시
-2. 연결된 Notion 제품 문서
-3. [`SOURCE_OF_TRUTH.md`](Assets/KeyboardWanderer/Design/SOURCE_OF_TRUTH.md)
-4. [`PRODUCT_CONCEPT_KO.md`](Assets/KeyboardWanderer/Design/PRODUCT_CONCEPT_KO.md)
-5. 서버 코드·SQL migration·자동화 테스트
-
-첨부 레퍼런스 이미지는 UI의 분위기와 정보 배치만 제공합니다. 중앙의 큰 맵, 상단 상태, 우측 로그/목표/D20, 하단 명령 덱, 따뜻한 목재·황동 픽셀 재질을 참고하되 이미지의 시나리오, 퀘스트, 적, 경제, 캐릭터 배치와 텍스트는 게임 콘텐츠가 아닙니다.
-
-## v3 핵심 계약
-
-- 캠페인 선택 화면은 LLM을 호출하지 않는 deterministic preview를 사용합니다.
-- 새 런은 자체 `worldSeed`, `turnLimit`, 선택적 `themeHint`로 월드와 캠페인 계획을 생성합니다.
-- 기본 월드는 160×160이며, 12개 area와 정확히 6개 terrain biome을 포함합니다.
-- 월드의 타일, area, route, POI, 배치 slot은 런 시작 시 한 번 생성·검증·봉인됩니다.
-- 플레이 중에는 기존 월드 안에서 이동하거나 entity/run 상태만 바뀝니다. 매 턴 맵을 다시 만들지 않습니다.
-- 캠페인은 6개 일반 역할과 3개 milestone으로 수렴하며 30~50개의 의미 있는 턴 안에 종료됩니다.
-- Rule Engine이 좌표, 이동, 점유, D20, 피해, 자원, 진행 조건, 지표와 결말 레시피를 소유합니다.
-- Gemini는 기존 ID에 연결된 짧은 서사 후보만 제안하며 검증 실패나 장애 시 deterministic fallback을 사용합니다.
-- API 키는 서버 환경 변수에만 존재하고 Unity, 응답, 로그, DB plan JSON에 포함되지 않습니다.
-
-### Terrain biome 6개
-
-| ID | 표현 |
+| 항목 | 고정값 |
 | --- | --- |
-| `temperate_forest_field` | 온대 숲과 들판 |
-| `river_wetland` | 강과 습지 |
-| `arid_desert` | 건조 사막 |
-| `frost_highland` | 설원 고지 |
-| `subterranean_cavern` | 지하 동굴 |
-| `ancient_ruins` | 고대 유적 |
+| 게임 | 《넙죽이와 붕괴한 코드 왕국》 |
+| 세계 | `WORLD_CODRIA` · 코드리아 |
+| 주인공 | `PROTAGONIST_NUPJUKYI` · 넙죽이 |
+| 핵심 유물 | `ARTIFACT_ADMIN_KEYBOARD` · 관리자 키보드 |
+| 캠페인 길이 | 기본 40턴, 허용 범위 30~50턴 |
+| 관리자 권한 | `ADMIN_ACCESS_LEVEL_1`–`3` |
+| 최종 목적지 | `REGION_ROOT_SYSTEM` |
+| 핵심 입력 | `MOVE`, `USE_SKILL` |
 
-### Campaign role 6개
+관리자 권한 단계의 의미는 고정됩니다.
 
-| ID | 서사 기능 |
+1. 관찰·읽기 권한
+2. 제한된 편집·연결 권한
+3. 시스템 배치와 루트 게이트 접근 권한
+
+각 단계는 서로 다른 지역과 행동 문맥에 연결된 획득 후보를 최소 두 개 갖습니다. Seed와 플레이어 선택이 실제 경로를 결정하며, 세 단계와 붕괴 원인 단서 없이는 루트 시스템에 진입할 수 없습니다.
+
+## 월드 계약
+
+런 시작 시 160×160 월드를 한 번 생성하고 검증한 뒤 `layoutHash`로 봉인합니다. 턴 진행, 저장·재개, Restore와 Undo는 geometry를 바꾸지 않습니다. LLM은 타일, 좌표, 길, 출구, 건물과 바이옴을 생성하거나 수정할 수 없습니다.
+
+필수 캠페인 지역 축은 물리 지형 바이옴과 별도 레이어입니다.
+
+| 지역 축 ID | 표시 이름 |
 | --- | --- |
-| `ARRIVAL_CATALYST` | 도착과 첫 변화의 촉발 |
-| `LOCAL_STAKES` | 지역 주민의 구체적인 이해관계 |
-| `RELATIONSHIP_CONFLICT` | 인물·집단 사이 약속의 충돌 |
-| `HIDDEN_TRUTH` | 감춰진 원인의 발견 |
-| `CONSEQUENCE_RETURN` | 이전 선택의 결과 귀환 |
-| `FINAL_CONVERGENCE` | 모든 갈래와 선택의 최종 수렴 |
+| `REGION_BUG_FOREST` | 버그 숲 |
+| `REGION_BUFFER_VILLAGE` | 버퍼 마을 |
+| `REGION_DEADLOCK_CITY` | 데드락 도시 |
+| `REGION_DATA_GRAND_LIBRARY` | 데이터 대도서관 |
+| `REGION_LEGACY_CITADEL` | 레거시 성채 |
+| `REGION_ROOT_SYSTEM` | 루트 시스템 |
 
-Role은 biome과 별도 레이어입니다. Seed는 각 역할을 서로 다른 area, 랜드마크, NPC, 증거와 해결 방식에 배정합니다.
+현재 generator가 사용하는 물리 지형은 다음 여섯 종류입니다.
 
-### Progress milestone
+- `temperate_forest_field`
+- `river_wetland`
+- `arid_desert`
+- `frost_highland`
+- `subterranean_cavern`
+- `ancient_ruins`
 
-서버가 검증하는 ID는 `MILESTONE_TOKEN_1`, `MILESTONE_TOKEN_2`, `MILESTONE_TOKEN_3`입니다. 표시 이름과 의미는 런의 genome에 따라 달라집니다. 세 milestone을 모두 획득해야 최종 수렴 area의 논리 게이트를 통과할 수 있습니다.
+`CampaignRegionAxis → Area → TerrainBiome → POI → NPC/Quest slot → Admin access candidate` 순으로 매핑되며, 동일 Seed와 generator version은 동일한 layout hash를 만듭니다.
 
-## 월드 생성 파이프라인
+## 입력과 턴
 
-| 단계 | 입력 | 결과 | 검증 |
-| --- | --- | --- | --- |
-| Progression contract | Seed + generic roles | 6-node DAG + finale gate | 순환 없음, milestone 3개 |
-| Area anchors | Seed + graph | 12개 area | 모든 biome 정확히 2개 anchor |
-| Routes | Area anchors | MST + 우회 loop | finale 전/후 단계별 도달성 |
-| Terrain raster | Seed + biome map | 160×160 tile/area/biome layer | 군집 지형, 도로 폭, 경계 |
-| POI/slots | Graph + walkable map | 조우 공간과 의미 기반 slot | 9×9 clearing, 중복 없음 |
-| Validation/repair | 전체 world | generation report | 결정적 국소 보정 후 실패 시 중단 |
-| Seal | 검증된 world | `layoutHash` + public RLE DTO | 이후 geometry 불변 |
+플레이어의 권위 입력은 이동 또는 스킬과 대상 선택뿐입니다. 자연어 메모를 추가하더라도 규칙 판정의 권위 입력으로 사용하지 않습니다.
 
-## 플레이 흐름
+안전 이동 예시:
 
-안전 탐색과 의미 있는 턴은 분리됩니다.
+```json
+{
+  "inputType": "MOVE",
+  "destination": {
+    "areaId": "area.buffer-village",
+    "x": 12,
+    "y": 7
+  },
+  "expectedRunVersion": 27,
+  "idempotencyKey": "move-00000001"
+}
+```
 
-- 안전 탐색: `POST /v1/runs/:id/travel`, D20과 캠페인 턴을 소비하지 않음
-- 위험 진입: 안전 staging 위치까지만 이동하고 active encounter 생성
-- 의미 있는 행동: 전투, 조사, 협상, 퍼즐, 복구 또는 키보드 편집을 D20으로 판정하고 정확히 한 턴 커밋
-- 결말: 서버가 공간 관계, 제거/활성 상태, 누적 지표와 seed가 선택한 recipe subset을 평가
-- hard limit: 남은 조합이 없으면 emergency 후보로 런을 안전하게 종료
+스킬 행동 예시:
 
-### 여섯 키보드 능력
+```json
+{
+  "inputType": "USE_SKILL",
+  "skillId": "CONNECT",
+  "targetIds": [
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222"
+  ],
+  "expectedRunVersion": 27,
+  "idempotencyKey": "skill-00000001"
+}
+```
 
-| 능력 | 역할 |
-| --- | --- |
-| Move | 조우 안에서 합법적인 위치로 이동 |
-| Copy | 허용된 객체의 사본 생성 |
-| Delete | 보호되지 않은 entity 제거 |
-| Connect | 두 entity 사이 임시 관계 생성 |
-| Restore | 최근 손상·제거의 권위 스냅샷 복구 |
-| Undo | 직전 가역 결과에 보상 연산 적용 |
+안전 타일 이동, 발견된 POI 간 이동, UI 열람, 대상 확인, 경로 미리보기, 취소, 모호한 대상 재선택과 불법 입력 거절은 캠페인 턴과 D20을 소비하지 않습니다.
 
-Attack, Interact/Investigate, Negotiate, Rest는 상황 행동입니다. 자유 입력은 의도 정렬과 서술에 사용되지만 불법 대상·좌표·비용·D20 결과를 우회하지 못합니다.
+HTTP에서는 이 `MOVE` 명령을 `/travel` 경로로 전송하며, 기존 클라이언트의 `TRAVEL` 표기는 호환 별칭으로 정규화됩니다.
+
+캠페인 턴을 소비하는 행동 문맥은 정확히 네 종류입니다.
+
+- `COMBAT`
+- `INVESTIGATION`
+- `NEGOTIATION`
+- `DEPLOYMENT`
+
+키보드 스킬 `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`는 이 문맥 안에서 사용됩니다. 위험 지역 이동은 안전 구간 도착과 조우 활성화까지만 처리하고, 이후 실제 행동에서 D20과 캠페인 턴을 소비합니다.
+
+## 캠페인 골격
+
+모든 런은 다음 거시 골격을 유지합니다.
+
+1. 코드리아 추락과 관리자 키보드 각성
+2. 붕괴 현상과 첫 지역 문제 발견
+3. 관리자 권한 I 획득
+4. 관리자 권한 II 획득
+5. 붕괴 원인이 관리자 통제 시스템 내부에 있음을 확인
+6. 기술 부채와 과거 선택의 역류
+7. 관리자 권한 III 획득
+8. 루트 시스템 진입
+9. 최종 배치와 결말
+
+이 골격은 특정 지역의 고정 장면이나 하나의 보스와 1:1로 묶이지 않습니다. 방문 순서, NPC, 사건, 권한 획득 문맥과 구체적 인과관계는 Seed와 선택에 따라 달라집니다.
+
+## 선택과 기술 부채
+
+서버와 PostgreSQL은 다음 권위 상태를 저장합니다.
+
+- `majorChoices`
+- `regionOutcomes`
+- `npcRelationships`
+- `canonicalFacts`
+- `unresolvedHooks`
+- `abilityUsageHistory`
+- `adminAccessAcquisitionHistory`
+- `technicalDebtEntries`
+
+기술 부채는 합계와 원장을 함께 유지합니다. 원장에는 스킬, 대상, 강제 override, 증감량, 지연 결과와 해결 시점이 기록됩니다. 일반 성공만으로 부채가 자동 감소하지 않으며, 복구·책임 수용·자원 지불·NPC 협력처럼 명시적인 해결 행동이 필요합니다.
+
+선택은 즉시 수치 변화, 중기 NPC·지역 반응, 장기 레거시 성채·루트 시스템·에필로그의 세 단계에서 회수됩니다.
 
 ## LLM 경계와 비용
 
-런 생성 시 `CAMPAIGN_PLAN`은 기존 beat/NPC/quest/ending/area ID를 대상으로 제목, 설명, tone, area flavor만 제안합니다. 좌표, slot 선택, asset 경로, 능력 조건, 수치, 보상과 결말 recipe는 스키마에서 거부됩니다.
+Rule Engine이 이동, 합법성, D20, 피해, 비용, 기술 부채, 관리자 권한과 결말 범주를 확정합니다. Campaign Director가 캠페인 단계, 사건 후보와 남은 턴 수렴을 관리합니다. LLM은 확정된 결과를 2~4문장의 장면, 대사, 선택 회수와 에필로그로 표현합니다.
+
+기본 모델은 [현재 공식 가격표](https://ai.google.dev/gemini-api/docs/pricing)에서 비용이 가장 낮은 안정 Flash-Lite 설정인 `gemini-2.5-flash-lite`입니다. thinking budget 0, 작은 구조화 출력, 최대 1회 repair와 deterministic fallback을 사용합니다. 모델과 키는 서버 환경 변수로만 설정하며 Unity, 응답, DB plan과 저장소에 노출하지 않습니다.
+
+`gemini-2.5-flash-lite`의 [공식 종료 예정일](https://ai.google.dev/gemini-api/docs/deprecations)은 2026-10-16입니다. 배포 환경에서는 `GEMINI_FAST_MODEL`과 `GEMINI_QUALITY_MODEL`을 `gemini-3.1-flash-lite`로 교체할 수 있습니다.
+
+## 저인지부하 UI
 
 일반 턴에서는 서버가 제공한 entity/quest/slot/asset ID 범위 안에서 대사, 사실, 소문, NPC 기억, 짧은 퀘스트 hook과 시각 의도를 제안할 수 있습니다. 모든 제안은 커밋 전에 다시 검증됩니다.
 
