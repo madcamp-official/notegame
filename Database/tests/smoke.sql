@@ -15,11 +15,21 @@ declare
     area_truth uuid := gen_random_uuid();
     area_consequence uuid := gen_random_uuid();
     area_finale uuid := gen_random_uuid();
+    poi_bug_forest uuid := gen_random_uuid();
+    poi_buffer_village uuid := gen_random_uuid();
+    poi_deadlock_city uuid := gen_random_uuid();
+    poi_data_library uuid := gen_random_uuid();
+    poi_legacy_citadel uuid := gen_random_uuid();
+    poi_root_system uuid := gen_random_uuid();
     test_slot uuid := gen_random_uuid();
     test_player uuid := gen_random_uuid();
     test_npc uuid := gen_random_uuid();
+    test_relationship uuid := gen_random_uuid();
+    test_safe_travel uuid := gen_random_uuid();
     test_plan uuid := gen_random_uuid();
     test_turn uuid := gen_random_uuid();
+    test_hook uuid := gen_random_uuid();
+    test_debt_entry uuid := gen_random_uuid();
     test_save_slot uuid := gen_random_uuid();
     test_snapshot uuid := gen_random_uuid();
     test_last_event bigint;
@@ -31,6 +41,8 @@ declare
     snapshot_checksum constant text := repeat('e', 64);
     biome_codes text[];
     role_codes text[];
+    axis_codes text[];
+    access_codes text[];
 begin
     perform set_config('app.user_id', test_owner::text, true);
 
@@ -62,6 +74,30 @@ begin
         raise exception 'the six generic progression roles are incomplete: %', role_codes;
     end if;
 
+    select array_agg(code order by display_order)
+      into axis_codes
+      from campaign_region_axis_catalog;
+    if axis_codes is distinct from array[
+        'REGION_BUG_FOREST', 'REGION_BUFFER_VILLAGE', 'REGION_DEADLOCK_CITY',
+        'REGION_DATA_GRAND_LIBRARY', 'REGION_LEGACY_CITADEL', 'REGION_ROOT_SYSTEM'
+    ]::text[] then
+        raise exception 'the six fixed Codria region axes are incomplete: %', axis_codes;
+    end if;
+
+    select array_agg(code order by access_level)
+      into access_codes
+      from admin_access_level_catalog;
+    if access_codes is distinct from array[
+        'ADMIN_ACCESS_LEVEL_1', 'ADMIN_ACCESS_LEVEL_2', 'ADMIN_ACCESS_LEVEL_3'
+    ]::text[] then
+        raise exception 'the three fixed administrator access levels are incomplete: %', access_codes;
+    end if;
+
+    if (select display_name_ko from product_identity_catalog where code = 'PROTAGONIST_NUPJUKYI') <> '넙죽이'
+       or not exists (select 1 from product_identity_catalog where code = 'WORLD_CODRIA') then
+        raise exception 'the fixed Codria and Nupjukyi product identities are incomplete';
+    end if;
+
     insert into profiles (id, display_name, locale)
     values (test_owner, 'Generative Schema Smoke', 'ko-KR');
 
@@ -69,9 +105,9 @@ begin
         id, owner_id, title, world_seed, turn_limit, status,
         ruleset_version, premise, settings, created_at, updated_at
     ) values (
-        test_campaign, test_owner, 'Generated Boundary Smoke', 20260717, 40, 'active',
-        'generative-run.v1', 'A seed-defined world whose choices converge within forty turns.',
-        '{"templateId":"keyboard-wanderer-generative","sealedWorld":true}'::jsonb,
+        test_campaign, test_owner, '넙죽이와 붕괴한 코드 왕국', 20260717, 40, 'active',
+        'codria-campaign.v4', '넙죽이가 코드리아의 관리자 권한 세 단계를 획득한다.',
+        '{"templateId":"codria-v4","sealedWorld":true,"worldContractCode":"WORLD_CODRIA"}'::jsonb,
         test_time, test_time
     );
 
@@ -83,7 +119,7 @@ begin
         generation_metadata, generated_at, created_at, updated_at
     ) values (
         test_world, test_campaign, test_owner, 'run', test_run,
-        'keyboard-wanderer-world.v6', expected_layout_hash, 160, 160,
+        'codria-world.v7', expected_layout_hash, 160, 160,
         '{"format":"generative-smoke-v5","coordinateSpace":"world_global","sealed":true}'::jsonb,
         '{"generatedOnce":true,"placementSlotsSealed":true,"routesSealed":true}'::jsonb,
         test_time, test_time, test_time
@@ -104,28 +140,28 @@ begin
         origin_x, origin_y, width, height, entry_x, entry_y, exit_x, exit_y,
         layout_hash, tile_json, created_at, updated_at
     ) values
-    (area_arrival, test_world, test_region, test_owner, 'area.arrival', 'Arrival Verge', 'campaign_region',
+    (area_arrival, test_world, test_region, test_owner, 'area.bug-forest', '버그 숲', 'campaign_region',
      0, 0, 20, 20, 1, 1, 18, 18, repeat('2', 64), '{"biomeId":"temperate_forest_field","sealed":true}'::jsonb, test_time, test_time),
-    (area_stakes, test_world, test_region, test_owner, 'area.local-stakes', 'River Settlement', 'campaign_region',
+    (area_stakes, test_world, test_region, test_owner, 'area.buffer-village', '버퍼 마을', 'campaign_region',
      30, 0, 20, 20, 1, 1, 18, 18, repeat('3', 64), '{"biomeId":"river_wetland","sealed":true}'::jsonb, test_time, test_time),
-    (area_relationship, test_world, test_region, test_owner, 'area.relationship', 'Crossed Promises', 'campaign_region',
+    (area_relationship, test_world, test_region, test_owner, 'area.deadlock-city', '데드락 시티', 'campaign_region',
      60, 0, 20, 20, 1, 1, 18, 18, repeat('4', 64), '{"biomeId":"arid_desert","sealed":true}'::jsonb, test_time, test_time),
-    (area_truth, test_world, test_region, test_owner, 'area.hidden-truth', 'Hidden Cause', 'campaign_region',
+    (area_truth, test_world, test_region, test_owner, 'area.data-grand-library', '데이터 대도서관', 'campaign_region',
      0, 30, 20, 20, 1, 1, 18, 18, repeat('5', 64), '{"biomeId":"frost_highland","sealed":true}'::jsonb, test_time, test_time),
-    (area_consequence, test_world, test_region, test_owner, 'area.consequence', 'Returning Cost', 'campaign_region',
+    (area_consequence, test_world, test_region, test_owner, 'area.legacy-citadel', '레거시 성채', 'campaign_region',
      30, 30, 20, 20, 1, 1, 18, 18, repeat('6', 64), '{"biomeId":"subterranean_cavern","sealed":true}'::jsonb, test_time, test_time),
-    (area_finale, test_world, test_region, test_owner, 'area.final-convergence', 'Final Convergence', 'campaign_region',
+    (area_finale, test_world, test_region, test_owner, 'area.root-system', '루트 시스템', 'campaign_region',
      60, 30, 20, 20, 1, 1, 18, 18, repeat('7', 64), '{"biomeId":"ancient_ruins","sealed":true}'::jsonb, test_time, test_time);
 
     insert into world_area_descriptors (
         area_id, world_id, owner_id, area_key, biome_id, campaign_role, descriptor_json
     ) values
-    (area_arrival, test_world, test_owner, 'area.arrival', 'temperate_forest_field', 'ARRIVAL_CATALYST', '{"phase":1}'::jsonb),
-    (area_stakes, test_world, test_owner, 'area.local-stakes', 'river_wetland', 'LOCAL_STAKES', '{"phase":2}'::jsonb),
-    (area_relationship, test_world, test_owner, 'area.relationship', 'arid_desert', 'RELATIONSHIP_CONFLICT', '{"phase":3}'::jsonb),
-    (area_truth, test_world, test_owner, 'area.hidden-truth', 'frost_highland', 'HIDDEN_TRUTH', '{"phase":4}'::jsonb),
-    (area_consequence, test_world, test_owner, 'area.consequence', 'subterranean_cavern', 'CONSEQUENCE_RETURN', '{"phase":5}'::jsonb),
-    (area_finale, test_world, test_owner, 'area.final-convergence', 'ancient_ruins', 'FINAL_CONVERGENCE', '{"phase":6}'::jsonb);
+    (area_arrival, test_world, test_owner, 'area.bug-forest', 'temperate_forest_field', 'ARRIVAL_CATALYST', '{"axis":"REGION_BUG_FOREST"}'::jsonb),
+    (area_stakes, test_world, test_owner, 'area.buffer-village', 'river_wetland', 'LOCAL_STAKES', '{"axis":"REGION_BUFFER_VILLAGE"}'::jsonb),
+    (area_relationship, test_world, test_owner, 'area.deadlock-city', 'arid_desert', 'RELATIONSHIP_CONFLICT', '{"axis":"REGION_DEADLOCK_CITY"}'::jsonb),
+    (area_truth, test_world, test_owner, 'area.data-grand-library', 'frost_highland', 'HIDDEN_TRUTH', '{"axis":"REGION_DATA_GRAND_LIBRARY"}'::jsonb),
+    (area_consequence, test_world, test_owner, 'area.legacy-citadel', 'subterranean_cavern', 'CONSEQUENCE_RETURN', '{"axis":"REGION_LEGACY_CITADEL"}'::jsonb),
+    (area_finale, test_world, test_owner, 'area.root-system', 'ancient_ruins', 'FINAL_CONVERGENCE', '{"axis":"REGION_ROOT_SYSTEM"}'::jsonb);
 
     insert into area_connections (
         owner_id, world_id, from_area_id, to_area_id,
@@ -134,20 +170,43 @@ begin
     (test_owner, test_world, area_arrival, area_stakes, 18, 18, 1, 1, 'bidirectional', 'safe_route',
      '{"routeId":"route.arrival.stakes","gated":false,"requirements":{"requiresProgressLevel":0,"requiresProgressTokens":[]},"coordinateSpace":"area_local"}'::jsonb),
     (test_owner, test_world, area_consequence, area_finale, 18, 18, 1, 1, 'bidirectional', 'safe_route',
-     '{"routeId":"route.consequence.finale","gated":true,"requirements":{"requiresProgressLevel":3,"requiresProgressTokens":["MILESTONE_TOKEN_1","MILESTONE_TOKEN_2","MILESTONE_TOKEN_3"]},"coordinateSpace":"area_local"}'::jsonb);
+     '{"routeId":"route.legacy.root","gated":true,"requirements":{"requiresAdminAccess":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"requiresEssentialClue":true},"coordinateSpace":"area_local"}'::jsonb);
 
     insert into world_pois (
-        world_id, owner_id, area_id, poi_key, poi_kind, display_name,
+        id, world_id, owner_id, area_id, poi_key, poi_kind, display_name,
         x, y, biome_id, campaign_role, visual_intent,
         is_gated, gate_requirements, tags
     ) values
-    (test_world, test_owner, area_arrival, 'entry', 'entry', 'Arrival Marker',
+    (poi_bug_forest, test_world, test_owner, area_arrival, 'bug-forest-anchor', 'axis_anchor', '버그 숲 앵커',
      1, 1, 'temperate_forest_field', 'ARRIVAL_CATALYST', 'navigation anchor',
      false, '{}'::jsonb, '["entry"]'::jsonb),
-    (test_world, test_owner, area_finale, 'finale', 'finale', 'Convergence Marker',
+    (poi_buffer_village, test_world, test_owner, area_stakes, 'buffer-village-anchor', 'axis_anchor', '버퍼 마을 앵커',
+     1, 1, 'river_wetland', 'LOCAL_STAKES', 'settlement anchor',
+     false, '{}'::jsonb, '["settlement"]'::jsonb),
+    (poi_deadlock_city, test_world, test_owner, area_relationship, 'deadlock-city-anchor', 'axis_anchor', '데드락 시티 앵커',
+     1, 1, 'arid_desert', 'RELATIONSHIP_CONFLICT', 'negotiation anchor',
+     false, '{}'::jsonb, '["negotiation"]'::jsonb),
+    (poi_data_library, test_world, test_owner, area_truth, 'data-library-anchor', 'axis_anchor', '데이터 대도서관 앵커',
+     1, 1, 'frost_highland', 'HIDDEN_TRUTH', 'investigation anchor',
+     false, '{}'::jsonb, '["essential-clue"]'::jsonb),
+    (poi_legacy_citadel, test_world, test_owner, area_consequence, 'legacy-citadel-anchor', 'axis_anchor', '레거시 성채 앵커',
+     1, 1, 'subterranean_cavern', 'CONSEQUENCE_RETURN', 'technical debt anchor',
+     false, '{}'::jsonb, '["technical-debt"]'::jsonb),
+    (poi_root_system, test_world, test_owner, area_finale, 'root-system-anchor', 'axis_anchor', '루트 시스템 앵커',
      1, 1, 'ancient_ruins', 'FINAL_CONVERGENCE', 'sealed finale anchor',
-     true, '{"requiresProgressLevel":3,"requiresProgressTokens":["MILESTONE_TOKEN_1","MILESTONE_TOKEN_2","MILESTONE_TOKEN_3"]}'::jsonb,
+     true, '{"requiresAdminAccess":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"requiresEssentialClue":true}'::jsonb,
      '["finale","gated"]'::jsonb);
+
+    insert into world_region_axis_bindings (
+        world_id, owner_id, region_axis_code, area_id, terrain_biome_id,
+        primary_poi_id, binding_seed, binding_metadata
+    ) values
+    (test_world, test_owner, 'REGION_BUG_FOREST', area_arrival, 'temperate_forest_field', poi_bug_forest, 101, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_BUFFER_VILLAGE', area_stakes, 'river_wetland', poi_buffer_village, 102, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_DEADLOCK_CITY', area_relationship, 'arid_desert', poi_deadlock_city, 103, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_DATA_GRAND_LIBRARY', area_truth, 'frost_highland', poi_data_library, 104, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_LEGACY_CITADEL', area_consequence, 'subterranean_cavern', poi_legacy_citadel, 105, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_ROOT_SYSTEM', area_finale, 'ancient_ruins', poi_root_system, 106, '{"seedBound":true}'::jsonb);
 
     insert into placement_slots (
         id, slot_key, owner_id, world_id, area_id, slot_kind,
@@ -165,7 +224,7 @@ begin
         required_ability, target_turn, display_order, created_at, updated_at
     ) values (
         test_campaign, test_owner, 'beat.arrival_catalyst', 'The First Witness',
-        'Confirm one bounded local stake.', 'interact', 1, 0, test_time, test_time
+        'Confirm one bounded local stake.', 'connect', 1, 0, test_time, test_time
     );
 
     insert into runs (
@@ -176,7 +235,9 @@ begin
         test_run, test_campaign, test_world, test_owner, 'playing', 1,
         0, 40, 8, 0, area_arrival,
         jsonb_build_object(
-            'campaignTitle', 'Generated Boundary Smoke',
+            'campaignTitle', '넙죽이와 붕괴한 코드 왕국',
+            'worldContractCode', 'WORLD_CODRIA',
+            'protagonistContractCode', 'PROTAGONIST_NUPJUKYI',
             'campaignContentHash', expected_plan_hash,
             'currentAct', 'arrival',
             'progressLevel', 0,
@@ -191,11 +252,11 @@ begin
         generation_seed, plan_hash, source, fallback_used, validation_status,
         validation_report, validation_errors, plan_json, validated_at, created_at
     ) values (
-        test_plan, test_run, test_owner, test_world, 'keyboard-wanderer-run-plan.v1',
-        'keyboard-wanderer-world.v6', 20260717, expected_plan_hash, 'deterministic', false, 'validated',
+        test_plan, test_run, test_owner, test_world, 'codria-run-plan.v4',
+        'codria-world.v7', 20260717, expected_plan_hash, 'deterministic', false, 'validated',
         '{"schemaValid":true,"immutableGeometryValidated":true,"placementSlotsValidated":true}'::jsonb,
         '[]'::jsonb,
-        '{"title":"Generated Boundary Smoke","beats":["beat.arrival_catalyst"],"endings":["ENDING_EMERGENCY_WITHDRAWAL"]}'::jsonb,
+        '{"worldContractCode":"WORLD_CODRIA","protagonistContractCode":"PROTAGONIST_NUPJUKYI","regionAxes":["REGION_BUG_FOREST","REGION_BUFFER_VILLAGE","REGION_DEADLOCK_CITY","REGION_DATA_GRAND_LIBRARY","REGION_LEGACY_CITADEL","REGION_ROOT_SYSTEM"],"adminAccessCodes":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"beats":["beat.arrival_catalyst"],"endings":["ENDING_EMERGENCY_WITHDRAWAL"]}'::jsonb,
         test_time, test_time
     );
 
