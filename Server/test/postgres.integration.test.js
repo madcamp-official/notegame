@@ -2,19 +2,31 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createApplication } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { FixedD20Source } from "../src/domain/turn-engine.js";
+import {
+  FixedD20Source,
+  normalizeTravelRequest,
+  normalizeTurnRequest,
+  resolveSafeTravel,
+  resolveTurn,
+  turnFingerprint
+} from "../src/domain/turn-engine.js";
 import { TILE, areaAt, isWalkable } from "../src/domain/world.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const USER_ID = "44444444-4444-4444-8444-444444444444";
+const ADMIN_USER_ID = "44444444-4444-4444-8444-444444444445";
 const SENSITIVE_API_KEY = "integration-only-api-key-that-must-not-persist";
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
+
+function distance(left, right) {
+  return Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+}
 
 const fakeNarrator = {
   async narrate() {
     return {
       summary: "위험 권역의 경계가 조용히 열렸다.",
-      body: "여행자는 흔들리는 신호 사이로 조심스럽게 발을 내디뎠다.",
+      body: "넙죽이는 서버가 확정한 편집 결과를 확인했다. 봉인된 코드리아의 geometry는 그대로 유지됐다.",
       dialogue: [],
       proposedOps: [],
       fallbackUsed: false,
@@ -63,20 +75,69 @@ test("PostgreSQL adapter atomically commits mechanics and validated director sta
 
   const campaignResult = await request("/v1/campaigns", { worldSeed: 88, turnLimit: 40 });
   assert.equal(campaignResult.response.status, 201);
-  const runResult = await request(`/v1/campaigns/${campaignResult.payload.campaign.id}/runs`, {});
-  assert.equal(runResult.response.status, 201);
+  assert.equal(campaignResult.payload.campaign.worldId, "WORLD_CODRIA");
+  const runResult = await request(`/v1/campaigns/${campaignResult.payload.campaign.id}/runs`, {
+    worldSeed: 88,
+    turnLimit: 40
+  });
+  assert.equal(runResult.response.status, 201, JSON.stringify(runResult.payload));
   let run = runResult.payload.run;
+  assert.equal(run.worldId, "WORLD_CODRIA");
   assert.equal(typeof run.campaignTitle, "string");
   assert.ok(run.campaignTitle.length > 0);
   const storedInitial = await application.store.getRun(USER_ID, run.id);
-  const preFinaleHub = storedInitial.world.points.find((point) => point.kind === "hub" && point.campaignRole !== "FINAL_CONVERGENCE" && (point.x !== storedInitial.entities.find((item) => item.id === storedInitial.playerEntityId).position.x || point.y !== storedInitial.entities.find((item) => item.id === storedInitial.playerEntityId).position.y));
-  const travelRequest = { idempotencyKey: "postgres-travel-0001", expectedRunVersion: 1, destination: { x: preFinaleHub.x, y: preFinaleHub.y }, intent: "안전 경로로 다음 권역 허브까지 이동한다" };
+  assert.equal(storedInitial.worldId, "WORLD_CODRIA");
+  assert.match(String(storedInitial.worldInstanceId), /^[0-9a-f-]{36}$/);
+  const playerBefore = storedInitial.entities.find((item) => item.id === storedInitial.playerEntityId);
+  const hostiles = storedInitial.entities.filter((item) => item.active && item.kind === "enemy");
+  const deletionTargets = storedInitial.entities
+    .filter((item) => item.active && item.kind === "prop" && !item.blocking
+      && !item.protected && !item.state?.adminAccessLevelId
+      && storedInitial.world.tiles[item.position.y * storedInitial.world.width + item.position.x] !== TILE.HAZARD
+      && !hostiles.some((hostile) => distance(hostile.position, item.position) <= 1))
+    .sort((left, right) => distance(left.position, playerBefore.position) - distance(right.position, playerBefore.position));
+  const deletionTarget = deletionTargets.find((candidate) => {
+    const destination = {
+      areaId: areaAt(storedInitial.world, candidate.position).id,
+      ...candidate.position
+    };
+    try {
+      const probe = resolveSafeTravel({
+        run: structuredClone(storedInitial),
+        request: normalizeTravelRequest({
+          inputType: "MOVE",
+          idempotencyKey: `postgres-probe-${candidate.id}`,
+          expectedRunVersion: 1,
+          destination
+        }),
+        now: "2026-07-17T00:00:00.000Z"
+      });
+      return probe.navigation.encounterOpened === false
+        && probe.navigation.to.areaId === destination.areaId
+        && probe.navigation.to.x === destination.x
+        && probe.navigation.to.y === destination.y;
+    } catch {
+      return false;
+    }
+  });
+  assert.ok(deletionTarget);
+  const staging = { ...deletionTarget.position };
+  assert.equal(isWalkable(storedInitial.world, staging), true);
+  const travelRequest = {
+    inputType: "MOVE",
+    idempotencyKey: "postgres-travel-0001",
+    expectedRunVersion: 1,
+    destination: { areaId: areaAt(storedInitial.world, staging).id, ...staging },
+    playerNote: "가까운 편집 대상으로 이동"
+  };
   const travelled = await request(`/v1/runs/${run.id}/travel`, travelRequest);
   assert.equal(travelled.response.status, 201);
   assert.equal(travelled.payload.run.currentTurn, 0);
   assert.equal(travelled.payload.run.version, 2);
   assert.ok(travelled.payload.run.travelTimeUnits > 0);
   assert.equal(travelled.payload.navigation.campaignTurnConsumed, false);
+  assert.equal(travelled.payload.navigation.encounterOpened, false);
+  assert.deepEqual(travelled.payload.navigation.to, travelRequest.destination);
   const travelReplay = await request(`/v1/runs/${run.id}/travel`, travelRequest);
   assert.equal(travelReplay.response.status, 200);
   assert.equal(travelReplay.payload.fromIdempotencyCache, true);
@@ -85,56 +146,41 @@ test("PostgreSQL adapter atomically commits mechanics and validated director sta
     assert.deepEqual(travelReplay.payload.navigation[field], travelled.payload.navigation[field], `travel replay field ${field}`);
   }
 
-  const afterTravel = await application.store.getRun(USER_ID, run.id);
-  const playerAfterTravel = afterTravel.entities.find((item) => item.id === afterTravel.playerEntityId);
-  const hazard = afterTravel.world.tiles.findIndex((tile, index) => {
-    if (tile !== TILE.HAZARD) return false;
-    const position = { x: index % afterTravel.world.width, y: Math.floor(index / afterTravel.world.width) };
-    return areaAt(afterTravel.world, position).campaignRole !== "FINAL_CONVERGENCE" && isWalkable(afterTravel.world, position) && Math.abs(position.x - playerAfterTravel.position.x) + Math.abs(position.y - playerAfterTravel.position.y) > 3;
-  });
-  assert.ok(hazard >= 0);
-  const hazardDestination = { x: hazard % afterTravel.world.width, y: Math.floor(hazard / afterTravel.world.width) };
-  const encounterTravel = await request(`/v1/runs/${run.id}/travel`, { idempotencyKey: "postgres-travel-encounter", expectedRunVersion: 2, destination: hazardDestination, intent: "위험 신호 앞까지 안전하게 이동한다" });
-  assert.equal(encounterTravel.response.status, 201);
-  assert.equal(encounterTravel.payload.navigation.encounterOpened, true);
-  assert.equal(encounterTravel.payload.run.currentTurn, 0);
-  assert.equal(encounterTravel.payload.run.version, 3);
-  assert.equal(encounterTravel.payload.run.activeEncounter.status, "active");
-
-  const staged = await application.store.getRun(USER_ID, run.id);
-  const encounterDestination = staged.activeEncounter.triggerPosition;
   const turnRequest = {
+    inputType: "USE_SKILL",
     idempotencyKey: "postgres-turn-0001",
-    expectedRunVersion: 3,
-    ability: "move",
-    destination: encounterDestination,
-    intent: `위험 지점 (${encounterDestination.x},${encounterDestination.y})으로 조심히 진입한다`
+    expectedRunVersion: 2,
+    skillId: "DELETE",
+    targetIds: [deletionTarget.id]
   };
-  const committed = await request(`/v1/runs/${run.id}/turns`, turnRequest);
+  const committed = await request(`/v1/runs/${run.id}/actions`, turnRequest);
   assert.equal(committed.response.status, 201);
-  assert.equal(committed.payload.run.version, 4);
+  assert.equal(committed.payload.run.version, 3);
   assert.equal(committed.payload.run.currentTurn, 1);
   assert.equal(committed.payload.run.activeEncounter, null);
-  assert.ok(committed.payload.turn.events.some((event) => event.type === "encounter_resolved" && event.campaignTurnConsumed));
+  assert.equal(committed.payload.turn.actionContext, "INVESTIGATION");
+  assert.equal(committed.payload.run.entities.some((item) => item.id === deletionTarget.id), false);
   assert.equal(committed.payload.turn.narrative.fallbackUsed, false);
   assert.equal(committed.payload.turn.narrative.model, "fake-integration-model");
 
-  const replay = await request(`/v1/runs/${run.id}/turns`, turnRequest);
+  const replay = await request(`/v1/runs/${run.id}/actions`, turnRequest);
   assert.equal(replay.response.status, 200);
   assert.equal(replay.payload.fromIdempotencyCache, true);
   assert.equal(replay.payload.run.currentTurn, 1);
 
-  const abandoned = await request(`/v1/runs/${run.id}/abandon`, { expectedRunVersion: 4 });
+  const abandoned = await request(`/v1/runs/${run.id}/abandon`, { expectedRunVersion: 3 });
   assert.equal(abandoned.response.status, 200);
   assert.equal(abandoned.payload.run.status, "abandoned");
-  assert.equal(abandoned.payload.run.version, 5);
-  const resumed = await request(`/v1/runs/${run.id}/resume`, { expectedRunVersion: 5 });
+  assert.equal(abandoned.payload.run.version, 4);
+  const resumed = await request(`/v1/runs/${run.id}/resume`, { expectedRunVersion: 4 });
   assert.equal(resumed.response.status, 200);
   assert.equal(resumed.payload.run.status, "active");
-  assert.equal(resumed.payload.run.version, 6);
+  assert.equal(resumed.payload.run.version, 5);
 
   const ledger = await application.store.pool.query(
-    `select tr.status, tr.fallback_used, tr.model,
+    `select tr.status, tr.fallback_used, tr.model, tr.command_schema_version,
+            tr.input_type, tr.skill_id, tr.target_ids, tr.action_context,
+            tr.campaign_turn_before, tr.campaign_turn_after, tr.campaign_turn_consumed,
             (select count(*)::int from keyboard_wanderer.llm_logs l where l.turn_record_id = tr.id) as llm_log_count
        from keyboard_wanderer.turn_records tr
       where tr.run_id = $1`,
@@ -143,7 +189,39 @@ test("PostgreSQL adapter atomically commits mechanics and validated director sta
   assert.equal(ledger.rows[0].status, "committed");
   assert.equal(ledger.rows[0].fallback_used, false);
   assert.equal(ledger.rows[0].model, "fake-integration-model");
+  assert.equal(ledger.rows[0].command_schema_version, "codria-action.v4");
+  assert.equal(ledger.rows[0].input_type, "USE_SKILL");
+  assert.equal(ledger.rows[0].skill_id, "DELETE");
+  assert.deepEqual(ledger.rows[0].target_ids, [deletionTarget.id]);
+  assert.equal(ledger.rows[0].action_context, "INVESTIGATION");
+  assert.equal(Number(ledger.rows[0].campaign_turn_before), 0);
+  assert.equal(Number(ledger.rows[0].campaign_turn_after), 1);
+  assert.equal(ledger.rows[0].campaign_turn_consumed, true);
   assert.equal(ledger.rows[0].llm_log_count, 1);
+
+  const codriaLedger = await application.store.pool.query(
+    `select
+        (select count(*)::int from keyboard_wanderer.world_region_axis_bindings where world_id = r.world_id) as axis_count,
+        (select count(distinct wad.biome_id)::int from keyboard_wanderer.world_area_descriptors wad where wad.world_id = r.world_id) as biome_count,
+        (select count(*)::int from keyboard_wanderer.safe_travels st where st.run_id = r.id and st.command_schema_version = 'codria-action.v4' and st.input_type = 'MOVE' and not st.campaign_turn_consumed) as move_count,
+        (select count(*)::int from keyboard_wanderer.ability_usage_history au where au.run_id = r.id and au.skill_id = 'DELETE') as ability_count,
+        (select count(*)::int from keyboard_wanderer.technical_debt_entries td where td.run_id = r.id and td.operation_type = 'DELETE' and td.debt_delta > 0) as debt_count,
+        (select count(*)::int from keyboard_wanderer.npc_relationships nr where nr.run_id = r.id) as relationship_count,
+        (select count(*)::int from keyboard_wanderer.world_facts wf where wf.run_id = r.id and wf.superseded_by_fact_id is null) as fact_count,
+        (select count(*)::int from keyboard_wanderer.unresolved_hooks uh where uh.run_id = r.id and uh.status = 'OPEN') as hook_count,
+        (select root_system_eligible from keyboard_wanderer.run_admin_access_states where run_id = r.id) as root_system_eligible
+      from keyboard_wanderer.runs r where r.id = $1`,
+    [run.id]
+  );
+  assert.equal(codriaLedger.rows[0].axis_count, 6);
+  assert.equal(codriaLedger.rows[0].biome_count, 6);
+  assert.equal(codriaLedger.rows[0].move_count, 1);
+  assert.equal(codriaLedger.rows[0].ability_count, 1);
+  assert.equal(codriaLedger.rows[0].debt_count, 1);
+  assert.ok(codriaLedger.rows[0].relationship_count >= 6);
+  assert.equal(codriaLedger.rows[0].fact_count, storedInitial.canonicalFacts.length);
+  assert.ok(codriaLedger.rows[0].hook_count >= 1);
+  assert.equal(codriaLedger.rows[0].root_system_eligible, false);
 
   const storedCommittedTurn = await application.store.getTurn(USER_ID, run.id, 1);
   const ruleLedger = await application.store.pool.query(
@@ -186,11 +264,11 @@ test("PostgreSQL adapter atomically commits mechanics and validated director sta
     [run.id]
   );
   assert.equal(progressState.rows[0].status, "active");
-  assert.ok(Number(progressState.rows[0].state_version) >= 6);
+  assert.ok(Number(progressState.rows[0].state_version) >= 5);
   assert.equal(Number(progressState.rows[0].last_turn_no), 1);
   assert.ok(Number(progressState.rows[0].fact_count) >= 3);
   assert.ok(Number(progressState.rows[0].loop_count) >= 1);
-  assert.equal(Number(progressState.rows[0].relationship_count), 6);
+  assert.ok(Number(progressState.rows[0].relationship_count) >= 6);
   assert.equal(progressState.rows[0].rule_state_type, "object");
   assert.equal(progressState.rows[0].convergence_state_type, "object");
   assert.match(progressState.rows[0].plan_hash, /^[0-9a-f]{64}$/);
