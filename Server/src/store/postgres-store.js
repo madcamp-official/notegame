@@ -1438,6 +1438,105 @@ async function persistInitialCodriaState(client, run) {
   }
 }
 
+async function persistAbilityUsage(client, run, turn) {
+  const usage = (turn.stateDelta?.abilityUsageHistory || [])[0];
+  if (!usage) throw new AppError(500, "ABILITY_USAGE_HISTORY_MISSING", "A committed Codria skill action requires normalized usage history.");
+  await client.query(
+    `insert into ${SCHEMA}.ability_usage_history
+       (id, run_id, owner_id, turn_id, turn_no, skill_id, action_context,
+        target_ids, outcome, effects_json, created_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11)`,
+    [usage.id, run.id, run.ownerId, turn.id, turn.turnNo, usage.skillId,
+      usage.actionContext, JSON.stringify(usage.targetIds || []), usage.outcome,
+      JSON.stringify({ d20: usage.d20, forcedOverride: usage.forcedOverride === true,
+        eventTypes: [...new Set((turn.events || []).map((event) => event.type))] }), turn.createdAt]
+  );
+}
+
+async function persistAdminAccessHistory(client, run, turn, areaIds) {
+  for (const acquisition of turn.stateDelta?.adminAccessHistory || []) {
+    const areaId = areaIds.get(acquisition.areaId);
+    if (!areaId) throw new AppError(500, "ADMIN_ACCESS_AREA_MISSING", "Administrator access history references no persisted sealed area.");
+    await client.query(
+      `insert into ${SCHEMA}.admin_access_acquisition_history
+         (id, run_id, owner_id, world_id, turn_id, turn_no, admin_access_code,
+          region_axis_code, area_id, action_context, acquisition_method, skill_id,
+          evidence, acquired_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14)`,
+      [acquisition.id, run.id, run.ownerId, databaseWorldId(run), turn.id, turn.turnNo,
+        acquisition.accessLevelId, acquisition.regionAxis, areaId, acquisition.actionContext,
+        `${acquisition.skillId}:${acquisition.actionContext}:${acquisition.candidateId}`,
+        acquisition.skillId, JSON.stringify({ candidateId: acquisition.candidateId,
+          targetIds: acquisition.targetIds || [], domainAreaId: acquisition.areaId }), turn.createdAt]
+    );
+  }
+}
+
+function choiceKeyPart(value) {
+  return String(value || "unknown").toLowerCase().replace(/[^a-z0-9_.:-]+/g, "-");
+}
+
+async function persistMajorChoices(client, run, turn) {
+  for (const choice of turn.stateDelta?.majorChoices || []) {
+    const choiceKey = `choice.${choiceKeyPart(choice.type)}.${choiceKeyPart(choice.accessLevelId || choice.id)}`;
+    const optionKey = `path.${choiceKeyPart(choice.regionAxis)}.${choiceKeyPart(choice.skillId)}.${choiceKeyPart(choice.actionContext)}`;
+    await client.query(
+      `insert into ${SCHEMA}.major_choices
+         (id, run_id, owner_id, turn_id, turn_no, choice_key, option_key,
+          region_axis_code, action_context, immediate_effects, long_term_tags, created_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12)`,
+      [choice.id, run.id, run.ownerId, turn.id, turn.turnNo, choiceKey, optionKey,
+        choice.regionAxis || null, choice.actionContext || turn.actionContext,
+        JSON.stringify({ adminAccessCode: choice.accessLevelId || null, skillId: choice.skillId || turn.request.skillId }),
+        JSON.stringify(["admin_access_path", choice.regionAxis, choice.accessLevelId].filter(Boolean)), turn.createdAt]
+    );
+  }
+}
+
+async function persistRegionOutcomes(client, run, turn) {
+  for (const outcome of turn.stateDelta?.regionOutcomes || []) {
+    const sequence = await client.query(
+      `select coalesce(max(sequence_no), 0) + 1 as sequence_no
+         from ${SCHEMA}.region_outcomes where run_id = $1 and owner_id = $2 and region_axis_code = $3`,
+      [run.id, run.ownerId, outcome.regionAxis]
+    );
+    await client.query(
+      `insert into ${SCHEMA}.region_outcomes
+         (run_id, owner_id, turn_id, turn_no, region_axis_code, sequence_no,
+          outcome_key, outcome_status, outcome_state, ending_tags, created_at)
+       values ($1,$2,$3,$4,$5,$6,$7,'STABILIZED',$8::jsonb,$9::jsonb,$10)`,
+      [run.id, run.ownerId, turn.id, turn.turnNo, outcome.regionAxis,
+        Number(sequence.rows[0].sequence_no), choiceKeyPart(outcome.outcome || "region_updated"),
+        JSON.stringify(outcome), JSON.stringify([outcome.regionAxis, outcome.accessLevelId].filter(Boolean)), turn.createdAt]
+    );
+  }
+}
+
+async function persistRelationshipHistory(client, beforeRun, run, turn) {
+  for (const relationship of turn.stateDelta?.relationships || []) {
+    const before = (beforeRun.npcRelationships || []).find((candidate) => candidate.npcId === relationship.npcId)
+      || { affinity: 0, trust: 0, fear: 0, stance: "neutral" };
+    const affinityDelta = Number(relationship.affinity || 0) - Number(before.affinity || 0);
+    const trustDelta = Number(relationship.trust || 0) - Number(before.trust || 0);
+    const fearDelta = Number(relationship.fear || 0) - Number(before.fear || 0);
+    const relationshipId = await upsertRelationshipProjection(client, run, relationship, turn.createdAt);
+    if (affinityDelta === 0 && trustDelta === 0 && fearDelta === 0) continue;
+    await client.query(
+      `insert into ${SCHEMA}.npc_relationship_history
+         (relationship_id, run_id, owner_id, turn_id, turn_no,
+          affinity_delta, trust_delta, fear_delta,
+          affinity_after, trust_after, fear_after, relationship_state_after,
+          reason_code, context, created_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15)`,
+      [relationshipId, run.id, run.ownerId, turn.id, turn.turnNo,
+        affinityDelta, trustDelta, fearDelta, Number(relationship.affinity || 0),
+        Number(relationship.trust || 0), Number(relationship.fear || 0),
+        relationship.stance || "neutral", "DIRECTOR_CONFIRMED_CHANGE",
+        JSON.stringify({ actionContext: turn.actionContext, skillId: turn.request.skillId }), turn.createdAt]
+    );
+  }
+}
+
 async function synchronizeReversibleActions(client, run, turn) {
   for (const entry of run.reversibleLedger) {
     await client.query(
