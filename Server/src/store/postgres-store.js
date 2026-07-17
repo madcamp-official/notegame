@@ -1,6 +1,7 @@
 import { AppError, notFound } from "../errors.js";
 import { clone, fingerprint } from "../domain/serialization.js";
 import { areaAt } from "../domain/world.js";
+import { WORLD_CODRIA } from "../domain/codria-contract.js";
 
 const SCHEMA = "keyboard_wanderer";
 
@@ -17,7 +18,7 @@ export async function createPostgresStore({ connectionString, ssl = false } = {}
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    application_name: "keyboard-wanderer-server"
+    application_name: "codria-v4-game-server"
   });
   return new PostgresStore(pool);
 }
@@ -36,7 +37,7 @@ export class PostgresStore {
     return this.withOwner(campaign.ownerId, async (client) => {
       await client.query(
         `insert into ${SCHEMA}.profiles (id, display_name)
-         values ($1, 'Keyboard Wanderer Player')
+         values ($1, 'Codria Player')
          on conflict (id) do nothing`,
         [campaign.ownerId]
       );
@@ -62,7 +63,7 @@ export class PostgresStore {
         `insert into ${SCHEMA}.regions
            (world_id, owner_id, region_key, display_name, region_kind, origin_x, origin_y,
             width, height, layout_hash, map_json, created_at, updated_at)
-         values ($1, $2, 'world.main', 'Keyboard Wanderer World', 'overworld', 0, 0,
+         values ($1, $2, 'world.main', '코드리아', 'overworld', 0, 0,
                  $3, $4, $5, $6::jsonb, $7, $7)
          returning id`,
         [worldId, campaign.ownerId, campaign.world.width, campaign.world.height,
@@ -140,7 +141,8 @@ export class PostgresStore {
       }
       return {
         ...campaign,
-        worldId,
+        worldId: campaign.worldId || WORLD_CODRIA,
+        worldInstanceId: worldId,
         areaId: entryAreaId,
         status: campaignResult.rows[0].status
       };
@@ -174,7 +176,7 @@ export class PostgresStore {
         metadata: worldGenerationMetadata(run)
       });
       const worldId = persistedWorld.worldId;
-      const databaseRun = { ...run, worldId };
+      const databaseRun = { ...run, worldId: run.worldId || WORLD_CODRIA, worldInstanceId: worldId };
       const areaRows = persistedWorld.areaRows;
       const player = run.entities.find((item) => item.id === run.playerEntityId && item.active);
       if (!player) throw new AppError(500, "PLAYER_MISSING", "The initial run has no active player entity.");
@@ -212,6 +214,7 @@ export class PostgresStore {
       }
 
       const storedRun = { ...databaseRun, activeAreaId: areaId };
+      await persistInitialCodriaState(client, storedRun);
       await insertInitialProgressState(client, storedRun, generationPlanId);
       await bindInitialEntitiesToSlots(client, storedRun, generationPlanId, persistedWorld.slotIds);
       await insertRunGenerationLog(client, storedRun, plan);
@@ -269,14 +272,26 @@ export class PostgresStore {
       await updateRunRow(client, committed.run);
       await client.query(`update ${SCHEMA}.entity_positions set area_id = $4, x = $5, y = $6, revision = revision + 1, updated_at = $7 where entity_id = $1 and owner_id = $2 and run_id = $3 and removed_at is null`, [committed.run.playerEntityId, ownerId, runId, activePlacement.placement.areaId, activePlacement.placement.localPosition.x, activePlacement.placement.localPosition.y, committed.run.updatedAt]);
       const requestedDestination = committed.navigation.requestedDestination || committed.navigation.to;
+      const requestedPlacement = databasePlacementForGlobalPosition(
+        committed.run, activePlacement.areaRows, requestedDestination
+      );
+      const travelContext = {
+        requestedAreaKey: requestedPlacement.areaKey,
+        enteredAreaKey: activePlacement.placement.areaKey,
+        enteredRegionAxis: areaAt(committed.run.world, committed.navigation.to).regionAxis,
+        encounterOpened: Boolean(committed.navigation.encounterOpened),
+        layoutHash: committed.run.world.layoutHash,
+        rulesAuthority: "server"
+      };
       await client.query(
         `insert into ${SCHEMA}.safe_travels
            (id, run_id, owner_id, sequence_no, idempotency_key, request_fingerprint, expected_run_version,
             committed_run_version, from_x, from_y, requested_x, requested_y, to_x, to_y, path_cost,
             travel_time_units, cumulative_travel_time_units, entered_area_key, entered_biome_id, campaign_role,
             traversed_area_ids, reached_poi_ids, path_json, encounter_opened, encounter_json,
-            campaign_turn_consumed, campaign_turn_before, campaign_turn_after, layout_hash, created_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25::jsonb,$26,$27,$28,$29,$30)`,
+            campaign_turn_consumed, campaign_turn_before, campaign_turn_after, layout_hash, created_at,
+            command_schema_version, input_type, world_id, destination_area_id, turn_context)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb)`,
         [committed.navigation.id, runId, ownerId, committed.navigation.sequence, idempotencyKey,
           requestFingerprint, expectedRunVersion, committed.run.version, committed.navigation.from.x,
           committed.navigation.from.y, requestedDestination.x, requestedDestination.y,
@@ -288,7 +303,9 @@ export class PostgresStore {
           JSON.stringify(committed.navigation.reachedPoiIds || []), JSON.stringify(committed.navigation.path || []),
           Boolean(committed.navigation.encounterOpened), committed.navigation.encounter ? JSON.stringify(committed.navigation.encounter) : null,
           false, committed.navigation.campaignTurnBefore, committed.navigation.campaignTurnAfter,
-          committed.navigation.layoutHash || committed.run.world.layoutHash, committed.navigation.createdAt]
+          committed.navigation.layoutHash || committed.run.world.layoutHash, committed.navigation.createdAt,
+          "codria-action.v4", "MOVE", databaseWorldId(committed.run), requestedPlacement.areaId,
+          JSON.stringify(travelContext)]
       );
       await writeDeepSnapshot(client, committed.run, { snapshotKind: "autosave" });
       return { ...committed, fromIdempotencyCache: false };
@@ -327,17 +344,35 @@ export class PostgresStore {
       await updateRunRow(client, committed.run);
       await synchronizeEntityState(client, committed.run, committed.turn);
       const narrative = committed.turn.narrative;
+      const committedArea = areaAt(
+        committed.run.world,
+        committed.run.entities.find((item) => item.id === committed.run.playerEntityId).position
+      );
+      const targetIds = [committed.turn.request.targetEntityId, committed.turn.request.secondaryTargetEntityId].filter(Boolean);
+      const turnContext = {
+        regionAxis: committedArea.regionAxis,
+        domainAreaId: committedArea.id,
+        encounterResolved: committed.turn.events.some((event) => event.type === "encounter_resolved"),
+        playerNotePresent: Boolean(committed.turn.request.playerNote),
+        rulesAuthority: "server"
+      };
       await client.query(
         `insert into ${SCHEMA}.turn_records
            (id, run_id, owner_id, turn_no, idempotency_key, request_fingerprint,
             expected_run_version, committed_run_version, status, request_json, result_json,
-            narrative_json, fallback_used, model, received_at, completed_at, created_at, updated_at)
+            narrative_json, fallback_used, model, received_at, completed_at, created_at, updated_at,
+            command_schema_version, input_type, skill_id, target_ids, action_context, turn_context,
+            campaign_turn_before, campaign_turn_after, campaign_turn_consumed)
          values ($1, $2, $3, $4, $5, $6, $7, $8, 'committed', $9::jsonb, $10::jsonb,
-                 $11::jsonb, $12, $13, $14, $14, $14, $14)`,
+                 $11::jsonb, $12, $13, $14, $14, $14, $14,
+                 $15,$16,$17,$18::jsonb,$19,$20::jsonb,$21,$22,$23)`,
         [committed.turn.id, runId, ownerId, committed.turn.turnNo, idempotencyKey,
           requestFingerprint, expectedRunVersion, committed.turn.committedRunVersion,
           JSON.stringify(committed.turn.request), JSON.stringify(committed.turn),
-          JSON.stringify(narrative), narrative.fallbackUsed, narrative.model, committed.turn.createdAt]
+          JSON.stringify(narrative), narrative.fallbackUsed, narrative.model, committed.turn.createdAt,
+          "codria-action.v4", "USE_SKILL", committed.turn.request.skillId,
+          JSON.stringify(targetIds), committed.turn.actionContext, JSON.stringify(turnContext),
+          currentRun.currentTurn, committed.run.currentTurn, true]
       );
       await insertTurnRuleResolution(client, committed.turn);
       for (let index = 0; index < committed.turn.events.length; index += 1) {
@@ -349,6 +384,7 @@ export class PostgresStore {
           [committed.turn.id, runId, ownerId, index, eventCatalogCode(event.type), JSON.stringify(event)]
         );
       }
+      await persistCodriaTurnHistory(client, currentRun, committed.run, committed.turn);
       await synchronizeReversibleActions(client, committed.run, committed.turn);
       await client.query(
         `insert into ${SCHEMA}.llm_logs
@@ -468,7 +504,8 @@ function rowToCampaign(row) {
     turnLimit: Number(row.turn_limit),
     status: row.status,
     premise: row.premise || row.settings?.premise || "",
-    worldId: row.world_id,
+    worldId: row.settings?.worldId || row.world_map?.worldId || WORLD_CODRIA,
+    worldInstanceId: row.world_id,
     world: row.world_map,
     createdAt: timestamp(row.created_at),
     updatedAt: timestamp(row.updated_at)
@@ -516,7 +553,7 @@ async function persistWorldGraph(client, {
         width, height, layout_hash, map_json, created_at, updated_at)
      values ($1,$2,'world.main',$3,'overworld',0,0,$4,$5,$6,$7::jsonb,$8,$8)
      returning id`,
-    [worldId, ownerId, world.worldNameKo || world.worldName || "Keyboard Wanderer World",
+    [worldId, ownerId, world.worldNameKo || world.worldName || "코드리아",
       world.width, world.height, world.layoutHash,
       JSON.stringify({ pointIds: world.points.map((pointItem) => pointItem.id) }), createdAt]
   );
@@ -572,21 +609,26 @@ async function persistWorldGraph(client, {
     );
   }
 
+  const pointIds = new Map();
   for (const pointItem of world.points) {
     const pointArea = requiredWorldArea(areasByKey, pointItem.areaId);
     const pointPosition = toAreaLocalPosition(pointArea, pointItem);
     const gate = gateContractFor(pointItem);
-    await client.query(
+    const result = await client.query(
       `insert into ${SCHEMA}.world_pois
          (world_id, owner_id, area_id, poi_key, poi_kind, display_name, x, y, biome_id,
           campaign_role, visual_intent, is_gated, gate_requirements, tags)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)`,
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)
+       returning id`,
       [worldId, ownerId, databaseAreaId(areaIds, pointItem.areaId), pointItem.id, pointItem.kind,
         pointItem.nameKo || pointItem.name, pointPosition.x, pointPosition.y,
         pointItem.biomeId || pointArea.biomeId, pointItem.campaignRole || pointArea.campaignRole || null,
         visualIntentFor(pointItem), gate.gated, JSON.stringify(gate.requirements), JSON.stringify(pointItem.tags || [])]
     );
+    pointIds.set(pointItem.id, result.rows[0].id);
   }
+
+  await persistRegionAxisBindings(client, { ownerId, worldId, world, areaIds, pointIds });
 
   const slotIds = new Map();
   for (const slot of world.placementSlots) {
@@ -606,7 +648,32 @@ async function persistWorldGraph(client, {
     );
     slotIds.set(slot.id, result.rows[0].id);
   }
-  return { worldId, regionId, areaIds, areaRows, slotIds };
+  return { worldId, regionId, areaIds, areaRows, pointIds, slotIds };
+}
+
+async function persistRegionAxisBindings(client, { ownerId, worldId, world, areaIds, pointIds }) {
+  const roles = Array.isArray(world.campaignRegionRoles) ? world.campaignRegionRoles : [];
+  if (roles.length !== 6 || new Set(roles.map((role) => role.regionAxis)).size !== 6) {
+    throw new AppError(500, "WORLD_REGION_AXIS_BINDINGS_INVALID", "A sealed Codria world requires exactly six semantic region-axis bindings.");
+  }
+  for (const role of roles) {
+    const area = world.areas.find((candidate) => candidate.campaignRole === role.id);
+    const primaryPoint = world.points.find((candidate) => candidate.id === `poi.${role.id.toLowerCase()}`)
+      || world.points.find((candidate) => candidate.campaignRole === role.id);
+    const areaId = area ? areaIds.get(area.id) : null;
+    const primaryPoiId = primaryPoint ? pointIds.get(primaryPoint.id) : null;
+    if (!area || !areaId || !primaryPoint || !primaryPoiId) {
+      throw new AppError(500, "WORLD_REGION_AXIS_BINDING_INCOMPLETE", `Region axis ${String(role.regionAxis)} has no sealed area and primary POI.`);
+    }
+    await client.query(
+      `insert into ${SCHEMA}.world_region_axis_bindings
+         (world_id, owner_id, region_axis_code, area_id, terrain_biome_id,
+          primary_poi_id, binding_seed, binding_metadata)
+       values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+      [worldId, ownerId, role.regionAxis, areaId, area.biomeId, primaryPoiId, world.worldSeed,
+        JSON.stringify({ campaignRole: role.id, domainAreaId: area.id, domainPoiId: primaryPoint.id, layoutHash: world.layoutHash, sealed: true })]
+    );
+  }
 }
 
 function routesForPersistence(world, entry) {
@@ -631,7 +698,7 @@ function routesForPersistence(world, entry) {
         gated: area.campaignRole === "FINAL_CONVERGENCE",
         requiresProgressLevel: area.campaignRole === "FINAL_CONVERGENCE" ? 3 : 0,
         requiresProgressTokens: area.campaignRole === "FINAL_CONVERGENCE"
-          ? ["MILESTONE_TOKEN_1", "MILESTONE_TOKEN_2", "MILESTONE_TOKEN_3"]
+          ? ["ADMIN_ACCESS_LEVEL_1", "ADMIN_ACCESS_LEVEL_2", "ADMIN_ACCESS_LEVEL_3"]
           : []
       }));
 
@@ -805,7 +872,12 @@ function campaignSettingsForDatabase(campaign) {
 function runStateForDatabase(run) {
   const state = clone(run);
   delete state.resolutionSeed;
+  delete state.worldInstanceId;
   return state;
+}
+
+function databaseWorldId(run) {
+  return run.worldInstanceId || run.worldId;
 }
 
 function runGenerationPlanForDatabase(run) {
@@ -818,7 +890,7 @@ function runGenerationPlanForDatabase(run) {
     throw new AppError(500, "RUN_PLAN_HASH_INVALID", "The validated run campaign plan has no canonical SHA-256 content hash.");
   }
   return {
-    schemaVersion: "keyboard-wanderer-run-plan.v1",
+    schemaVersion: "codria-run-plan.v4",
     planHash,
     source,
     provider: modelEnriched ? "google-gemini" : null,
@@ -945,7 +1017,7 @@ async function bindInitialEntitiesToSlots(client, run, generationPlanId, slotIds
           binding_kind, plan_node_key, entity_id, status, activation_turn, binding_payload,
           created_at, updated_at)
        values ($1,$2,$3,$4,$5,$6,'entity',$7,$8,'active',0,$9::jsonb,$10,$10)`,
-      [run.id, run.ownerId, run.worldId, generationPlanId, slotId, `entity:${gameEntity.id}`,
+      [run.id, run.ownerId, databaseWorldId(run), generationPlanId, slotId, `entity:${gameEntity.id}`,
         planNodeKey, gameEntity.id,
         JSON.stringify({ domainSlotId, assetId: gameEntity.assetId, geometryOwnedByWorld: true }), run.createdAt]
     );
@@ -984,7 +1056,7 @@ async function writeDeepSnapshot(client, run, { generationPlanId = null, snapsho
      on conflict (owner_id, campaign_id, slot_no) do update
        set title = excluded.title, updated_at = excluded.updated_at
      returning id`,
-    [run.ownerId, run.campaignId, `${run.campaignTitle || "Keyboard Wanderer"} · 자동 저장`, run.updatedAt || run.createdAt]
+    [run.ownerId, run.campaignId, `${run.campaignTitle || "넙죽이와 붕괴한 코드 왕국"} · 자동 저장`, run.updatedAt || run.createdAt]
   );
   let lastTurnRecordId = null;
   let lastEventId = null;
@@ -1007,10 +1079,10 @@ async function writeDeepSnapshot(client, run, { generationPlanId = null, snapsho
        (slot_id, owner_id, campaign_id, run_id, run_version, current_turn, schema_version,
         state_json, checksum_sha256, snapshot_kind, world_id, generation_plan_id, plan_hash,
         layout_hash, last_turn_record_id, last_event_id, resume_metadata, created_at)
-     values ($1,$2,$3,$4,$5,$6,'keyboard-wanderer-save.v3',$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)
+     values ($1,$2,$3,$4,$5,$6,'codria-save.v4',$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)
      returning id`,
     [slotResult.rows[0].id, run.ownerId, run.campaignId, run.id, run.version, run.currentTurn,
-      JSON.stringify(state), fingerprint(state), snapshotKind, run.worldId, plan.id, plan.planHash,
+      JSON.stringify(state), fingerprint(state), snapshotKind, databaseWorldId(run), plan.id, plan.planHash,
       run.world.layoutHash, lastTurnRecordId, lastEventId,
       JSON.stringify({ authoritative: true, worldGeneratedOnce: true, secretFieldsRedacted: ["resolutionSeed"] }),
       run.updatedAt || run.createdAt]
@@ -1074,7 +1146,8 @@ function rowToRun(row) {
     ...row.world_state,
     id: row.id,
     campaignId: row.campaign_id,
-    worldId: row.world_id,
+    worldId: row.world_state.worldId || WORLD_CODRIA,
+    worldInstanceId: row.world_id,
     ownerId: row.owner_id,
     activeAreaId: row.active_area_id,
     status: databaseStatusToDomain(row.status),
@@ -1097,7 +1170,7 @@ async function insertEntity(client, { run, gameEntity, spawnedTurn, sourceEntity
        (id, owner_id, run_id, world_id, entity_kind, asset_id, display_name,
         source_entity_id, is_protected, is_cloneable, is_active, state_json, spawned_turn)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)`,
-    [gameEntity.id, run.ownerId, run.id, run.worldId, entityKindCode(gameEntity.kind),
+    [gameEntity.id, run.ownerId, run.id, databaseWorldId(run), entityKindCode(gameEntity.kind),
       gameEntity.assetId, gameEntity.name, sourceEntityId, gameEntity.protected,
       gameEntity.cloneable, gameEntity.active,
       JSON.stringify({ blocking: gameEntity.blocking, ...gameEntity.state }), spawnedTurn]
@@ -1117,13 +1190,13 @@ async function insertEntity(client, { run, gameEntity, spawnedTurn, sourceEntity
     `insert into ${SCHEMA}.entity_positions
        (entity_id, owner_id, run_id, world_id, area_id, x, y, blocks_movement)
      values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [gameEntity.id, run.ownerId, run.id, run.worldId, areaId,
+    [gameEntity.id, run.ownerId, run.id, databaseWorldId(run), areaId,
       localPosition.x, localPosition.y, gameEntity.blocking]
   );
 }
 
 async function loadDatabaseAreas(client, run) {
-  const result = await client.query(`select id, area_key, origin_x, origin_y, width, height from ${SCHEMA}.areas where world_id = $1 and owner_id = $2`, [run.worldId, run.ownerId]);
+  const result = await client.query(`select id, area_key, origin_x, origin_y, width, height from ${SCHEMA}.areas where world_id = $1 and owner_id = $2`, [databaseWorldId(run), run.ownerId]);
   return result.rows;
 }
 
@@ -1243,7 +1316,7 @@ async function bindRuntimeEntityToSlot(client, run, turn, event, gameEntity) {
   const slot = await client.query(
     `select id from ${SCHEMA}.placement_slots
       where world_id = $1 and owner_id = $2 and slot_key = $3`,
-    [run.worldId, run.ownerId, event.slotId]
+    [databaseWorldId(run), run.ownerId, event.slotId]
   );
   if (slot.rowCount !== 1) throw new AppError(500, "BOUND_SLOT_MISSING", "A validated runtime binding references no persisted world slot.");
   const plan = await generationPlanIdentity(client, run);
@@ -1252,7 +1325,7 @@ async function bindRuntimeEntityToSlot(client, run, turn, event, gameEntity) {
        (run_id, owner_id, world_id, generation_plan_id, slot_id, binding_key, binding_kind,
         plan_node_key, entity_id, status, activation_turn, binding_payload, created_at, updated_at)
      values ($1,$2,$3,$4,$5,$6,'entity',$7,$8,'active',$9,$10::jsonb,$11,$11)`,
-    [run.id, run.ownerId, run.worldId, plan.id, slot.rows[0].id, `entity:${gameEntity.id}`,
+    [run.id, run.ownerId, databaseWorldId(run), plan.id, slot.rows[0].id, `entity:${gameEntity.id}`,
       String(gameEntity.state?.campaignRole || gameEntity.state?.evidenceKey || event.slotId),
       gameEntity.id, turn.turnNo,
       JSON.stringify({ domainSlotId: event.slotId, assetId: gameEntity.assetId, geometryOwnedByWorld: true }),
