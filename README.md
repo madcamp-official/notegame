@@ -149,9 +149,16 @@ Rule Engine이 이동, 합법성, D20, 피해, 비용, 기술 부채, 관리자 
 
 ## 저인지부하 UI
 
-일반 턴에서는 서버가 제공한 entity/quest/slot/asset ID 범위 안에서 대사, 사실, 소문, NPC 기억, 짧은 퀘스트 hook과 시각 의도를 제안할 수 있습니다. 모든 제안은 커밋 전에 다시 검증됩니다.
+- 메인 목표 1개
+- 보조 목표 최대 2개
+- 현재 추천 행동 2~3개
+- 동시에 강조하는 대상 최대 5개
+- 실행 전 대상, 스킬, 행동 문맥, 턴 소비 여부와 위험 표시
+- 사용할 수 없는 스킬 비활성화
+- 결과는 판정 → 상태 변화 → 2~4문장 서사 순서
+- 긴 기록은 로그와 저널에 저장
 
-기본 모델은 `gemini-2.5-flash-lite`, thinking budget은 0, 출력은 작은 구조화 JSON, 재시도는 최대 1회입니다. 캠페인 preview에는 LLM 비용이 발생하지 않습니다.
+현재 전용 넙죽이 픽셀 스프라이트가 저장소에 없으므로, NinjaAdventure `NinjaGreen`을 넙죽이의 임시 렌더링 에셋으로 사용합니다. 도메인 ID와 표시 이름은 항상 넙죽이로 유지합니다.
 
 ## 빠른 실행
 
@@ -164,9 +171,9 @@ npm test
 npm start
 ```
 
-환경 변수 예시는 [`Server/.env.example`](Server/.env.example)을 참고합니다. `.env`와 API 키는 commit하지 않습니다.
+환경 변수는 [Server/.env.example](Server/.env.example)을 참고합니다. `.env`, Gemini 키와 PostgreSQL 비밀번호는 커밋하지 않습니다.
 
-### World CLI
+### World validation
 
 ```bash
 cd Server
@@ -177,49 +184,35 @@ npm run world:validate
 ### Unity
 
 1. Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 엽니다.
-2. 서버를 실행한 뒤 Play Mode에서 새 런을 시작합니다.
-3. NinjaAdventure 경로가 바뀌었다면 **Keyboard Wanderer > Rebuild Ninja Adventure Manifest**를 실행합니다.
-4. 서버가 없으면 `seeded-local-world.v7` 로컬 generator가 같은 역할·biome·turn 계약의 별도 deterministic fallback을 만듭니다.
+2. 서버를 실행하고 Play Mode에서 새 런을 시작합니다.
+3. 서버가 없으면 로컬 deterministic fallback으로 동일한 제품 계약을 플레이합니다.
+4. NinjaAdventure 경로가 바뀌었다면 **Keyboard Wanderer > Rebuild Ninja Adventure Manifest**를 실행합니다.
 
-온라인 서버와 로컬 generator는 같은 제품 계약을 따르지만 byte-identical layout을 보장하지 않습니다.
-
-## 주요 API
+## API
 
 | Method | Path | 기능 |
 | --- | --- | --- |
-| `GET` | `/health` | 권위·storage·model profile 상태 |
-| `POST` | `/v1/campaigns` | deterministic 캠페인 preview 생성 |
-| `GET` | `/v1/campaigns` | 소유 캠페인 목록 |
-| `GET` | `/v1/campaigns/:id` | preview와 world 조회 |
-| `POST` | `/v1/campaigns/:id/runs` | 새 run world/plan 생성 및 봉인 |
+| `GET` | `/health` | 권위·storage·model profile 확인 |
+| `POST` | `/v1/campaigns` | 코드리아 캠페인 preview 생성 |
+| `POST` | `/v1/campaigns/:id/runs` | 월드 생성·검증·봉인 |
 | `GET` | `/v1/runs/:id` | 현재 run 조회 |
-| `POST` | `/v1/runs/:id/travel` | 안전 탐색 이동 |
-| `POST` | `/v1/runs/:id/turns` | 권위 턴 판정·커밋 |
-| `GET` | `/v1/runs/:id/turns` | 커밋된 턴 목록 |
-| `POST` | `/v1/runs/:id/abandon` | 런 중단 |
-| `POST` | `/v1/runs/:id/resume` | 런 재개 |
-
-런 생성 예시:
-
-```json
-{
-  "worldSeed": 20260718,
-  "turnLimit": 40,
-  "themeHint": "달빛 아래 이어지는 민담과 공동체의 약속"
-}
-```
+| `POST` | `/v1/runs/:id/travel` | 턴 미소비 안전 이동 |
+| `POST` | `/v1/runs/:id/actions` | 스킬·대상 기반 권위 행동 |
+| `GET` | `/v1/runs/:id/turns` | 커밋된 캠페인 행동 조회 |
+| `POST` | `/v1/runs/:id/resume` | snapshot 기반 재개 |
 
 ## PostgreSQL
 
-실행 가능한 스키마 권위는 [`Database/migrations`](Database/migrations)입니다. 파일을 lexical order로 적용하고 [`Database/README.md`](Database/README.md)의 owner RLS, run-scoped world, generation plan, generic progress, deep-resume 계약을 따릅니다. 별도 ERD export는 설계 참고용이며 migration 위에 덮어쓰지 않습니다.
+실행 가능한 스키마 권위는 [Database/migrations](Database/migrations)입니다. 사용자 제공 `v1.1.sql` ERD의 핵심 run/turn/world 원장을 PostgreSQL로 옮기고, 코드리아 지역 축, 관리자 권한 이력, 선택 회수와 기술 부채 원장을 순차 migration으로 확장합니다.
 
-## 완료 기준
+## 문서 권위
 
-- 동일 seed/version은 동일한 layout/content hash를 만든다.
-- 서로 다른 seed는 세계 이름, premise, NPC, quest, ending subset과 배치를 실질적으로 바꾼다.
-- 모든 런에 biome 6개, generic role 6개, milestone 3개가 존재한다.
-- 30·40·50턴 구성에서 유효한 수렴 또는 emergency 종료가 가능하다.
-- 일반 턴, Restore, Undo, 저장/재개는 sealed `layoutHash`를 바꾸지 않는다.
-- 잘못된 LLM JSON은 규칙 상태를 바꾸지 않고 deterministic fallback으로 대체된다.
-- UI는 레퍼런스 이미지의 분위기만 사용하고 해당 이미지의 콘텐츠를 복제하지 않는다.
-- 플레이어 sprite는 현재 NinjaAdventure `NinjaGreen` 자산을 사용한다.
+1. 제품 소유자의 최신 명시적 지시
+2. Notion `08_제품_계약_넙죽이와_붕괴한_코드_왕국_v4.0`
+3. 서비스 PRD와 턴 처리 워크플로우
+4. LLM 게임 디렉터 명세
+5. 구현 정합화 계획
+6. [SOURCE_OF_TRUTH.md](Assets/KeyboardWanderer/Design/SOURCE_OF_TRUTH.md)
+7. 서버 코드, PostgreSQL migration과 자동화 테스트
+
+첨부 레퍼런스 이미지는 UI의 분위기와 정보 배치만 제공합니다. 시나리오, 캐릭터, 퀘스트와 경제 구조를 복제하지 않습니다.
