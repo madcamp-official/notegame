@@ -139,116 +139,161 @@ namespace KeyboardWanderer.Gameplay
 
         private static readonly string[] RolePool =
         {
-            "도착의 의미를 해석하는 안내자", "지역의 생존을 먼저 지키려는 대표",
-            "서로 다른 해법 사이에서 흔들리는 동료", "감춰진 기록을 보존한 증언자",
-            "과거 선택의 대가를 돌려주는 귀환자", "마지막 선택을 함께 책임질 목격자"
+            "붕괴를 기록하는 디버거", "마을의 버퍼를 지키는 조정자",
+            "교착된 파벌 사이의 중재자", "손실된 데이터를 보존한 사서",
+            "레거시 책임을 증언하는 유지보수자", "최종 배치를 함께 책임질 동료"
         };
 
         private static readonly EndingCandidateState[] EndingPool =
         {
-            new EndingCandidateState("SAFE_PASSAGE", "안전한 통로", "닻과 보호막, 통로를 잇고 위협을 내려놓는다.", 6),
-            new EndingCandidateState("SHARED_GUARDIANSHIP", "공동의 수호", "보호막과 목격자의 기록을 연결해 책임을 나눈다.", 5),
-            new EndingCandidateState("FREE_WORLD", "스스로 걷는 세계", "자유의 핵을 깨우고 세계가 직접 다음 길을 고르게 한다.", 5),
-            new EndingCandidateState("MEMORY_REWEAVE", "기억 다시 잇기", "기억과 닻을 엮어 상처 난 역사를 새로운 토대로 삼는다.", 5),
-            new EndingCandidateState("THREAT_SEAL", "위협의 봉인", "위협을 제거하고 목격자의 증언으로 봉인의 조건을 남긴다.", 4)
+            new EndingCandidateState("ENDING_REWEAVE_TOGETHER", "함께 다시 잇기", "관계와 세계의 상처를 함께 엮는다.", 8),
+            new EndingCandidateState("ENDING_OPEN_FRONTIER", "열린 변경", "코드리아가 위험과 선택권을 함께 품게 한다.", 8),
+            new EndingCandidateState("ENDING_KEEP_THE_PROMISE", "약속을 지키는 이", "주민과 맺은 약속의 책임을 받아들인다.", 8),
+            new EndingCandidateState("ENDING_CUT_THE_CYCLE", "되풀이 끊기", "오래된 통제 순환을 끊고 다음 가능성을 연다.", 8),
+            new EndingCandidateState("ENDING_PRESERVE_THE_SCARS", "상처를 기억하기", "완전한 복구 대신 상처와 증언을 보존한다.", 8),
+            new EndingCandidateState("ENDING_WALK_BETWEEN_WORLDS", "세계 사이를 걷기", "두 세계를 잇는 통로와 책임을 선택한다.", 8),
+            new EndingCandidateState(FallbackEndingCode, "긴급 이탈", "생존자를 우선해 위험한 수렴점에서 이탈한다.", 0)
         };
 
         public static CampaignBlueprint Create(long worldSeed)
         {
-            Theme theme = Themes[Index(worldSeed, 11, Themes.Length)];
-            string playerName = PlayerNames[Index(worldSeed, 23, PlayerNames.Length)];
-            string worldName = theme.World;
             string signature = SeedSignature(worldSeed);
-            string title = worldName + "의 " + playerName;
-            string premise = playerName + "는(은) 키보드 모양의 세계 편집 유물과 함께 " + worldName +
-                "에 떨어진다. " + theme.Crisis + ". 이미 생성된 여섯 바이옴을 탐험해 세 개의 핵심 표식을 모으고, " +
-                "관계와 기록 속에 감춰진 진실을 확인한 뒤 마지막 수렴지에서 무엇을 남길지 결정해야 한다.";
-
             string[] npcNames = PickDistinct(worldSeed, NpcNamePool, 6, 37);
-            string[] endingCodes = PickDistinctEndingCodes(worldSeed);
-            var endings = new List<EndingCandidateState>();
-            for (int i = 0; i < endingCodes.Length; i++)
-            {
-                EndingCandidateState candidate = FindEnding(endingCodes[i]);
-                endings.Add(candidate.Clone());
-            }
-            endings.Add(new EndingCandidateState(FallbackEndingCode, "마지막 피난처",
-                "시간이 끝나기 전에 남은 존재를 지키고 변화의 확산을 멈춘다.", 0));
+            AdminAccessBinding[] bindings = CreateAccessBindings(worldSeed);
+            string premise = "현실의 개발자 넙죽이는 붕괴 중인 코드리아에 떨어져 관리자 키보드를 깨운다. " +
+                "여섯 지역 축을 잇는 경로에서 서로 다른 방식으로 관리자 권한 3단계를 획득하고, " +
+                "기술 부채와 과거 선택을 감당하며 루트 시스템의 최종 배치를 결정해야 한다.";
 
-            string[] questSeeds =
+            var beats = new List<CampaignBeatState>
             {
-                npcNames[0] + "가 " + theme.Motif + "의 첫 흔적을 숨긴 이유를 찾는다.",
-                npcNames[2] + "와 " + npcNames[3] + "의 상반된 기억 중 무엇이 지역을 살릴지 검증한다.",
-                theme.Return + "는 징조를 따라 마지막 표식의 대가를 선택한다."
+                Beat("arrival", "코드리아 추락", "관리자 키보드를 조사해 편집 범위를 확인하세요.",
+                    AbilityKind.Copy, BugForestAxis, "", ActionContext.Investigation),
+                Beat("collapse", "붕괴 징후", "현재 지역의 붕괴 원인을 조사하세요.",
+                    AbilityKind.Copy, bindings[0].SelectedRegionAxis, "", ActionContext.Investigation),
+                AccessBeat(bindings[0]),
+                AccessBeat(bindings[1]),
+                Beat("truth", "관리자 통제의 내부 오류", "데이터 대도서관의 기록으로 붕괴 원인을 확인하세요.",
+                    AbilityKind.Copy, DataGrandLibraryAxis, "", ActionContext.Investigation),
+                Beat("debt-backflow", "기술 부채의 역류", "레거시 성채 주민과 연결해 과거 편집의 책임을 회수하세요.",
+                    AbilityKind.Connect, LegacyCitadelAxis, "", ActionContext.Negotiation),
+                AccessBeat(bindings[2]),
+                Beat("root-entry", "루트 시스템 진입", "세 권한과 내부 오류 단서로 루트 게이트를 여세요.",
+                    AbilityKind.Connect, RootSystemAxis, "", ActionContext.Deployment),
+                Beat("final-deployment", "최종 배치", "통제와 자율, 오류와 공존 사이의 최종 배치를 실행하세요.",
+                    AbilityKind.Connect, RootSystemAxis, "", ActionContext.Deployment)
             };
 
             return new CampaignBlueprint(
-                CampaignId + "-" + theme.Id + "-" + signature,
-                title,
-                worldName,
-                playerName,
-                "player.ninja-green",
+                CampaignId + ":" + signature,
+                CampaignTitle,
+                WorldName,
+                ProtagonistName,
+                ProtagonistAssetId,
                 premise,
-                new[]
-                {
-                    new CampaignBeatState("arrival", "도착 · " + theme.Motif,
-                        npcNames[0] + " 또는 낯선 키보드 유물을 조사해 이 세계에서 가능한 편집의 범위를 확인하세요.", AbilityKind.Interact,
-                        true, ArrivalCatalystRole),
-                    new CampaignBeatState("adaptation", "지역의 위기 · 첫 번째 표식",
-                        theme.Crisis + ". 지역의 단서를 복사하거나 조사해 MILESTONE_TOKEN_1을 확보하세요.", AbilityKind.Copy,
-                        true, LocalStakesRole, MilestoneTokenIds[0]),
-                    new CampaignBeatState("expansion", "관계의 충돌 · 두 번째 표식",
-                        npcNames[1] + "와 " + npcNames[2] + "의 해법을 연결하거나 중재해 MILESTONE_TOKEN_2를 확보하세요.", AbilityKind.Connect,
-                        true, RelationshipConflictRole, MilestoneTokenIds[1]),
-                    new CampaignBeatState("truth", "숨은 진실 · " + theme.Truth,
-                        "주 기록 또는 증언을 확인해 소문과 확정 사실을 분리하세요.", AbilityKind.Interact,
-                        true, HiddenTruthRole),
-                    new CampaignBeatState("backflow", "돌아온 결과 · 세 번째 표식",
-                        theme.Return + ". 손상된 흔적을 복원하거나 조사해 MILESTONE_TOKEN_3을 확보하세요.", AbilityKind.Restore,
-                        true, ConsequenceReturnRole, MilestoneTokenIds[2]),
-                    new CampaignBeatState("finale", "마지막 수렴 · 남길 가치",
-                        "닻·보호막·통로·목격자·자유·위협·기억을 공간적으로 편집해 결말 레시피 하나를 완성하세요.", AbilityKind.Connect,
-                        true, FinalConvergenceRole)
-                },
-                endings,
+                beats,
+                EndingPool,
                 Rotate(worldSeed, RolePool, 59),
                 npcNames,
-                questSeeds,
+                new[]
+                {
+                    "버그 숲과 버퍼 마을 중 먼저 도울 지역을 선택한다.",
+                    "교착 도시의 충돌을 삭제할지 연결할지 결정한다.",
+                    "레거시 성채에서 기술 부채의 책임을 인수하거나 협력을 구한다."
+                },
                 FinaleComponentIds,
                 new[]
                 {
-                    playerName + "는(은) " + worldName + "에 도착한 외부 여행자다.",
-                    "키보드 유물은 이미 존재하는 대상의 상태와 관계만 편집할 수 있다.",
-                    "160x160 월드와 여섯 바이옴은 런 시작 시 한 번 생성되며 턴 중 다시 만들어지지 않는다.",
-                    "마지막 수렴지에는 세 개의 MILESTONE_TOKEN이 필요하다."
+                    "세계 ID는 WORLD_CODRIA이며 이름은 코드리아다.",
+                    "주인공 ID는 PROTAGONIST_NUPJUKYI이며 이름은 넙죽이다.",
+                    "관리자 키보드는 이미 존재하는 객체와 관계만 편집한다.",
+                    "160x160 월드 geometry는 런 시작 시 봉인되어 턴·복구·재개 이후에도 불변이다.",
+                    "ROOT_SYSTEM 진입에는 관리자 권한 3단계와 내부 오류 단서가 필요하다."
                 },
-                new[] { npcNames[4] + "의 소문: " + theme.Truth + "." },
+                new[] { npcNames[4] + "의 소문: 루트 시스템의 통제가 붕괴를 스스로 증폭시키고 있다." },
                 new[]
                 {
-                    "플레이 도중 지도 재생성", "월드에 없는 장소나 통로 생성", "죽은 핵심 NPC의 무비용 부활",
-                    "주사위·좌표·지표의 LLM 직접 변경", "세 표식 없이 마지막 수렴지 조기 진입", "확정 세계 사실의 소급 변경"
-                });
+                    "플레이 중 geometry 재생성", "LLM의 좌표·D20·권한·결말 변경",
+                    "세 관리자 권한 없이 ROOT_SYSTEM 진입", "자연어 입력을 규칙 권위로 사용",
+                    "기술 부채 원장을 남기지 않는 강제 편집"
+                },
+                bindings);
         }
 
-        private static EndingCandidateState FindEnding(string code)
+        private static CampaignBeatState Beat(string id, string title, string objective,
+            AbilityKind trigger, string regionAxis, string accessId = "",
+            ActionContext requiredContext = ActionContext.None)
         {
-            for (int i = 0; i < EndingPool.Length; i++)
-                if (string.Equals(EndingPool[i].Code, code, StringComparison.Ordinal)) return EndingPool[i];
-            return EndingPool[0];
+            return new CampaignBeatState(id, title, objective, trigger, true, regionAxis, accessId,
+                requiredContext);
         }
 
-        private static string[] PickDistinctEndingCodes(long seed)
+        private static CampaignBeatState AccessBeat(AdminAccessBinding binding)
         {
-            var indices = new int[EndingPool.Length];
-            for (int i = 0; i < indices.Length; i++) indices[i] = i;
-            Shuffle(seed, indices, 71);
-            return new[]
+            return Beat("admin-access-" + binding.Level, "관리자 권한 " + Roman(binding.Level),
+                RegionLabel(binding.SelectedRegionAxis) + "에서 " + ContextLabel(binding.SelectedContext) +
+                " 문맥의 " + binding.SelectedSkill + " 스킬로 " + binding.AccessId + "을 획득하세요.",
+                binding.SelectedSkill,
+                binding.SelectedRegionAxis, binding.AccessId, binding.SelectedContext);
+        }
+
+        private static AdminAccessBinding[] CreateAccessBindings(long seed)
+        {
+            string[][] candidates =
             {
-                EndingPool[indices[0]].Code,
-                EndingPool[indices[1]].Code,
-                EndingPool[indices[2]].Code
+                new[] { BufferVillageAxis, BugForestAxis },
+                new[] { DeadlockCityAxis, BufferVillageAxis },
+                new[] { LegacyCitadelAxis, DataGrandLibraryAxis }
             };
+            ActionContext[][] contexts =
+            {
+                new[] { ActionContext.Negotiation, ActionContext.Investigation },
+                new[] { ActionContext.Combat, ActionContext.Negotiation },
+                new[] { ActionContext.Deployment, ActionContext.Investigation }
+            };
+            AbilityKind[][] skills =
+            {
+                new[] { AbilityKind.Connect, AbilityKind.Copy },
+                new[] { AbilityKind.Delete, AbilityKind.Connect },
+                new[] { AbilityKind.Restore, AbilityKind.Copy }
+            };
+            var result = new AdminAccessBinding[3];
+            for (int i = 0; i < result.Length; i++)
+            {
+                int selected = Index(seed, 101 + i * 19, candidates[i].Length);
+                result[i] = new AdminAccessBinding(AdminAccessLevelIds[i], i + 1,
+                    candidates[i][selected], contexts[i][selected], skills[i][selected],
+                    candidates[i], contexts[i], skills[i]);
+            }
+            return result;
         }
+
+        public static string RegionLabel(string axis)
+        {
+            switch (axis)
+            {
+                case BugForestAxis: return "버그 숲";
+                case BufferVillageAxis: return "버퍼 마을";
+                case DeadlockCityAxis: return "교착 도시";
+                case DataGrandLibraryAxis: return "데이터 대도서관";
+                case LegacyCitadelAxis: return "레거시 성채";
+                case RootSystemAxis: return "루트 시스템";
+                default: return axis ?? string.Empty;
+            }
+        }
+
+        public static string ContextLabel(ActionContext context)
+        {
+            switch (context)
+            {
+                case ActionContext.Combat: return "전투";
+                case ActionContext.Investigation: return "조사";
+                case ActionContext.Negotiation: return "협상";
+                case ActionContext.Deployment: return "배치";
+                default: return "안전 이동";
+            }
+        }
+
+        private static string Roman(int level) { return level == 1 ? "I" : level == 2 ? "II" : "III"; }
 
         private static string[] PickDistinct(long seed, string[] source, int count, int salt)
         {
@@ -275,9 +320,7 @@ namespace KeyboardWanderer.Gameplay
             {
                 state = Mix(state + 0x9e3779b97f4a7c15UL);
                 int swap = (int)(state % (ulong)(i + 1));
-                int value = values[i];
-                values[i] = values[swap];
-                values[swap] = value;
+                int value = values[i]; values[i] = values[swap]; values[swap] = value;
             }
         }
 
@@ -289,10 +332,8 @@ namespace KeyboardWanderer.Gameplay
 
         private static ulong Mix(ulong value)
         {
-            value ^= value >> 30;
-            value *= 0xbf58476d1ce4e5b9UL;
-            value ^= value >> 27;
-            value *= 0x94d049bb133111ebUL;
+            value ^= value >> 30; value *= 0xbf58476d1ce4e5b9UL;
+            value ^= value >> 27; value *= 0x94d049bb133111ebUL;
             return value ^ (value >> 31);
         }
 
