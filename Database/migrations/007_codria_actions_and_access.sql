@@ -132,4 +132,55 @@ begin
 end
 $$;
 
+create view structured_action_history
+with (security_invoker = true, security_barrier = true)
+as
+select
+    id as action_id,
+    run_id,
+    owner_id,
+    command_schema_version,
+    input_type,
+    idempotency_key,
+    request_fingerprint,
+    'committed'::text as status,
+    null::text as skill_id,
+    '[]'::jsonb as target_ids,
+    jsonb_build_object('areaId', destination_area_id, 'x', requested_x, 'y', requested_y) as destination,
+    null::text as action_context,
+    turn_context,
+    expected_run_version,
+    committed_run_version,
+    campaign_turn_before,
+    campaign_turn_after,
+    campaign_turn_consumed,
+    created_at,
+    created_at as completed_at
+from safe_travels
+where command_schema_version = 'codria-action.v4'
+union all
+select
+    id,
+    run_id,
+    owner_id,
+    command_schema_version,
+    input_type,
+    idempotency_key,
+    request_fingerprint,
+    status,
+    skill_id,
+    target_ids,
+    null::jsonb,
+    action_context,
+    turn_context,
+    expected_run_version,
+    committed_run_version,
+    campaign_turn_before,
+    campaign_turn_after,
+    campaign_turn_consumed,
+    created_at,
+    completed_at
+from turn_records
+where command_schema_version = 'codria-action.v4';
+
 commit;
