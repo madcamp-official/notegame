@@ -2133,7 +2133,7 @@ namespace KeyboardWanderer.Demo
             if (id.Contains("error-core")) return Hex("db625c");
             if (id.Contains("return-gate")) return Hex("d69adb");
             if (id.Contains("survivor")) return Hex("ead6a1");
-            if (id.Contains("milestone-token")) return Hex("efc65d");
+            if (id.Contains("admin-access")) return Hex("efc65d");
             if (id.Contains("hidden-truth") || id.Contains("rune-book")) return Hex("70c7d8");
             return TintForKind(kind);
         }
@@ -2185,40 +2185,170 @@ namespace KeyboardWanderer.Demo
                 case "Delete": return _assets.DeleteIcon;
                 case "Restore": return _assets.HeartIcon;
                 case "Undo": return _assets.CopyIcon;
-                case "Attack": return _assets.DeleteIcon;
-                case "Interact": return _assets.InteractIcon;
-                case "Rest": return _assets.HeartIcon;
                 case "Connect": return _assets.CopyIcon;
                 default: return _assets.D20;
             }
         }
 
+        private string SecondaryObjectiveText(RunView view)
+        {
+            var objectives = new List<string>();
+            if (_serverOnline && _serverRun?.openLoops != null)
+            {
+                for (int i = 0; i < _serverRun.openLoops.Length && objectives.Count < 2; i++)
+                {
+                    string summary = _serverRun.openLoops[i]?.summary;
+                    if (!string.IsNullOrWhiteSpace(summary)) objectives.Add("• " + summary.Trim());
+                }
+            }
+            else
+            {
+                for (int i = 0; i < view.OpenLoops.Count && objectives.Count < 2; i++)
+                    if (!string.IsNullOrWhiteSpace(view.OpenLoops[i]) &&
+                        !string.Equals(view.OpenLoops[i], view.CurrentStoryBeatObjective, StringComparison.Ordinal))
+                        objectives.Add("• " + view.OpenLoops[i]);
+            }
+            if (objectives.Count == 0) objectives.Add("• 현재 보조 목표 없음");
+            return string.Join("\n", objectives);
+        }
+
+        private string ProgressLedgerText(RunView view)
+        {
+            int debt = _serverOnline ? _serverRun?.metrics?.technicalDebt ?? view.TechnicalDebt : view.TechnicalDebt;
+            int openDebt = _serverOnline ? _serverRun?.technicalDebtEntries?.Length ?? 0 :
+                CountUnresolvedDebt(view.TechnicalDebtEntries);
+            int choices = _serverOnline ? _serverRun?.majorChoices?.Length ?? 0 : view.MajorChoices.Count;
+            return "관리자 권한 " + AdminAccessLevel(view) + "/3\n기술 부채 " + debt +
+                   " · 미해결 " + openDebt + "\n선택 회수 대기 " + choices;
+        }
+
+        private static int CountUnresolvedDebt(IReadOnlyList<TechnicalDebtEntry> entries)
+        {
+            int count = 0;
+            for (int i = 0; i < entries.Count; i++) if (!entries[i].IsResolved) count++;
+            return count;
+        }
+
+        private AbilityKind[] RecommendedActions(RunView view)
+        {
+            var values = new List<AbilityKind>();
+            if (!_encounterMoveRequired) values.Add(AbilityKind.Move);
+            AbilityKind objectiveSkill = AbilityKind.Copy;
+            for (int i = 0; i < view.RequiredBeats.Count; i++)
+            {
+                CampaignBeatState beat = view.RequiredBeats[i];
+                if (!beat.IsCompleted && !beat.IsSkipped)
+                {
+                    objectiveSkill = beat.TriggerAbility;
+                    break;
+                }
+            }
+            if (objectiveSkill != AbilityKind.Move && !values.Contains(objectiveSkill)) values.Add(objectiveSkill);
+            AbilityKind contextual = _encounterMoveRequired ? AbilityKind.Delete : AbilityKind.Connect;
+            if (!values.Contains(contextual)) values.Add(contextual);
+            if (values.Count < 2) values.Add(AbilityKind.Restore);
+            return values.ToArray();
+        }
+
+        private string ExecutionPreview(RunView view)
+        {
+            string target = _ability == AbilityKind.Move
+                ? (_selectedCoord.HasValue ? _selectedCoord.Value.ToString() : "목적지 미선택")
+                : _ability == AbilityKind.Undo ? "직전 가역 행동"
+                : _selectedTarget.HasValue ? DisplayEntityName(view, _selectedTarget.Value) : "대상 미선택";
+            if (_ability == AbilityKind.Connect && _selectedSecondaryTarget.HasValue)
+                target += " + " + DisplayEntityName(view, _selectedSecondaryTarget.Value);
+            bool consumes = _ability != AbilityKind.Move;
+            string risk = _ability == AbilityKind.Move ? "경로상 사건 활성화 가능"
+                : _ability == AbilityKind.Delete || _ability == AbilityKind.Undo ? "높음 · 기술 부채 발생 가능"
+                : _ability == AbilityKind.Connect ? "중간 · 관계/배치 결과"
+                : "중간 · D20 결과 적용";
+            return "대상  " + target + "\n스킬  " + (_ability == AbilityKind.Move ? "MOVE" : _ability.ToString().ToUpperInvariant()) +
+                   "\n문맥  " + ContextPreview(_ability, view) + "\n턴 소비  " +
+                   (consumes ? "예 · D20 사용" : "아니오 · D20 없음") + "\n예상 위험  " + risk;
+        }
+
+        private string ContextPreview(AbilityKind ability, RunView view)
+        {
+            if (ability == AbilityKind.Move) return "안전 이동";
+            if (ability == AbilityKind.Copy) return "조사";
+            if (ability == AbilityKind.Delete) return "전투/배치";
+            if (ability == AbilityKind.Connect)
+            {
+                if (_selectedTarget.HasValue)
+                {
+                    for (int i = 0; i < view.Entities.Count; i++)
+                        if (view.Entities[i].EntityId == _selectedTarget.Value && view.Entities[i].Kind == EntityKind.Npc)
+                            return "협상";
+                }
+                return "배치";
+            }
+            return "배치";
+        }
+
+        private static string ActionContextLabel(string context)
+        {
+            switch ((context ?? string.Empty).ToUpperInvariant())
+            {
+                case "COMBAT": return "전투";
+                case "INVESTIGATION": return "조사";
+                case "NEGOTIATION": return "협상";
+                case "DEPLOYMENT": return "배치";
+                case "SAFE_TRAVEL":
+                case "MOVE": return "안전 이동";
+                default: return string.IsNullOrWhiteSpace(context) ? "--" : context;
+            }
+        }
+
+        private static string ShortNarrative(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "확정된 짧은 서사가 없습니다.";
+            string value = text.Trim();
+            int sentences = 0;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+                if (c != '.' && c != '!' && c != '?') continue;
+                sentences++;
+                if (sentences == 4) return value.Substring(0, i + 1);
+            }
+            return value;
+        }
+
+        private static string StateChangeSummary(IReadOnlyList<string> events)
+        {
+            if (events == null || events.Count == 0) return "상태 변화 없음";
+            var values = new List<string>();
+            for (int i = 0; i < events.Count && values.Count < 3; i++)
+            {
+                string label = HumanizeEvent(events[i]);
+                if (!string.IsNullOrWhiteSpace(label)) values.Add("• " + label);
+            }
+            return values.Count == 0 ? "상태 변화 없음" : string.Join("\n", values);
+        }
+
+        private static string StateChangeSummary(GameApiClient.EventSnapshot[] events)
+        {
+            if (events == null || events.Length == 0) return "상태 변화 없음";
+            var values = new List<string>();
+            for (int i = 0; i < events.Length && values.Count < 3; i++)
+            {
+                string label = HumanizeServerEvent(events[i]);
+                if (!string.IsNullOrWhiteSpace(label)) values.Add("• " + label);
+            }
+            return values.Count == 0 ? "상태 변화 없음" : string.Join("\n", values);
+        }
+
         private string SelectionHint(RunView view)
         {
             string ability = _ability.ToString();
-            if (ability == "Attack")
-                return _selectedTarget.HasValue
-                    ? DisplayEntityName(view, _selectedTarget.Value) + " · 권위 Attack 대상 선택 완료"
-                    : "인접한 적을 선택하세요. Attack은 Delete로 위장하지 않고 별도 전투 판정을 사용합니다.";
-            if (ability == "Interact")
-                return _selectedTarget.HasValue
-                    ? DisplayEntityName(view, _selectedTarget.Value) + " · 권위 Interact 대상 선택 완료"
-                    : "가까운 NPC나 소품을 선택하세요. Interact는 별도 대화·조사 판정을 사용합니다.";
-            if (ability == "Negotiate")
-                return _selectedTarget.HasValue
-                    ? DisplayEntityName(view, _selectedTarget.Value) + " · 권위 Negotiate 대상 선택 완료"
-                    : "가까운 비적대 NPC를 선택하세요. 협상은 조사와 구분된 상황 판정을 사용합니다.";
-            if (ability == "Rest")
-                return _serverOnline
-                    ? "대상 없이 권위 Rest를 제출합니다. 현재 HP와 Focus가 모두 가득 차면 서버가 거부합니다."
-                    : "대상 없이 로컬 Rest를 판정합니다. 현재 HP와 Focus가 모두 가득 차면 거부됩니다.";
             if (ability == "Undo") return "직전 가역 턴을 보상 이벤트로 되돌립니다. 턴 번호와 맵은 되감지 않습니다.";
             if (ability == "Move")
             {
                 if (_encounterMoveRequired)
                     return _selectedCoord.HasValue
                         ? "사건 배치 위치 선택 · 현재 위치에서 5칸 이내만 의미 턴 Move로 제출됩니다."
-                        : "ACTIVE ENCOUNTER · 가까운 배치 타일 또는 공격/조사/협상/휴식을 선택하세요.";
+                        : "ACTIVE ENCOUNTER · COPY/DELETE/CONNECT/RESTORE/UNDO 중 상황에 맞는 스킬을 선택하세요.";
                 return _selectedCoord.HasValue ? "안전 탐색 목적지 선택 완료 · 우선 /travel로 검증" : "맵에서 탐색 목적지를 선택하세요.";
             }
             if (ability == "Copy")
