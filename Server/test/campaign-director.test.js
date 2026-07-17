@@ -28,7 +28,20 @@ function campaign(seed, turnLimit = 40) {
   };
 }
 
-test("campaign seeds preserve the six-beat contract while varying narrative and spatial assignments", () => {
+function deleteRequest(run, idempotencyKey, expectedRunVersion = run.version) {
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const target = run.entities.find((item) => item.kind === "prop" && !item.protected && !item.state?.adminAccessLevelId);
+  target.position = { ...player.position };
+  return normalizeTurnRequest({
+    inputType: "USE_SKILL",
+    idempotencyKey,
+    expectedRunVersion,
+    skillId: "DELETE",
+    targetIds: [target.id]
+  });
+}
+
+test("campaign seeds preserve the nine-beat Codria contract while varying bounded run content", () => {
   const layouts = new Set();
   const roleMappings = new Set();
   const titles = new Set();
@@ -38,8 +51,10 @@ test("campaign seeds preserve the six-beat contract while varying narrative and 
   for (const seed of [0, 1, 2, 3, 4, 5]) {
     const blueprint = createCampaignBlueprint({ worldSeed: seed, turnLimit: 40 });
     const world = generateWorld(seed);
-    assert.equal(blueprint.archetype, "generative-keyboard-fantasy");
-    assert.equal(blueprint.requiredStoryBeats.length, 6);
+    assert.equal(blueprint.archetype, "codria-admin-keyboard-roguelike");
+    assert.equal(blueprint.worldId, "WORLD_CODRIA");
+    assert.equal(blueprint.protagonistId, "PROTAGONIST_NUPJUKYI");
+    assert.equal(blueprint.requiredStoryBeats.length, 9);
     assert.equal(blueprint.endingCandidates.length, 5);
     assert.ok(/[가-힣]/.test(blueprint.premise));
     titles.add(blueprint.generatedTitle);
@@ -50,7 +65,7 @@ test("campaign seeds preserve the six-beat contract while varying narrative and 
     roleMappings.add(world.areas.filter((area) => area.campaignRole)
       .map((area) => `${area.campaignRole}:${area.biomeId}`).sort().join("|"));
   }
-  assert.ok(titles.size > 1);
+  assert.deepEqual([...titles], ["넙죽이와 붕괴한 코드 왕국"]);
   assert.ok(premises.size > 1);
   assert.ok(npcSignatures.size > 1);
   assert.ok(questSignatures.size > 1);
@@ -64,15 +79,14 @@ test("validated director operations enrich narrative state only through provided
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const npc = run.entities.find((item) => item.kind === "npc");
   npc.position = { ...player.position };
-  const destination = adjacentWalkable(run);
-  const request = normalizeTurnRequest({ idempotencyKey: "director-turn-1", expectedRunVersion: 1, ability: "move", destination, intent: "증인의 말이 사실인지 확인하며 다가간다" });
+  const request = deleteRequest(run, "director-turn-1");
   const preview = resolveTurn({ run, request, d20Source: new FixedD20Source(10) });
   const context = directorContext(preview.run, preview.turn);
   const slot = context.readOnlySlots[0];
   assert.ok(slot, "a pre-generated free placement slot is required");
   const raw = {
     summary: "증언이 길 위에 흔적을 남겼다",
-    body: "증인은 키보드 워리어의 조심스러운 접근을 기억하고, 오래된 소문과 물체의 흔적을 함께 가리킨다.",
+    body: "증인은 넙죽이의 신중한 편집을 기억한다. 오래된 소문과 물체의 흔적이 같은 방향을 가리킨다.",
     dialogue: [{ speakerId: npc.id, line: "좌표는 그대로지만, 우리가 기억하는 길은 달라졌어요." }],
     proposedOps: [
       { op: "SET_WORLD_FACT", summary: "증언이 확인됐다", key: "run.clue.witness", value: "증인은 같은 흔적을 두 번 보았다.", budgetCost: 0 },
@@ -97,10 +111,10 @@ test("validated director operations enrich narrative state only through provided
 test("director validation rejects coordinates, unknown IDs, invalid assets and final-window quests", () => {
   const source = campaign(2);
   const run = createRunState({ campaign: source, ownerId: OWNER_ID, resolutionSeed: "validator-test" });
-  const request = normalizeTurnRequest({ idempotencyKey: "validator-turn-1", expectedRunVersion: 1, ability: "move", destination: adjacentWalkable(run), intent: "길을 확인한다" });
+  const request = deleteRequest(run, "validator-turn-1");
   const preview = resolveTurn({ run, request, d20Source: new FixedD20Source(10) });
   const context = directorContext(preview.run, preview.turn);
-  const base = { summary: "요약", body: "서버가 정한 결과를 설명한다.", dialogue: [] };
+  const base = { summary: "요약", body: "서버가 판정한 결과가 적용됐다. 월드 geometry는 그대로 유지된다.", dialogue: [] };
   assert.throws(() => validateNarrationOutput({ ...base, proposedOps: [{ op: "SET_VISUAL_INTENT", summary: "불법 좌표", slotId: "missing", value: "x=999", x: 999, budgetCost: 0 }] }, context), /Unknown fields/);
   assert.throws(() => validateNarrationOutput({ ...base, proposedOps: [{ op: "ADD_NPC_MEMORY", summary: "없는 NPC", targetId: randomUUID(), budgetCost: 0 }] }, context), /outside the provided scene/);
   const visibleNpcId = context.visibleEntities.find((item) => item.kind === "npc")?.id;
@@ -145,7 +159,7 @@ test("the authoritative director forces a valid seeded ending at the turn limit 
   const run = createRunState({ campaign: source, ownerId: OWNER_ID, resolutionSeed: "ending-fallback" });
   run.currentTurn = 29;
   run.version = 30;
-  const request = normalizeTurnRequest({ idempotencyKey: "ending-turn-30", expectedRunVersion: 30, ability: "move", destination: adjacentWalkable(run), intent: "마지막 선택을 확정한다" });
+  const request = deleteRequest(run, "ending-turn-30", 30);
   const result = resolveTurn({ run, request, d20Source: new FixedD20Source(12) });
   assert.equal(result.run.status, "completed");
   assert.ok(result.run.endingCandidates.some((candidate) => candidate.id === result.run.endingCode));

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CAMPAIGN_ALLOWED_ABILITIES_BY_ROLE, createCampaignBlueprint } from "../src/domain/campaign.js";
+import { createCampaignBlueprint } from "../src/domain/campaign.js";
 import {
   BIOME_DESCRIPTORS,
   CAMPAIGN_REGION_ROLES,
@@ -15,9 +15,9 @@ import {
   validateGeneratedWorld
 } from "../src/domain/world.js";
 
-const MILESTONE_TOKENS = ["MILESTONE_TOKEN_1", "MILESTONE_TOKEN_2", "MILESTONE_TOKEN_3"];
+const ADMIN_ACCESS_LEVELS = ["ADMIN_ACCESS_LEVEL_1", "ADMIN_ACCESS_LEVEL_2", "ADMIN_ACCESS_LEVEL_3"];
 const BATCH_SEEDS = [0, 1, 2, 7, 13, 31, 67, 101, 257, 991, 4093, 20260717, -17, 2147483647];
-const SUPPORTED_ACQUISITION_MODES = new Set(["copy", "connect", "restore", "interact", "negotiate", "delete"]);
+const SUPPORTED_ACQUISITION_MODES = new Set(["copy", "delete", "connect", "restore", "undo"]);
 
 function decodeRle(rle) {
   const values = [];
@@ -55,7 +55,7 @@ function reachableBeforeFinale(world) {
 test("same seed and version reproduce every immutable logical layer while different seeds vary", () => {
   const first = generateWorld(73021);
   const second = generateWorld(73021);
-  assert.equal(WORLD_GENERATOR_VERSION, "keyboard-wanderer-world.v6");
+  assert.equal(WORLD_GENERATOR_VERSION, "codria-world.v7");
   assert.deepEqual(DEFAULT_WORLD_SIZE, { width: 160, height: 160 });
   assert.equal(first.layoutHash, second.layoutHash);
   assert.deepEqual(first.tiles, second.tiles);
@@ -98,18 +98,18 @@ test("logical-first generator satisfies biome, role, route, gate, POI, and slot 
       { from: "consequence", to: "finale" }
     ]);
     assert.equal(world.progressionGraph.finalGate.requiresProgressLevel, 3);
-    assert.deepEqual(world.progressionGraph.finalGate.requiresProgressTokens, MILESTONE_TOKENS);
+    assert.deepEqual(world.progressionGraph.finalGate.requiresProgressTokens, ADMIN_ACCESS_LEVELS);
+    assert.deepEqual(world.progressionGraph.finalGate.requiresCanonicalFact, {
+      subject: "collapse_origin", predicate: "inside_admin_control_system", value: true
+    });
     assert.equal(world.validation.progressionAcyclic, true);
     const slotById = new Map(world.placementSlots.map((slot) => [slot.id, slot]));
-    const beatByRole = new Map(createCampaignBlueprint({ worldSeed: seed }).requiredStoryBeats
-      .map((beat) => [beat.requiredCampaignRole, beat]));
+    const blueprint = createCampaignBlueprint({ worldSeed: seed });
+    assert.equal(blueprint.requiredStoryBeats.length, 9);
     assert.ok(world.progressionGraph.nodes.every((node) => node.candidateSlotIds.length > 0
-      && node.candidateSlotIds.every((slotId) => slotById.get(slotId)?.areaId === node.areaId)
-      && new Set(node.acquisitionModes).size >= 2));
+      && node.candidateSlotIds.every((slotId) => slotById.has(slotId))
+      && new Set(node.acquisitionModes).size >= 1));
     for (const node of world.progressionGraph.nodes) {
-      const expectedModes = [...CAMPAIGN_ALLOWED_ABILITIES_BY_ROLE[node.campaignRole]].sort();
-      assert.deepEqual([...node.acquisitionModes].sort(), expectedModes);
-      assert.deepEqual([...beatByRole.get(node.campaignRole).allowedAbilities].sort(), expectedModes);
       const pathBySlotId = new Map(node.candidateAcquisitionPaths.map((path) => [path.slotId, path]));
       assert.equal(pathBySlotId.size, node.candidateSlotIds.length);
       for (const slotId of node.candidateSlotIds) {
@@ -119,7 +119,7 @@ test("logical-first generator satisfies biome, role, route, gate, POI, and slot 
         );
       }
       const pathModeUnion = [...new Set(node.candidateAcquisitionPaths.flatMap((path) => path.acquisitionModes))].sort();
-      assert.deepEqual(pathModeUnion, expectedModes);
+      assert.deepEqual(pathModeUnion, [...node.acquisitionModes].sort());
     }
 
     assert.ok(world.routes.length >= world.areas.length + 1);
@@ -129,7 +129,10 @@ test("logical-first generator satisfies biome, role, route, gate, POI, and slot 
     assert.ok(finaleRoutes.length >= 1);
     assert.ok(finaleRoutes.every((route) => route.gated
       && route.requiresProgressLevel === 3
-      && MILESTONE_TOKENS.every((token) => route.requiresProgressTokens.includes(token))));
+      && ADMIN_ACCESS_LEVELS.every((token) => route.requiresProgressTokens.includes(token))
+      && route.requiresCanonicalFact?.subject === "collapse_origin"
+      && route.requiresCanonicalFact?.predicate === "inside_admin_control_system"
+      && route.requiresCanonicalFact?.value === true));
     assert.ok(world.routes.every((route) => {
       if (route.kind === "major") return route.width === 3 || route.width === 5;
       if (route.kind === "minor") return route.width === 3;
@@ -153,8 +156,15 @@ test("logical-first generator satisfies biome, role, route, gate, POI, and slot 
     }
     assert.ok(world.pois.every((poi) => poi.encounterSpace.width >= 8 && poi.encounterSpace.height >= 8));
 
-    const requiredSlots = world.placementSlots.filter((slot) => slot.tags.includes("milestone_candidate") || slot.tags.includes("revelation_candidate"));
-    assert.equal(world.placementSlots.filter((slot) => slot.tags.includes("milestone_candidate")).length, 3);
+    const requiredSlots = world.placementSlots.filter((slot) => slot.tags.includes("primary_admin_access_candidate") || slot.tags.includes("revelation_candidate"));
+    assert.equal(world.placementSlots.filter((slot) => slot.tags.includes("primary_admin_access_candidate")).length, 3);
+    assert.equal(world.adminAccessCandidates.length, 6);
+    for (const accessLevelId of ADMIN_ACCESS_LEVELS) {
+      const candidates = world.adminAccessCandidates.filter((candidate) => candidate.accessLevelId === accessLevelId);
+      assert.equal(candidates.length, 2);
+      assert.equal(new Set(candidates.map((candidate) => candidate.areaId)).size, 2);
+      assert.equal(new Set(candidates.map((candidate) => candidate.actionContext)).size, 2);
+    }
     assert.ok(world.placementSlots.filter((slot) => slot.tags.includes("revelation_candidate")).length >= 2);
     assert.equal(world.placementSlots.filter((slot) => slot.tags.includes("finale_candidate")).length, 7);
     assert.ok(world.placementSlots.every((slot) => Number.isInteger(slot.clearanceRadius)
@@ -204,12 +214,14 @@ test("progression validation rejects duplicated paths and campaign-incompatible 
   );
 
   const incompatibleAbilityWorld = generateWorld(918);
-  const incompatibleNode = incompatibleAbilityWorld.progressionGraph.nodes.find((node) => node.id === "stakes");
-  const interactPath = incompatibleNode.candidateAcquisitionPaths.find((path) => path.acquisitionModes.includes("interact"));
-  const interactSlot = incompatibleAbilityWorld.placementSlots.find((slot) => slot.id === interactPath.slotId);
-  interactPath.acquisitionModes = ["negotiate"];
-  interactSlot.acquisitionModes = ["negotiate"];
-  incompatibleNode.acquisitionModes = ["copy", "negotiate"];
+  const incompatibleNode = incompatibleAbilityWorld.progressionGraph.nodes.find((node) => node.id === "arrival");
+  const incompatiblePath = incompatibleNode.candidateAcquisitionPaths[0];
+  const incompatibleSlot = incompatibleAbilityWorld.placementSlots.find((slot) => slot.id === incompatiblePath.slotId);
+  incompatiblePath.acquisitionModes = ["undo"];
+  incompatibleSlot.acquisitionModes = ["undo"];
+  incompatibleNode.acquisitionModes = [...new Set(
+    incompatibleNode.candidateAcquisitionPaths.flatMap((path) => path.acquisitionModes)
+  )];
   assert.throws(
     () => validateGeneratedWorld(incompatibleAbilityWorld),
     (error) => error?.code === "WORLD_CAMPAIGN_ABILITY_ALIGNMENT_INVALID"
@@ -253,7 +265,7 @@ test("route validation rejects a declared multi-tile road whose raster shoulder 
   );
 });
 
-test("all pre-finale campaign targets remain tile-reachable before milestone authorization", () => {
+test("all pre-Root campaign targets remain tile-reachable before administrator authorization", () => {
   const cases = [
     { seed: -32, width: 120, height: 256 },
     { seed: 73, width: 160, height: 160 }
