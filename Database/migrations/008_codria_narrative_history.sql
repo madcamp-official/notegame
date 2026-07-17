@@ -348,4 +348,120 @@ begin
 end
 $$;
 
+create or replace function keyboard_wanderer.enforce_unresolved_hook_transition()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+begin
+    if tg_op = 'DELETE' then
+        if pg_trigger_depth() > 1 then
+            return old;
+        end if;
+        raise exception using errcode = '55000', message = 'hook history cannot be deleted directly';
+    end if;
+
+    if tg_op = 'INSERT' then
+        if new.introduced_turn_no > 0 then
+            perform keyboard_wanderer.assert_committed_v4_action(
+                new.introduced_turn_id, new.run_id, new.owner_id, new.introduced_turn_no
+            );
+        end if;
+        if new.status <> 'OPEN' then
+            raise exception using errcode = '23514', message = 'new hooks must start open';
+        end if;
+        return new;
+    end if;
+
+    if new.id is distinct from old.id
+       or new.run_id is distinct from old.run_id
+       or new.owner_id is distinct from old.owner_id
+       or new.hook_key is distinct from old.hook_key
+       or new.region_axis_code is distinct from old.region_axis_code
+       or new.npc_actor_id is distinct from old.npc_actor_id
+       or new.introduced_turn_id is distinct from old.introduced_turn_id
+       or new.introduced_turn_no is distinct from old.introduced_turn_no
+       or new.summary is distinct from old.summary
+       or new.hook_payload is distinct from old.hook_payload
+       or new.deadline_turn is distinct from old.deadline_turn
+       or new.created_at is distinct from old.created_at then
+        raise exception using errcode = '55000', message = 'hook identity and introduction are immutable';
+    end if;
+    if old.status <> 'OPEN' or new.status not in ('RESOLVED', 'EXPIRED') then
+        raise exception using errcode = '55000', message = 'a hook may transition from open exactly once';
+    end if;
+
+    perform keyboard_wanderer.assert_committed_v4_action(
+        new.resolution_turn_id, new.run_id, new.owner_id, new.resolution_turn_no
+    );
+    return new;
+end
+$$;
+
+create or replace function keyboard_wanderer.enforce_technical_debt_entry()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+declare
+    turn_skill text;
+    resolving_turn_no smallint;
+begin
+    if tg_op = 'DELETE' then
+        if pg_trigger_depth() > 1 then
+            return old;
+        end if;
+        raise exception using errcode = '55000', message = 'technical debt entries cannot be deleted directly';
+    end if;
+
+    if tg_op = 'INSERT' then
+        perform keyboard_wanderer.assert_committed_v4_action(
+            new.turn_id, new.run_id, new.owner_id, new.turn_no
+        );
+        select skill_id
+          into strict turn_skill
+          from keyboard_wanderer.turn_records
+         where id = new.turn_id and run_id = new.run_id and owner_id = new.owner_id;
+        if turn_skill <> new.skill_id then
+            raise exception using errcode = '23514', message = 'technical debt skill must match its action';
+        end if;
+        if new.resolved_at is not null then
+            raise exception using errcode = '23514', message = 'technical debt entries cannot start resolved';
+        end if;
+        return new;
+    end if;
+
+    if new.id is distinct from old.id
+       or new.run_id is distinct from old.run_id
+       or new.owner_id is distinct from old.owner_id
+       or new.turn_id is distinct from old.turn_id
+       or new.turn_no is distinct from old.turn_no
+       or new.skill_id is distinct from old.skill_id
+       or new.operation_type is distinct from old.operation_type
+       or new.target_id is distinct from old.target_id
+       or new.forced_override is distinct from old.forced_override
+       or new.debt_delta is distinct from old.debt_delta
+       or new.deferred_consequence_type is distinct from old.deferred_consequence_type
+       or new.metadata is distinct from old.metadata
+       or new.created_at is distinct from old.created_at then
+        raise exception using errcode = '55000', message = 'technical debt cause and delta are immutable';
+    end if;
+    if old.resolved_at is not null or new.resolved_at is null then
+        raise exception using errcode = '55000', message = 'technical debt consequence may be resolved exactly once';
+    end if;
+
+    select turn_no
+      into strict resolving_turn_no
+      from keyboard_wanderer.turn_records
+     where id = new.resolved_by_turn_id and run_id = new.run_id and owner_id = new.owner_id;
+    perform keyboard_wanderer.assert_committed_v4_action(
+        new.resolved_by_turn_id, new.run_id, new.owner_id, resolving_turn_no
+    );
+    if resolving_turn_no < new.turn_no then
+        raise exception using errcode = '23514', message = 'technical debt cannot resolve before it is created';
+    end if;
+    return new;
+end
+$$;
+
 commit;
