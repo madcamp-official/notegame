@@ -215,4 +215,137 @@ create table unresolved_hooks (
 create index unresolved_hooks_owner_open_idx
     on unresolved_hooks (owner_id, run_id, deadline_turn) where status = 'OPEN';
 
+create table technical_debt_entries (
+    id uuid primary key default gen_random_uuid(),
+    run_id uuid not null,
+    owner_id uuid not null,
+    turn_id uuid not null,
+    turn_no smallint not null,
+    skill_id text not null references ability_catalog(code),
+    operation_type text not null,
+    target_id text not null,
+    forced_override boolean not null default false,
+    debt_delta integer not null,
+    deferred_consequence_type text not null,
+    resolved_at timestamptz,
+    resolved_by_turn_id uuid,
+    resolution_type text,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    constraint technical_debt_entries_run_fk
+        foreign key (run_id, owner_id) references runs(id, owner_id) on delete cascade,
+    constraint technical_debt_entries_turn_fk
+        foreign key (turn_id, owner_id, run_id)
+        references turn_records(id, owner_id, run_id) on delete cascade,
+    constraint technical_debt_entries_resolution_turn_fk
+        foreign key (resolved_by_turn_id, owner_id, run_id)
+        references turn_records(id, owner_id, run_id) on delete restrict,
+    constraint technical_debt_entries_dedupe_unique
+        unique (run_id, turn_id, operation_type, target_id, deferred_consequence_type),
+    constraint technical_debt_entries_turn check (turn_no between 1 and 50),
+    constraint technical_debt_entries_operation check (
+        operation_type in ('COPY', 'DELETE', 'CONNECT', 'RESTORE', 'UNDO')
+        and skill_id = operation_type
+    ),
+    constraint technical_debt_entries_target check (btrim(target_id) <> ''),
+    constraint technical_debt_entries_delta check (
+        debt_delta between -100 and 100 and debt_delta <> 0
+        and (not forced_override or debt_delta > 0)
+    ),
+    constraint technical_debt_entries_consequence check (btrim(deferred_consequence_type) <> ''),
+    constraint technical_debt_entries_resolution_shape check (
+        (
+            resolved_at is null and resolved_by_turn_id is null and resolution_type is null
+        )
+        or (
+            resolved_at is not null and resolved_by_turn_id is not null
+            and resolution_type in ('RECOVERY', 'ACCEPT_RESPONSIBILITY', 'RESOURCE_PAYMENT', 'NPC_COOPERATION')
+        )
+    ),
+    constraint technical_debt_entries_metadata check (jsonb_typeof(metadata) = 'object')
+);
+
+create index technical_debt_entries_owner_run_turn_idx
+    on technical_debt_entries (owner_id, run_id, turn_no);
+create index technical_debt_entries_owner_unresolved_idx
+    on technical_debt_entries (owner_id, run_id, deferred_consequence_type)
+    where debt_delta > 0 and resolved_at is null;
+
+create or replace function keyboard_wanderer.validate_codria_action_history()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+begin
+    perform keyboard_wanderer.assert_committed_v4_action(
+        new.turn_id, new.run_id, new.owner_id, new.turn_no
+    );
+    return new;
+end
+$$;
+
+create or replace function keyboard_wanderer.validate_npc_relationship_history()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+declare
+    projected_affinity smallint;
+    projected_trust smallint;
+    projected_fear smallint;
+    projected_state text;
+    projected_turn smallint;
+begin
+    perform keyboard_wanderer.assert_committed_v4_action(
+        new.turn_id, new.run_id, new.owner_id, new.turn_no
+    );
+
+    select affinity, trust, fear, relationship_state, last_changed_turn
+      into strict projected_affinity, projected_trust, projected_fear, projected_state, projected_turn
+      from keyboard_wanderer.npc_relationships
+     where id = new.relationship_id and run_id = new.run_id and owner_id = new.owner_id;
+
+    if projected_affinity <> new.affinity_after
+       or projected_trust <> new.trust_after
+       or projected_fear <> new.fear_after
+       or projected_state <> new.relationship_state_after
+       or projected_turn <> new.turn_no then
+        raise exception using
+            errcode = '23514',
+            message = 'NPC relationship history must match the current projection written in the same transaction';
+    end if;
+    return new;
+end
+$$;
+
+create or replace function keyboard_wanderer.validate_ability_usage_history()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+declare
+    turn_skill text;
+    turn_action_context text;
+    turn_targets jsonb;
+begin
+    perform keyboard_wanderer.assert_committed_v4_action(
+        new.turn_id, new.run_id, new.owner_id, new.turn_no
+    );
+
+    select skill_id, action_context, target_ids
+      into strict turn_skill, turn_action_context, turn_targets
+      from keyboard_wanderer.turn_records
+     where id = new.turn_id and run_id = new.run_id and owner_id = new.owner_id;
+
+    if turn_skill <> new.skill_id
+       or turn_action_context <> new.action_context
+       or turn_targets <> new.target_ids then
+        raise exception using
+            errcode = '23514',
+            message = 'ability history must reproduce the authoritative structured action';
+    end if;
+    return new;
+end
+$$;
+
 commit;
