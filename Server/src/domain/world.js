@@ -1054,7 +1054,8 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
       allowedAssetIds: ["prop.altar.v1", "prop.sign.v1", "item.rune-book.v1"],
       gated: true,
       requiresProgressLevel: 3,
-      requiresProgressTokens: [...MILESTONE_TOKENS],
+      requiresProgressTokens: [...ADMIN_ACCESS_TOKENS],
+      requiresCanonicalFact: { subject: "collapse_origin", predicate: "inside_admin_control_system", value: true },
       interactionAnchor: { ...finaleCluster.staging },
       clearanceRadius: 1,
       reachability: "entry_component_after_finale_gate",
@@ -1069,10 +1070,10 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
 function bindProgressionCandidates(progressionGraph, placementSlots) {
   const selectors = {
     arrival: (slot) => slot.reservedFor === "ARRIVAL_GUIDE",
-    stakes: (slot) => slot.reservedFor === "MILESTONE_TOKEN_1",
-    bonds: (slot) => slot.reservedFor === "MILESTONE_TOKEN_2",
+    stakes: (slot) => slot.reservedFor === "ADMIN_ACCESS_LEVEL_1",
+    bonds: (slot) => slot.reservedFor === "ADMIN_ACCESS_LEVEL_2",
     truth: (slot) => slot.reservedFor === "STORY_REVELATION",
-    consequence: (slot) => slot.reservedFor === "MILESTONE_TOKEN_3",
+    consequence: (slot) => slot.reservedFor === "ADMIN_ACCESS_LEVEL_3",
     finale: (slot) => slot.tags.includes("finale_candidate")
   };
   for (const node of progressionGraph.nodes) {
@@ -1081,10 +1082,37 @@ function bindProgressionCandidates(progressionGraph, placementSlots) {
     node.candidateSlotIds = candidates.map((slot) => slot.id);
     node.candidateAcquisitionPaths = candidates.map((slot) => ({
       slotId: slot.id,
-      acquisitionModes: [...slot.acquisitionModes]
+      areaId: slot.areaId,
+      regionAxis: slot.regionAxis,
+      acquisitionModes: [...slot.acquisitionModes],
+      actionContext: slot.actionContext || null
     }));
     node.acquisitionModes = seededAcquisitionModes;
   }
+}
+
+function createAdminAccessCandidates(worldSeed, areas, placementSlots) {
+  const candidates = placementSlots
+    .filter((slot) => slot.tags.includes("admin_access_candidate"))
+    .map((slot) => {
+      const area = areas.find((item) => item.id === slot.areaId);
+      const skillId = String(slot.acquisitionModes[0] || "").toUpperCase();
+      assert(KEYBOARD_SKILLS.includes(skillId), 500, "ADMIN_ACCESS_CANDIDATE_SKILL_INVALID", "Admin access candidates require a keyboard skill.");
+      assert(CAMPAIGN_ACTION_CONTEXTS.includes(slot.actionContext), 500, "ADMIN_ACCESS_CANDIDATE_CONTEXT_INVALID", "Admin access candidates require an authoritative action context.");
+      assert(CAMPAIGN_REGION_AXES.includes(area.regionAxis) && area.regionAxis !== ROOT_SYSTEM, 500, "ADMIN_ACCESS_CANDIDATE_AXIS_INVALID", "Admin access candidates must remain outside Root System.");
+      return {
+        id: `admin-candidate.${stableId(worldSeed, slot.id)}`,
+        accessLevelId: slot.reservedFor,
+        slotId: slot.id,
+        areaId: slot.areaId,
+        regionAxis: area.regionAxis,
+        terrainBiomeId: slot.biomeId,
+        skillId,
+        actionContext: slot.actionContext
+      };
+    })
+    .sort((left, right) => left.accessLevelId.localeCompare(right.accessLevelId) || left.id.localeCompare(right.id));
+  return validateAdminAccessCandidates(candidates);
 }
 
 function pointClearingIsValid(tiles, width, height, point) {
@@ -1133,6 +1161,9 @@ export function validateGeneratedWorld(world, { turnLimit = 40 } = {}) {
   assert(world.tiles.length === world.width * world.height, 500, "WORLD_TILE_COUNT_INVALID", "Tile data must fill the generated world.");
   assert(world.areaMap.length === world.tiles.length && world.biomeMap.length === world.tiles.length, 500, "WORLD_LAYER_COUNT_INVALID", "Area and biome layers must cover every tile.");
   assert(world.areas.length === AREA_COUNT, 500, "WORLD_AREA_COUNT_INVALID", "The generated world requires exactly twelve areas.");
+  assert(world.worldId === WORLD_CODRIA && world.worldNameKo === WORLD_NAME_KO, 500, "WORLD_IDENTITY_INVALID", "Every generated run must remain in Codria.");
+  assert(Array.isArray(world.regionAxes) && world.regionAxes.length === CAMPAIGN_REGION_AXES.length
+    && CAMPAIGN_REGION_AXES.every((axis) => world.regionAxes.includes(axis)), 500, "WORLD_REGION_AXES_INVALID", "The six Codria region axes are required.");
 
   const biomeAreaCounts = new Map(BIOME_DESCRIPTORS.map((biome) => [biome.id, 0]));
   for (const area of world.areas) biomeAreaCounts.set(area.biomeId, (biomeAreaCounts.get(area.biomeId) || 0) + 1);
@@ -1142,6 +1173,10 @@ export function validateGeneratedWorld(world, { turnLimit = 40 } = {}) {
   const assignedRoles = world.areas.map((area) => area.campaignRole).filter(Boolean);
   assert(assignedRoles.length === CAMPAIGN_REGION_ROLES.length && new Set(assignedRoles).size === CAMPAIGN_REGION_ROLES.length, 500, "WORLD_CAMPAIGN_ROLES_INVALID", "Each campaign role must be assigned exactly once to a distinct area.");
   assert(CAMPAIGN_REGION_ROLES.every((role) => assignedRoles.includes(role.id)), 500, "WORLD_CAMPAIGN_ROLES_INCOMPLETE", "All six campaign roles must be represented.");
+  const assignedAxes = world.areas.map((area) => area.regionAxis).filter(Boolean);
+  assert(assignedAxes.length === CAMPAIGN_REGION_AXES.length && new Set(assignedAxes).size === CAMPAIGN_REGION_AXES.length
+    && CAMPAIGN_REGION_AXES.every((axis) => assignedAxes.includes(axis)), 500, "WORLD_REGION_AXIS_BINDINGS_INVALID", "Each Codria region axis must bind to one generated area.");
+  validateAdminAccessCandidates(world.adminAccessCandidates);
 
   const topological = topologicalOrder(world.progressionGraph);
   assert(topological && topological[0] === "arrival" && topological[topological.length - 1] === "finale", 500, "WORLD_PROGRESSION_INVALID", "The run progression scaffold must be acyclic from arrival to finale.");
@@ -1152,7 +1187,7 @@ export function validateGeneratedWorld(world, { turnLimit = 40 } = {}) {
     && new Set(node.candidateSlotIds).size === node.candidateSlotIds.length
     && node.candidateSlotIds.every((slotId) => slotIds.has(slotId))
     && Array.isArray(node.acquisitionModes)
-    && new Set(node.acquisitionModes).size >= 2), 500, "WORLD_PROGRESSION_CANDIDATES_INVALID", "Every progression node must bind generated candidate slots and at least two acquisition modes.");
+    && new Set(node.acquisitionModes).size >= 1), 500, "WORLD_PROGRESSION_CANDIDATES_INVALID", "Every progression node must bind generated candidate slots and at least one executable acquisition mode.");
   assert(world.progressionGraph.nodes.every((node) => {
     if (!Array.isArray(node.candidateAcquisitionPaths)
       || node.candidateAcquisitionPaths.length !== node.candidateSlotIds.length) return false;
@@ -1172,13 +1207,19 @@ export function validateGeneratedWorld(world, { turnLimit = 40 } = {}) {
       && sameUniqueStringSet(node.acquisitionModes, pathModes);
   }),
   500, "WORLD_ACQUISITION_CONTRACT_INVALID", "Progression candidates must expose executable turn actions only.");
-  assert(world.progressionGraph.nodes.every((node) => sameUniqueStringSet(
-    node.acquisitionModes,
-    CAMPAIGN_ALLOWED_ABILITIES_BY_ROLE[node.campaignRole]
-  )), 500, "WORLD_CAMPAIGN_ABILITY_ALIGNMENT_INVALID", "Generated acquisition modes must exactly match the canonical campaign abilities for their role.");
-  assert(world.progressionGraph.nodes.every((node) => node.candidateSlotIds.every((slotId) => world.placementSlots.find((slot) => slot.id === slotId).areaId === node.areaId)), 500, "WORLD_PROGRESSION_CANDIDATE_AREA_INVALID", "Progression candidates must remain in their bound generated area.");
+  assert(world.progressionGraph.nodes.every((node) => {
+    if (node.rewardProgressToken?.startsWith("ADMIN_ACCESS_LEVEL_")) {
+      return node.acquisitionModes.every((mode) => KEYBOARD_SKILLS.includes(mode.toUpperCase()))
+        && new Set(node.candidateAcquisitionPaths.map((path) => path.areaId)).size >= 2;
+    }
+    return sameUniqueStringSet(node.acquisitionModes, CAMPAIGN_ALLOWED_ABILITIES_BY_ROLE[node.campaignRole]);
+  }), 500, "WORLD_CAMPAIGN_ABILITY_ALIGNMENT_INVALID", "Generated progression paths must match the Codria action contract.");
   assert(world.progressionGraph.finalGate.requiresProgressLevel === 3
-    && MILESTONE_TOKENS.every((token) => world.progressionGraph.finalGate.requiresProgressTokens.includes(token)), 500, "WORLD_FINALE_GATE_INVALID", "Finale progression requires three validated run milestones.");
+    && ADMIN_ACCESS_TOKENS.every((token) => world.progressionGraph.finalGate.requiresProgressTokens.includes(token))
+    && world.progressionGraph.finalGate.requiresCanonicalFact?.subject === "collapse_origin"
+    && world.progressionGraph.finalGate.requiresCanonicalFact?.predicate === "inside_admin_control_system"
+    && world.progressionGraph.finalGate.requiresCanonicalFact?.value === true,
+  500, "WORLD_FINALE_GATE_INVALID", "Root System progression requires all three administrator access levels and the internal-collapse clue.");
 
   validateRoutePaths(world);
   assert(world.routes.filter((route) => route.isLoop).length >= 2, 500, "WORLD_ROUTE_LOOPS_INCOMPLETE", "The area graph requires at least two deterministic loop routes.");
@@ -1186,12 +1227,15 @@ export function validateGeneratedWorld(world, { turnLimit = 40 } = {}) {
   const arrivalArea = world.areas.find((area) => area.campaignRole === ARRIVAL_ROLE);
   const finaleRoutes = world.routes.filter((route) => route.fromAreaId === finaleArea.id || route.toAreaId === finaleArea.id);
   assert(finaleRoutes.length >= 1 && finaleRoutes.every((route) => route.gated && route.requiresProgressLevel === 3
-    && MILESTONE_TOKENS.every((token) => route.requiresProgressTokens.includes(token))), 500, "WORLD_FINALE_ROUTES_UNGATED", "Every route incident to the finale must carry the full logical gate.");
+    && ADMIN_ACCESS_TOKENS.every((token) => route.requiresProgressTokens.includes(token))
+    && route.requiresCanonicalFact?.subject === "collapse_origin"
+    && route.requiresCanonicalFact?.predicate === "inside_admin_control_system"
+    && route.requiresCanonicalFact?.value === true), 500, "WORLD_FINALE_ROUTES_UNGATED", "Every route incident to Root System must carry the full logical gate.");
   const beforeGate = routeReachableAreaIds(world.routes, arrivalArea.id, { progressLevel: 0, progressTokens: [] });
-  const afterGate = routeReachableAreaIds(world.routes, arrivalArea.id, { progressLevel: 3, progressTokens: [...MILESTONE_TOKENS] });
-  assert(!beforeGate.has(finaleArea.id), 500, "WORLD_FINALE_REACHABLE_EARLY", "The finale must be unreachable in the route graph before its milestones.");
+  const afterGate = routeReachableAreaIds(world.routes, arrivalArea.id, { progressLevel: 3, progressTokens: [...ADMIN_ACCESS_TOKENS] });
+  assert(!beforeGate.has(finaleArea.id), 500, "WORLD_FINALE_REACHABLE_EARLY", "Root System must be unreachable before all administrator access levels and the essential clue are available.");
   assert(world.areas.filter((area) => area.id !== finaleArea.id).every((area) => beforeGate.has(area.id)), 500, "WORLD_PRE_FINALE_GRAPH_DISCONNECTED", "Every pre-finale area must remain route-reachable before the finale gate.");
-  assert(afterGate.size === world.areas.length, 500, "WORLD_POST_FINALE_GRAPH_DISCONNECTED", "All areas, including the finale, must be route-reachable after the milestones.");
+  assert(afterGate.size === world.areas.length, 500, "WORLD_POST_FINALE_GRAPH_DISCONNECTED", "All areas, including Root System, must be route-reachable after the gate contract is satisfied.");
 
   for (const area of world.areas) {
     assert(world.areaMap[indexOf(world.width, area.anchor.x, area.anchor.y)] === area.index, 500, "WORLD_AREA_ANCHOR_INVALID", "Each area anchor must remain inside its own distance-field region.");
@@ -1225,19 +1269,19 @@ export function validateGeneratedWorld(world, { turnLimit = 40 } = {}) {
     assert(hasWalkableClearance(world.tiles, world.width, world.height, slot, slot.clearanceRadius), 500, "WORLD_SLOT_CLEARANCE_BLOCKED", "Semantic slot clearance is blocked: " + slot.id + ".");
   }
 
-  const requiredSlots = world.placementSlots.filter((slot) => slot.tags.includes("milestone_candidate") || slot.tags.includes("revelation_candidate"));
+  const requiredSlots = world.placementSlots.filter((slot) => slot.tags.includes("primary_admin_access_candidate") || slot.tags.includes("revelation_candidate"));
   assert(requiredSlots.every((slot) => Array.isArray(slot.acquisitionModes)
     && slot.acquisitionModes.length >= 1
     && slot.acquisitionModes.every((mode) => SUPPORTED_ACQUISITION_MODES.has(mode))),
-  500, "WORLD_ACQUISITION_PATHS_INCOMPLETE", "Every milestone and revelation slot must expose an executable acquisition mode.");
-  const milestones = world.placementSlots.filter((slot) => slot.tags.includes("milestone_candidate"));
+  500, "WORLD_ACQUISITION_PATHS_INCOMPLETE", "Every administrator-access and revelation slot must expose an executable acquisition mode.");
+  const primaryAccessSlots = world.placementSlots.filter((slot) => slot.tags.includes("primary_admin_access_candidate"));
   const revelations = world.placementSlots.filter((slot) => slot.tags.includes("revelation_candidate"));
   const finale = world.placementSlots.filter((slot) => slot.tags.includes("finale_candidate"));
-  assert(milestones.length === 3 && revelations.length >= 2 && finale.length === 7, 500, "WORLD_CANDIDATES_INCOMPLETE", "Exactly three milestone anchors, redundant revelation anchors, and seven finale components are required.");
-  const minimumMilestoneDistance = Math.floor(Math.min(world.width, world.height) / 10);
-  for (let left = 0; left < milestones.length; left += 1) {
-    for (let right = left + 1; right < milestones.length; right += 1) {
-      assert(manhattan(milestones[left], milestones[right]) >= minimumMilestoneDistance, 500, "WORLD_MILESTONE_DISTANCE_INVALID", "Milestone anchors must be spatially separated.");
+  assert(primaryAccessSlots.length === 3 && revelations.length >= 2 && finale.length === 7, 500, "WORLD_CANDIDATES_INCOMPLETE", "Exactly three primary administrator-access anchors, redundant revelation anchors, and seven finale components are required.");
+  const minimumAccessDistance = Math.floor(Math.min(world.width, world.height) / 10);
+  for (let left = 0; left < primaryAccessSlots.length; left += 1) {
+    for (let right = left + 1; right < primaryAccessSlots.length; right += 1) {
+      assert(manhattan(primaryAccessSlots[left], primaryAccessSlots[right]) >= minimumAccessDistance, 500, "WORLD_ADMIN_ACCESS_DISTANCE_INVALID", "Primary administrator-access anchors must be spatially separated.");
     }
   }
 
@@ -1269,7 +1313,7 @@ export function validateGeneratedWorld(world, { turnLimit = 40 } = {}) {
     slotCount: world.placementSlots.length,
     routeCount: world.routes.length,
     loopRouteCount: world.routes.filter((route) => route.isLoop).length,
-    candidateCounts: { milestones: milestones.length, revelations: revelations.length, finale: finale.length },
+    candidateCounts: { primaryAdminAccess: primaryAccessSlots.length, adminAccess: world.adminAccessCandidates.length, revelations: revelations.length, finale: finale.length },
     biomePoiCoverage,
     finaleInteractionAnchor: { ...finaleInteractionAnchor },
     finaleMaxInteractionDistance: Math.max(...finale.map((slot) => manhattan(finaleInteractionAnchor, slot))),
@@ -1292,8 +1336,10 @@ export function validateGeneratedWorld(world, { turnLimit = 40 } = {}) {
 export function computeWorldLayoutHash(world) {
   const logical = {
     generatorVersion: world.generatorVersion,
+    worldId: world.worldId,
     worldName: world.worldName,
     worldNameKo: world.worldNameKo,
+    regionAxes: world.regionAxes,
     worldSeed: world.worldSeed,
     width: world.width,
     height: world.height,
@@ -1302,6 +1348,7 @@ export function computeWorldLayoutHash(world) {
     areas: world.areas,
     routes: world.routes,
     progressionGraph: world.progressionGraph,
+    adminAccessCandidates: world.adminAccessCandidates,
     points: world.points,
     pois: world.pois,
     placementSlots: world.placementSlots,
@@ -1377,10 +1424,13 @@ export function generateWorld(worldSeed, { width = DEFAULT_WORLD_SIZE.width, hei
     repairs
   });
   bindProgressionCandidates(progressionGraph, slotResult.placementSlots);
+  const adminAccessCandidates = createAdminAccessCandidates(worldSeed, areas, slotResult.placementSlots);
   const world = {
     generatorVersion: WORLD_GENERATOR_VERSION,
-    worldName: "Unwritten Realm",
-    worldNameKo: "이름 없는 경계",
+    worldId: WORLD_CODRIA,
+    worldName: "Codria",
+    worldNameKo: WORLD_NAME_KO,
+    regionAxes: [...CAMPAIGN_REGION_AXES],
     worldSeed,
     width,
     height,
@@ -1391,6 +1441,7 @@ export function generateWorld(worldSeed, { width = DEFAULT_WORLD_SIZE.width, hei
     biomes: BIOME_DESCRIPTORS.map((item) => ({ ...item })),
     campaignRegionRoles: CAMPAIGN_REGION_ROLES.map(({ landmarkNames, ...item }) => ({ ...item, candidateLandmarkNames: [...landmarkNames] })),
     progressionGraph,
+    adminAccessCandidates,
     areas,
     routes,
     points,
@@ -1486,8 +1537,10 @@ export function movementCost(world, point) {
 export function publicWorld(world) {
   return {
     generatorVersion: world.generatorVersion,
+    worldId: world.worldId,
     worldName: world.worldName,
     worldNameKo: world.worldNameKo,
+    regionAxes: world.regionAxes,
     worldSeed: world.worldSeed,
     width: world.width,
     height: world.height,
@@ -1501,6 +1554,7 @@ export function publicWorld(world) {
     biomes: world.biomes,
     campaignRegionRoles: world.campaignRegionRoles,
     progressionGraph: world.progressionGraph,
+    adminAccessCandidates: world.adminAccessCandidates,
     areas: world.areas,
     routes: world.routes,
     points: world.points,
