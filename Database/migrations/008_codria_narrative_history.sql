@@ -550,4 +550,58 @@ begin
 end
 $$;
 
+create view current_region_outcomes
+with (security_invoker = true, security_barrier = true)
+as
+select distinct on (run_id, region_axis_code)
+    id,
+    run_id,
+    owner_id,
+    turn_id,
+    turn_no,
+    region_axis_code,
+    sequence_no,
+    outcome_key,
+    outcome_status,
+    outcome_state,
+    ending_tags,
+    created_at
+from region_outcomes
+order by run_id, region_axis_code, sequence_no desc;
+
+create view technical_debt_summaries
+with (security_invoker = true, security_barrier = true)
+as
+select
+    run_id,
+    owner_id,
+    coalesce(sum(debt_delta) filter (where debt_delta > 0), 0)::bigint as accrued_debt,
+    abs(coalesce(sum(debt_delta) filter (where debt_delta < 0), 0))::bigint as mitigated_debt,
+    greatest(coalesce(sum(debt_delta), 0), 0)::bigint as net_technical_debt,
+    count(*) filter (where debt_delta > 0 and resolved_at is null)::integer as unresolved_consequence_count
+from technical_debt_entries
+group by run_id, owner_id;
+
+comment on table major_choices is
+    'Append-only major player choices retained for downstream callbacks and ending inputs.';
+comment on table region_outcomes is
+    'Append-only region outcome revisions; current_region_outcomes exposes the latest state per fixed axis.';
+comment on table npc_relationship_history is
+    'Append-only relationship deltas synchronized with the existing npc_relationships current projection.';
+comment on table ability_usage_history is
+    'One normalized keyboard skill usage record for every committed v4 campaign action.';
+comment on table unresolved_hooks is
+    'Normalized open/resolved narrative hooks with an explicit convergence horizon and turn provenance.';
+comment on table technical_debt_entries is
+    'Causal technical-debt ledger. Ordinary success never rewrites or silently reduces prior entries.';
+revoke all on major_choices, region_outcomes,
+    npc_relationship_history, ability_usage_history, unresolved_hooks,
+    technical_debt_entries, current_region_outcomes,
+    technical_debt_summaries from public;
+revoke execute on function keyboard_wanderer.validate_codria_action_history() from public;
+revoke execute on function keyboard_wanderer.validate_npc_relationship_history() from public;
+revoke execute on function keyboard_wanderer.validate_ability_usage_history() from public;
+revoke execute on function keyboard_wanderer.enforce_unresolved_hook_transition() from public;
+revoke execute on function keyboard_wanderer.enforce_technical_debt_entry() from public;
+
 commit;
