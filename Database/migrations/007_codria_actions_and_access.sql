@@ -72,4 +72,64 @@ alter table turn_records
         )
     );
 
+create or replace function keyboard_wanderer.enforce_turn_record_transition()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+declare
+    run_turn_limit integer;
+    authoritative_version bigint;
+    authoritative_turn integer;
+begin
+    select turn_limit, version, current_turn
+      into strict run_turn_limit, authoritative_version, authoritative_turn
+      from keyboard_wanderer.runs
+     where id = new.run_id and owner_id = new.owner_id;
+
+    if new.turn_no is not null and new.turn_no > run_turn_limit then
+        raise exception using errcode = '23514', message = 'turn_no exceeds the run turn limit';
+    end if;
+
+    if tg_op = 'UPDATE' then
+        if new.id is distinct from old.id
+           or new.run_id is distinct from old.run_id
+           or new.owner_id is distinct from old.owner_id
+           or new.idempotency_key is distinct from old.idempotency_key
+           or new.request_fingerprint is distinct from old.request_fingerprint
+           or new.expected_run_version is distinct from old.expected_run_version
+           or new.request_json is distinct from old.request_json
+           or new.command_schema_version is distinct from old.command_schema_version
+           or new.input_type is distinct from old.input_type
+           or new.skill_id is distinct from old.skill_id
+           or new.target_ids is distinct from old.target_ids
+           or new.action_context is distinct from old.action_context
+           or new.turn_context is distinct from old.turn_context
+           or new.campaign_turn_before is distinct from old.campaign_turn_before
+           or new.received_at is distinct from old.received_at
+           or new.created_at is distinct from old.created_at then
+            raise exception using errcode = '55000', message = 'turn request identity and payload are immutable';
+        end if;
+        if old.status <> 'pending' then
+            raise exception using
+                errcode = '55000',
+                message = 'terminal turn records are immutable after the authoritative commit';
+        end if;
+        if new.status not in ('pending', 'committed', 'rejected') then
+            raise exception using errcode = '23514', message = 'invalid turn record transition';
+        end if;
+    end if;
+
+    if new.status = 'committed' then
+        if authoritative_version <> new.committed_run_version
+           or authoritative_turn <> new.turn_no then
+            raise exception using
+                errcode = '40001',
+                message = 'commit the optimistic run update before finalizing its turn record';
+        end if;
+    end if;
+    return new;
+end
+$$;
+
 commit;
