@@ -1333,6 +1333,111 @@ async function bindRuntimeEntityToSlot(client, run, turn, event, gameEntity) {
   );
 }
 
+function databaseFactShape(fact) {
+  if (fact.subject === "collapse_origin" && fact.predicate === "inside_admin_control_system") {
+    return {
+      subject: "REGION_DATA_GRAND_LIBRARY",
+      predicate: "ROOT_CAUSE_ESSENTIAL_CLUE_ACQUIRED",
+      object: {
+        acquired: fact.value === true,
+        domainSubject: fact.subject,
+        domainPredicate: fact.predicate
+      }
+    };
+  }
+  return {
+    subject: String(fact.subject),
+    predicate: String(fact.predicate),
+    object: {
+      value: clone(fact.value),
+      label: fact.label || null,
+      factType: fact.type || "canonical"
+    }
+  };
+}
+
+async function persistWorldFact(client, run, fact, updatedAt) {
+  const shape = databaseFactShape(fact);
+  const current = await client.query(
+    `select id from ${SCHEMA}.world_facts
+      where run_id = $1 and owner_id = $2 and subject_key = $3 and predicate = $4
+        and superseded_by_fact_id is null`,
+    [run.id, run.ownerId, shape.subject, shape.predicate]
+  );
+  if (current.rowCount > 0) {
+    await client.query(
+      `update ${SCHEMA}.world_facts
+          set object_json = $4::jsonb, confidence = 1.000,
+              valid_from_turn = $5, valid_until_turn = null, updated_at = $6
+        where id = $1 and owner_id = $2 and run_id = $3 and superseded_by_fact_id is null`,
+      [current.rows[0].id, run.ownerId, run.id, JSON.stringify(shape.object),
+        Number(fact.establishedTurn || 0), updatedAt]
+    );
+    return;
+  }
+  await client.query(
+    `insert into ${SCHEMA}.world_facts
+       (id, owner_id, run_id, subject_key, predicate, object_json,
+        confidence, valid_from_turn, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6::jsonb,1.000,$7,$8,$8)`,
+    [fact.id, run.ownerId, run.id, shape.subject, shape.predicate,
+      JSON.stringify(shape.object), Number(fact.establishedTurn || 0), updatedAt]
+  );
+}
+
+async function upsertRelationshipProjection(client, run, relationship, updatedAt) {
+  const result = await client.query(
+    `insert into ${SCHEMA}.npc_relationships
+       (owner_id, run_id, subject_actor_id, object_actor_id, affinity, trust, fear,
+        relationship_state, notes, last_changed_turn, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$11)
+     on conflict (run_id, subject_actor_id, object_actor_id) do update
+       set affinity = excluded.affinity,
+           trust = excluded.trust,
+           fear = excluded.fear,
+           relationship_state = excluded.relationship_state,
+           notes = excluded.notes,
+           last_changed_turn = excluded.last_changed_turn,
+           updated_at = excluded.updated_at
+     returning id`,
+    [run.ownerId, run.id, run.playerEntityId, relationship.npcId,
+      Number(relationship.affinity || 0), Number(relationship.trust || 0), Number(relationship.fear || 0),
+      relationship.stance || "neutral", JSON.stringify({ domainNpcId: relationship.npcId }),
+      Number(relationship.lastChangedTurn || 0), updatedAt]
+  );
+  return result.rows[0].id;
+}
+
+function hookKey(hook) {
+  return `hook.${String(hook.id).toLowerCase()}`;
+}
+
+async function insertUnresolvedHook(client, run, hook, turnId, updatedAt) {
+  await client.query(
+    `insert into ${SCHEMA}.unresolved_hooks
+       (id, run_id, owner_id, hook_key, introduced_turn_id, introduced_turn_no,
+        summary, hook_payload, status, deadline_turn, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'OPEN',$9,$10,$10)
+     on conflict (run_id, hook_key) do nothing`,
+    [hook.id, run.id, run.ownerId, hookKey(hook), turnId,
+      Number(hook.createdTurn || 0), hook.summary,
+      JSON.stringify({ source: hook.source || "campaign_director" }),
+      Number.isInteger(hook.expiresTurn) ? hook.expiresTurn : null, updatedAt]
+  );
+}
+
+async function persistInitialCodriaState(client, run) {
+  for (const fact of run.canonicalFacts || []) {
+    await persistWorldFact(client, run, fact, run.createdAt);
+  }
+  for (const relationship of run.npcRelationships || []) {
+    await upsertRelationshipProjection(client, run, relationship, run.createdAt);
+  }
+  for (const hook of run.unresolvedHooks || []) {
+    await insertUnresolvedHook(client, run, hook, null, run.createdAt);
+  }
+}
+
 async function synchronizeReversibleActions(client, run, turn) {
   for (const entry of run.reversibleLedger) {
     await client.query(
