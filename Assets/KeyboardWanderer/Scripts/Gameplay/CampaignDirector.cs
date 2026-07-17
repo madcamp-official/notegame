@@ -254,6 +254,54 @@ namespace KeyboardWanderer.Gameplay
             state.CompanionBond = RunState.ClampMetric(state.CompanionBond + bond);
             events.Add("METRICS_CHANGED:stability=" + stability + ":autonomy=" + autonomy + ":trust=" + trust +
                        ":debt=" + debt + ":bond=" + bond);
+            RecordDebt(state, request, actionContext, turnNo, debt, events);
+            RecordChoiceAndRegionOutcome(state, request, actionContext, outcome, turnNo);
+        }
+
+        private static void RecordDebt(RunState state, TurnRequest request, ActionContext context,
+            int turnNo, int debtDelta, List<string> events)
+        {
+            string targetId = request.TargetEntityId?.ToString("N") ?? string.Empty;
+            if (request.Ability == AbilityKind.Restore && debtDelta < 0)
+            {
+                for (int i = 0; i < state.TechnicalDebtEntries.Count; i++)
+                {
+                    TechnicalDebtEntry entry = state.TechnicalDebtEntries[i];
+                    if (!entry.IsResolved)
+                    {
+                        entry.ResolvedTurn = turnNo;
+                        events.Add("TECHNICAL_DEBT_RESOLVED:" + entry.Id + ":turn=" + turnNo);
+                        break;
+                    }
+                }
+            }
+            if (debtDelta <= 0) return;
+            string id = "debt-" + turnNo + "-" + state.TechnicalDebtEntries.Count;
+            string consequence = request.Ability == AbilityKind.Delete ? "REMOVED_DEPENDENCY_BACKFLOW"
+                : request.Ability == AbilityKind.Copy ? "DUPLICATED_STATE_DRIFT"
+                : request.Ability == AbilityKind.Undo ? "COMPENSATION_CONFLICT" : "UNRESOLVED_OVERRIDE";
+            var entryToAdd = new TechnicalDebtEntry(id, turnNo, request.Ability,
+                request.Ability.ToString().ToUpperInvariant(), string.IsNullOrEmpty(targetId) ? "WORLD_CODRIA" : targetId,
+                request.Ability == AbilityKind.Delete ||
+                request.Ability == AbilityKind.Undo, debtDelta, consequence);
+            state.TechnicalDebtEntries.Add(entryToAdd);
+            events.Add("TECHNICAL_DEBT_RECORDED:" + id + ":delta=" + debtDelta + ":" + consequence);
+        }
+
+        private static void RecordChoiceAndRegionOutcome(RunState state, TurnRequest request,
+            ActionContext context, RuleOutcome outcome, int turnNo)
+        {
+            string region = state.Spatial.TryGetEntity(state.PlayerEntityId, out EntityState player)
+                ? state.Region.AreaAt(player.Position)?.CampaignRole ?? string.Empty
+                : string.Empty;
+            string choice = "T" + turnNo + "|" + region + "|" + context + "|" + request.Ability + "|" + outcome;
+            state.MajorChoices.Add(choice);
+            while (state.MajorChoices.Count > 24) state.MajorChoices.RemoveAt(0);
+            if (!string.IsNullOrEmpty(region))
+            {
+                state.RegionOutcomes.RemoveAll(value => value.StartsWith(region + "|", StringComparison.Ordinal));
+                state.RegionOutcomes.Add(region + "|" + context + "|" + outcome + "|T" + turnNo);
+            }
         }
 
         private static bool HasConnection(RunState state, string leftAsset, string rightAsset)
@@ -311,100 +359,100 @@ namespace KeyboardWanderer.Gameplay
         {
             switch (beatId)
             {
-                case "arrival": return ArrivalAbilities;
-                case "adaptation": return AdaptationAbilities;
-                case "expansion": return ExpansionAbilities;
-                case "truth": return TruthAbilities;
-                case "backflow": return BackflowAbilities;
-                case "finale": return FinaleAbilities;
+                case "arrival":
+                case "collapse":
+                case "truth": return InvestigationAbilities;
+                case "admin-access-1": return AccessOneAbilities;
+                case "admin-access-2": return AccessTwoAbilities;
+                case "admin-access-3": return AccessThreeAbilities;
+                case "debt-backflow": return DeploymentAbilities;
+                case "root-entry":
+                case "final-deployment": return FinaleAbilities;
                 default: return Array.Empty<AbilityKind>();
             }
         }
 
-        private static bool AbilityAllowedForBeat(string beatId, AbilityKind ability)
+        private static bool AbilityAllowedForBeat(CampaignBeatState beat, AbilityKind ability,
+            ActionContext context)
         {
-            IReadOnlyList<AbilityKind> allowed = AllowedAbilitiesForBeat(beatId);
+            if (beat.RequiredContext != ActionContext.None && beat.RequiredContext != context)
+                return false;
+            if (beat.Id.StartsWith("admin-access-", StringComparison.Ordinal))
+                return beat.TriggerAbility == ability && IsCampaignAction(context);
+            IReadOnlyList<AbilityKind> allowed = AllowedAbilitiesForBeat(beat.Id);
             for (int i = 0; i < allowed.Count; i++)
                 if (allowed[i] == ability) return true;
             return false;
         }
 
-        private static bool IsRequiredCampaignRole(RunState state, string beatId)
+        private static bool IsRequiredCampaignRegion(RunState state, CampaignBeatState beat)
         {
             if (!state.Spatial.TryGetEntity(state.PlayerEntityId, out EntityState player)) return false;
             WorldArea area = state.Region.AreaAt(player.Position);
             if (area == null) return false;
-            string required = state.CurrentBeat != null && state.CurrentBeat.Id == beatId
-                ? state.CurrentBeat.RoleId
-                : string.Empty;
-            if (string.IsNullOrWhiteSpace(required))
-            {
-                switch (beatId)
-                {
-                    case "arrival": required = CampaignCatalog.ArrivalCatalystRole; break;
-                    case "adaptation": required = CampaignCatalog.LocalStakesRole; break;
-                    case "expansion": required = CampaignCatalog.RelationshipConflictRole; break;
-                    case "truth": required = CampaignCatalog.HiddenTruthRole; break;
-                    case "backflow": required = CampaignCatalog.ConsequenceReturnRole; break;
-                    case "finale": required = CampaignCatalog.FinalConvergenceRole; break;
-                    default: return false;
-                }
-            }
-            return string.Equals(area.CampaignRole, required, StringComparison.Ordinal);
+            return string.Equals(area.CampaignRole, beat.RoleId, StringComparison.Ordinal);
         }
 
-        private static bool HasDesignatedEvidence(RunState state, string beatId, TurnRequest request,
+        private static bool HasDesignatedEvidence(RunState state, CampaignBeatState beat, TurnRequest request,
             List<string> events)
         {
-            if (beatId == "finale")
+            if (beat.Id == "root-entry")
+                return CanEnterRootSystem(state);
+            if (beat.Id == "final-deployment")
                 return !string.Equals(SelectEnding(state), CampaignCatalog.FallbackEndingCode,
                     StringComparison.Ordinal);
 
             EntityState first = null, second = null;
             if (request.TargetEntityId.HasValue) state.Spatial.TryGetEntity(request.TargetEntityId.Value, out first);
             if (request.SecondaryTargetEntityId.HasValue) state.Spatial.TryGetEntity(request.SecondaryTargetEntityId.Value, out second);
-            if (beatId == "arrival")
+            if (beat.Id == "arrival")
             {
-                if (first != null && first.AssetId == "artifact.keyboard")
+                if (first != null && first.AssetId == CampaignCatalog.AdministratorKeyboardId)
                     return ContainsEvent(events, "CATALYST_AWAKENED:") ||
-                           ContainsEvent(events, "KEYBOARD_ARTIFACT_AWAKENED:");
-                return first != null && first.Kind == EntityKind.Npc &&
-                       string.Equals(state.Region.AreaAt(first.Position)?.CampaignRole,
-                           CampaignCatalog.ArrivalCatalystRole, StringComparison.Ordinal) &&
-                       ContainsEvent(events, "NEGOTIATION_RESOLVED:");
+                           ContainsEvent(events, "ADMIN_KEYBOARD_AWAKENED:");
+                return false;
             }
-
-            if ((beatId == "expansion" || beatId == "truth") && request.Ability == AbilityKind.Negotiate)
+            if (beat.Id == "truth")
+                return (first != null && first.AssetId.StartsWith("story.internal-failure", StringComparison.Ordinal) ||
+                        second != null && second.AssetId.StartsWith("story.internal-failure", StringComparison.Ordinal)) &&
+                       ContainsEvent(events, "INTERNAL_FAILURE_CONFIRMED:");
+            if (beat.Id == "debt-backflow")
+                return request.Ability == AbilityKind.Connect &&
+                       (first != null && first.Kind == EntityKind.Npc ||
+                        second != null && second.Kind == EntityKind.Npc) &&
+                       ContainsEvent(events, "CONNECTION_CREATED:");
+            if (beat.Id.StartsWith("admin-access-", StringComparison.Ordinal))
             {
-                string requiredRole = beatId == "expansion"
-                    ? CampaignCatalog.RelationshipConflictRole
-                    : CampaignCatalog.HiddenTruthRole;
-                return first != null && first.Kind == EntityKind.Npc &&
-                       string.Equals(state.Region.AreaAt(first.Position)?.CampaignRole, requiredRole, StringComparison.Ordinal) &&
-                       ContainsEvent(events, "NEGOTIATION_RESOLVED:");
+                string level = beat.Id.Substring("admin-access-".Length);
+                string prefix = "story.admin-access-" + level;
+                bool designated = first != null && first.AssetId.StartsWith(prefix, StringComparison.Ordinal) ||
+                                  second != null && second.AssetId.StartsWith(prefix, StringComparison.Ordinal);
+                return designated && (ContainsEvent(events, "ADMIN_ACCESS_CANDIDATE_INSPECTED:") ||
+                    ContainsEvent(events, "ADMIN_ACCESS_CANDIDATE_REPAIRED:") ||
+                    ContainsEvent(events, "ENTITY_REMOVED:") || ContainsEvent(events, "CONNECTION_CREATED:"));
             }
+            return first != null || second != null;
+        }
 
-            if (beatId == "backflow" && request.Ability == AbilityKind.Restore)
-                return first != null && first.AssetId == "story.milestone-token-3.echo" &&
-                       ContainsEvent(events, "ENTITY_RESTORED:");
+        public static bool HasInternalFailureClue(RunState state)
+        {
+            for (int i = 0; i < state.CanonicalFacts.Count; i++)
+                if (state.CanonicalFacts[i].Contains("관리자 통제 시스템 내부")) return true;
+            return false;
+        }
 
-            string requiredAsset;
-            switch (beatId)
-            {
-                case "adaptation": requiredAsset = "story.milestone-token-1"; break;
-                case "expansion": requiredAsset = "story.milestone-token-2"; break;
-                case "truth": requiredAsset = "story.hidden-truth"; break;
-                case "backflow": requiredAsset = "story.milestone-token-3"; break;
-                default: return false;
-            }
-            bool designated = beatId == "truth"
-                ? first != null && first.AssetId.StartsWith(requiredAsset, StringComparison.Ordinal) ||
-                  second != null && second.AssetId.StartsWith(requiredAsset, StringComparison.Ordinal)
-                : first != null && first.AssetId == requiredAsset || second != null && second.AssetId == requiredAsset;
-            return designated && (ContainsEvent(events, "MILESTONE_ANCHOR_INSPECTED:") ||
-                                  ContainsEvent(events, "HIDDEN_TRUTH_CONFIRMED:") ||
-                                  ContainsEvent(events, "ENTITY_SPAWNED:") ||
-                                  ContainsEvent(events, "CONNECTION_CREATED:"));
+        public static bool CanEnterRootSystem(RunState state)
+        {
+            if (state == null || state.AdminAccess != 3 || !HasInternalFailureClue(state)) return false;
+            for (int i = 0; i < CampaignCatalog.AdminAccessLevelIds.Length; i++)
+                if (!state.HasItem(CampaignCatalog.AdminAccessLevelIds[i])) return false;
+            return true;
+        }
+
+        private static bool IsCampaignAction(ActionContext context)
+        {
+            return context == ActionContext.Combat || context == ActionContext.Investigation ||
+                   context == ActionContext.Negotiation || context == ActionContext.Deployment;
         }
 
         private static bool ContainsEvent(List<string> events, string prefix)
@@ -414,31 +462,5 @@ namespace KeyboardWanderer.Gameplay
             return false;
         }
 
-        private static bool HasCommitEvidence(AbilityKind ability, List<string> events)
-        {
-            string prefix;
-            switch (ability)
-            {
-                case AbilityKind.Move: prefix = "ENTITY_MOVED:"; break;
-                case AbilityKind.Copy: prefix = "ENTITY_SPAWNED:"; break;
-                case AbilityKind.Delete: prefix = "ENTITY_REMOVED:"; break;
-                case AbilityKind.Connect: prefix = "CONNECTION_CREATED:"; break;
-                case AbilityKind.Restore: prefix = "ENTITY_RESTORED:"; break;
-                case AbilityKind.Undo: prefix = "UNDO_COMPENSATION:"; break;
-                case AbilityKind.Interact: prefix = "NPC_"; break;
-                case AbilityKind.Attack: prefix = "ENTITY_DAMAGED:"; break;
-                case AbilityKind.Rest: prefix = "PLAYER_HEALED:"; break;
-                case AbilityKind.Negotiate: prefix = "NEGOTIATION_RESOLVED:"; break;
-                default: return false;
-            }
-            for (int i = 0; i < events.Count; i++)
-            {
-                if (events[i].StartsWith(prefix, StringComparison.Ordinal)) return true;
-                if (ability == AbilityKind.Interact &&
-                    (events[i].StartsWith("ENTITY_INSPECTED:", StringComparison.Ordinal) ||
-                     events[i].StartsWith("ITEM_ACQUIRED:", StringComparison.Ordinal))) return true;
-            }
-            return false;
-        }
     }
 }
