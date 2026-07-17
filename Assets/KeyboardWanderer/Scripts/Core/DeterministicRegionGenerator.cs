@@ -912,7 +912,7 @@ namespace KeyboardWanderer.Core
                     throw new InvalidOperationException("Pre-finale area requires traversal through the finale: " + areas[i].Id);
             }
             if (start.ManhattanDistance(exit) < Math.Min(width, height) / 2)
-                throw new InvalidOperationException("Final convergence is too close to the arrival area.");
+                throw new InvalidOperationException("ROOT_SYSTEM is too close to Nupjukyi's arrival area.");
 
             var slotCoordinates = new HashSet<GridCoord>();
             for (int i = 0; i < slots.Count; i++)
@@ -929,14 +929,21 @@ namespace KeyboardWanderer.Core
                     throw new InvalidOperationException("Pre-finale slot requires traversal through the finale: " + slot.Id);
             }
 
-            var milestones = slots.FindAll(slot => HasTag(slot, "milestone_token"));
-            if (milestones.Count != 3)
-                throw new InvalidOperationException("Exactly three milestone token slots are required.");
-            int minimumDistance = Math.Max(10, Math.Min(width, height) / 8);
-            for (int i = 0; i < milestones.Count; i++)
-                for (int j = i + 1; j < milestones.Count; j++)
-                    if (milestones[i].Coord.ManhattanDistance(milestones[j].Coord) < minimumDistance)
-                        throw new InvalidOperationException("Milestone candidates are too close together.");
+            var accessCandidates = slots.FindAll(slot => HasTag(slot, "admin_access_candidate"));
+            if (accessCandidates.Count != 6)
+                throw new InvalidOperationException("Each of three administrator levels requires two candidate slots.");
+            for (int level = 1; level <= 3; level++)
+            {
+                string levelTag = "admin_level_" + level;
+                List<PlacementSlot> levelCandidates = accessCandidates.FindAll(slot => HasTag(slot, levelTag));
+                if (levelCandidates.Count != 2 || levelCandidates[0].AreaId == levelCandidates[1].AreaId)
+                    throw new InvalidOperationException("Administrator access candidates must use two different areas: " + levelTag);
+                string firstContext = FindTagWithPrefix(levelCandidates[0], "context_");
+                string secondContext = FindTagWithPrefix(levelCandidates[1], "context_");
+                if (string.IsNullOrEmpty(firstContext) || string.IsNullOrEmpty(secondContext) ||
+                    firstContext == secondContext)
+                    throw new InvalidOperationException("Administrator access candidates must use different contexts: " + levelTag);
+            }
 
             if (!IsAcyclic(progression))
                 throw new InvalidOperationException("Progression graph must be acyclic.");
@@ -960,7 +967,9 @@ namespace KeyboardWanderer.Core
                 {
                     ProgressionCandidatePath path = node.CandidatePaths[pathIndex];
                     PlacementSlot candidateSlot = slots.Find(slot => slot.Id == path.SlotId);
-                    if (candidateSlot == null || candidateSlot.AreaId != node.AreaId ||
+                    bool accessCandidate = node.RewardAdminAccess > 0 && candidateSlot != null &&
+                        HasTag(candidateSlot, "admin_level_" + node.RewardAdminAccess);
+                    if (candidateSlot == null || (!accessCandidate && candidateSlot.AreaId != node.AreaId) ||
                         !candidateSlotIds.Add(path.SlotId) || path.AcquisitionModes.Count == 0)
                         throw new InvalidOperationException("Progression slot path is invalid: " + node.Id);
                     var uniquePathModes = new HashSet<string>();
@@ -971,6 +980,10 @@ namespace KeyboardWanderer.Core
                             throw new InvalidOperationException("Progression slot path uses a non-executable mode: " + node.Id);
                         candidateModes.Add(mode);
                     }
+                    HashSet<string> candidateStageAreas = ReachableAreaIds(routes, areas[roleArea[0]].Id,
+                        node.RequiredAdminAccess, TokensForLevel(node.RequiredAdminAccess));
+                    if (!candidateStageAreas.Contains(candidateSlot.AreaId))
+                        throw new InvalidOperationException("Progression candidate is spatially unreachable: " + path.SlotId);
                 }
                 if (!candidateSlotIds.Contains(node.SlotId) ||
                     !SameStringSet(candidateModes, expectedModes))
@@ -984,7 +997,7 @@ namespace KeyboardWanderer.Core
             HashSet<string> beforeRoot = ReachableAreaIds(routes, areas[roleArea[0]].Id, 0,
                 Array.Empty<string>());
             HashSet<string> afterRoot = ReachableAreaIds(routes, areas[roleArea[0]].Id, 3,
-                MilestoneTokens);
+                AccessTokens);
             if (beforeRoot.Contains(areas[roleArea[5]].Id) || !afterRoot.Contains(areas[roleArea[5]].Id) ||
                 afterRoot.Count != areas.Count)
                 throw new InvalidOperationException("Finale route gate failed stage-aware reachability.");
@@ -1003,13 +1016,13 @@ namespace KeyboardWanderer.Core
                 LoopRouteCount = loopCount
             };
             summary.Checks.Add("six_biomes_represented");
-            summary.Checks.Add("six_campaign_roles_bound_independently");
+            summary.Checks.Add("six_codria_region_axes_bound_independently");
             summary.Checks.Add("mst_and_loop_routes_connected");
             summary.Checks.Add("major_route_width_at_least_three");
             summary.Checks.Add("all_slots_unique_inside_area_and_reachable");
             summary.Checks.Add("pre_finale_routes_and_slots_avoid_finale_before_gate");
             summary.Checks.Add("progression_acyclic_with_executable_slot_paths");
-            summary.Checks.Add("finale_locked_before_three_milestones_and_reachable_after");
+            summary.Checks.Add("root_system_locked_before_admin_access_3_and_reachable_after");
             summary.Checks.Add("finale_components_bounded");
             return summary;
         }
@@ -1134,9 +1147,9 @@ namespace KeyboardWanderer.Core
         private static string[] TokensForLevel(int level)
         {
             if (level <= 0) return Array.Empty<string>();
-            if (level == 1) return new[] { MilestoneTokens[0] };
-            if (level == 2) return new[] { MilestoneTokens[0], MilestoneTokens[1] };
-            return (string[])MilestoneTokens.Clone();
+            if (level == 1) return new[] { AccessTokens[0] };
+            if (level == 2) return new[] { AccessTokens[0], AccessTokens[1] };
+            return (string[])AccessTokens.Clone();
         }
 
         private static WorldArea FindArea(List<WorldArea> areas, string id)
@@ -1164,12 +1177,12 @@ namespace KeyboardWanderer.Core
         {
             switch (role)
             {
-                case CampaignCatalog.ArrivalCatalystRole: return index % 2 == 0 ? "fallen_relic_grove" : "crash_shrine";
-                case CampaignCatalog.LocalStakesRole: return index % 2 == 0 ? "settlement" : "repair_outpost";
-                case CampaignCatalog.RelationshipConflictRole: return index % 2 == 0 ? "contested_citadel" : "sealed_crossroads";
-                case CampaignCatalog.HiddenTruthRole: return index % 2 == 0 ? "archive_temple" : "memory_vault";
-                case CampaignCatalog.ConsequenceReturnRole: return index % 2 == 0 ? "legacy_fortress" : "returning_ruin";
-                case CampaignCatalog.FinalConvergenceRole: return index % 2 == 0 ? "sealed_convergence_temple" : "crystal_convergence";
+                case CampaignCatalog.ArrivalCatalystRole: return index % 2 == 0 ? "bug_grove" : "crash_debugger";
+                case CampaignCatalog.LocalStakesRole: return index % 2 == 0 ? "buffer_settlement" : "queue_outpost";
+                case CampaignCatalog.RelationshipConflictRole: return index % 2 == 0 ? "deadlock_citadel" : "mutex_crossroads";
+                case CampaignCatalog.HiddenTruthRole: return index % 2 == 0 ? "data_archive" : "record_vault";
+                case CampaignCatalog.ConsequenceReturnRole: return index % 2 == 0 ? "legacy_fortress" : "debt_ruin";
+                case CampaignCatalog.FinalConvergenceRole: return index % 2 == 0 ? "root_terminal" : "kernel_chamber";
                 default: return index % 3 == 0 ? "camp" : biome == "ancient_ruins" ? "ruins" : "shrine";
             }
         }
@@ -1178,24 +1191,24 @@ namespace KeyboardWanderer.Core
         {
             switch (role)
             {
-                case CampaignCatalog.ArrivalCatalystRole: return biomeName + " · 도착의 촉매";
-                case CampaignCatalog.LocalStakesRole: return biomeName + " · 지역 위기지";
-                case CampaignCatalog.RelationshipConflictRole: return biomeName + " · 관계 충돌지";
-                case CampaignCatalog.HiddenTruthRole: return biomeName + " · 숨은 기록소";
-                case CampaignCatalog.ConsequenceReturnRole: return biomeName + " · 결과 귀환지";
-                case CampaignCatalog.FinalConvergenceRole: return biomeName + " · 마지막 수렴지";
+                case CampaignCatalog.ArrivalCatalystRole: return "버그 숲 · " + biomeName;
+                case CampaignCatalog.LocalStakesRole: return "버퍼 마을 · " + biomeName;
+                case CampaignCatalog.RelationshipConflictRole: return "교착 도시 · " + biomeName;
+                case CampaignCatalog.HiddenTruthRole: return "데이터 대도서관 · " + biomeName;
+                case CampaignCatalog.ConsequenceReturnRole: return "레거시 성채 · " + biomeName;
+                case CampaignCatalog.FinalConvergenceRole: return "루트 시스템 · " + biomeName;
                 default: return biomeName + " 관심 지점 " + (index + 1);
             }
         }
 
         private static string DescriptionFor(string role, string biomeName)
         {
-            if (role == CampaignCatalog.ArrivalCatalystRole) return "방랑자가 키보드 유물의 편집 범위를 발견하는 시작지";
-            if (role == CampaignCatalog.LocalStakesRole) return "지역의 이해관계와 첫 핵심 표식이 배치되는 후보지";
-            if (role == CampaignCatalog.RelationshipConflictRole) return "인물들의 상반된 선택과 두 번째 표식을 다루는 후보지";
-            if (role == CampaignCatalog.HiddenTruthRole) return "소문과 확정 사실을 분리할 기록과 증언이 있는 곳";
-            if (role == CampaignCatalog.ConsequenceReturnRole) return "과거 선택의 결과와 세 번째 표식이 돌아오는 후보지";
-            if (role == CampaignCatalog.FinalConvergenceRole) return "세 표식 뒤에 마지막 공간 퍼즐을 시작할 수 있는 수렴 구역";
+            if (role == CampaignCatalog.ArrivalCatalystRole) return "넙죽이가 관리자 키보드를 깨우는 버그 숲 지역 축";
+            if (role == CampaignCatalog.LocalStakesRole) return "버퍼 과부하와 주민 관계를 다루는 관리자 권한 후보 지역";
+            if (role == CampaignCatalog.RelationshipConflictRole) return "교착된 파벌의 전투·협상·배치 해법을 제공하는 지역";
+            if (role == CampaignCatalog.HiddenTruthRole) return "관리자 통제 내부의 붕괴 원인을 보존한 기록 지역";
+            if (role == CampaignCatalog.ConsequenceReturnRole) return "과거 편집의 기술 부채와 책임이 역류하는 지역";
+            if (role == CampaignCatalog.FinalConvergenceRole) return "관리자 권한 3단계와 내부 단서 뒤에 진입하는 ROOT_SYSTEM";
             return biomeName + "의 기존 지형과 에셋 안에서 사건 역할을 배정할 수 있는 관심 지점";
         }
 
@@ -1204,7 +1217,7 @@ namespace KeyboardWanderer.Core
             var tags = new List<string> { "poi", landmark, "encounter_space" };
             if (!string.IsNullOrEmpty(role)) tags.Add("campaign_role");
             if (role == CampaignCatalog.LocalStakesRole || role == CampaignCatalog.RelationshipConflictRole ||
-                role == CampaignCatalog.ConsequenceReturnRole) tags.Add("milestone_candidate");
+                role == CampaignCatalog.ConsequenceReturnRole) tags.Add("admin_access_region_candidate");
             if (role == CampaignCatalog.HiddenTruthRole) tags.Add("truth_candidate");
             if (role == CampaignCatalog.FinalConvergenceRole) tags.Add("finale_candidate");
             return tags;
@@ -1215,6 +1228,13 @@ namespace KeyboardWanderer.Core
             for (int i = 0; i < slot.Tags.Length; i++)
                 if (string.Equals(slot.Tags[i], tag, StringComparison.Ordinal)) return true;
             return false;
+        }
+
+        private static string FindTagWithPrefix(PlacementSlot slot, string prefix)
+        {
+            for (int i = 0; i < slot.Tags.Length; i++)
+                if (slot.Tags[i].StartsWith(prefix, StringComparison.Ordinal)) return slot.Tags[i];
+            return string.Empty;
         }
 
         private static GridCoord Offset(GridCoord coord, int x, int y)
