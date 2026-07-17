@@ -11,6 +11,7 @@
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
 #
 .utmp/
+**/.DS_Store
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/
@@ -51,6 +52,7 @@ ExportedObj/
 *.csproj
 *.unityproj
 *.sln
+*.slnx
 *.suo
 *.tmp
 *.user
@@ -105,3 +107,6 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Auto-generated cache in Assets folder
+/[Aa]ssets/[Ss]ceneDependencyCache*
