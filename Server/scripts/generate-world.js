@@ -140,7 +140,7 @@ function escapeXml(value) {
 }
 
 function usage() {
-  process.stdout.write(`Generate and validate sealed Keyboard Wanderer worlds.\n\nUsage:\n  npm run world:generate -- [options]\n\nOptions:\n  --seed <integer>       First world seed (default: 20260717)\n  --count <integer>      Consecutive seeds to validate (default: 1)\n  --width <integer>      Debug/test width; production default is 160\n  --height <integer>     Debug/test height; production default is 160\n  --output, -o <path>    Write public JSON and SVG preview\n  --summary-only         Validate without writing artifacts\n`);
+  process.stdout.write(`Generate and validate sealed Codria worlds.\n\nUsage:\n  npm run world:generate -- [options]\n\nOptions:\n  --seed <integer>       First world seed (default: 20260717)\n  --count <integer>      Consecutive seeds to validate (default: 1)\n  --width <integer>      Debug/test width; production default is 160\n  --height <integer>     Debug/test height; production default is 160\n  --output, -o <path>    Write public JSON and SVG preview\n  --summary-only         Validate without writing artifacts\n`);
   process.exit(0);
 }
 

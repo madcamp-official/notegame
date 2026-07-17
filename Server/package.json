@@ -2,7 +2,7 @@
   "name": "keyboard-wanderer-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Authoritative turn and narration API for Keyboard Wanderer",
+  "description": "Authoritative Codria v4 game server for 넙죽이와 붕괴한 코드 왕국",
   "type": "module",
   "engines": {
     "node": ">=20.11"
