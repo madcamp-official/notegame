@@ -2585,53 +2585,6 @@ namespace KeyboardWanderer.Demo
             return fallback;
         }
 
-        private bool IsValidAuxiliaryTarget(RunView view, Guid id, AbilityKind ability)
-        {
-            if (ability != AbilityKind.Attack && ability != AbilityKind.Interact && ability != AbilityKind.Negotiate)
-                return true;
-
-            if (_serverOnline && _serverRun?.entities != null)
-            {
-                string key = id.ToString();
-                for (int i = 0; i < _serverRun.entities.Length; i++)
-                {
-                    GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
-                    if (entity == null || !string.Equals(entity.id, key, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (ability == AbilityKind.Attack)
-                    {
-                        if (string.Equals(entity.kind, "enemy", StringComparison.OrdinalIgnoreCase))
-                            return true;
-                        if (!string.Equals(entity.kind, "npc", StringComparison.OrdinalIgnoreCase) || _serverRun.npcRelationships == null)
-                            return false;
-                        for (int relationshipIndex = 0; relationshipIndex < _serverRun.npcRelationships.Length; relationshipIndex++)
-                        {
-                            GameApiClient.NpcRelationshipSnapshot relationship = _serverRun.npcRelationships[relationshipIndex];
-                            if (relationship != null && string.Equals(relationship.npcId, entity.id, StringComparison.OrdinalIgnoreCase))
-                                return string.Equals(relationship.stance, "hostile", StringComparison.OrdinalIgnoreCase);
-                        }
-                        return false;
-                    }
-                    if (ability == AbilityKind.Negotiate)
-                        return string.Equals(entity.kind, "npc", StringComparison.OrdinalIgnoreCase);
-                    return string.Equals(entity.kind, "npc", StringComparison.OrdinalIgnoreCase) ||
-                           string.Equals(entity.kind, "prop", StringComparison.OrdinalIgnoreCase);
-                }
-                return false;
-            }
-
-            for (int i = 0; i < view.Entities.Count; i++)
-            {
-                EntityView entity = view.Entities[i];
-                if (entity.EntityId != id)
-                    continue;
-                if (ability == AbilityKind.Attack) return entity.Kind == EntityKind.Enemy;
-                if (ability == AbilityKind.Negotiate) return entity.Kind == EntityKind.Npc;
-                return entity.Kind == EntityKind.Npc || entity.Kind == EntityKind.Prop;
-            }
-            return false;
-        }
-
         private static string EntityName(RunView view, Guid id)
         {
             for (int i = 0; i < view.Entities.Count; i++)
@@ -2745,37 +2698,6 @@ namespace KeyboardWanderer.Demo
             if (_serverOnline && _serverRun?.world != null)
                 return coord.X >= 0 && coord.X < _serverRun.world.width && coord.Y >= 0 && coord.Y < _serverRun.world.height;
             return view.Region.Contains(coord);
-        }
-
-        private bool ShouldResolveMoveAsEncounter(RunView view)
-        {
-            if (_ability != AbilityKind.Move || !_selectedCoord.HasValue)
-                return false;
-            GridCoord destination = _selectedCoord.Value;
-            TryGetPlayerPosition(view, out GridCoord player);
-
-            if (_serverOnline && _serverRun?.world != null)
-            {
-                bool serverEncounterOpen = _serverRun.activeEncounter != null &&
-                                           !string.Equals(_serverRun.activeEncounter.status, "resolved", StringComparison.OrdinalIgnoreCase);
-                if (!_encounterMoveRequired && !serverEncounterOpen)
-                    return false;
-                // A travel refusal never promotes an arbitrary far coordinate into a 5-cost turn Move.
-                // The player first selects the server staging coordinate (when supplied) or another
-                // nearby encounter-placement tile.
-                return player.ManhattanDistance(destination) <= 5;
-            }
-
-            if (view.Region.Contains(destination) && view.Region.GetTile(destination).Kind == TileKind.Hazard)
-                return true;
-            for (int i = 0; i < view.Entities.Count; i++)
-            {
-                EntityView entity = view.Entities[i];
-                if (entity.IsHostile && (entity.Position.ManhattanDistance(destination) <= 2 ||
-                                         entity.Position.ManhattanDistance(player) <= 2))
-                    return true;
-            }
-            return false;
         }
 
         private static TileKind TileKindForServer(GameApiClient.WorldSnapshot world, int code)
