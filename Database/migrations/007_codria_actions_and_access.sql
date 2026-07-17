@@ -224,4 +224,88 @@ create table admin_access_acquisition_history (
 create index admin_access_acquisition_history_owner_run_idx
     on admin_access_acquisition_history (owner_id, run_id, turn_no);
 
+create or replace function keyboard_wanderer.assert_committed_v4_action(
+    checked_turn_id uuid,
+    checked_run_id uuid,
+    checked_owner_id uuid,
+    checked_turn_no smallint
+)
+returns void
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+declare
+    stored_status text;
+    stored_turn_no smallint;
+    stored_schema text;
+    stored_input_type text;
+begin
+    select status, turn_no, command_schema_version, input_type
+      into strict stored_status, stored_turn_no, stored_schema, stored_input_type
+      from keyboard_wanderer.turn_records
+     where id = checked_turn_id
+       and run_id = checked_run_id
+       and owner_id = checked_owner_id;
+
+    if stored_status <> 'committed'
+       or stored_turn_no is distinct from checked_turn_no
+       or stored_schema <> 'codria-action.v4'
+       or stored_input_type <> 'USE_SKILL' then
+        raise exception using
+            errcode = '23514',
+            message = 'Codria history rows require the matching committed v4 USE_SKILL action';
+    end if;
+end
+$$;
+
+create or replace function keyboard_wanderer.validate_admin_access_acquisition()
+returns trigger
+language plpgsql
+set search_path = keyboard_wanderer, pg_catalog
+as $$
+declare
+    acquired_level smallint;
+    prior_level_count integer;
+    latest_prior_turn smallint;
+    turn_skill text;
+    turn_context text;
+begin
+    perform keyboard_wanderer.assert_committed_v4_action(
+        new.turn_id, new.run_id, new.owner_id, new.turn_no
+    );
+
+    select access_level
+      into strict acquired_level
+      from keyboard_wanderer.admin_access_level_catalog
+     where code = new.admin_access_code;
+
+    select count(*), max(h.turn_no)
+      into prior_level_count, latest_prior_turn
+      from keyboard_wanderer.admin_access_acquisition_history h
+      join keyboard_wanderer.admin_access_level_catalog c
+        on c.code = h.admin_access_code
+     where h.run_id = new.run_id and h.owner_id = new.owner_id
+       and c.access_level < acquired_level;
+
+    if prior_level_count <> acquired_level - 1
+       or (latest_prior_turn is not null and latest_prior_turn >= new.turn_no) then
+        raise exception using
+            errcode = '23514',
+            message = 'administrator access levels must be acquired exactly once and in chronological order';
+    end if;
+
+    select skill_id, action_context
+      into strict turn_skill, turn_context
+      from keyboard_wanderer.turn_records
+     where id = new.turn_id and run_id = new.run_id and owner_id = new.owner_id;
+
+    if turn_skill <> new.skill_id or turn_context <> new.action_context then
+        raise exception using
+            errcode = '23514',
+            message = 'administrator access evidence must match its authoritative skill action';
+    end if;
+    return new;
+end
+$$;
+
 commit;
