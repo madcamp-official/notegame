@@ -11,7 +11,7 @@ namespace KeyboardWanderer.Demo
             if (SceneManager.GetActiveScene().name != "SampleScene" || Object.FindAnyObjectByType<KeyboardWandererDemoController>() != null)
                 return;
 
-            var gameObject = new GameObject("Keyboard Wanderer Demo");
+            var gameObject = new GameObject("Codria Game");
             gameObject.AddComponent<KeyboardWandererDemoController>();
         }
     }

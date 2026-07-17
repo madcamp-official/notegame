@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace KeyboardWanderer.Demo
 {
-    [CreateAssetMenu(fileName = "NinjaAdventureAssetManifest", menuName = "Keyboard Wanderer/Ninja Adventure Asset Manifest")]
+    [CreateAssetMenu(fileName = "NinjaAdventureAssetManifest", menuName = "Codria/Ninja Adventure Asset Manifest")]
     public sealed class NinjaAdventureAssetManifest : ScriptableObject
     {
         [HideInInspector]
