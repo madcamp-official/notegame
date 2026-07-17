@@ -147,4 +147,61 @@ begin
 end
 $$;
 
+do $$
+declare
+    forced_rls_count integer;
+begin
+
+    if not exists (
+        select 1 from pg_catalog.pg_constraint
+         where conrelid = 'keyboard_wanderer.runs'::regclass
+           and conname = 'runs_fixed_product_contract'
+           and pg_get_constraintdef(oid) like '%WORLD_CODRIA%PROTAGONIST_NUPJUKYI%ARTIFACT_ADMIN_KEYBOARD%'
+    ) then
+        raise exception 'runs does not enforce the fixed product contract';
+    end if;
+
+    if not exists (
+        select 1 from pg_catalog.pg_constraint
+         where conrelid = 'keyboard_wanderer.safe_travels'::regclass
+           and conname = 'safe_travels_v4_command_shape'
+           and pg_get_constraintdef(oid) like '%MOVE%'
+    ) or not exists (
+        select 1 from pg_catalog.pg_constraint
+         where conrelid = 'keyboard_wanderer.turn_records'::regclass
+           and conname = 'turn_records_v4_command_shape'
+           and pg_get_constraintdef(oid) like '%USE_SKILL%'
+    ) then
+        raise exception 'canonical MOVE/USE_SKILL database constraints are missing';
+    end if;
+
+    select count(*)
+      into forced_rls_count
+      from pg_catalog.pg_class c
+      join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'keyboard_wanderer'
+       and c.relname = any (array[
+           'world_region_axis_bindings', 'admin_access_acquisition_history',
+           'major_choices', 'region_outcomes', 'npc_relationship_history',
+           'ability_usage_history', 'unresolved_hooks', 'technical_debt_entries'
+       ]::text[])
+       and c.relrowsecurity and c.relforcerowsecurity;
+    if forced_rls_count <> 8 then
+        raise exception 'all eight owner-scoped Codria v4 tables must force RLS, got %', forced_rls_count;
+    end if;
+
+    if not exists (
+        select 1 from pg_catalog.pg_trigger
+         where tgrelid = 'keyboard_wanderer.runs'::regclass
+           and tgname = 'runs_validate_codria_axis_contract' and not tgisinternal
+    ) or not exists (
+        select 1 from pg_catalog.pg_trigger
+         where tgrelid = 'keyboard_wanderer.technical_debt_entries'::regclass
+           and tgname = 'technical_debt_entries_guard' and not tgisinternal
+    ) then
+        raise exception 'aggregate axis validation or technical-debt immutability trigger is missing';
+    end if;
+end
+$$;
+
 rollback;
