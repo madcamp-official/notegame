@@ -288,6 +288,12 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     canonicalFacts,
     rumors: clone(campaign.initialRumors || []),
     openLoops: [{ id: deterministicUuid(`${runId}:opening-loop`), summary: firstBeat.title, status: "open", createdTurn: 0, expiresTurn: Math.min(campaign.turnLimit, 8), source: "campaign_director" }],
+    unresolvedHooks: [{ id: deterministicUuid(`${runId}:opening-loop`), summary: firstBeat.title, status: "open", createdTurn: 0, expiresTurn: Math.min(campaign.turnLimit, 8), source: "campaign_director" }],
+    majorChoices: [],
+    regionOutcomes: [],
+    abilityUsageHistory: [],
+    technicalDebtEntries: [],
+    finalPlacement: null,
     npcMemories: [],
     npcRelationships,
     activeQuests: [
@@ -452,7 +458,7 @@ function findUnrestrictedTravelPath(run, start, goal) {
 }
 
 function finaleGateEligible(run) {
-  return run.progressLevel >= 3 && (run.progressTokenDefinitions || []).length === 3 && run.progressTokenDefinitions.every((token) => run.progressTokens.includes(token.id));
+  return rootSystemGate(run).eligible;
 }
 
 export function resolveSafeTravel({ run: originalRun, request, now = new Date().toISOString() }) {
@@ -462,7 +468,8 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
   assert(player, 409, "PLAYER_MISSING", "The authoritative player entity is missing.");
   assert(!samePoint(player.position, request.destination), 422, "DESTINATION_INVALID", "Player is already on that tile.");
   const destinationArea = areaAt(originalRun.world, request.destination);
-  if (destinationArea.campaignRole === "FINAL_CONVERGENCE") assert(finaleGateEligible(originalRun), 422, "FINALE_ACCESS_DENIED", "Finale travel requires all three validated run milestones.");
+  assert(!request.destination.areaId || request.destination.areaId === destinationArea.id, 422, "DESTINATION_AREA_MISMATCH", "destination.areaId does not contain the selected coordinates.");
+  if (destinationArea.regionAxis === ROOT_SYSTEM) assert(finaleGateEligible(originalRun), 422, "ROOT_SYSTEM_ACCESS_DENIED", "Root System travel requires all three administrator access levels and the internal-collapse clue.", rootSystemGate(originalRun));
   const immutableLayout = fingerprint(publicWorld(originalRun.world));
   let path = findSafeTravelPath(originalRun, player.position, request.destination);
   let encounter = null;
@@ -481,7 +488,8 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
   const run = clone(originalRun);
   const runPlayer = entityById(run, run.playerEntityId);
   const from = clone(runPlayer.position);
-  const actualDestination = clone(path.path.at(-1));
+  const pathDestination = path.path.at(-1);
+  const actualDestination = { x: pathDestination.x, y: pathDestination.y };
   runPlayer.position = actualDestination;
   run.version += 1;
   run.navigationSequence = (run.navigationSequence || 0) + 1;
@@ -501,7 +509,8 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
       openedNavigationSequence: run.navigationSequence,
       openedAt: now,
       campaignTurnOpened: run.currentTurn,
-      suggestedActions: ["attack", "interact", "investigate", "negotiate", "move"]
+      suggestedActionContexts: [...CAMPAIGN_ACTION_CONTEXTS],
+      suggestedSkillIds: [...KEYBOARD_SKILLS]
     };
     run.encounterHistory.push(clone(run.activeEncounter));
   }
@@ -517,7 +526,7 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
     expectedRunVersion: request.expectedRunVersion,
     committedRunVersion: run.version,
     from,
-    to: actualDestination,
+    to: { areaId: actualArea.id, ...actualDestination },
     requestedDestination: clone(request.destination),
     path: path.path,
     pathCost: path.cost,
@@ -566,6 +575,33 @@ function prepare(run, request) {
   }
   const target = request.targetEntityId ? entityAnyById(run, request.targetEntityId) : null;
   assert(target, 422, "ENTITY_NOT_FOUND", "A valid target entity is required.");
+  if (target.state?.adminAccessLevelId) {
+    const candidate = (run.adminAccessCandidates || []).find((item) => item.id === target.state.candidateId);
+    assert(candidate && target.active, 422, "ADMIN_ACCESS_CANDIDATE_INVALID", "The selected administrator access candidate is unavailable.");
+    assert(candidate.skillId === request.skillId, 422, "ADMIN_ACCESS_SKILL_MISMATCH", `This candidate requires ${candidate.skillId}.`);
+    assert(!(run.adminAccessAcquisitionHistory || []).some((item) => item.accessLevelId === candidate.accessLevelId), 422, "ADMIN_ACCESS_ALREADY_ACQUIRED", `${candidate.accessLevelId} has already been acquired through another path.`);
+    const accessLevel = ADMIN_ACCESS_LEVELS.find((item) => item.id === candidate.accessLevelId);
+    assert(accessLevel.level === (run.adminAccessAcquisitionHistory || []).length + 1, 422, "ADMIN_ACCESS_ORDER_INVALID", `Acquire ${ADMIN_ACCESS_LEVELS[(run.adminAccessAcquisitionHistory || []).length].id} first.`);
+    assert(run.currentStoryBeat?.requiredEvidenceKey === candidate.accessLevelId, 422, "ADMIN_ACCESS_STAGE_INVALID", `${candidate.accessLevelId} can only be acquired during its active campaign beat.`);
+    assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Administrator access candidates must be within 3 tiles.");
+    let secondary = null;
+    if (request.skillId === "CONNECT") {
+      secondary = entityById(run, request.secondaryTargetEntityId);
+      assert(secondary && secondary.id !== target.id && manhattan(player.position, secondary.position) <= 5, 422, "SECONDARY_TARGET_REQUIRED", "CONNECT requires a distinct nearby second target.");
+    }
+    const focusCost = { COPY: 1, DELETE: 1, CONNECT: 2, RESTORE: 3, UNDO: 3 }[request.skillId];
+    assert(run.focus >= focusCost, 422, "INSUFFICIENT_FOCUS", `${request.skillId} requires ${focusCost} focus.`);
+    return {
+      difficulty: { COMBAT: 12, INVESTIGATION: 10, NEGOTIATION: 11, DEPLOYMENT: 13 }[candidate.actionContext],
+      modifier: 3,
+      focusCost,
+      target,
+      secondary,
+      actionContext: candidate.actionContext,
+      adminAccessCandidate: candidate,
+      normalizedAttempt: `${candidate.actionContext} with ${request.skillId} at ${candidate.regionAxis} for ${candidate.accessLevelId}`
+    };
+  }
   if (request.ability === "attack") {
     assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Attack accepts exactly one entity target.");
     const relationship = run.npcRelationships.find((item) => item.npcId === target.id);
@@ -604,7 +640,7 @@ function prepare(run, request) {
   if (request.ability === "delete") {
     assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Delete accepts exactly one entity target.");
     assert(target.active && target.id !== run.playerEntityId && !target.protected, 422, "ENTITY_PROTECTED", "The selected entity cannot be deleted.");
-    if (target.state?.finaleComponent) assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all milestones and physical finale entry.");
+    if (target.state?.finaleComponent) assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all three administrator access levels, the essential clue, and physical Root System entry.");
     assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Delete target must be within 3 tiles.");
     return { difficulty: 12, modifier: 3, focusCost: 1, target, normalizedAttempt: `Delete the removable entity ${target.name}` };
   }
@@ -618,7 +654,7 @@ function prepare(run, request) {
     const finaleRelated = target.state?.finaleComponent || secondary.state?.finaleComponent;
     if (finaleRelated) {
       const bothPuzzleEntities = (target.state?.finaleComponent || target.id === run.playerEntityId) && (secondary.state?.finaleComponent || secondary.id === run.playerEntityId);
-      assert(bothPuzzleEntities && finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale links require puzzle entities, all milestones, and physical finale entry.");
+      assert(bothPuzzleEntities && finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale links require puzzle entities, all three administrator access levels, the essential clue, and physical Root System entry.");
     }
     return { difficulty: 13, modifier: 2, focusCost: 2, target, secondary, normalizedAttempt: `Create a temporary allowed connection between ${target.name} and ${secondary.name}` };
   }
@@ -630,6 +666,17 @@ function prepare(run, request) {
   const restoreEntityOperation = restoration.inverseOps.find((operation) => operation.type === "restore_entity" && operation.entity.id === target.id);
   if (restoreEntityOperation) assert(!isActiveOccupied(run, restoreEntityOperation.entity.position), 422, "RESTORE_DESTINATION_OCCUPIED", "Restore destination is occupied by an active entity.");
   return { difficulty: 14, modifier: 2, focusCost: 3, target, restoration, normalizedAttempt: `Restore permitted recent damage or removal on ${target.name} from the authoritative snapshot recorded on turn ${restoration.turnNo}` };
+}
+
+function classifyActionContext(run, request, preparation) {
+  if (preparation.actionContext) return preparation.actionContext;
+  const target = preparation.target || null;
+  const relationship = target ? run.npcRelationships.find((item) => item.npcId === target.id) : null;
+  if (run.activeEncounter?.status === "active" || target?.kind === "enemy" || relationship?.stance === "hostile") return "COMBAT";
+  const playerArea = areaAt(run.world, entityById(run, run.playerEntityId).position);
+  if (playerArea.regionAxis === ROOT_SYSTEM || target?.state?.finaleComponent) return "DEPLOYMENT";
+  if (target?.kind === "npc") return "NEGOTIATION";
+  return "INVESTIGATION";
 }
 
 function outcomeFor(score, d20) {
@@ -697,7 +744,40 @@ function applyInverseOperation(run, operation, events) {
 
 function applyPrimaryEffect(run, request, preparation, turnNo, events) {
   const inverseOps = [];
-  if (request.ability === "move") {
+  if (preparation.adminAccessCandidate) {
+    const candidate = preparation.adminAccessCandidate;
+    const acquisition = {
+      id: deterministicUuid(`${run.id}:admin-access:${candidate.accessLevelId}:${turnNo}`),
+      accessLevelId: candidate.accessLevelId,
+      candidateId: candidate.id,
+      turnNo,
+      areaId: candidate.areaId,
+      regionAxis: candidate.regionAxis,
+      actionContext: candidate.actionContext,
+      skillId: candidate.skillId,
+      targetIds: [request.targetEntityId, request.secondaryTargetEntityId].filter(Boolean)
+    };
+    run.adminAccessAcquisitionHistory.push(acquisition);
+    if (!run.progressTokens.includes(candidate.accessLevelId)) run.progressTokens.push(candidate.accessLevelId);
+    run.progressLevel = run.adminAccessAcquisitionHistory.length;
+    preparation.target.state.adminAccessResolved = true;
+    preparation.target.state.adminAccessResolvedTurn = turnNo;
+    run.majorChoices.push({
+      id: deterministicUuid(`${run.id}:major-choice:admin-access:${turnNo}`),
+      type: "ADMIN_ACCESS_PATH_CHOSEN",
+      turnNo,
+      accessLevelId: candidate.accessLevelId,
+      regionAxis: candidate.regionAxis,
+      actionContext: candidate.actionContext,
+      skillId: candidate.skillId
+    });
+    const priorOutcome = run.regionOutcomes.find((item) => item.regionAxis === candidate.regionAxis);
+    const regionOutcome = { regionAxis: candidate.regionAxis, areaId: candidate.areaId, outcome: "ADMIN_ACCESS_ACQUIRED", lastChangedTurn: turnNo, accessLevelId: candidate.accessLevelId };
+    if (priorOutcome) Object.assign(priorOutcome, regionOutcome);
+    else run.regionOutcomes.push(regionOutcome);
+    events.push({ type: "admin_access_acquired", ...clone(acquisition) });
+    events.push({ type: "major_choice_recorded", choiceId: run.majorChoices.at(-1).id, choiceType: "ADMIN_ACCESS_PATH_CHOSEN" });
+  } else if (request.ability === "move") {
     const player = entityById(run, run.playerEntityId);
     const from = clone(player.position);
     player.position = clone(request.destination);
