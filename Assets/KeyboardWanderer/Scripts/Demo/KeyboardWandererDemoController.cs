@@ -839,16 +839,19 @@ namespace KeyboardWanderer.Demo
             GridCoord? destination = abilityName == "Move" || abilityName == "Copy" || abilityName == "Connect"
                 ? _selectedCoord
                 : null;
-            Guid? target = abilityName == "Move" || abilityName == "Rest" || abilityName == "Undo" ? null : _selectedTarget;
+            Guid? target = abilityName == "Move" || abilityName == "Undo" ? null : _selectedTarget;
             Guid? secondary = abilityName == "Connect" ? _selectedSecondaryTarget : null;
-            var request = new TurnRequest(Guid.NewGuid().ToString("N"), view.Version, _ability, target, secondary, destination, intent);
+            TurnRequest request = _ability == AbilityKind.Move && destination.HasValue
+                ? TurnRequest.Move(Guid.NewGuid().ToString("N"), view.Version, destination.Value)
+                : TurnRequest.UseSkill(Guid.NewGuid().ToString("N"), view.Version, _ability, target,
+                    secondary, destination);
             TurnResponse response = _service.Submit(request);
             if (!response.IsSuccess)
             {
                 _lastOutcome = response.ErrorCode.ToString();
                 _lastAttempt = response.ErrorMessage ?? "행동이 거부되었습니다.";
                 _lastExplanation = "서버 규칙과 같은 로컬 폴백 검증에서 거부되어 턴은 소비되지 않았습니다.";
-                _lastNarrative = "대상, 목적지, 자원 조건을 다시 확인한 뒤 새로운 시도를 선언하세요.";
+                _lastNarrative = "대상, 목적지, 자원 조건을 다시 확인한 뒤 스킬을 다시 선택하세요.";
                 AddLog("행동 거부 · " + _lastAttempt);
                 PlaySfx(AssetClip("UiCancelSound"));
                 return;
@@ -859,14 +862,16 @@ namespace KeyboardWanderer.Demo
             _lastModifier = response.Modifier;
             _lastDifficulty = response.Difficulty;
             _lastMechanicalScore = response.MechanicalScore;
-            _lastIntentAlignment = IntentAlignmentLabel(response.IntentAlignment);
+            _lastActionContext = CampaignCatalog.ContextLabel(response.ActionContext);
             _lastModifierBreakdown = "로컬 능력·상태 합계 " + Signed(response.Modifier);
             _lastOutcome = KoreanOutcome(response.Outcome);
             _lastAttempt = response.NormalizedAttempt;
             _lastExplanation = response.OutcomeExplanation + " · " + _lastModifierBreakdown;
             _lastNarrative = response.Narrative;
+            _lastStateChanges = StateChangeSummary(response.Events);
             _lastDialogue = Array.Empty<string>();
-            _playerActionUntil = Time.unscaledTime + (abilityName == "Attack" ? 0.5f : 0.22f);
+            _playerActionUntil = Time.unscaledTime +
+                (response.ActionContext == ActionContext.Combat ? 0.5f : 0.22f);
             AddLog("D20 " + response.D20 + " · " + _lastOutcome + " · " + response.NormalizedAttempt);
             for (int i = 0; i < response.Events.Count; i++)
                 AddLog(HumanizeEvent(response.Events[i]));
@@ -876,7 +881,7 @@ namespace KeyboardWanderer.Demo
             UpdateSelectionVisual(_service.CurrentView);
             LocalRunSaveService.Save(_service);
 
-            if (abilityName == "Attack")
+            if (response.ActionContext == ActionContext.Combat)
                 PlaySfx(AssetClip("SlashSound"));
             else if (response.Outcome == RuleOutcome.CriticalSuccess)
                 PlaySfx(AssetClip("SuccessJingle"));
@@ -888,7 +893,8 @@ namespace KeyboardWanderer.Demo
                 int generation = _runGeneration;
                 int turn = response.TurnNo;
                 _gmPending = true;
-                StartCoroutine(_narrativeClient.RequestNarrative(_service.CurrentView, response, _ability, intent,
+                StartCoroutine(_narrativeClient.RequestNarrative(_service.CurrentView, response, _ability,
+                    response.NormalizedAttempt,
                     CurrentAreaName(_service.CurrentView), result =>
                     {
                         if (generation != _runGeneration || _service == null || _service.CurrentView.CurrentTurn != turn)
@@ -914,31 +920,32 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        private IEnumerator SubmitServerTurn(string intent)
+        private IEnumerator SubmitServerAction()
         {
             EnsureRuntimeClients();
             _serverPending = true;
             _gmPending = true;
             _serverStatus = "권위 턴 커밋 중";
 
-            string ability = ServerAbilityName(_ability);
-            GridCoord? destinationCoord = _ability == AbilityKind.Move || _ability == AbilityKind.Copy
+            string skillId = ServerAbilityName(_ability).ToUpperInvariant();
+            GridCoord? destinationCoord = _ability == AbilityKind.Copy
                 ? _selectedCoord
                 : null;
             var destination = destinationCoord.HasValue
                 ? new GameApiClient.PositionSnapshot { x = destinationCoord.Value.X, y = destinationCoord.Value.Y }
                 : null;
-            string target = _ability == AbilityKind.Move || _ability == AbilityKind.Rest || _ability == AbilityKind.Undo
-                ? null
-                : _selectedTarget?.ToString();
-            string secondary = _ability == AbilityKind.Connect ? _selectedSecondaryTarget?.ToString() : null;
+            var targetIds = new List<string>();
+            if (_ability != AbilityKind.Undo && _selectedTarget.HasValue)
+                targetIds.Add(_selectedTarget.Value.ToString());
+            if (_ability == AbilityKind.Connect && _selectedSecondaryTarget.HasValue)
+                targetIds.Add(_selectedSecondaryTarget.Value.ToString());
             string requestId = "unity-" + Guid.NewGuid().ToString("N");
             GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
             int turnBeforeSubmit = _serverRun.currentTurn;
             GameApiClient.Result<GameApiClient.CommittedTurn> result = null;
 
-            yield return _gameApi.SubmitTurn(_serverRun.id, requestId, _serverRun.version, ability,
-                target, secondary, destination, intent, value => result = value);
+            yield return _gameApi.SubmitAction(_serverRun.id, requestId, _serverRun.version, skillId,
+                targetIds.ToArray(), destination, value => result = value);
 
             _serverPending = false;
             _gmPending = false;
@@ -968,7 +975,7 @@ namespace KeyboardWanderer.Demo
                 _lastOutcome = result?.ErrorCode ?? "NETWORK_ERROR";
                 _lastAttempt = result?.ErrorMessage ?? "권위 서버에서 응답을 받지 못했습니다.";
                 _lastExplanation = result?.ErrorCode == "RUN_VERSION_CONFLICT"
-                    ? "다른 상태가 먼저 커밋되어 최신 런을 다시 동기화합니다. 입력한 선언은 자동 재실행하지 않습니다."
+                    ? "다른 상태가 먼저 커밋되어 최신 런을 다시 동기화합니다. 선택한 행동은 자동 재실행하지 않습니다."
                     : "서버가 거부한 요청은 턴을 소비하지 않습니다. 로컬에서 임의 판정을 대신하지 않았습니다.";
                 _serverStatus = "턴 거부 · " + _lastOutcome;
                 PlaySfx(AssetClip("UiCancelSound"));
@@ -1011,7 +1018,7 @@ namespace KeyboardWanderer.Demo
             PlaySfx(_lastD20 == 20 ? AssetClip("SuccessJingle") : AssetClip("UiAcceptSound"));
         }
 
-        private IEnumerator SubmitServerTravel(string intent)
+        private IEnumerator SubmitServerTravel()
         {
             EnsureRuntimeClients();
             if (!_selectedCoord.HasValue)
@@ -1033,7 +1040,7 @@ namespace KeyboardWanderer.Demo
             string layoutHashBefore = _serverRun.world?.layoutHash;
             GameApiClient.Result<GameApiClient.CommittedNavigation> result = null;
 
-            yield return _gameApi.SubmitTravel(_serverRun.id, requestId, _serverRun.version, destination, intent,
+            yield return _gameApi.SubmitTravel(_serverRun.id, requestId, _serverRun.version, destination,
                 value => result = value);
 
             _serverPending = false;
@@ -1076,7 +1083,7 @@ namespace KeyboardWanderer.Demo
             _lastModifierBreakdown = "탐색 이동에는 판정 수정치 없음";
             _lastDifficulty = 0;
             _lastMechanicalScore = 0;
-            _lastIntentAlignment = "탐색";
+            _lastActionContext = "안전 이동";
             _lastOutcome = encounterOpened ? "사건 발견" : invariantHeld ? "안전 이동" : "이동 상태 확인";
             _lastAttempt = "고정 월드의 (" + destinationCoord.X + ", " + destinationCoord.Y + ")까지 안전 경로로 이동";
             _lastExplanation = encounterOpened
@@ -1088,6 +1095,9 @@ namespace KeyboardWanderer.Demo
             _lastNarrative = encounterOpened
                 ? actorName + "는(은) 안전 구간 끝에서 " + EncounterReasonLabel(_encounterReason) + " 사건과 마주쳤다. 이제 배치·전투·조사·협상 중 하나로 해결해야 한다."
                 : actorName + "는(은) 이미 생성된 월드 안에서 안전 경로를 따라 이동했다. 사건이 시작되기 전까지 세계 지형은 바뀌지 않는다.";
+            _lastStateChanges = encounterOpened
+                ? "위치: 안전 지점까지 이동 · 사건 활성화 · 캠페인 턴 유지"
+                : "위치와 이동 시간만 변경 · 캠페인 턴 유지 · D20 없음";
             _lastDialogue = Array.Empty<string>();
             SyncRestorableCandidateFromServer();
             SyncServerEntityVisuals(_serverRun);
@@ -1266,7 +1276,8 @@ namespace KeyboardWanderer.Demo
             _lastModifierBreakdown = "--";
             _lastDifficulty = 0;
             _lastMechanicalScore = 0;
-            _lastIntentAlignment = "--";
+            _lastActionContext = "--";
+            _lastStateChanges = "아직 확정된 상태 변화가 없습니다.";
             _lastDialogue = Array.Empty<string>();
 
             if (resumed)
@@ -1286,14 +1297,13 @@ namespace KeyboardWanderer.Demo
             {
                 _lastD20 = 0;
                 _lastOutcome = "READY";
-                _lastAttempt = "목적지나 대상을 고르고, 무엇을 시도할지 직접 적으세요.";
-                _lastExplanation = "높은 D20은 원래 의도에 더 가깝게, 낮은 D20은 대가와 우회를 크게 만듭니다.";
+                _lastAttempt = "MOVE 목적지 또는 관리자 키보드 스킬과 대상을 선택하세요.";
+                _lastExplanation = "자연어 없이 선택된 스킬·대상·장면 상태만으로 권위 판정을 실행합니다.";
                 _lastNarrative = CampaignPremise(_service.CurrentView);
                 AddLog("고정 월드 1회 생성 완료 · seed " + _worldSeed + " · " + ShortHash(LayoutHash(_service.CurrentView)));
             }
 
             _ability = AbilityKind.Move;
-            _intent = string.Empty;
             _selectedCoord = null;
             _selectedTarget = null;
             _selectedSecondaryTarget = null;
@@ -2015,7 +2025,7 @@ namespace KeyboardWanderer.Demo
             string entityKind = (kind ?? string.Empty).ToLowerInvariant();
             if (isPlayer || id.Contains("player")) return _playerSprite;
             if (id == "artifact.keyboard" || id.Contains("rune-book") || id.Contains("hidden-truth")) return _bookSprite;
-            if (id.Contains("milestone-token") || id.Contains("altar") || id.Contains("sign")) return _d20Sprite;
+            if (id.Contains("admin-access") || id.Contains("altar") || id.Contains("sign")) return _d20Sprite;
             if (id.StartsWith("finale."))
                 return id.Contains("memory") || id.Contains("witness") ? _bookSprite : _d20Sprite;
             if (id.Contains("root-core") || id.Contains("stabilizer") || id.Contains("autonomy-core") ||
