@@ -4,6 +4,33 @@ using System.Globalization;
 
 namespace KeyboardWanderer.Gameplay
 {
+    public sealed class AdminAccessBinding
+    {
+        public string AccessId { get; }
+        public int Level { get; }
+        public string SelectedRegionAxis { get; }
+        public ActionContext SelectedContext { get; }
+        public AbilityKind SelectedSkill { get; }
+        public IReadOnlyList<string> CandidateRegionAxes { get; }
+        public IReadOnlyList<ActionContext> CandidateContexts { get; }
+        public IReadOnlyList<AbilityKind> CandidateSkills { get; }
+
+        public AdminAccessBinding(string accessId, int level, string selectedRegionAxis,
+            ActionContext selectedContext, AbilityKind selectedSkill,
+            IEnumerable<string> candidateRegionAxes, IEnumerable<ActionContext> candidateContexts,
+            IEnumerable<AbilityKind> candidateSkills)
+        {
+            AccessId = accessId ?? string.Empty;
+            Level = Math.Max(1, Math.Min(3, level));
+            SelectedRegionAxis = selectedRegionAxis ?? string.Empty;
+            SelectedContext = selectedContext;
+            SelectedSkill = selectedSkill;
+            CandidateRegionAxes = new List<string>(candidateRegionAxes ?? Array.Empty<string>());
+            CandidateContexts = new List<ActionContext>(candidateContexts ?? Array.Empty<ActionContext>());
+            CandidateSkills = new List<AbilityKind>(candidateSkills ?? Array.Empty<AbilityKind>());
+        }
+    }
+
     public sealed class CampaignBlueprint
     {
         public string Id { get; }
@@ -21,13 +48,15 @@ namespace KeyboardWanderer.Gameplay
         public List<string> InitialFacts { get; }
         public List<string> InitialRumors { get; }
         public List<string> ForbiddenEvents { get; }
+        public List<AdminAccessBinding> AdminAccessBindings { get; }
 
         public CampaignBlueprint(string id, string title, string worldName, string playerName,
             string playerAssetId, string premise, IEnumerable<CampaignBeatState> beats,
             IEnumerable<EndingCandidateState> endings, IEnumerable<string> npcRoles,
             IEnumerable<string> npcNames, IEnumerable<string> questSeeds,
             IEnumerable<string> finaleComponents, IEnumerable<string> initialFacts,
-            IEnumerable<string> initialRumors, IEnumerable<string> forbiddenEvents)
+            IEnumerable<string> initialRumors, IEnumerable<string> forbiddenEvents,
+            IEnumerable<AdminAccessBinding> adminAccessBindings = null)
         {
             Id = id ?? string.Empty;
             Title = title ?? string.Empty;
@@ -44,96 +73,68 @@ namespace KeyboardWanderer.Gameplay
             InitialFacts = new List<string>(initialFacts ?? Array.Empty<string>());
             InitialRumors = new List<string>(initialRumors ?? Array.Empty<string>());
             ForbiddenEvents = new List<string>(forbiddenEvents ?? Array.Empty<string>());
+            AdminAccessBindings = new List<AdminAccessBinding>(adminAccessBindings ?? Array.Empty<AdminAccessBinding>());
         }
     }
 
     /// <summary>
-    /// Creates the offline campaign contract from the run seed. Geometry is generated once by the
-    /// region generator; this catalog varies story flavour and finale options without asking an LLM
-    /// to invent or replace map topology during play.
+    /// Fixed product contract for 《넙죽이와 붕괴한 코드 왕국》. A seed may bind content to
+    /// existing slots, but cannot replace Codria, Nupjukyi, the Administrator Keyboard, the three
+    /// access levels, or the six campaign-region axes.
     /// </summary>
     public static class CampaignCatalog
     {
-        public const string RulesVersion = "seeded-campaign.v4";
-        public const string CampaignId = "seeded-keyboard-wanderer";
-        public const string CampaignTitle = "키보드 방랑자";
-        public const string FallbackEndingCode = "LAST_RESORT";
+        public const string RulesVersion = "codria-campaign.v4";
+        public const string CampaignId = "WORLD_CODRIA";
+        public const string CampaignTitle = "넙죽이와 붕괴한 코드 왕국";
+        public const string WorldId = "WORLD_CODRIA";
+        public const string WorldName = "코드리아";
+        public const string ProtagonistId = "PROTAGONIST_NUPJUKYI";
+        public const string ProtagonistName = "넙죽이";
+        // Temporary visual binding only. Product identity remains PROTAGONIST_NUPJUKYI / 넙죽이.
+        public const string ProtagonistAssetId = "player.ninja-green.v1";
+        public const string AdministratorKeyboardId = "ARTIFACT_ADMIN_KEYBOARD";
+        public const string AdministratorKeyboardName = "관리자 키보드";
+        public const string FallbackEndingCode = "ENDING_EMERGENCY_WITHDRAWAL";
 
-        public const string ArrivalCatalystRole = "ARRIVAL_CATALYST";
-        public const string LocalStakesRole = "LOCAL_STAKES";
-        public const string RelationshipConflictRole = "RELATIONSHIP_CONFLICT";
-        public const string HiddenTruthRole = "HIDDEN_TRUTH";
-        public const string ConsequenceReturnRole = "CONSEQUENCE_RETURN";
-        public const string FinalConvergenceRole = "FINAL_CONVERGENCE";
+        public const string BugForestAxis = "REGION_BUG_FOREST";
+        public const string BufferVillageAxis = "REGION_BUFFER_VILLAGE";
+        public const string DeadlockCityAxis = "REGION_DEADLOCK_CITY";
+        public const string DataGrandLibraryAxis = "REGION_DATA_GRAND_LIBRARY";
+        public const string LegacyCitadelAxis = "REGION_LEGACY_CITADEL";
+        public const string RootSystemAxis = "REGION_ROOT_SYSTEM";
 
-        public static readonly string[] RoleIds =
+        // Compatibility names retained for the generator; their values are now product region axes.
+        public const string ArrivalCatalystRole = BugForestAxis;
+        public const string LocalStakesRole = BufferVillageAxis;
+        public const string RelationshipConflictRole = DeadlockCityAxis;
+        public const string HiddenTruthRole = DataGrandLibraryAxis;
+        public const string ConsequenceReturnRole = LegacyCitadelAxis;
+        public const string FinalConvergenceRole = RootSystemAxis;
+
+        public static readonly string[] RegionAxisIds =
         {
-            ArrivalCatalystRole, LocalStakesRole, RelationshipConflictRole,
-            HiddenTruthRole, ConsequenceReturnRole, FinalConvergenceRole
+            BugForestAxis, BufferVillageAxis, DeadlockCityAxis, DataGrandLibraryAxis,
+            LegacyCitadelAxis, RootSystemAxis
         };
 
-        public static readonly string[] MilestoneTokenIds =
+        public static readonly string[] RoleIds = RegionAxisIds;
+
+        public static readonly string[] AdminAccessLevelIds =
         {
-            "MILESTONE_TOKEN_1", "MILESTONE_TOKEN_2", "MILESTONE_TOKEN_3"
+            "ADMIN_ACCESS_LEVEL_1", "ADMIN_ACCESS_LEVEL_2", "ADMIN_ACCESS_LEVEL_3"
         };
 
         public static readonly string[] FinaleComponentIds =
         {
-            "finale.anchor", "finale.safeguard", "finale.passage", "finale.witness",
-            "finale.freedom", "finale.threat", "finale.memory"
-        };
-
-        private sealed class Theme
-        {
-            public readonly string Id;
-            public readonly string World;
-            public readonly string Crisis;
-            public readonly string Truth;
-            public readonly string Return;
-            public readonly string Motif;
-
-            public Theme(string id, string world, string crisis, string truth, string consequence,
-                string motif)
-            {
-                Id = id;
-                World = world;
-                Crisis = crisis;
-                Truth = truth;
-                Return = consequence;
-                Motif = motif;
-            }
-        }
-
-        private static readonly Theme[] Themes =
-        {
-            new Theme("tide", "잠든 조수의 군도", "밤마다 섬의 길이 물속으로 사라진다",
-                "도시의 안전을 위해 지운 기억이 조류를 붙잡고 있었다", "잊힌 항해자들의 선택이 파도와 함께 돌아온다", "푸른 종과 소금빛 기록"),
-            new Theme("ember", "꺼지지 않는 잿불령", "마을의 불씨가 서로의 온기를 빼앗기 시작했다",
-                "보호 의식은 오래전 추방된 수호자의 약속을 훔쳐 만들어졌다", "버려진 약속이 산불의 형상으로 귀환한다", "재의 정원과 붉은 실"),
-            new Theme("frost", "거울서리 고원", "얼음 거울이 주민들의 미래를 하나씩 고정한다",
-                "예언은 발견된 것이 아니라 두려움으로 반복 작성된 기록이었다", "거부한 미래들이 눈보라 속에서 되돌아온다", "은빛 거울과 유리 새"),
-            new Theme("root", "속삭이는 뿌리숲", "숲의 길이 방문자의 가장 소중한 관계를 삼킨다",
-                "고대 나무는 침입자가 아니라 주민들의 비밀을 대신 기억해 왔다", "잘라 낸 관계들이 덩굴의 목소리로 돌아온다", "씨앗 문자와 초록 등불"),
-            new Theme("clock", "멈춘 종탑도시", "해 질 무렵마다 같은 한 시간이 반복된다",
-                "반복은 재난이 아니라 단 한 사람을 기다리기 위한 공동의 선택이었다", "미뤄 둔 작별들이 시계탑 아래 모여든다", "황동 톱니와 종이 새"),
-            new Theme("echo", "메아리 동굴왕국", "말하지 않은 생각이 괴물의 목소리로 증폭된다",
-                "괴물은 외부의 적이 아니라 감춘 진실이 만든 공동의 메아리다", "침묵시킨 증언들이 수정 벽에서 깨어난다", "수정 북과 검은 물"),
-            new Theme("ruin", "별비 내리는 폐허원", "밤하늘의 파편이 오래된 건축물을 다시 움직인다",
-                "폐허는 멸망의 흔적이 아니라 다음 시대를 시험하는 거대한 질문이었다", "과거의 답들이 수호상으로 돌아온다", "별가루 지도와 돌 열쇠"),
-            new Theme("marsh", "달그림자 습지", "그림자를 잃은 이들이 서로의 이름을 잊어 간다",
-                "그림자는 저주가 아니라 약속을 보관하던 두 번째 기억이었다", "파기된 맹세가 검은 연꽃으로 피어난다", "달빛 병과 연꽃 인장")
-        };
-
-        private static readonly string[] PlayerNames =
-        {
-            "초록 방랑자", "낯선 편집자", "열쇠를 든 여행자", "기억을 잇는 자",
-            "길 위의 기록자", "균열을 걷는 자", "새벽의 조율자", "무명의 복원자"
+            "FINAL_ANCHOR", "FINAL_SAFEGUARD", "FINAL_MEMORY", "FINAL_FREEDOM",
+            "FINAL_THREAT", "FINAL_PASSAGE", "FINAL_WITNESS"
         };
 
         private static readonly string[] NpcNamePool =
         {
-            "마루", "세라", "도윤", "리오", "나린", "페이", "온", "루카",
-            "하람", "이브", "소미", "테오", "아린", "로안", "유나", "카이"
+            "바이트", "루프", "모나드", "세마", "래치", "스택", "캐시", "패치",
+            "링크", "포인터", "로그", "커밋"
         };
 
         private static readonly string[] RolePool =
