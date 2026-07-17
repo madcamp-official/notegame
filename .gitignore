@@ -110,3 +110,9 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Keyboard Wanderer server-local dependencies and secrets
+/Server/node_modules/
+/Server/.env
+/Server/.env.*
+!/Server/.env.example

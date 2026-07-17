@@ -1,0 +1,20 @@
+{
+  "name": "keyboard-wanderer-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Authoritative turn and narration API for Keyboard Wanderer",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test --test-reporter=spec",
+    "world:generate": "node scripts/generate-world.js",
+    "world:validate": "node scripts/generate-world.js --count 32 --summary-only"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

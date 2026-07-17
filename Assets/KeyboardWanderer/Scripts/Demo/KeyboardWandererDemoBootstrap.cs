@@ -8,7 +8,7 @@ namespace KeyboardWanderer.Demo
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreateDemo()
         {
-            if (SceneManager.GetActiveScene().name != "SampleScene" || Object.FindFirstObjectByType<KeyboardWandererDemoController>() != null)
+            if (SceneManager.GetActiveScene().name != "SampleScene" || Object.FindAnyObjectByType<KeyboardWandererDemoController>() != null)
                 return;
 
             var gameObject = new GameObject("Keyboard Wanderer Demo");

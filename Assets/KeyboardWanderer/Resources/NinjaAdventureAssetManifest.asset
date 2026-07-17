@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
+  BuilderVersion: 2
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -31,12 +32,65 @@ MonoBehaviour:
     y: 32
     width: 16
     height: 16
+  OutdoorFieldAtlas: {fileID: 2800000, guid: c43dc15421e384bb2be7aa7d1a6c6389, type: 3}
+  WaterAtlas: {fileID: 2800000, guid: 5d3abc92281c8446ab98ba9e98ff40d8, type: 3}
+  NatureAtlas: {fileID: 2800000, guid: 1e0319a13e264405ab53e4a15015dbd6, type: 3}
+  HouseAtlas: {fileID: 2800000, guid: 230d4af9c8c14449d9f36d210deeeb0a, type: 3}
+  OutdoorDirtRect:
+    serializedVersion: 2
+    x: 16
+    y: 208
+    width: 16
+    height: 16
+  OutdoorGrassRect:
+    serializedVersion: 2
+    x: 16
+    y: 160
+    width: 16
+    height: 16
+  OutdoorDarkGrassRect:
+    serializedVersion: 2
+    x: 16
+    y: 112
+    width: 16
+    height: 16
+  PlayerIdleSheet: {fileID: 2800000, guid: f85ec122d2c2f4aeb9cb75aac6af6bc9, type: 3}
+  PlayerWalkSheet: {fileID: 2800000, guid: e771f1022aa0a4b139af54671ffc4433, type: 3}
+  PlayerAttackSheet: {fileID: 2800000, guid: 63e3a84d5b4d04162a82e95ff2ce4444, type: 3}
+  SlimeSheet: {fileID: 2800000, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}
+  VillagerWalkSheet: {fileID: 2800000, guid: 0a610727db16c4b10ac87cef66cca3cb, type: 3}
+  PlayerFrameSize: 32
+  CreatureFrameSize: 16
   PlayerIdle: {fileID: -7385789195546760866, guid: fd0dc91ff18f746dea9f1192a6d94a41, type: 3}
   WardenIdle: {fileID: 4723107735738678597, guid: 07bb692ab5687420da17d27e29989325, type: 3}
+  SlimeIdle: {fileID: 4518187702968751635, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}
+  VillagerIdle: {fileID: -7385789195546760866, guid: ee8745936e2de4912a4f685588afa282, type: 3}
   RuneBook: {fileID: 2353571312451627304, guid: b724c872ed7f54eaca08c061d33b5dc3, type: 3}
   Crate: {fileID: 769504479347062634, guid: 6ecd53b1450af47f5af94ecd5e5ae9aa, type: 3}
+  TreasureChest: {fileID: 8213334933265063372, guid: b53ed5982c55a4291a34c0d3b071c53b, type: 3}
   D20: {fileID: -5843691984524311486, guid: 3bea09d9b5af44d068c18afa0f0a37d6, type: 3}
+  WoodPanel: {fileID: -8747778316048434277, guid: 481fd195d24644f91ab5b23504875a35, type: 3}
+  WoodBackground: {fileID: -4030754755457138777, guid: df035b5cf01574195bb7af7cabc27e24, type: 3}
+  WoodButtonNormal: {fileID: 1205776407840972037, guid: a772c7058990b4c8db9344ed9463d5a5, type: 3}
+  WoodButtonHover: {fileID: -7293006983133732075, guid: f4e163f3835364e2597e9d08faffe5bd, type: 3}
+  WoodButtonPressed: {fileID: 8346901879194642381, guid: 0682fedcaa43f431aaeec16f6134f72a, type: 3}
+  WoodButtonDisabled: {fileID: -5836713271973203417, guid: 44be3270e04494480bbbe5c960c9e034, type: 3}
+  HeartIcon: {fileID: 4543326179846441247, guid: a8bb3f1ef008c4a5e8ab4cc3f208f8f6, type: 3}
   MoveIcon: {fileID: -2241300882062069919, guid: d3ae3380aadc14afeb02fa47cc466214, type: 3}
+  MoveIconDisabled: {fileID: 8259108488230064799, guid: 6da4219013c62425c9c312251d226150, type: 3}
   CopyIcon: {fileID: 897710771807637462, guid: 3d9ad5093b2954b5eb7126783a01ef6d, type: 3}
+  CopyIconDisabled: {fileID: 132522856593005287, guid: 38935f7e89fb84e6ba04904ec35a414d, type: 3}
   DeleteIcon: {fileID: -6607481912129624618, guid: 773d227a474084d9ba1c8c6d4fd1b146, type: 3}
+  DeleteIconDisabled: {fileID: -3899677564991089478, guid: 216ed81a4075c4725ac9aac3a75d386f, type: 3}
+  InteractIcon: {fileID: 5682281752145333396, guid: 5424cacac472b470d9dcb022fe3d15ac, type: 3}
   PixelFont: {fileID: 12800000, guid: 8d0b54f2b8b774cb69af90b3584a4e9a, type: 3}
+  AdventureMusic: {fileID: 8300000, guid: 918125628d5f84d0fa83ebbbd2743e3f, type: 3}
+  VillageMusic: {fileID: 8300000, guid: b37b85a1a4d0c4601995e2c28a21d1bd, type: 3}
+  BattleMusic: {fileID: 8300000, guid: 90613ea4eba6947b3b5fdaa2b1fbc0c6, type: 3}
+  UiMoveSound: {fileID: 8300000, guid: abcd64c94256f4bf39dad98f611f2c3b, type: 3}
+  UiAcceptSound: {fileID: 8300000, guid: 6f68444b693e344c88d586ee6093a47d, type: 3}
+  UiCancelSound: {fileID: 8300000, guid: 52a3b4ea3a320477ebc52626d0e11987, type: 3}
+  SlashSound: {fileID: 8300000, guid: 4cc81036a03904d2c812c04f52ab3f53, type: 3}
+  HitSound: {fileID: 8300000, guid: f431b557b918b417e972b1914a9f073f, type: 3}
+  CoinSound: {fileID: 8300000, guid: 62cc601946aa24ca4b01629623e55104, type: 3}
+  SuccessJingle: {fileID: 8300000, guid: 7f1f282eb6b68498cbdf805c5e6925f3, type: 3}

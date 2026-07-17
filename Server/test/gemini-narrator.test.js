@@ -1,0 +1,89 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { DEFAULT_MODEL_PROFILES, GeminiNarrator } from "../src/llm/gemini-narrator.js";
+import { FALLBACK_MODEL } from "../src/llm/narration.js";
+
+const context = {
+  turnNo: 3,
+  remainingTurns: 27,
+  area: "Rain Ruins",
+  intent: "Inspect the broken lantern",
+  ability: "interact",
+  d20: 16,
+  outcome: "success",
+  normalizedAttempt: "Inspect the lantern",
+  allowedEffects: ["ambient_cue", "fact_hint"],
+  recentFacts: ["Rain has covered the western path."]
+};
+
+const silentLogger = { warn() {} };
+
+function responseWith(value) {
+  return {
+    ok: true,
+    async json() {
+      return { candidates: [{ content: { parts: [{ text: JSON.stringify(value) }] } }] };
+    }
+  };
+}
+
+test("Gemini adapter retries one semantically invalid response and sends bounded structured config", async () => {
+  const requests = [];
+  const outputs = [
+    { summary: "Unsafe", body: "Bad op", dialogue: null, proposedOps: [{ type: "delete_entity", text: "Delete it" }] },
+    { summary: "Lantern found", body: "Rain beads on the lantern's cracked glass.", dialogue: null, proposedOps: [{ type: "ambient_cue", text: "Play a soft rain cue." }] }
+  ];
+  const narrator = new GeminiNarrator({
+    apiKey: "unit-test-token",
+    logger: silentLogger,
+    fetchImpl: async (_url, options) => {
+      requests.push(options);
+      return responseWith(outputs.shift());
+    }
+  });
+
+  const result = await narrator.narrate(context);
+  assert.equal(requests.length, 2);
+  assert.equal(result.fallbackUsed, false);
+  assert.equal(result.model, DEFAULT_MODEL_PROFILES.fast.model);
+  assert.equal(result.proposedOps[0].type, "ambient_cue");
+  const requestBody = JSON.parse(requests[0].body);
+  assert.equal(requestBody.generationConfig.thinkingConfig.thinkingBudget, 0);
+  assert.equal(requestBody.generationConfig.maxOutputTokens, 384);
+  assert.equal(requestBody.generationConfig.responseMimeType, "application/json");
+  assert.equal(requestBody.generationConfig.responseJsonSchema.additionalProperties, false);
+  assert.equal(requests[0].headers["x-goog-api-key"], "unit-test-token");
+  assert.equal(requests[0].body.includes("unit-test-token"), false);
+});
+
+test("Gemini adapter performs only one retry then returns deterministic fallback", async () => {
+  let calls = 0;
+  const narrator = new GeminiNarrator({
+    apiKey: "unit-test-token",
+    logger: silentLogger,
+    fetchImpl: async () => {
+      calls += 1;
+      return responseWith({ summary: "", body: "", dialogue: null, proposedOps: [] });
+    }
+  });
+  const result = await narrator.narrate(context);
+  assert.equal(calls, 2);
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(result.model, FALLBACK_MODEL);
+  assert.ok(result.body.length > 0);
+});
+
+test("missing API key never performs a network request", async () => {
+  let calls = 0;
+  const narrator = new GeminiNarrator({
+    apiKey: "",
+    logger: silentLogger,
+    fetchImpl: async () => {
+      calls += 1;
+      throw new Error("should not run");
+    }
+  });
+  const result = await narrator.narrate(context);
+  assert.equal(calls, 0);
+  assert.equal(result.fallbackUsed, true);
+});

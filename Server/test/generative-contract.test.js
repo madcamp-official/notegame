@@ -1,0 +1,247 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { createCampaignBlueprint } from "../src/domain/campaign.js";
+import { generateWorld } from "../src/domain/world.js";
+import { FixedD20Source, createRunState, normalizeTurnRequest, resolveTurn } from "../src/domain/turn-engine.js";
+import { createCampaignPlanContext, validateCampaignPlanOutput } from "../src/llm/campaign-planning.js";
+import { GameService } from "../src/services/game-service.js";
+import { MemoryStore } from "../src/store/memory-store.js";
+
+const OWNER_ID = "77777777-7777-4777-8777-777777777777";
+const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
+
+function campaignFixture(seed, turnLimit = 40) {
+  return {
+    id: randomUUID(),
+    ownerId: OWNER_ID,
+    title: "generated contract fixture",
+    turnLimit,
+    ...createCampaignBlueprint({ worldSeed: seed, turnLimit }),
+    world: generateWorld(seed)
+  };
+}
+
+function adjacentWalkable(run) {
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const occupied = new Set(run.entities
+    .filter((entity) => entity.active && entity.blocking && entity.id !== player.id)
+    .map((entity) => `${entity.position.x},${entity.position.y}`));
+  for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+    const destination = { x: player.position.x + dx, y: player.position.y + dy };
+    if (destination.x <= 0 || destination.y <= 0 || destination.x >= run.world.width - 1 || destination.y >= run.world.height - 1) continue;
+    const tile = run.world.tiles[destination.y * run.world.width + destination.x];
+    if (tile !== 1 && tile !== 4 && !occupied.has(`${destination.x},${destination.y}`)) return destination;
+  }
+  assert.fail("The generated entry must have a legal neighboring tile.");
+}
+
+function minimalProposal() {
+  return {
+    campaign: {
+      title: "별빛 아래의 약속",
+      description: "마을 사람들은 오래된 서약의 의미를 함께 다시 정해야 한다.",
+      tone: ["신비", "따뜻함"]
+    },
+    beats: [],
+    npcs: [],
+    quests: [],
+    endings: [],
+    areaFlavors: []
+  };
+}
+
+test("same seeds reproduce campaign and map data while different seeds diversify both layers", () => {
+  const firstBlueprint = createCampaignBlueprint({ worldSeed: 73021, turnLimit: 40 });
+  const secondBlueprint = createCampaignBlueprint({ worldSeed: 73021, turnLimit: 40 });
+  const firstWorld = generateWorld(73021);
+  const secondWorld = generateWorld(73021);
+  assert.deepEqual(secondBlueprint, firstBlueprint);
+  assert.deepEqual(secondWorld, firstWorld);
+
+  const samples = [11, 12, 13, 14, 15, 16].map((seed) => ({
+    blueprint: createCampaignBlueprint({ worldSeed: seed, turnLimit: 40 }),
+    world: generateWorld(seed)
+  }));
+  assert.equal(new Set(samples.map(({ world }) => world.layoutHash)).size, samples.length);
+  assert.ok(new Set(samples.map(({ blueprint }) => blueprint.contentHash)).size > 1);
+  assert.ok(new Set(samples.map(({ blueprint }) => blueprint.generatedTitle)).size > 1);
+  assert.ok(new Set(samples.map(({ blueprint }) => blueprint.npcRoles.map((npc) => npc.displayName).join("|"))).size > 1);
+  assert.ok(new Set(samples.map(({ blueprint }) => blueprint.questSeeds.map((quest) => quest.title).join("|"))).size > 1);
+  assert.ok(new Set(samples.map(({ blueprint }) => blueprint.endingCandidates.map((ending) => ending.id).sort().join("|"))).size > 1);
+});
+
+test("all supported turn limits retain six biomes and converge to a valid seeded ending without rebuilding the map", () => {
+  for (const [index, turnLimit] of [30, 40, 50].entries()) {
+    const run = createRunState({
+      campaign: campaignFixture(8100 + index, turnLimit),
+      ownerId: OWNER_ID,
+      resolutionSeed: `convergence-${turnLimit}`
+    });
+    assert.equal(new Set(run.world.biomes.map((biome) => biome.id)).size, 6);
+    assert.deepEqual(
+      new Set(run.world.areas.map((area) => area.biomeId)),
+      new Set(run.world.biomes.map((biome) => biome.id))
+    );
+    const layoutHash = run.world.layoutHash;
+    run.currentTurn = turnLimit - 1;
+    run.version = turnLimit;
+    const result = resolveTurn({
+      run,
+      request: normalizeTurnRequest({
+        idempotencyKey: `converge-${turnLimit}`,
+        expectedRunVersion: turnLimit,
+        destination: adjacentWalkable(run),
+        intent: "마지막 선택을 향해 한 걸음 이동한다"
+      }),
+      d20Source: new FixedD20Source(12)
+    });
+    assert.equal(result.run.currentTurn, turnLimit);
+    assert.equal(result.run.status, "completed");
+    assert.ok(result.run.endingCandidates.some((ending) => ending.id === result.run.endingCode));
+    assert.equal(result.run.world.layoutHash, layoutHash);
+    assert.ok(result.turn.events.some((event) => event.type === "run_completed"));
+  }
+});
+
+test("the same campaign can converge to more than one server-approved ending", () => {
+  const source = campaignFixture(8201, 30);
+  const endingIds = source.endingCandidates.filter((ending) => !ending.emergency).slice(0, 2).map((ending) => ending.id);
+  assert.equal(endingIds.length, 2);
+  const resolved = endingIds.map((endingId, index) => {
+    const run = createRunState({ campaign: source, ownerId: OWNER_ID, resolutionSeed: `ending-${index}` });
+    run.currentTurn = 29;
+    run.version = 30;
+    run.selectedEndingId = endingId;
+    run.finalePuzzle.status = "resolved";
+    run.finalePuzzle.matchedEndingId = endingId;
+    return resolveTurn({
+      run,
+      request: normalizeTurnRequest({
+        idempotencyKey: `ending-path-${index}`,
+        expectedRunVersion: 30,
+        destination: adjacentWalkable(run),
+        intent: "우리의 결말을 향해 이동한다"
+      }),
+      d20Source: new FixedD20Source(12)
+    }).run.endingCode;
+  });
+  assert.deepEqual(resolved, endingIds);
+  assert.equal(new Set(resolved).size, 2);
+});
+
+test("natural-language requests infer abilities when the client omits an explicit ability", () => {
+  const run = createRunState({ campaign: campaignFixture(8301), ownerId: OWNER_ID, resolutionSeed: "language-grounding" });
+  const npc = run.entities.find((entity) => entity.kind === "npc");
+  const props = run.entities.filter((entity) => entity.kind === "prop").slice(0, 2);
+  const cases = [
+    { expected: "move", request: { destination: adjacentWalkable(run), intent: "동쪽 길로 이동한다" } },
+    { expected: "interact", request: { targetEntityId: npc.id, intent: "증인의 말을 자세히 조사한다" } },
+    { expected: "connect", request: { targetEntityId: props[0].id, secondaryTargetEntityId: props[1].id, intent: "두 물체의 흔적을 연결한다" } },
+    { expected: "rest", request: { intent: "잠시 휴식하며 숨을 고른다" } }
+  ];
+  for (const [index, item] of cases.entries()) {
+    const normalized = normalizeTurnRequest({
+      idempotencyKey: `natural-language-${index}`,
+      expectedRunVersion: 1,
+      ...item.request
+    });
+    assert.equal(normalized.ability, item.expected);
+    assert.equal(normalized.abilitySource, "natural_language_grounding");
+  }
+});
+
+test("campaign planning rejects coordinates, assets, and unknown immutable IDs", () => {
+  const blueprint = createCampaignBlueprint({ worldSeed: 8401, turnLimit: 40 });
+  const world = generateWorld(8401);
+  const context = createCampaignPlanContext({ blueprint, world, themeHint: "공동체의 오래된 약속" });
+  const invalidPlans = [
+    {
+      expectedCode: "CAMPAIGN_PLAN_MECHANICS_FORBIDDEN",
+      proposal: { ...minimalProposal(), campaign: { ...minimalProposal().campaign, description: "마지막 장면은 x=999 지점에서 열린다." } }
+    },
+    {
+      expectedCode: "CAMPAIGN_PLAN_MECHANICS_FORBIDDEN",
+      proposal: { ...minimalProposal(), campaign: { ...minimalProposal().campaign, description: "장면에는 assetId hero.secret를 사용한다." } }
+    },
+    {
+      expectedCode: "CAMPAIGN_PLAN_ID_FORBIDDEN",
+      proposal: { ...minimalProposal(), beats: [{ id: "beat.unknown", title: "없는 장면", description: "허용되지 않은 식별자다." }] }
+    }
+  ];
+  for (const { proposal, expectedCode } of invalidPlans) {
+    assert.throws(
+      () => validateCampaignPlanOutput(proposal, context),
+      (error) => error?.code === expectedCode
+    );
+  }
+});
+
+test("invalid campaign plans fall back deterministically without changing the sealed generated world", async () => {
+  const cases = [
+    {
+      seed: 8501,
+      reason: "CAMPAIGN_PLAN_MECHANICS_FORBIDDEN",
+      mutate: (proposal) => ({ ...proposal, campaign: { ...proposal.campaign, description: "x=777 위치에 비밀 장면을 둔다." } })
+    },
+    {
+      seed: 8502,
+      reason: "CAMPAIGN_PLAN_MECHANICS_FORBIDDEN",
+      mutate: (proposal) => ({ ...proposal, campaign: { ...proposal.campaign, description: "assetId hidden.hero를 장면에 둔다." } })
+    },
+    {
+      seed: 8503,
+      reason: "CAMPAIGN_PLAN_ID_FORBIDDEN",
+      mutate: (proposal) => ({ ...proposal, beats: [{ id: "beat.not-in-context", title: "알 수 없는 장면", description: "허용 목록 밖의 장면이다." }] })
+    }
+  ];
+  for (const { seed, reason, mutate } of cases) {
+    const service = new GameService({
+      store: new MemoryStore(),
+      narrator: {
+        async planCampaign() {
+          return { proposal: mutate(minimalProposal()), model: "untrusted-test-planner", modelProfile: "quality" };
+        }
+      },
+      clock: () => "2026-07-17T00:00:00.000Z",
+      logger: silentLogger
+    });
+    const preview = await service.createCampaign(OWNER_ID, { worldSeed: seed - 100, turnLimit: 40 });
+    const run = await service.createRun(OWNER_ID, preview.id, { worldSeed: seed, turnLimit: 40 });
+    assert.equal(run.generationPlan.generationMetadata.fallbackUsed, true);
+    assert.equal(run.generationPlan.generationMetadata.fallbackReason, reason);
+    assert.equal(run.world.layoutHash, generateWorld(seed).layoutHash);
+  }
+});
+
+test("the world generator runs exactly once for each campaign preview and each run start", async () => {
+  const generatedSeeds = [];
+  let planningCalls = 0;
+  const service = new GameService({
+    store: new MemoryStore(),
+    narrator: {
+      async planCampaign() {
+        planningCalls += 1;
+        return { fallbackUsed: true, proposal: null, fallbackReason: "test_declined", model: "test-planner" };
+      }
+    },
+    worldGenerator(seed) {
+      generatedSeeds.push(seed);
+      return generateWorld(seed);
+    },
+    clock: () => "2026-07-17T00:00:00.000Z",
+    logger: silentLogger
+  });
+
+  const campaign = await service.createCampaign(OWNER_ID, { worldSeed: 8600, turnLimit: 40 });
+  assert.deepEqual(generatedSeeds, [8600]);
+  assert.equal(planningCalls, 0, "campaign previews must defer LLM planning");
+
+  await service.createRun(OWNER_ID, campaign.id, { worldSeed: 8601, turnLimit: 30 });
+  assert.deepEqual(generatedSeeds, [8600, 8601]);
+  assert.equal(planningCalls, 1);
+
+  await service.createRun(OWNER_ID, campaign.id, { worldSeed: 8602, turnLimit: 50 });
+  assert.deepEqual(generatedSeeds, [8600, 8601, 8602]);
+  assert.equal(planningCalls, 2);
+});

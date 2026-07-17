@@ -21,7 +21,11 @@ namespace KeyboardWanderer.Core
         public bool IsBlocking { get; }
         public bool IsProtected { get; }
         public bool IsCloneable { get; }
+        public bool IsHostile { get; }
         public bool IsActive { get; private set; }
+        public bool IsOpened { get; private set; }
+        public int Health { get; private set; }
+        public int MaxHealth { get; }
         public Guid RegionId { get; private set; }
         public GridCoord Position { get; private set; }
         public int Layer { get; private set; }
@@ -37,6 +41,25 @@ namespace KeyboardWanderer.Core
             Guid regionId,
             GridCoord position,
             int layer = 0)
+            : this(entityId, kind, assetId, displayName, isBlocking, isProtected, isCloneable,
+                false, kind == EntityKind.Player ? 10 : kind == EntityKind.Enemy ? 4 : 1,
+                regionId, position, layer)
+        {
+        }
+
+        public EntityState(
+            Guid entityId,
+            EntityKind kind,
+            string assetId,
+            string displayName,
+            bool isBlocking,
+            bool isProtected,
+            bool isCloneable,
+            bool isHostile,
+            int maxHealth,
+            Guid regionId,
+            GridCoord position,
+            int layer = 0)
         {
             EntityId = entityId;
             Kind = kind;
@@ -45,7 +68,11 @@ namespace KeyboardWanderer.Core
             IsBlocking = isBlocking;
             IsProtected = isProtected;
             IsCloneable = isCloneable;
+            IsHostile = isHostile;
             IsActive = true;
+            IsOpened = false;
+            MaxHealth = Math.Max(1, maxHealth);
+            Health = MaxHealth;
             RegionId = regionId;
             Position = position;
             Layer = layer;
@@ -63,12 +90,76 @@ namespace KeyboardWanderer.Core
             IsActive = false;
         }
 
+        internal int ApplyDamage(int amount)
+        {
+            Health = Math.Max(0, Health - Math.Max(0, amount));
+            return Health;
+        }
+
+        internal int ApplyHealing(int amount)
+        {
+            Health = Math.Min(MaxHealth, Health + Math.Max(0, amount));
+            return Health;
+        }
+
+        internal void SetOpened()
+        {
+            IsOpened = true;
+        }
+
+        internal void RestoreRuntimeState(int health, bool isOpened, bool isActive)
+        {
+            Health = Math.Max(0, Math.Min(MaxHealth, health));
+            IsOpened = isOpened;
+            IsActive = isActive;
+        }
+
         internal EntityState Clone()
         {
-            var clone = new EntityState(EntityId, Kind, AssetId, DisplayName, IsBlocking, IsProtected, IsCloneable, RegionId, Position, Layer);
-            if (!IsActive)
-                clone.Deactivate();
+            var clone = new EntityState(EntityId, Kind, AssetId, DisplayName, IsBlocking, IsProtected, IsCloneable,
+                IsHostile, MaxHealth, RegionId, Position, Layer);
+            clone.RestoreRuntimeState(Health, IsOpened, IsActive);
             return clone;
+        }
+    }
+
+    /// <summary>
+    /// Immutable runtime-only entity state used by Restore and compensating Undo events.
+    /// Structural entity data remains owned by the deterministic world/entity catalog.
+    /// </summary>
+    public sealed class EntityRuntimeSnapshot
+    {
+        public Guid EntityId { get; }
+        public Guid RegionId { get; }
+        public GridCoord Position { get; }
+        public int Layer { get; }
+        public int Health { get; }
+        public bool IsOpened { get; }
+        public bool IsActive { get; }
+
+        public EntityRuntimeSnapshot(Guid entityId, Guid regionId, GridCoord position, int layer, int health,
+            bool isOpened, bool isActive)
+        {
+            EntityId = entityId;
+            RegionId = regionId;
+            Position = position;
+            Layer = layer;
+            Health = health;
+            IsOpened = isOpened;
+            IsActive = isActive;
+        }
+
+        public static EntityRuntimeSnapshot Capture(EntityState entity)
+        {
+            if (entity == null)
+                throw new ArgumentNullException(nameof(entity));
+            return new EntityRuntimeSnapshot(entity.EntityId, entity.RegionId, entity.Position, entity.Layer,
+                entity.Health, entity.IsOpened, entity.IsActive);
+        }
+
+        public EntityRuntimeSnapshot Clone()
+        {
+            return new EntityRuntimeSnapshot(EntityId, RegionId, Position, Layer, Health, IsOpened, IsActive);
         }
     }
 
@@ -220,6 +311,120 @@ namespace KeyboardWanderer.Core
             RemoveFromCell(entity);
             entity.Deactivate();
             return true;
+        }
+
+        public bool TryDamage(Guid entityId, int amount, out int remainingHealth, out bool defeated, out string errorCode)
+        {
+            remainingHealth = 0;
+            defeated = false;
+            errorCode = null;
+            if (amount <= 0)
+            {
+                errorCode = "INVALID_DAMAGE";
+                return false;
+            }
+            if (!_entities.TryGetValue(entityId, out EntityState entity) || !entity.IsActive)
+            {
+                errorCode = "ENTITY_NOT_FOUND";
+                return false;
+            }
+
+            remainingHealth = entity.ApplyDamage(amount);
+            defeated = remainingHealth <= 0;
+            if (defeated && entity.Kind != EntityKind.Player)
+            {
+                RemoveFromCell(entity);
+                entity.Deactivate();
+            }
+            return true;
+        }
+
+        public bool TryHeal(Guid entityId, int amount, out int health, out string errorCode)
+        {
+            health = 0;
+            errorCode = null;
+            if (amount <= 0)
+            {
+                errorCode = "INVALID_HEALING";
+                return false;
+            }
+            if (!_entities.TryGetValue(entityId, out EntityState entity) || !entity.IsActive)
+            {
+                errorCode = "ENTITY_NOT_FOUND";
+                return false;
+            }
+            health = entity.ApplyHealing(amount);
+            return true;
+        }
+
+        public bool TryOpen(Guid entityId, out string errorCode)
+        {
+            errorCode = null;
+            if (!_entities.TryGetValue(entityId, out EntityState entity) || !entity.IsActive)
+            {
+                errorCode = "ENTITY_NOT_FOUND";
+                return false;
+            }
+            if (entity.IsOpened)
+            {
+                errorCode = "ALREADY_OPENED";
+                return false;
+            }
+            entity.SetOpened();
+            return true;
+        }
+
+        public bool CanRestore(EntityRuntimeSnapshot snapshot, Func<Guid, GridCoord, bool> isValidPosition,
+            out string errorCode)
+        {
+            errorCode = null;
+            if (snapshot == null || !_entities.TryGetValue(snapshot.EntityId, out EntityState entity))
+            {
+                errorCode = "ENTITY_NOT_FOUND";
+                return false;
+            }
+            if (snapshot.IsActive && (isValidPosition == null || !isValidPosition(snapshot.RegionId, snapshot.Position)))
+            {
+                errorCode = "ENTITY_POSITION_INVALID";
+                return false;
+            }
+            if (snapshot.IsActive && entity.IsBlocking &&
+                IsBlockingOccupied(snapshot.RegionId, snapshot.Position, snapshot.Layer, entity.EntityId))
+            {
+                errorCode = "TILE_OCCUPIED";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Applies a previously captured runtime snapshot without replacing structural entity data.
+        /// This never changes map geometry and is therefore safe for Restore/Undo compensation.
+        /// </summary>
+        public bool TryRestore(EntityRuntimeSnapshot snapshot, Func<Guid, GridCoord, bool> isValidPosition,
+            out string errorCode)
+        {
+            if (!CanRestore(snapshot, isValidPosition, out errorCode))
+                return false;
+
+            EntityState entity = _entities[snapshot.EntityId];
+            if (entity.IsActive)
+                RemoveFromCell(entity);
+
+            entity.SetPosition(snapshot.RegionId, snapshot.Position, snapshot.Layer);
+            entity.RestoreRuntimeState(snapshot.Health, snapshot.IsOpened, snapshot.IsActive);
+            if (snapshot.IsActive)
+                AddToCell(entity);
+            return true;
+        }
+
+        public List<EntityRuntimeSnapshot> CaptureRuntimeState()
+        {
+            var snapshots = new List<EntityRuntimeSnapshot>();
+            foreach (EntityState entity in _entities.Values)
+                snapshots.Add(EntityRuntimeSnapshot.Capture(entity));
+            snapshots.Sort((left, right) => string.CompareOrdinal(left.EntityId.ToString("N"), right.EntityId.ToString("N")));
+            return snapshots;
         }
 
         public List<string> Validate(Func<Guid, GridCoord, bool> isValidPosition)
