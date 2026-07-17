@@ -411,24 +411,105 @@ begin
         costs_json, guaranteed_operations, allowed_effects, state_delta,
         state_hash_before, state_hash_after, rng_audit, created_at
     ) values (
-        test_turn, test_run, test_owner, 1, 'keyboard-wanderer-rules.v3',
-        '{"ability":"move","abilitySource":"explicit_selection","legalExecution":"move to area-local tile (2,1)"}'::jsonb,
+        test_turn, test_run, test_owner, 1, 'codria-rules.v4',
+        jsonb_build_object(
+            'inputType', 'USE_SKILL', 'skillId', 'CONNECT',
+            'targetIds', jsonb_build_array(test_npc::text), 'actionContext', 'NEGOTIATION'
+        ),
         12, 3, '[{"source":"keyboard_affinity","value":3}]'::jsonb,
         15, 9, 'success', 0,
-        '{}'::jsonb, '[{"op":"MOVE","entityId":"player"}]'::jsonb,
-        '["entity_moved"]'::jsonb, '{"position":{"from":[1,1],"to":[2,1]}}'::jsonb,
+        '{"focus":2}'::jsonb, '[{"op":"CONNECT","durationTurns":3}]'::jsonb,
+        '["relationship_changed","admin_access_candidate"]'::jsonb,
+        '{"relationship":{"trustDelta":10},"technicalDebtDelta":2}'::jsonb,
         state_hash_before, state_hash_after,
         '{"algorithm":"sha256_modulo_d20.v2","secretRedacted":true}'::jsonb,
         test_time
     );
 
+    update npc_relationships
+       set affinity = 5, trust = 10, relationship_state = 'cooperative',
+           notes = '{"connectedBy":"CONNECT"}'::jsonb,
+           last_changed_turn = 1, updated_at = test_time
+     where id = test_relationship and owner_id = test_owner and run_id = test_run;
+
     insert into turn_events (
         turn_record_id, run_id, owner_id, event_index, event_type, payload, created_at
     ) values
-    (test_turn, test_run, test_owner, 0, 'ENTITY_MOVED',
-     '{"type":"entity_moved","from":{"x":1,"y":1},"to":{"x":2,"y":1}}'::jsonb, test_time),
+    (test_turn, test_run, test_owner, 0, 'RELATIONSHIP_CHANGED',
+     '{"type":"relationship_changed","affinityDelta":5,"trustDelta":10}'::jsonb, test_time),
     (test_turn, test_run, test_owner, 1, 'TURN_COMMITTED',
-     '{"type":"turn_committed","turnNo":1,"runVersion":3}'::jsonb, test_time);
+     '{"type":"turn_committed","turnNo":1,"runVersion":4}'::jsonb, test_time);
+
+    insert into admin_access_acquisition_history (
+        run_id, owner_id, world_id, turn_id, turn_no, admin_access_code,
+        region_axis_code, area_id, action_context, acquisition_method,
+        skill_id, evidence, acquired_at
+    ) values (
+        test_run, test_owner, test_world, test_turn, 1, 'ADMIN_ACCESS_LEVEL_1',
+        'REGION_BUG_FOREST', area_arrival, 'NEGOTIATION', 'witness-cooperation',
+        'CONNECT', '{"candidateCount":3,"seedSelected":true}'::jsonb, test_time
+    );
+
+    insert into major_choices (
+        run_id, owner_id, turn_id, turn_no, choice_key, option_key,
+        region_axis_code, action_context, immediate_effects, long_term_tags, created_at
+    ) values (
+        test_run, test_owner, test_turn, 1, 'choice.bug-forest.coexist', 'coexist-with-errors',
+        'REGION_BUG_FOREST', 'NEGOTIATION', '{"publicTrustDelta":2}'::jsonb,
+        '["coexistence","npc-callback"]'::jsonb, test_time
+    );
+
+    insert into region_outcomes (
+        run_id, owner_id, turn_id, turn_no, region_axis_code, sequence_no,
+        outcome_key, outcome_status, outcome_state, ending_tags, created_at
+    ) values (
+        test_run, test_owner, test_turn, 1, 'REGION_BUG_FOREST', 1,
+        'outcome.bug-forest.cooperative-stability', 'STABILIZED',
+        '{"errorsRemoved":false,"coexistence":true}'::jsonb,
+        '["world-autonomy","public-trust"]'::jsonb, test_time
+    );
+
+    insert into npc_relationship_history (
+        relationship_id, run_id, owner_id, turn_id, turn_no,
+        affinity_delta, trust_delta, fear_delta, affinity_after, trust_after,
+        fear_after, relationship_state_after, reason_code, context, created_at
+    ) values (
+        test_relationship, test_run, test_owner, test_turn, 1,
+        5, 10, 0, 5, 10, 0, 'cooperative', 'CONNECT_COOPERATION',
+        '{"regionAxis":"REGION_BUG_FOREST"}'::jsonb, test_time
+    );
+
+    insert into ability_usage_history (
+        run_id, owner_id, turn_id, turn_no, skill_id, action_context,
+        target_ids, outcome, effects_json, created_at
+    ) values (
+        test_run, test_owner, test_turn, 1, 'CONNECT', 'NEGOTIATION',
+        jsonb_build_array(test_npc::text), 'success',
+        '{"relationshipChanged":true,"adminAccessAcquired":"ADMIN_ACCESS_LEVEL_1"}'::jsonb,
+        test_time
+    );
+
+    insert into unresolved_hooks (
+        id, run_id, owner_id, hook_key, region_axis_code, npc_actor_id,
+        introduced_turn_id, introduced_turn_no, summary, hook_payload,
+        deadline_turn, created_at, updated_at
+    ) values (
+        test_hook, test_run, test_owner, 'hook.legacy.connect-feedback',
+        'REGION_LEGACY_CITADEL', test_npc, test_turn, 1,
+        'The forced semantic edge may return from the Legacy Citadel.',
+        '{"callbackAt":"REGION_LEGACY_CITADEL","sourceSkill":"CONNECT"}'::jsonb,
+        20, test_time, test_time
+    );
+
+    insert into technical_debt_entries (
+        id, run_id, owner_id, turn_id, turn_no, skill_id, operation_type,
+        target_id, forced_override, debt_delta, deferred_consequence_type,
+        metadata, created_at
+    ) values (
+        test_debt_entry, test_run, test_owner, test_turn, 1, 'CONNECT', 'CONNECT',
+        test_npc::text, false, 2, 'RELATIONSHIP_FEEDBACK',
+        '{"hookKey":"hook.legacy.connect-feedback"}'::jsonb, test_time
+    );
 
     select max(id)
       into strict test_last_event
