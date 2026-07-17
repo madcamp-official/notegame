@@ -1,0 +1,25 @@
+import { createApplication } from "./app.js";
+
+const application = await createApplication();
+application.server.listen(application.config.port, application.config.host, () => {
+  application.logger.info({
+    event: "server_started",
+    host: application.config.host,
+    port: application.config.port,
+    storage: application.config.storage,
+    narrationModel: application.config.geminiFastModel,
+    geminiConfigured: Boolean(application.config.geminiApiKey)
+  });
+});
+
+let closing = false;
+async function shutdown(signal) {
+  if (closing) return;
+  closing = true;
+  application.logger.info({ event: "server_stopping", signal });
+  await application.close();
+  process.exitCode = 0;
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
