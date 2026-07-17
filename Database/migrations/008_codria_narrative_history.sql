@@ -464,4 +464,90 @@ begin
 end
 $$;
 
+create trigger major_choices_validate
+before insert on major_choices
+for each row execute function keyboard_wanderer.validate_codria_action_history();
+
+create trigger region_outcomes_validate
+before insert on region_outcomes
+for each row execute function keyboard_wanderer.validate_codria_action_history();
+
+create trigger npc_relationship_history_validate
+before insert on npc_relationship_history
+for each row execute function keyboard_wanderer.validate_npc_relationship_history();
+
+create trigger ability_usage_history_validate
+before insert on ability_usage_history
+for each row execute function keyboard_wanderer.validate_ability_usage_history();
+
+create trigger unresolved_hooks_transition_guard
+before insert or update or delete on unresolved_hooks
+for each row execute function keyboard_wanderer.enforce_unresolved_hook_transition();
+
+create trigger unresolved_hooks_set_updated_at
+before update on unresolved_hooks
+for each row execute function keyboard_wanderer.set_updated_at();
+
+create trigger technical_debt_entries_guard
+before insert or update or delete on technical_debt_entries
+for each row execute function keyboard_wanderer.enforce_technical_debt_entry();
+
+do $$
+declare
+    table_name text;
+begin
+    foreach table_name in array array[
+        'major_choices', 'region_outcomes', 'npc_relationship_history',
+        'ability_usage_history'
+    ]
+    loop
+        execute format(
+            'create trigger %I before update or delete on keyboard_wanderer.%I for each row execute function keyboard_wanderer.reject_generative_history_mutation()',
+            table_name || '_append_only', table_name
+        );
+    end loop;
+end
+$$;
+
+do $$
+declare
+    table_name text;
+begin
+    foreach table_name in array array[
+        'major_choices', 'region_outcomes', 'npc_relationship_history',
+        'ability_usage_history'
+    ]
+    loop
+        execute format('alter table keyboard_wanderer.%I enable row level security', table_name);
+        execute format('alter table keyboard_wanderer.%I force row level security', table_name);
+        execute format(
+            'create policy %I on keyboard_wanderer.%I for select using (owner_id = (select keyboard_wanderer.current_app_user_id()))',
+            table_name || '_owner_select', table_name
+        );
+        execute format(
+            'create policy %I on keyboard_wanderer.%I for insert with check (owner_id = (select keyboard_wanderer.current_app_user_id()))',
+            table_name || '_owner_insert', table_name
+        );
+    end loop;
+
+    foreach table_name in array array['unresolved_hooks', 'technical_debt_entries']
+    loop
+        execute format('alter table keyboard_wanderer.%I enable row level security', table_name);
+        execute format('alter table keyboard_wanderer.%I force row level security', table_name);
+        execute format(
+            'create policy %I on keyboard_wanderer.%I for select using (owner_id = (select keyboard_wanderer.current_app_user_id()))',
+            table_name || '_owner_select', table_name
+        );
+        execute format(
+            'create policy %I on keyboard_wanderer.%I for insert with check (owner_id = (select keyboard_wanderer.current_app_user_id()))',
+            table_name || '_owner_insert', table_name
+        );
+        execute format(
+            'create policy %I on keyboard_wanderer.%I for update using (owner_id = (select keyboard_wanderer.current_app_user_id())) with check (owner_id = (select keyboard_wanderer.current_app_user_id()))',
+            table_name || '_owner_update', table_name
+        );
+    end loop;
+end
+$$;
+
 commit;
