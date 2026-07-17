@@ -945,6 +945,8 @@ function applyDirectorOperations(run, narrative, turnNo, budget, events) {
       if (run.turnLimit - turnNo <= 3) { reject("ENDING_WINDOW_LOCKED"); continue; }
       const loop = { id: deterministicUuid(`${run.id}:hook:${turnNo}:${appliedOps.length}`), summary: operation.summary, status: "open", createdTurn: turnNo, expiresTurn: Math.min(run.turnLimit, turnNo + Math.max(1, Math.min(operation.ttlTurns || 5, run.turnLimit - turnNo))), source: "validated_director" };
       run.openLoops.push(loop);
+      run.unresolvedHooks ||= [];
+      run.unresolvedHooks.push(clone(loop));
       events.push({ type: "open_loop_created", loopId: loop.id, summary: loop.summary });
     } else if (operation.op === "START_QUEST") {
       if (run.turnLimit - turnNo <= 5 || run.activeQuests.filter((quest) => quest.status === "active").length >= 3) { reject("QUEST_HORIZON_LOCKED"); continue; }
@@ -1013,6 +1015,8 @@ function expireNarrativeState(run, turnNo, events, forceConvergence = false) {
     if (loop.status === "open" && Number.isInteger(loop.expiresTurn) && loop.expiresTurn <= turnNo) {
       loop.status = "expired";
       loop.closedTurn = turnNo;
+      const hook = (run.unresolvedHooks || []).find((item) => item.id === loop.id);
+      if (hook) Object.assign(hook, { status: "expired", closedTurn: turnNo });
       events.push({ type: "open_loop_closed", loopId: loop.id, reason: "ttl_expired" });
     }
   }
@@ -1027,6 +1031,8 @@ function expireNarrativeState(run, turnNo, events, forceConvergence = false) {
     if (loop.status !== "open") continue;
     loop.status = "closed";
     loop.closedTurn = turnNo;
+    const hook = (run.unresolvedHooks || []).find((item) => item.id === loop.id);
+    if (hook) Object.assign(hook, { status: "closed", closedTurn: turnNo });
     events.push({ type: "open_loop_closed", loopId: loop.id, reason: "ending_convergence" });
   }
   const allRequiredBeatsCompleted = run.requiredStoryBeats.every((beat) => beat.status === "completed");
@@ -1039,22 +1045,54 @@ function expireNarrativeState(run, turnNo, events, forceConvergence = false) {
   }
 }
 
-function updateCampaignMetrics(run, request, outcome, turnNo, events) {
+function updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events) {
   const before = clone(run.metrics);
   const success = SUCCESS_OUTCOMES.has(outcome);
   const critical = outcome === "critical_success" || outcome === "critical_failure";
   const shift = success ? (critical ? 3 : 2) : (critical ? -4 : -2);
   run.metrics.worldStability += shift;
   run.metrics.publicTrust += success ? 1 : -2;
-  run.metrics.technicalDebt += success ? -1 : 3;
-  if (request.ability === "copy") { run.metrics.worldAutonomy += 2; run.metrics.technicalDebt += 1; }
+  // Failed checks do not silently create or erase debt. Only an applied editing
+  // operation (or an explicit repair of a ledger entry) changes technical debt.
+  if (request.ability === "copy") run.metrics.worldAutonomy += 2;
   if (request.ability === "delete") { run.metrics.worldStability += 2; run.metrics.worldAutonomy -= 1; }
   if (request.ability === "connect") { run.metrics.worldAutonomy += 2; run.metrics.publicTrust += 2; run.metrics.companionBond += 1; }
-  if (["restore", "undo"].includes(request.ability)) { run.metrics.worldStability += 2; run.metrics.technicalDebt -= 2; }
-  if (request.ability === "interact") { run.metrics.publicTrust += 2; run.metrics.companionBond += 2; }
-  if (request.ability === "negotiate") { run.metrics.publicTrust += success ? 4 : -2; run.metrics.worldAutonomy += success ? 2 : 0; run.metrics.companionBond += success ? 2 : 0; }
-  if (request.ability === "attack") { run.metrics.worldStability += success ? 1 : -1; run.metrics.publicTrust -= 1; }
-  if (request.ability === "rest") { run.metrics.companionBond += 1; run.metrics.technicalDebt -= 1; }
+  if (["restore", "undo"].includes(request.ability)) run.metrics.worldStability += 2;
+  if (actionContext === "NEGOTIATION") { run.metrics.publicTrust += success ? 3 : -1; run.metrics.companionBond += success ? 2 : 0; }
+  if (actionContext === "COMBAT") run.metrics.publicTrust -= 1;
+  const debtDelta = technicalDebtDelta({
+    skillId: request.skillId,
+    successful: success,
+    forcedOverride: request.forcedOverride,
+    resolvesDebtEntryId: request.resolvesDebtEntryId
+  });
+  run.metrics.technicalDebt += debtDelta;
+  if (success && request.resolvesDebtEntryId) {
+    const resolved = run.technicalDebtEntries.find((item) => item.id === request.resolvesDebtEntryId && item.resolvedAt === null);
+    if (resolved) {
+      resolved.resolvedAt = turnNo;
+      resolved.resolutionSkillId = request.skillId;
+      events.push({ type: "technical_debt_resolved", entryId: resolved.id, debtDelta });
+    }
+  }
+  if (debtDelta > 0) {
+    const entry = {
+      id: deterministicUuid(`${run.id}:technical-debt:${turnNo}:${request.skillId}`),
+      runId: run.id,
+      turnId: deterministicUuid(`${run.id}:turn:${turnNo}`),
+      turnNo,
+      skillId: request.skillId,
+      operationType: request.skillId,
+      actionContext,
+      targetId: request.targetEntityId || request.resolvesDebtEntryId || "LAST_REVERSIBLE_ACTION",
+      forcedOverride: request.forcedOverride === true,
+      debtDelta,
+      deferredConsequenceType: { COPY: "DUPLICATED_STATE", DELETE: "REMOVED_DEPENDENCY", CONNECT: "COUPLING_RISK", UNDO: "COMPENSATION_DRIFT" }[request.skillId] || "EDIT_SIDE_EFFECT",
+      resolvedAt: null
+    };
+    run.technicalDebtEntries.push(entry);
+    events.push({ type: "technical_debt_recorded", entryId: entry.id, debtDelta, deferredConsequenceType: entry.deferredConsequenceType });
+  }
   run.metrics.turnPressure = Math.max(run.metrics.turnPressure, Math.round((turnNo / run.turnLimit) * 70 + Math.min(30, run.pressure * 2)));
   for (const keyName of Object.keys(run.metrics)) run.metrics[keyName] = Math.max(0, Math.min(100, Math.round(run.metrics[keyName])));
   const changes = Object.entries(run.metrics).filter(([keyName, value]) => value !== before[keyName]).map(([keyName, value]) => ({ metric: keyName, from: before[keyName], to: value }));
@@ -1063,11 +1101,18 @@ function updateCampaignMetrics(run, request, outcome, turnNo, events) {
 
 export function resolveTurn({ run: originalRun, request, d20Source = new DeterministicD20Source(), forcedD20 = null, now = new Date().toISOString(), directorOutput = null }) {
   assert(originalRun.status === "active", 409, "RUN_NOT_ACTIVE", "The run does not accept turns.");
+  assert(request.inputType === "USE_SKILL" && KEYBOARD_SKILLS.includes(request.skillId), 400, "TURN_REQUEST_INVALID", "Only structured USE_SKILL commands consume campaign turns.");
+  if (request.resolvesDebtEntryId) {
+    assert(["RESTORE", "UNDO"].includes(request.skillId), 422, "TECHNICAL_DEBT_RESOLUTION_INVALID", "Only RESTORE or UNDO can explicitly resolve a technical debt entry.");
+    assert(originalRun.technicalDebtEntries.some((item) => item.id === request.resolvesDebtEntryId && item.resolvedAt === null), 422, "TECHNICAL_DEBT_ENTRY_INVALID", "The selected technical debt entry is not unresolved.");
+  }
   const stateHashBefore = stateFingerprint(originalRun);
   const openedEncounter = originalRun.activeEncounter?.status === "active" ? clone(originalRun.activeEncounter) : null;
   if (openedEncounter) assert(request.ability !== "rest", 422, "ENCOUNTER_ACTION_REQUIRED", "An active encounter requires a nearby meaningful action; rest cannot bypass it.", { activeEncounter: openedEncounter });
   const immutableLayout = fingerprint(publicWorld(originalRun.world));
   const preparation = prepare(originalRun, request);
+  const actionContext = classifyActionContext(originalRun, request, preparation);
+  assert(CAMPAIGN_ACTION_CONTEXTS.includes(actionContext), 500, "ACTION_CONTEXT_INVALID", "The server failed to classify a consuming action context.");
   const intentAnalysis = analyzeIntent({ run: originalRun, request, legalExecution: preparation.normalizedAttempt });
   const turnNo = originalRun.currentTurn + 1;
   const d20 = forcedD20 ?? d20Source.roll({ resolutionSeed: originalRun.resolutionSeed, runId: originalRun.id, turnNo });
@@ -1076,6 +1121,12 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   const outcome = outcomeFor(score, d20);
   const budget = consequenceBudget(d20);
   const run = clone(originalRun);
+  run.majorChoices ||= [];
+  run.regionOutcomes ||= [];
+  run.abilityUsageHistory ||= [];
+  run.adminAccessAcquisitionHistory ||= [];
+  run.technicalDebtEntries ||= [];
+  run.unresolvedHooks ||= clone(run.openLoops || []);
   const events = [];
 
   if (preparation.focusCost > 0) {
@@ -1111,23 +1162,34 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   }
 
   run.currentTurn = turnNo;
+  run.abilityUsageHistory.push({
+    id: deterministicUuid(`${run.id}:ability-usage:${turnNo}`),
+    turnNo,
+    skillId: request.skillId,
+    actionContext,
+    targetIds: [request.targetEntityId, request.secondaryTargetEntityId].filter(Boolean),
+    outcome,
+    d20,
+    forcedOverride: request.forcedOverride === true
+  });
   if (openedEncounter) {
     const resolvedEncounter = { ...openedEncounter, status: "resolved", resolvedTurn: turnNo, resolutionAction: request.ability, resolutionOutcome: outcome, resolvedAt: now };
     run.encounterHistory = (run.encounterHistory || []).map((item) => item.id === resolvedEncounter.id ? clone(resolvedEncounter) : item);
     run.activeEncounter = null;
     events.push({ type: "encounter_resolved", encounterId: resolvedEncounter.id, action: request.ability, outcome, campaignTurnConsumed: true });
   }
-  updateCampaignMetrics(run, request, outcome, turnNo, events);
+  updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events);
   evaluateFinalePuzzle(run, turnNo, events);
-  const contextualActions = SUCCESS_OUTCOMES.has(outcome) && ["interact", "negotiate"].includes(request.ability) ? [request.ability, request.ability === "interact" ? "investigate" : request.ability] : [];
   const campaignRole = areaAt(run.world, entityById(run, run.playerEntityId).position).campaignRole;
+  const currentArea = areaAt(run.world, entityById(run, run.playerEntityId).position);
   const targetEvidenceKeys = [preparation.target, preparation.secondary]
     .filter(Boolean)
     .flatMap((item) => [item.state?.evidenceKey, item.state?.finaleComponent ? "FINALE_PUZZLE_COMPONENT" : null])
     .filter(Boolean);
   if (run.finalePuzzle?.status === "resolved") targetEvidenceKeys.push("FINALE_PUZZLE_RESOLVED");
+  if (currentArea.regionAxis === ROOT_SYSTEM) targetEvidenceKeys.push("ROOT_SYSTEM_ENTERED");
   advanceStoryDirector(run, turnNo, events, {
-    ability: request.ability, outcome, contextualActions, campaignRole,
+    ability: request.ability, outcome, contextualActions: [actionContext.toLowerCase()], campaignRole,
     targetEvidenceKeys,
     finalePuzzleResolved: run.finalePuzzle?.status === "resolved",
     finaleEndingId: run.finalePuzzle?.matchedEndingId || null
@@ -1145,6 +1207,15 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   events.push({ type: "turn_committed", turnNo, runVersion: run.version });
   if (explicitFinaleReady || forcedTurnLimitFallback) {
     const ending = chooseEnding(run);
+    const playerAtEnding = entityById(run, run.playerEntityId);
+    const endingArea = areaAt(run.world, playerAtEnding.position);
+    run.finalPlacement = {
+      areaId: endingArea.id,
+      regionAxis: endingArea.regionAxis,
+      position: clone(playerAtEnding.position),
+      selectedEndingId: ending.id,
+      turnNo
+    };
     run.status = "completed";
     run.endingCode = ending.id;
     run.currentAct = "finale_resolution";
@@ -1168,6 +1239,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     expectedRunVersion: request.expectedRunVersion,
     committedRunVersion: run.version,
     request: clone(request),
+    actionContext,
     normalizedAttempt: intentAnalysis.normalizedAttempt,
     intentAnalysis: clone(intentAnalysis),
     d20,
@@ -1188,7 +1260,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     mechanicalScore: score,
     outcome,
     consequenceBudget: budget,
-    rulesetVersion: "keyboard-wanderer-rules.v3",
+    rulesetVersion: "codria-rules.v4",
     stateHashBefore,
     stateHashAfter: stateFingerprint(run),
     events,
@@ -1200,6 +1272,11 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
       npcMemories: run.npcMemories.filter((memory) => memory.createdTurn === turnNo),
       relationships: run.npcRelationships.filter((item) => item.lastChangedTurn === turnNo),
       quests: run.activeQuests.filter((quest) => quest.createdTurn === turnNo),
+      majorChoices: run.majorChoices.filter((choice) => choice.turnNo === turnNo),
+      regionOutcomes: run.regionOutcomes.filter((item) => item.lastChangedTurn === turnNo),
+      abilityUsageHistory: run.abilityUsageHistory.filter((item) => item.turnNo === turnNo),
+      adminAccessHistory: run.adminAccessAcquisitionHistory.filter((item) => item.turnNo === turnNo),
+      technicalDebtEntries: run.technicalDebtEntries.filter((item) => item.turnNo === turnNo || item.resolvedAt === turnNo),
       appliedOps: directorPlan.appliedOps,
       rejectedOps: directorPlan.rejectedOps
     },
@@ -1243,8 +1320,8 @@ export function directorContext(run, turn) {
   return {
     schemaVersion: "2.0",
     requestType: "TURN_NARRATION",
-    campaign: { title: run.campaignTitle, worldName: run.worldName, premise: run.premise, contentHash: run.campaignContentHash },
-    progression: { level: run.progressLevel, tokens: clone(run.progressTokens), tokenDefinitions: clone(run.progressTokenDefinitions) },
+    campaign: { title: GAME_TITLE, worldId: WORLD_CODRIA, worldName: WORLD_NAME_KO, protagonistId: PROTAGONIST_NUPJUKYI, protagonistName: PROTAGONIST_NAME_KO, artifactId: ARTIFACT_ADMIN_KEYBOARD, premise: run.premise, contentHash: run.campaignContentHash },
+    progression: { level: run.progressLevel, tokens: clone(run.progressTokens), tokenDefinitions: clone(run.progressTokenDefinitions), rootSystemGate: rootSystemGate(run) },
     turnNo: turn.turnNo,
     remainingTurns,
     act: campaignAct(turn.turnNo, run.turnLimit),
@@ -1252,7 +1329,10 @@ export function directorContext(run, turn) {
     area: currentArea.name,
     areaSummary: currentArea.summary,
     intent: turn.request.intent,
+    playerNote: turn.request.playerNote,
     ability: turn.request.ability,
+    skillId: turn.request.skillId,
+    actionContext: turn.actionContext,
     normalizedAttempt: turn.normalizedAttempt,
     intentAnalysis: clone(turn.intentAnalysis),
     d20: turn.d20,
@@ -1278,7 +1358,14 @@ export function directorContext(run, turn) {
     openLoops: run.openLoops.filter((loop) => loop.status === "open").slice(-8),
     rumors: run.rumors.filter((rumor) => rumor.status === "active").slice(-6),
     npcRelationships: run.npcRelationships.filter((item) => visibleEntities.some((entityItem) => entityItem.id === item.npcId)),
-    recentMemories: run.npcMemories.filter((item) => !item.expired).slice(-8)
+    recentMemories: run.npcMemories.filter((item) => !item.expired).slice(-8),
+    majorChoices: (run.majorChoices || []).slice(-8),
+    regionOutcomes: (run.regionOutcomes || []).slice(-6),
+    abilityUsageHistory: (run.abilityUsageHistory || []).slice(-8),
+    adminAccessHistory: clone(run.adminAccessAcquisitionHistory || []),
+    technicalDebtEntries: (run.technicalDebtEntries || []).filter((item) => item.resolvedAt === null).slice(-8),
+    unresolvedHooks: (run.unresolvedHooks || []).filter((item) => item.status === "open").slice(-8),
+    endingFactors: run.status === "completed" ? clone(run.finaleResolution?.endingFactors || null) : null
   };
 }
 
@@ -1326,7 +1413,12 @@ export function publicRun(run) {
     id: run.id,
     campaignId: run.campaignId,
     campaignTitle: run.campaignTitle,
+    gameTitle: run.gameTitle || GAME_TITLE,
+    worldId: run.worldId || WORLD_CODRIA,
     worldName: run.worldName,
+    protagonistId: run.protagonistId || PROTAGONIST_NUPJUKYI,
+    protagonistName: run.protagonistName || PROTAGONIST_NAME_KO,
+    artifactId: run.artifactId || ARTIFACT_ADMIN_KEYBOARD,
     archetype: run.archetype,
     premise: run.premise,
     templateId: run.templateId,
@@ -1362,11 +1454,8 @@ export function publicRun(run) {
     discoveredAreaIds: run.discoveredAreaIds,
     activeEncounter: run.activeEncounter ? clone(run.activeEncounter) : null,
     encounterHistory: (run.encounterHistory || []).slice(-12).map((item) => clone(item)),
-    finaleGate: {
-      eligible: finaleGateEligible(run),
-      requiredProgressLevel: 3,
-      missingProgressTokens: (run.progressTokenDefinitions || []).filter((token) => !run.progressTokens.includes(token.id)).map((token) => token.id)
-    },
+    rootSystemGate: rootSystemGate(run),
+    finaleGate: { ...rootSystemGate(run), requiredProgressLevel: 3, missingProgressTokens: rootSystemGate(run).missingAdminAccessLevels },
     endingCandidates: run.endingCandidates.map((item) => item.title),
     endingCandidateDetails: run.endingCandidates,
     playerEntityId: run.playerEntityId,
@@ -1379,11 +1468,20 @@ export function publicRun(run) {
     rumors: run.rumors.filter((item) => item.status === "active"),
     npcRelationships: run.npcRelationships.map((item) => ({ ...item, npcName: entityNames.get(item.npcId) || "", score: item.affinity, label: item.stance, reason: "authoritative relationship state" })),
     npcMemories: run.npcMemories.filter((item) => !item.expired).map((item) => ({ ...item, npcName: entityNames.get(item.npcId) || "", memory: item.summary, importance: Math.round(item.importance * 100), turnNo: item.createdTurn })),
+    majorChoices: clone(run.majorChoices || []),
+    regionOutcomes: clone(run.regionOutcomes || []),
+    abilityUsageHistory: clone(run.abilityUsageHistory || []),
+    adminAccessLevels: clone(run.adminAccessLevels || ADMIN_ACCESS_LEVELS),
+    adminAccessCandidates: clone(run.adminAccessCandidates || []),
+    adminAccessAcquisitionHistory: clone(run.adminAccessAcquisitionHistory || []),
+    technicalDebtEntries: clone(run.technicalDebtEntries || []),
+    unresolvedHooks: clone((run.unresolvedHooks || []).filter((item) => item.status === "open")),
     restoreCandidates: restoreCandidatesForRun(run),
     generationPlan: run.generationPlan,
     campaignContentHash: run.campaignContentHash,
     abilities: CORE_ABILITIES,
-    contextActions: CONTEXT_ACTIONS,
+    actionContexts: CONTEXT_ACTIONS,
+    inputTypes: ["MOVE", "USE_SKILL"],
     createdAt: run.createdAt,
     updatedAt: run.updatedAt
   };
@@ -1406,6 +1504,8 @@ export function publicTurn(turn) {
     expectedRunVersion: turn.expectedRunVersion,
     committedRunVersion: turn.committedRunVersion,
     request: turn.request,
+    actionContext: turn.actionContext,
+    campaignTurnConsumed: true,
     normalizedAttempt: turn.normalizedAttempt,
     intentAnalysis: turn.intentAnalysis,
     d20: turn.d20,
