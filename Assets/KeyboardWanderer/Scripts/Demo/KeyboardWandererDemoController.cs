@@ -2717,11 +2717,7 @@ namespace KeyboardWanderer.Demo
 
         private string CampaignTitle(RunView view)
         {
-            if (_serverOnline && !string.IsNullOrWhiteSpace(_serverRun?.campaignTitle)) return _serverRun.campaignTitle;
-            if (_serverCampaign != null && !string.IsNullOrWhiteSpace(_serverCampaign.generatedTitleKo)) return _serverCampaign.generatedTitleKo;
-            if (_serverCampaign != null && !string.IsNullOrWhiteSpace(_serverCampaign.generatedTitle)) return _serverCampaign.generatedTitle;
-            if (_serverCampaign != null && !string.IsNullOrWhiteSpace(_serverCampaign.title)) return _serverCampaign.title;
-            return string.IsNullOrWhiteSpace(view.CampaignTitle) ? "생성 중인 캠페인" : view.CampaignTitle;
+            return CampaignCatalog.CampaignTitle;
         }
 
         private string CampaignPremise(RunView view)
@@ -2730,7 +2726,7 @@ namespace KeyboardWanderer.Demo
             if (_serverCampaign != null && !string.IsNullOrWhiteSpace(_serverCampaign.premiseKo)) return _serverCampaign.premiseKo;
             if (_serverCampaign != null && !string.IsNullOrWhiteSpace(_serverCampaign.premise)) return _serverCampaign.premise;
             return string.IsNullOrWhiteSpace(view.CampaignPremise)
-                ? "Seed에서 파생된 위협과 인물 관계가 첫 선언을 기다립니다."
+                ? "넙죽이는 코드리아에서 관리자 키보드와 권한 3단계를 찾아 ROOT_SYSTEM으로 향합니다."
                 : view.CampaignPremise;
         }
 
@@ -2752,7 +2748,7 @@ namespace KeyboardWanderer.Demo
                 if (!string.IsNullOrWhiteSpace(quest?.currentStep)) return quest.currentStep;
             }
             return string.IsNullOrWhiteSpace(view.CurrentStoryBeatObjective)
-                ? "현재 사실과 미회수 훅을 바탕으로 다음 시도를 선언하세요."
+                ? "목적지 또는 관리자 키보드 스킬과 대상을 선택하세요."
                 : view.CurrentStoryBeatObjective;
         }
 
@@ -2761,12 +2757,9 @@ namespace KeyboardWanderer.Demo
         private int RemainingTurns(RunView view) => _serverOnline && _serverRun != null ? Math.Max(0, _serverRun.remainingTurns) : view.RemainingTurns;
         private int Focus(RunView view) => _serverOnline && _serverRun != null ? _serverRun.focus : view.Focus;
         private int Pressure(RunView view) => _serverOnline && _serverRun != null ? _serverRun.pressure : 0;
-        private int MilestoneProgress(RunView view) => _serverOnline && _serverRun != null
+        private int AdminAccessLevel(RunView view) => _serverOnline && _serverRun != null
             ? Mathf.Clamp(_serverRun.adminLevel, 0, 3)
-            : view.MilestoneProgress;
-        private int AccessTokenCount(RunView view) => _serverOnline && _serverRun?.accessTokens != null
-            ? Mathf.Clamp(_serverRun.accessTokens.Length, 0, 3)
-            : view.MilestoneProgress;
+            : view.AdminAccess;
         private int TravelCount(RunView view) => _serverOnline && _serverRun != null ? _serverRun.safeTravelCount : view.TravelTime;
 
         private string MetricsLine(RunView view)
@@ -2790,18 +2783,18 @@ namespace KeyboardWanderer.Demo
             switch ((phase ?? string.Empty).ToLowerInvariant())
             {
                 case "awakening":
-                case "introduction": return "1단계 · 도착의 촉매";
+                case "introduction": return "1단계 · 코드리아 추락";
                 case "permission_one":
-                case "adaptation": return "2단계 · 지역의 이해관계";
+                case "adaptation": return "2단계 · 관리자 권한 I";
                 case "permission_two":
-                case "expansion": return "3단계 · 관계의 충돌";
+                case "expansion": return "3단계 · 관리자 권한 II";
                 case "truth_index":
-                case "truth": return "4단계 · 숨은 진실";
+                case "truth": return "4단계 · 통제 내부 오류";
                 case "legacy_judgment":
-                case "backflow": return "5단계 · 결과의 귀환";
+                case "backflow": return "5단계 · 기술 부채 역류";
                 case "root_resolution":
-                case "finale": return "6단계 · 마지막 수렴";
-                default: return string.IsNullOrWhiteSpace(phase) ? "1단계 · 도착의 촉매" : phase;
+                case "finale": return "6단계 · ROOT_SYSTEM";
+                default: return string.IsNullOrWhiteSpace(phase) ? "1단계 · 코드리아 추락" : phase;
             }
         }
 
@@ -2828,22 +2821,22 @@ namespace KeyboardWanderer.Demo
                 string matched = string.IsNullOrWhiteSpace(_serverRun.rootPuzzle.matchedEndingId)
                     ? "레시피 미완성"
                     : EndingTitle(_serverRun.rootPuzzle.matchedEndingId);
-                return "마지막 수렴 " + FirstNonEmpty(_serverRun.rootPuzzle.status, "locked") + " · " + matched;
+                return "ROOT_SYSTEM " + FirstNonEmpty(_serverRun.rootPuzzle.status, "locked") + " · " + matched;
             }
             if (_serverOnline && _serverRun?.rootGate != null)
                 return _serverRun.rootGate.eligible
-                    ? "수렴지 개방 · 공간 연결로 결말 선택"
-                    : "수렴지 잠김 · 표식 " + MilestoneProgress(view) + "/3 · 토큰 " + AccessTokenCount(view) + "/3";
-            return MilestoneProgress(view) >= 3
-                ? "수렴지 개방 · 구성 요소를 연결하세요"
-                : "수렴지 잠김 · 핵심 표식 " + MilestoneProgress(view) + "/3";
+                    ? "ROOT_SYSTEM 개방 · 최종 배치 대기"
+                    : "ROOT_SYSTEM 잠김 · 관리자 권한 " + AdminAccessLevel(view) + "/3";
+            return AdminAccessLevel(view) >= 3
+                ? "ROOT_SYSTEM 개방 · 최종 배치를 선택하세요"
+                : "ROOT_SYSTEM 잠김 · 관리자 권한 " + AdminAccessLevel(view) + "/3";
         }
 
         private string SubmissionButtonLabel(RunView view)
         {
-            if (_ability == AbilityKind.Move && !ShouldResolveMoveAsEncounter(view))
-                return "안전 탐색 이동\n\nD20 없음\n의미 턴 유지";
-            return "사건 행동 제출\n\n서버 D20\n+ 의미 턴";
+            if (_ability == AbilityKind.Move)
+                return "MOVE 실행\n\nD20 없음\n턴 유지";
+            return "USE_SKILL 실행\n\n서버 D20\n+ 캠페인 턴";
         }
         private int MaxFocus(RunView view) => _serverOnline && _serverRun != null
             ? (_serverRun.maxFocus > 0 ? _serverRun.maxFocus : Math.Max(10, _serverRun.focus))
@@ -2856,20 +2849,7 @@ namespace KeyboardWanderer.Demo
 
         private string PlayerDisplayName(RunView view)
         {
-            if (_serverOnline && _serverRun?.entities != null)
-            {
-                for (int i = 0; i < _serverRun.entities.Length; i++)
-                {
-                    GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
-                    if (entity != null && string.Equals(entity.id, _serverRun.playerEntityId,
-                            StringComparison.OrdinalIgnoreCase))
-                        return FirstNonEmpty(entity.name, "방랑자");
-                }
-            }
-            for (int i = 0; i < view.Entities.Count; i++)
-                if (view.Entities[i].EntityId == view.PlayerEntityId)
-                    return FirstNonEmpty(view.Entities[i].DisplayName, "방랑자");
-            return "방랑자";
+            return CampaignCatalog.ProtagonistName;
         }
 
         private bool TryGetServerPlayerState(out GameApiClient.EntityStateSnapshot state)
@@ -2908,12 +2888,18 @@ namespace KeyboardWanderer.Demo
             var lines = new List<string>();
             if (_serverOnline && _serverRun != null)
             {
+                lines.Add("⌘ 관리자 권한 · " + Mathf.Clamp(_serverRun.adminLevel, 0, 3) + "/3");
+                int serverDebt = _serverRun.metrics?.technicalDebt ?? 0;
+                lines.Add("⚠ 기술 부채 · " + serverDebt + " · 원장 " +
+                          (_serverRun.technicalDebtEntries?.Length ?? 0));
+                if (_serverRun.majorChoices != null && _serverRun.majorChoices.Length > 0)
+                    lines.Add("↩ 선택 회수 · " + _serverRun.majorChoices[_serverRun.majorChoices.Length - 1]);
                 if (_serverRun.rootPuzzle != null)
                 {
                     string matched = string.IsNullOrWhiteSpace(_serverRun.rootPuzzle.matchedEndingId)
                         ? "공간 레시피 선택 대기"
                         : EndingTitle(_serverRun.rootPuzzle.matchedEndingId);
-                    lines.Add("⌘ 마지막 수렴 · " + FirstNonEmpty(_serverRun.rootPuzzle.status, "locked") + " · " + matched);
+                    lines.Add("⌘ ROOT_SYSTEM · " + FirstNonEmpty(_serverRun.rootPuzzle.status, "locked") + " · " + matched);
                     if (_serverRun.rootPuzzle.evidence != null)
                     {
                         for (int i = 0; i < _serverRun.rootPuzzle.evidence.Length && i < 4; i++)
@@ -2992,6 +2978,11 @@ namespace KeyboardWanderer.Demo
                 return lines;
             }
 
+            lines.Add("⌘ 관리자 권한 · " + view.AdminAccess + "/3");
+            lines.Add("⚠ 기술 부채 · " + view.TechnicalDebt + " · 미해결 " +
+                      CountUnresolvedDebt(view.TechnicalDebtEntries));
+            if (view.MajorChoices.Count > 0)
+                lines.Add("↩ 선택 회수 · " + view.MajorChoices[view.MajorChoices.Count - 1]);
             AppendPrefixed(lines, "◆ 사실 · ", view.CanonicalFacts, 4);
             AppendPrefixed(lines, "◇ 열린 훅 · ", view.OpenLoops, 4);
             AppendPrefixed(lines, "? 소문 · ", view.Rumors, 2);
@@ -3064,7 +3055,7 @@ namespace KeyboardWanderer.Demo
             _lastModifierBreakdown = modifierParts.Count == 0 ? "수정치 없음" : string.Join(", ", modifierParts);
             _lastDifficulty = dice?.difficulty ?? 0;
             _lastMechanicalScore = dice?.mechanicalScore ?? turn.mechanicalScore;
-            _lastIntentAlignment = dice == null ? "--" : IntentAlignmentLabel(dice.intentAlignment);
+            _lastActionContext = ActionContextLabel(turn.actionContext);
             _lastOutcome = KoreanOutcome(turn.outcome);
             _lastAttempt = string.IsNullOrWhiteSpace(turn.normalizedAttempt) ? "서버가 정규화한 시도 없음" : turn.normalizedAttempt;
             _lastExplanation = ExplainResultDifference(turn);
@@ -3078,6 +3069,7 @@ namespace KeyboardWanderer.Demo
             AddLog("D20 " + _lastD20 + Signed(_lastModifier) + " vs " + _lastDifficulty + " · " + _lastOutcome);
             AddLog("실제 시도 · " + _lastAttempt);
             GameApiClient.EventSnapshot[] appliedEvents = turn.events ?? turn.stateDelta?.events;
+            _lastStateChanges = StateChangeSummary(appliedEvents);
             if (appliedEvents != null)
                 for (int i = 0; i < appliedEvents.Length; i++) AddLog(HumanizeServerEvent(appliedEvents[i]));
         }
@@ -3264,16 +3256,15 @@ namespace KeyboardWanderer.Demo
 
         private string ExplainResultDifference(GameApiClient.TurnSnapshot turn)
         {
-            string alignment = _lastIntentAlignment;
             string cost = turn.consequenceBudget > 0 ? "합병증 예산 " + turn.consequenceBudget + "이 적용되었습니다." : "추가 합병증 예산은 없습니다.";
             string normalized = string.IsNullOrWhiteSpace(turn.normalizedAttempt)
                 ? "서버가 별도의 실제 시도 문장을 반환하지 않았습니다."
-                : "서버가 선택한 능력·대상·목적지와 원문 선언을 검증해 위 실제 시도를 확정했습니다.";
+                : "서버가 선택된 스킬·대상·현재 위치와 장면 상태를 검증해 실제 시도를 확정했습니다.";
             string serverExplanation = string.IsNullOrWhiteSpace(turn.dice?.outcomeExplanation)
                 ? string.Empty
                 : " 서버 결과 설명: " + turn.dice.outcomeExplanation.Trim();
-            return normalized + " 원문과 실제 시도의 문장 차이만으로 의미 변경을 단정하지 않습니다. " +
-                   "서버 의도 정렬은 " + alignment + "입니다. " + cost + " 수정: " + _lastModifierBreakdown + "." + serverExplanation;
+            return normalized + " 자연어 메모는 규칙 판정에 사용되지 않습니다. " + cost +
+                   " 문맥: " + _lastActionContext + " · 수정: " + _lastModifierBreakdown + "." + serverExplanation;
         }
 
         private static string HumanizeServerEvent(GameApiClient.EventSnapshot value)
@@ -3304,10 +3295,6 @@ namespace KeyboardWanderer.Demo
                 case AbilityKind.Connect: return "connect";
                 case AbilityKind.Restore: return "restore";
                 case AbilityKind.Undo: return "undo";
-                case AbilityKind.Attack: return "attack";
-                case AbilityKind.Interact: return "interact";
-                case AbilityKind.Rest: return "rest";
-                case AbilityKind.Negotiate: return "negotiate";
                 default: return "move";
             }
         }
@@ -3371,21 +3358,16 @@ namespace KeyboardWanderer.Demo
 
         private static string EndingTitle(string code)
         {
-            if (string.IsNullOrWhiteSpace(code)) return "캠페인은 아직 수렴 중입니다";
+            if (string.IsNullOrWhiteSpace(code)) return "ROOT_SYSTEM 진입 전";
             switch (code.ToUpperInvariant())
             {
-                case "SAFE_PASSAGE": return "안전한 통로";
-                case "SHARED_GUARDIANSHIP": return "공동의 수호";
-                case "FREE_WORLD": return "스스로 걷는 세계";
-                case "MEMORY_REWEAVE": return "기억 다시 잇기";
-                case "THREAT_SEAL": return "위협의 봉인";
-                case "LAST_RESORT": return "마지막 피난처";
-                // Server v1 aliases remain readable without exposing the old fixed campaign premise.
-                case "STABILIZE_AND_RETURN": return "안정과 다음 길";
-                case "IMPERFECT_RECOVERY": return "상처를 남긴 회복";
-                case "NEW_ADMINISTRATOR": return "남아서 지키기";
-                case "WORLD_RESET": return "새로운 순환";
-                case "EMERGENCY_SHUTDOWN": return "마지막 피난처";
+                case "ENDING_REWEAVE_TOGETHER": return "함께 다시 잇기";
+                case "ENDING_OPEN_FRONTIER": return "열린 변경";
+                case "ENDING_KEEP_THE_PROMISE": return "약속을 지키는 이";
+                case "ENDING_CUT_THE_CYCLE": return "되풀이 끊기";
+                case "ENDING_PRESERVE_THE_SCARS": return "상처를 기억하기";
+                case "ENDING_WALK_BETWEEN_WORLDS": return "세계 사이를 걷기";
+                case "ENDING_EMERGENCY_WITHDRAWAL": return "긴급 이탈";
                 default: return code.Replace('_', ' ').Replace('-', ' ');
             }
         }
@@ -3393,20 +3375,16 @@ namespace KeyboardWanderer.Demo
         private static string EndingDescription(string code)
         {
             if (string.IsNullOrWhiteSpace(code))
-                return "닻·보호막·통로·목격자·자유·위협·기억의 공간 연결을 선택하세요.";
+                return "관리자 권한 3단계와 내부 오류 단서를 모아 ROOT_SYSTEM에 진입하세요.";
             switch (code.ToUpperInvariant())
             {
-                case "SAFE_PASSAGE": return "닻과 보호막, 통로를 이어 모두가 건널 수 있는 다음 길을 엽니다.";
-                case "SHARED_GUARDIANSHIP": return "목격자의 기록과 보호막을 연결해 한 사람 대신 공동체가 책임을 나눕니다.";
-                case "FREE_WORLD": return "자유의 핵을 깨워 세계가 스스로 다음 선택을 이어가게 합니다.";
-                case "MEMORY_REWEAVE": return "상처 난 기억과 닻을 다시 엮어 과거를 지우지 않은 토대를 만듭니다.";
-                case "THREAT_SEAL": return "남은 위협을 걷어 내고 목격자의 증언으로 새로운 봉인의 조건을 남깁니다.";
-                case "LAST_RESORT": return "시간이 끝나기 전에 남은 존재를 지키고 변화의 확산을 멈춥니다.";
-                case "STABILIZE_AND_RETURN": return "안정 장치와 다음 길을 연결해 세계의 회복을 시작합니다.";
-                case "IMPERFECT_RECOVERY": return "상처를 남긴 채 세계가 스스로 회복하도록 선택합니다.";
-                case "NEW_ADMINISTRATOR": return "방랑자가 남아 새로운 질서를 함께 돌봅니다.";
-                case "WORLD_RESET": return "기억을 토대로 새로운 순환을 시작합니다.";
-                case "EMERGENCY_SHUTDOWN": return "시간이 끝나기 전에 남은 존재를 지키는 마지막 선택을 합니다.";
+                case "ENDING_REWEAVE_TOGETHER": return "관계와 세계의 상처를 함께 엮어 새 약속을 만듭니다.";
+                case "ENDING_OPEN_FRONTIER": return "코드리아가 위험과 선택권을 함께 품도록 경계를 엽니다.";
+                case "ENDING_KEEP_THE_PROMISE": return "주민과 맺은 약속의 책임을 받아들이고 수호자로 남습니다.";
+                case "ENDING_CUT_THE_CYCLE": return "오래된 통제 순환을 끊고 다음 가능성을 엽니다.";
+                case "ENDING_PRESERVE_THE_SCARS": return "완전한 복구 대신 코드리아의 상처와 증언을 보존합니다.";
+                case "ENDING_WALK_BETWEEN_WORLDS": return "두 세계를 잇는 통로와 책임을 함께 선택합니다.";
+                case "ENDING_EMERGENCY_WITHDRAWAL": return "생존자를 우선해 위험한 수렴점에서 이탈합니다.";
                 default: return "서버가 확정한 공간 배치와 지표가 이 결말을 선택했습니다.";
             }
         }
@@ -3420,10 +3398,6 @@ namespace KeyboardWanderer.Demo
                 case "Connect": return AbilityKind.Connect;
                 case "Restore": return AbilityKind.Restore;
                 case "Undo": return AbilityKind.Undo;
-                case "Attack": return AbilityKind.Attack;
-                case "Interact": return AbilityKind.Interact;
-                case "Rest": return AbilityKind.Rest;
-                case "Negotiate": return AbilityKind.Negotiate;
                 default: return AbilityKind.Move;
             }
         }
