@@ -1,101 +1,66 @@
-# Keyboard Wanderer — UI design system v3
+# 넙죽이와 붕괴한 코드 왕국 — UI 디자인 시스템 v4
 
-## 1. Visual direction
+## 방향
 
-The interface is a tactile 16-bit fantasy command console: warm carved wood, aged metal, parchment, compact pixel controls, and a clearly framed tactical map. It must support a different generated campaign on every seed without visually implying one permanent kingdom, village, enemy, or quest.
+PC 16:9 기준의 따뜻한 픽셀 판타지 인터페이스입니다. 봉인된 대형 월드가 화면의 중심이고, 관리자 키보드는 명령 체계의 시각적 근거가 됩니다. 고정 제품 세계는 코드리아이며 주인공은 넙죽이입니다. NinjaAdventure의 `NinjaGreen`은 교체 가능한 임시 표현입니다.
 
-The supplied screenshot informs UI feeling only. Use its map-first hierarchy, compact rhythm, and warm material cues. Do not copy its scenario content, exact geometry, characters, icons, text, or level arrangement.
+레퍼런스 이미지는 맵 중심 위계, 높은 정보 밀도, 상단 상태·우측 정보·하단 명령 구조와 목재·금속 재질만 참고합니다. 이미지의 시나리오, 인물, 적, 퀘스트, 문구, 아이콘과 정확한 배치는 복사하지 않습니다.
 
-The current player sprite is NinjaAdventure `NinjaGreen`. Environmental sprites are resolved through the same asset manifest. Never stretch pixel art or mix it with painterly high-resolution icons.
+## 토큰
 
-## 2. Color and material
+- 배경 `#17130F`; 목재 `#3A291C`; 돌출 목재 `#543820`; 오목 목재 `#261B14`
+- 금속 `#C98B35`; 강조 금색 `#F0BA55`; 비활성 `#715630`
+- 본문 `#F2DFC0`; 보조 `#BFA57B`; 성공 `#77A94B`; 경고 `#D98A35`; 위험 `#C7513E`
+- 관리자 권한 `#73C6D8`; 기술 부채 `#9866B5`
+- 8px 공간 단위, 12–16px 패널 padding, 최소 44×44 논리 입력 영역
+- 한국어 본문 14–17px 상당, 행간 1.35–1.5; 수치에는 tabular figure
 
-- Frame background: warm near-black `#17130F`
-- Main wood: `#3A291C`; raised wood: `#543820`; recessed wood: `#261B14`
-- Metal edge: `#C98B35`; highlight gold: `#F0BA55`; disabled metal: `#715630`
-- Parchment: `#D8B77A`; primary text: `#F2DFC0`; secondary text: `#BFA57B`
-- Success: moss `#77A94B`; warning: amber `#D98A35`; danger: muted vermilion `#C7513E`
-- Milestone/link accent: pale crystal blue `#73C6D8`
-- Consequence accent: restrained violet `#9866B5`
+픽셀 아트는 정수 배율과 정수 좌표를 사용합니다. gradient, blur, glass, neon bloom, 과도한 둥근 카드와 현대 IDE 분위기를 사용하지 않습니다.
 
-The surrounding HUD remains stable while each biome owns its map palette. Use hard 1–3 px ramps, integer edges, and dithered texture instead of gradients, blur, glass, or neon bloom.
+## 레이아웃
 
-## 3. Typography and spacing
+1. `TopRunStatus`: 현재 지역 축·물리 바이옴, 9비트 진행, 의미 턴, 관리자 권한 `0/3`, 핵심 단서와 기술 부채.
+2. `WorldViewport`: 사용 가능 폭의 최소 60%. 봉인된 160×160 월드의 카메라, 경로, POI, 발견 상태와 넙죽이를 표시.
+3. `InformationRail`: 판정, 상태 변화, 짧은 서술, 주 목표 1개, 보조 목표 최대 2개, 추천 행동 2–3개.
+4. `CommandDeck`: MOVE, COPY, DELETE, CONNECT, RESTORE, UNDO, 대상/목적지, 선택적 `playerNote`, 확정.
 
-- Korean-first body copy at a readable 14–17 px equivalent with 1.35–1.5 line height
-- Headings at 16–20 px; one-line title at 28–36 px
-- Tabular numbers for turns, metrics, D20, costs, and distances
-- 8 px base unit; 8–12 px outer frame; 8 px panel gap; 12–16 px inner padding
-- Minimum 44×44 logical pointer target even when the visible pixel icon is smaller
-- Integer-positioned strokes and discrete map zoom steps
+좁은 데스크톱에서는 우측 레일을 tab으로 바꿀 수 있지만 주 목표, 현재 판정과 확정 조작은 항상 접근 가능해야 합니다.
 
-Do not shrink Korean text to imitate the screenshot. Dense information should be grouped, not made illegible.
+## 핵심 컴포넌트
 
-## 4. Desktop composition
+- `WorldViewport`: 여섯 물리 바이옴을 구분하고 여섯 지역 축 overlay를 별도 표현합니다. 축 색을 바이옴 색으로 사용하지 않습니다.
+- `RoutePreview`: 안전 이동의 경로·비용·발견과 “턴 소비 없음”, 위험 목적지의 조우 가능성을 구분합니다.
+- `AdminAccessStrip`: 세 권한의 잠김, 후보 발견, 획득 상태와 증거를 표시합니다.
+- `ObjectiveStack`: 주 목표 1개, 보조 목표 0–2개. 내부 비트나 미발견 후보를 노출하지 않습니다.
+- `RecommendedActions`: 현재 상태에서 합법적인 2–3개 행동을 우선 제시합니다.
+- `SkillBar`: COPY, DELETE, CONNECT, RESTORE, UNDO를 고정 순서로 표시합니다. 사용할 수 없는 기술도 비활성 상태와 이유를 유지합니다.
+- `ActionConfirmation`: 대상/목적지, 기술, 턴 소비 여부, 위험, 예상 자원 비용을 제출 전에 요약합니다.
+- `ResolutionCard`: `판정 → 상태 변화 → 2–4문장 서술` 순서. Gemini 서술을 규칙 결과보다 먼저 보여 주지 않습니다.
+- `DebtLedger`: 부채 수치와 원인·예정 결과·해소 방법을 함께 표시합니다.
+- `RootGate`: 권한 3/3과 핵심 단서의 충족 여부를 각각 설명합니다.
 
-The 16:9 baseline has four stable zones:
+## 명령과 상태
 
-1. Top status strip: generated place and biome, campaign phase, meaningful turn/limit, milestone `0/3`, compact world metrics, settings.
-2. Center-left viewport: at least 60% of usable width, showing either the sealed 160×160 world through a camera or a zoomed local encounter.
-3. Right rail: authoritative result and generated narration, current objective, then D20 and normalized-intent explanation.
-4. Bottom command deck: six primary keyboard commands, contextual actions, target/destination, free-form intent, resource strip, and commit control.
+공개 입력은 `MOVE`와 `USE_SKILL`뿐입니다. 다섯 기술은 COPY, DELETE, CONNECT, RESTORE, UNDO입니다. Attack, Interact, Negotiate, Rest를 별도 버튼이나 기술로 만들지 않습니다. 전투·조사·협상·배치는 서버가 선택 기술과 대상에서 분류하는 맥락입니다.
 
-On narrower desktop windows the right rail may become tabs, but current objective, intent, and commit must remain reachable. The six primary commands may not disappear behind inventory navigation.
+`playerNote`는 선택적 flavor입니다. 비어 있어도 확정 버튼이 활성화될 수 있어야 하며 규칙 결과를 바꾸는 권위 입력처럼 꾸미지 않습니다. 안전 MOVE는 D20·의미 턴을 쓰지 않고, 위험 이동은 조우 활성화와 실제 소비 행동을 분리합니다.
 
-## 5. Components
+## 모션과 피드백
 
-- `WorldViewport`: sealed world camera, square tiles, six biome palettes, routes, POIs, discovery, player, and selected destination
-- `LocalEncounterOverlay`: exact occupancy, legal range, hazards, entity selection, and placement preview
-- `TopRunStatus`: place, biome, phase, meaningful turn/limit, `마일스톤 0/3`, and inspectable metrics
-- `NarrativeLog`: chronological rule result and generated narration with visibly distinct sources, without exposing prompts
-- `ObjectiveCard`: current generic role, required evidence, deadline window, recovery route, and travel target
-- `D20Panel`: raw roll, modifiers, difficulty, outcome tier, normalized attempt, alignment, and divergence explanation
-- `AbilityBar`: Move, Copy, Delete, Connect, Restore, Undo in that order, each with shortcut and cost
-- `ContextActionBar`: Attack, Interact/Investigate, Negotiate, Rest in a subordinate visual tier
-- `IntentComposer`: selected target/destination chips, multiline intent, validation state, and commit
-- `MilestoneToken`: three distinct fantasy seals with locked, lead-known, earned, and committed states
-- `MetricPips`: compact inspectable world-state indicators defined by the current run
-- `TravelRouteCard`: safe path, risky shortcut, travel cost, possible encounter, and explicit “no meaningful turn” label for safe travel
-- `FinaleBindings`: the current run's valid `anchor`, `safeguard`, `memory`, `freedom`, `threat`, `passage`, and `witness` candidates without showing unavailable internals
+- pan/zoom 120–180ms, 정지 시 pixel snap
+- 선택 목적지 짧은 pulse 후 고정 outline
+- D20 공개 450–700ms, 원본 값 후 수정치와 결과 표시
+- 명령 반응 160–260ms, 제출한 조작만 잠금
+- provider 지연 중에도 Rule Engine 결과를 즉시 유지
+- reduced motion에서는 단계 전환을 즉시 표시
 
-## 6. Biome readability
+## 문체와 금지 사항
 
-The map must visibly distinguish all six descriptors without changing the HUD vocabulary:
+한국어 시스템 문구는 짧고 구체적으로 씁니다. 고정 명칭은 `코드리아`, `넙죽이`, `관리자 키보드`, `관리자 권한`, `기술 부채`입니다. 생성 서술은 확정 사실과 충돌하거나 `endingId`를 암시적으로 바꿀 수 없습니다.
 
-- `temperate_forest_field`: layered greens, soil, timber, crops
-- `river_wetland`: cool water, reeds, wet ground, bridges
-- `arid_desert`: sand, ochre stone, sparse vegetation
-- `frost_highland`: pale ground, cold rock, cliffs, wind markers
-- `subterranean_cavern`: dark rock, mineral contrast, tight corridors
-- `ancient_ruins`: weathered masonry, relic structures, corrupted accents
-
-Campaign roles are not colors. A relationship conflict or hidden truth can occur in any compatible biome.
-
-## 7. Motion and feedback
-
-- Map pan/zoom: 120–180 ms, eased, pixel-snapped at rest
-- Destination: one short pulse followed by a persistent outline
-- D20: 450–700 ms, reveal raw value before modifiers and consequence
-- Commit: lock only the submitted command and preserve map position
-- Command response: 160–260 ms; Copy echoes with an unstable offset, Delete fragments locally, Connect draws a temporary rune, Restore reconstructs locally, Undo adds a visible compensation mark
-- Provider delay: keep the authoritative result visible and show narration as optional follow-up
-- Reduced motion: replace rolls and pulses with immediate stepped states
-
-No ambient parallax or floating decoration may obscure the grid.
-
-## 8. Voice
-
-Korean-first copy is concise, concrete, and lightly mythic. Generated proper nouns may vary per run, while system labels remain stable: `마일스톤`, `의미 턴`, `탐색 이동`, `정규화된 시도`, `월드 봉인`, and the six command names.
-
-Rule explanations must name the selected target, cost, roll, difficulty, legal change, and consequence. Generated narration can be evocative but cannot disguise the authoritative result.
-
-## 9. Anti-patterns
-
-- Do not copy any place, character, enemy, quest, economy, text, or object arrangement from the screenshot.
-- Do not present a seed as a renamed version of one fixed scenario.
-- Do not confuse the six biome descriptors with the six generic campaign roles.
-- Do not regenerate the map per turn or let the LLM invent coordinates, exits, routes, POIs, or asset paths.
-- Do not consume a meaningful turn for each safe map step.
-- Do not hide milestone progress, current objective, free-form intent, normalized attempt, roll breakdown, or remaining meaningful turns.
-- Do not use a modern IDE, cyberpunk dashboard, glassmorphism, purple brand gradient, oversized rounded cards, or sparse landing-page spacing.
-- Do not fractional-scale sprites or show a substitute hero when `NinjaGreen` resolves successfully.
+- 맵을 매 턴 재생성하지 않습니다.
+- 지역 축과 물리 바이옴을 합치지 않습니다.
+- 자연어 입력을 필수로 만들지 않습니다.
+- 숨겨진 기술, 미발견 단서와 결말 내부 점수를 노출하지 않습니다.
+- `NinjaGreen`을 제품 정체성으로 표기하지 않습니다.
+- 레퍼런스 이미지의 콘텐츠를 게임 설정으로 옮기지 않습니다.
