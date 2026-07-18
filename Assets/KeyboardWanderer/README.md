@@ -28,6 +28,20 @@ Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 열고 Play Mode를 
 
 에셋 경로가 바뀌면 Unity 메뉴의 **Keyboard Wanderer > Rebuild Ninja Adventure Manifest**를 실행합니다. manifest는 넙죽이의 임시 `NinjaGreen` 표현과 환경 스프라이트만 해결하며 제품 식별자를 바꾸지 않습니다.
 
+## Unity 저작 에셋 구조
+
+고정 오브젝트 구성은 런타임 코드가 아니라 Unity 에셋에 저장합니다.
+
+- `SampleScene.unity`: `Authored World`, Camera, `Authored Audio`, EventSystem과 UI Prefab 인스턴스
+- `Prefabs/UI/AuthoredUI.prefab`: 타이틀, HUD, 설정, 일시정지, 결말 화면
+- `Prefabs/World/EntityVisual.prefab`: Actor, 체력 바, 결말 라벨 계층
+- `Prefabs/World/Landmark.prefab`: 캠페인 랜드마크 표현
+- `ScriptableObjects/KeyboardWandererAuthoringSettings.asset`: Prefab 참조와 이동·카메라·표현 크기 설정
+
+씬 또는 프리팹 구성을 다시 만들려면 Play Mode를 종료하고 Unity 메뉴의 **Keyboard Wanderer > Convert Runtime Composition to Authored Assets**를 실행합니다. 변환기는 기존 에셋을 같은 경로에 갱신하고 Scene 참조를 다시 연결합니다.
+
+절차적으로 달라지는 160×160 타일 배치와 서버가 내려주는 엔티티 상태는 런타임 데이터이므로 코드에 남습니다. 다만 런타임은 오브젝트를 직접 조립하는 대신 씬의 `KeyboardWandererWorldView`와 저장된 Prefab을 채웁니다. 테스트·복구용 씬에서만 기존 코드 생성 폴백을 사용합니다.
+
 ## 입력
 
 클라이언트가 전송하는 신규 입력은 두 종류뿐입니다.

@@ -11,6 +11,7 @@ namespace KeyboardWanderer.Editor
 {
     public static class KeyboardWandererSceneUIBuilder
     {
+        private const string UiPrefabPath = "Assets/KeyboardWanderer/Prefabs/UI/AuthoredUI.prefab";
         private static readonly Color Ink = Hex("160f0a");
         private static readonly Color Panel = Hex("281a11");
         private static readonly Color Raised = Hex("352419");
@@ -51,6 +52,16 @@ namespace KeyboardWanderer.Editor
             BuildPause(canvasObject.transform);
             BuildEnding(canvasObject.transform);
 
+            EnsureFolder("Assets/KeyboardWanderer/Prefabs");
+            EnsureFolder("Assets/KeyboardWanderer/Prefabs/UI");
+            PrefabUtility.SaveAsPrefabAssetAndConnect(
+                canvasObject,
+                UiPrefabPath,
+                InteractionMode.AutomatedAction,
+                out bool prefabSaved);
+            if (!prefabSaved)
+                throw new UnityException("Failed to save the authored UI prefab.");
+
             GameObject eventSystem = NewObject("EventSystem", null, typeof(EventSystem), typeof(InputSystemUIInputModule));
             Undo.RegisterCreatedObjectUndo(eventSystem, "Create Codria EventSystem");
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
@@ -80,33 +91,46 @@ namespace KeyboardWanderer.Editor
         private static void BuildGameHud(Transform canvas)
         {
             RectTransform root = RectObject(canvas, "Game HUD", Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-            RectTransform viewport = PanelRect(root, "World Viewport", new Vector2(0.181f, 0.244f), new Vector2(0.729f, 0.933f),
-                Vector2.zero, Vector2.zero, new Color(1f, 1f, 1f, 0.01f));
+            RectTransform viewport = PanelRect(root, "World Viewport", Vector2.zero, Vector2.one,
+                Vector2.zero, Vector2.zero, new Color(1f, 1f, 1f, 0.005f));
             viewport.GetComponent<Image>().raycastTarget = false;
 
-            RectTransform top = PanelRect(root, "Top Bar", new Vector2(0f, 0.933f), Vector2.one, Vector2.zero, Vector2.zero, Panel);
-            TextRect(top, "Campaign Text", new Vector2(0.012f, 0.08f), new Vector2(0.28f, 0.92f), "캠페인", 15, Parchment, TextAnchor.MiddleLeft);
-            TextRect(top, "Area Text", new Vector2(0.28f, 0.08f), new Vector2(0.68f, 0.92f), "현재 지역", 16, Parchment, TextAnchor.MiddleCenter);
-            TextRect(top, "Metrics Text", new Vector2(0.68f, 0.08f), new Vector2(0.988f, 0.92f), "턴 · 권한 · 지표", 14, Muted, TextAnchor.MiddleRight);
+            RectTransform header = PanelRect(root, "Story Header", new Vector2(0f, 0.93f), Vector2.one,
+                Vector2.zero, Vector2.zero, new Color(0.07f, 0.045f, 0.025f, 0.88f));
+            TextRect(header, "Scene Location", new Vector2(0.035f, 0.12f), new Vector2(0.36f, 0.88f), "현재 장소", 14, Muted, TextAnchor.MiddleLeft);
+            TextRect(header, "Scene Title", new Vector2(0.36f, 0.08f), new Vector2(0.64f, 0.92f), "현재 장면", 20, Parchment, TextAnchor.MiddleCenter);
 
-            RectTransform left = PanelRect(root, "Left Rail", new Vector2(0f, 0.244f), new Vector2(0.181f, 0.933f), Vector2.zero, Vector2.zero, Panel);
-            TextRect(left, "Context Text", new Vector2(0.07f, 0.04f), new Vector2(0.93f, 0.97f), "런 컨텍스트\n\n메인 목표\n\n보조 목표", 15, Parchment, TextAnchor.UpperLeft);
-            ButtonRect(left, "Previous POI Button", "◀ POI", new Vector2(0.07f, 0.005f), new Vector2(0.47f, 0.045f), Raised, Parchment, "Previous POI Label");
-            ButtonRect(left, "Next POI Button", "POI ▶", new Vector2(0.53f, 0.005f), new Vector2(0.93f, 0.045f), Raised, Parchment, "Next POI Label");
+            RectTransform actions = PanelRect(root, "Action Bar", new Vector2(0.16f, 0.305f), new Vector2(0.84f, 0.375f),
+                Vector2.zero, Vector2.zero, new Color(0.055f, 0.036f, 0.022f, 0.94f));
+            AddOutline(actions.gameObject, new Color(Gold.r, Gold.g, Gold.b, 0.42f), 1f);
+            ButtonRect(actions, "Move Button", "이동 모드", new Vector2(0.015f, 0.16f), new Vector2(0.125f, 0.84f), Gold, Ink, "Move Label");
+            ButtonRect(actions, "Copy Skill Button", "복제", new Vector2(0.14f, 0.16f), new Vector2(0.25f, 0.84f), Raised, Parchment, "Copy Skill Label");
+            ButtonRect(actions, "Delete Skill Button", "삭제", new Vector2(0.265f, 0.16f), new Vector2(0.375f, 0.84f), Raised, Parchment, "Delete Skill Label");
+            ButtonRect(actions, "Connect Skill Button", "연결", new Vector2(0.39f, 0.16f), new Vector2(0.50f, 0.84f), Raised, Parchment, "Connect Skill Label");
+            ButtonRect(actions, "Restore Skill Button", "복원", new Vector2(0.515f, 0.16f), new Vector2(0.625f, 0.84f), Raised, Parchment, "Restore Skill Label");
+            ButtonRect(actions, "Undo Skill Button", "되돌리기", new Vector2(0.64f, 0.16f), new Vector2(0.765f, 0.84f), Raised, Parchment, "Undo Skill Label");
+            ButtonRect(actions, "Confirm Action Button", "실행", new Vector2(0.785f, 0.16f), new Vector2(0.985f, 0.84f), Gold, Ink, "Confirm Action Label");
 
-            RectTransform right = PanelRect(root, "Right Rail", new Vector2(0.729f, 0.244f), new Vector2(1f, 0.933f), Vector2.zero, Vector2.zero, Panel);
-            TextRect(right, "Resolution Text", new Vector2(0.05f, 0.03f), new Vector2(0.95f, 0.97f), "1 · 판정\n\n2 · 상태 변화\n\n3 · 짧은 서사\n\n기억", 15, Parchment, TextAnchor.UpperLeft);
+            RectTransform story = PanelRect(root, "Story Panel", new Vector2(0.115f, 0.035f), new Vector2(0.885f, 0.285f),
+                Vector2.zero, Vector2.zero, new Color(0.80f, 0.63f, 0.39f, 0.98f));
+            AddOutline(story.gameObject, new Color(0.95f, 0.79f, 0.48f, 1f), 2f);
+            RectTransform portraitFrame = PanelRect(story, "Speaker Portrait Frame", new Vector2(0.025f, 0.18f), new Vector2(0.17f, 0.88f),
+                Vector2.zero, Vector2.zero, new Color(0.33f, 0.20f, 0.14f, 1f));
+            AddOutline(portraitFrame.gameObject, new Color(0.55f, 0.34f, 0.22f, 1f), 2f);
+            ImageRect(portraitFrame, "Speaker Portrait", new Vector2(0.12f, 0.18f), new Vector2(0.88f, 0.88f),
+                _assets != null ? _assets.VillagerIdle : null, Color.white);
+            TextRect(story, "Dialogue Speaker", new Vector2(0.02f, 0.025f), new Vector2(0.18f, 0.18f),
+                "코드리아 주민", 15, new Color(0.38f, 0.20f, 0.13f, 1f), TextAnchor.MiddleCenter);
 
-            RectTransform bottom = PanelRect(root, "Command Deck", Vector2.zero, new Vector2(1f, 0.244f), Vector2.zero, Vector2.zero, Panel);
-            string[] abilities = { "Move", "Copy", "Delete", "Connect", "Restore", "Undo" };
-            string[] labels = { "이동", "복제", "삭제", "연결", "복원", "되돌림" };
-            for (int i = 0; i < abilities.Length; i++)
-            {
-                float x0 = 0.0125f + i * 0.067f;
-                ButtonRect(bottom, "Ability " + abilities[i], labels[i], new Vector2(x0, 0.36f), new Vector2(x0 + 0.061f, 0.82f), Raised, Parchment, abilities[i] + " Label");
-            }
-            TextRect(bottom, "Execution Text", new Vector2(0.43f, 0.12f), new Vector2(0.84f, 0.88f), "실행 전 확인", 15, Parchment, TextAnchor.UpperLeft);
-            ButtonRect(bottom, "Submit Button", "대상 선택 필요", new Vector2(0.852f, 0.16f), new Vector2(0.988f, 0.86f), Gold, Ink, "Submit Label");
+            RectTransform speech = PanelRect(story, "Speech Bubble", new Vector2(0.19f, 0.12f), new Vector2(0.975f, 0.88f),
+                Vector2.zero, Vector2.zero, new Color(0.94f, 0.82f, 0.61f, 1f));
+            AddOutline(speech.gameObject, new Color(0.58f, 0.37f, 0.23f, 1f), 1f);
+            TextRect(speech, "Story Text", new Vector2(0.035f, 0.17f), new Vector2(0.91f, 0.89f),
+                "이곳에서 벌어진 이야기가 표시됩니다.", 18, new Color(0.35f, 0.20f, 0.13f, 1f), TextAnchor.UpperLeft);
+            ButtonRect(speech, "Next Dialogue Button", "다음 ▶", new Vector2(0.83f, 0.03f), new Vector2(0.975f, 0.18f),
+                new Color(0.58f, 0.37f, 0.23f, 1f), Parchment, "Next Dialogue Label");
+            TextRect(speech, "Action Hint", new Vector2(0.035f, 0.025f), new Vector2(0.80f, 0.17f),
+                "대화를 읽은 뒤 이동하거나 스킬을 사용할 수 있습니다.", 13, new Color(0.49f, 0.31f, 0.20f, 1f), TextAnchor.MiddleLeft);
             root.gameObject.SetActive(false);
         }
 
@@ -247,6 +271,16 @@ namespace KeyboardWanderer.Editor
         {
             ColorUtility.TryParseHtmlString("#" + value, out Color color);
             return color;
+        }
+
+        private static void EnsureFolder(string path)
+        {
+            if (AssetDatabase.IsValidFolder(path))
+                return;
+            int slash = path.LastIndexOf('/');
+            string parent = path.Substring(0, slash);
+            EnsureFolder(parent);
+            AssetDatabase.CreateFolder(parent, path.Substring(slash + 1));
         }
     }
 }

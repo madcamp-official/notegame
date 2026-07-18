@@ -5,6 +5,7 @@ using KeyboardWanderer.Core;
 using KeyboardWanderer.Gameplay;
 using KeyboardWanderer.Networking;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.Tilemaps;
 
@@ -33,14 +34,17 @@ namespace KeyboardWanderer.Demo
 
         private sealed class EntityVisual
         {
+            public KeyboardWandererEntityView AuthoredView;
             public GameObject Root;
             public SpriteRenderer Renderer;
             public GameObject HealthBack;
             public GameObject HealthFill;
             public GameObject RootComponentLabel;
             public Sprite[] IdleFrames;
+            public Sprite[] WalkFrames;
             public Sprite[] AttackFrames;
             public Vector3 TargetPosition;
+            public readonly Queue<Vector3> MovementPath = new Queue<Vector3>();
             public Color BaseColor;
             public float DesiredSize;
             public bool IsPlayer;
@@ -63,6 +67,14 @@ namespace KeyboardWanderer.Demo
         private readonly List<Texture2D> _runtimeTextures = new List<Texture2D>();
         private readonly List<Tile> _runtimeTiles = new List<Tile>();
         private readonly List<string> _sessionLog = new List<string>();
+
+        [Header("Authored content")]
+        [SerializeField] private KeyboardWandererAuthoringSettings authoringSettings;
+        [SerializeField] private NinjaAdventureAssetManifest authoredAssetManifest;
+        [SerializeField] private KeyboardWandererWorldView authoredWorld;
+        [SerializeField] private Camera authoredCamera;
+        [SerializeField] private AudioSource authoredMusicSource;
+        [SerializeField] private AudioSource authoredSfxSource;
 
         private LocalTurnService _service;
         private NinjaAdventureAssetManifest _assets;
@@ -91,6 +103,9 @@ namespace KeyboardWanderer.Demo
         private string _lastOutcome = "READY";
         private string _lastExplanation = "서버는 입력을 가장 가까운 합법적 시도로 정규화합니다.";
         private string[] _lastDialogue = Array.Empty<string>();
+        private string _authoredDialogueSignature = string.Empty;
+        private int _authoredDialoguePage;
+        private bool _authoredDialogueDismissed;
         private bool _gmPending;
         private bool _gmEnabled = true;
         private bool _serverOnline;
@@ -100,6 +115,8 @@ namespace KeyboardWanderer.Demo
         private string _encounterReason;
         private string _serverStatus = "권위 서버 확인 전";
         private bool _showPause;
+        private bool _playerWalking;
+        private bool _reopenDialogueAfterWalk;
         private int _runGeneration;
         private long _worldSeed;
         private Vector2 _logScroll;
@@ -108,6 +125,7 @@ namespace KeyboardWanderer.Demo
         private GridCoord? _cameraInspectCoord;
         private float _cameraInspectUntil;
         private string _poiLabel = "POI 탐색";
+        private string _movementSelectionFeedback = string.Empty;
 
         private Camera _camera;
         private KeyboardWandererSceneUI _sceneUi;
@@ -126,6 +144,11 @@ namespace KeyboardWanderer.Demo
         private int _lastScreenHeight;
         private Font _koreanFont;
 
+        private float PlayerWalkSpeed => authoringSettings != null ? authoringSettings.PlayerWalkSpeed : 4.2f;
+        private Transform WorldContentRoot => authoredWorld != null && _worldRoot == authoredWorld.gameObject
+            ? authoredWorld.DynamicObjects
+            : _worldRoot != null ? _worldRoot.transform : transform;
+
         private Sprite _grassSprite;
         private Sprite _dirtSprite;
         private Sprite _darkGrassSprite;
@@ -140,6 +163,7 @@ namespace KeyboardWanderer.Demo
         private Sprite _d20Sprite;
         private Sprite _whiteSprite;
         private Sprite[] _playerIdleFrames = Array.Empty<Sprite>();
+        private Sprite[] _playerWalkFrames = Array.Empty<Sprite>();
         private Sprite[] _playerAttackFrames = Array.Empty<Sprite>();
         private Sprite[] _slimeFrames = Array.Empty<Sprite>();
         private Sprite[] _villagerFrames = Array.Empty<Sprite>();
@@ -188,6 +212,22 @@ namespace KeyboardWanderer.Demo
             }
         }
 
+        public void ConfigureAuthoredContent(
+            KeyboardWandererAuthoringSettings settings,
+            NinjaAdventureAssetManifest manifest,
+            KeyboardWandererWorldView world,
+            Camera sceneCamera,
+            AudioSource music,
+            AudioSource sfx)
+        {
+            authoringSettings = settings;
+            authoredAssetManifest = manifest;
+            authoredWorld = world;
+            authoredCamera = sceneCamera;
+            authoredMusicSource = music;
+            authoredSfxSource = sfx;
+        }
+
         private void OnEnable()
         {
             // These clients are intentionally not serialized. Recreate them after an
@@ -206,7 +246,7 @@ namespace KeyboardWanderer.Demo
         private void OnDestroy()
         {
             StopAllCoroutines();
-            if (_worldRoot != null)
+            if (_worldRoot != null && (authoredWorld == null || _worldRoot != authoredWorld.gameObject))
                 Destroy(_worldRoot);
             for (int i = 0; i < _runtimeSprites.Count; i++)
                 if (_runtimeSprites[i] != null)
@@ -294,34 +334,44 @@ namespace KeyboardWanderer.Demo
                 return;
 
             RunView view = _service.CurrentView;
-            _sceneUi.SetText("Campaign Text", CampaignTitle(view) + "\n" +
-                (_serverOnline ? "SERVER 160×160 AUTHORITATIVE" : "OFFLINE 160×160 RULE FALLBACK"));
-            _sceneUi.SetText("Area Text", "◆  " + CurrentAreaName(view) + "  ◆\n" + CurrentBiomeLabel(view) + " · " + CampaignPhaseLabel(view));
-            _sceneUi.SetText("Metrics Text", "캠페인 턴 " + CurrentTurn(view) + "/" + TurnLimit(view) + "  ·  관리자 권한 " +
-                AdminAccessLevel(view) + "/3\n" + MetricsLine(view));
-            _sceneUi.SetText("Context Text", "런 컨텍스트\n\n" + PlayerDisplayName(view) + " · " + CampaignPhaseLabel(view) +
-                "\nSeed " + view.WorldSeed + "\n\nHP  " + Health(view) + " / " + MaxHealth(view) +
-                "\nFOCUS  " + Focus(view) + " / " + MaxFocus(view) + "\n\n메인 목표\n" + StoryBeat(view) +
-                "\n" + StoryBeatObjective(view) + "\n\n보조 목표\n" + SecondaryObjectiveText(view) +
-                "\n\n권한 / 부채 / 선택 회수\n" + ProgressLedgerText(view) + "\n" + FinaleGateLabel(view));
-            _sceneUi.SetText("Resolution Text", "1 · 판정\n\n" + (_lastD20 > 0 ? "D20  " + _lastD20 : "D20  --") +
-                "  ·  " + _lastOutcome + "\n수정 " + Signed(_lastModifier) + " · 난이도 " + DisplayNumber(_lastDifficulty) +
-                "\n총점 " + DisplayNumber(_lastMechanicalScore) + " · 문맥 " + _lastActionContext + "\n\n2 · 상태 변화\n" +
-                _lastStateChanges + "\n" + _lastExplanation + "\n\n3 · 짧은 서사\n" + ShortNarrative(NarrativeWithDialogue()) +
-                "\n\n기억\n" + string.Join("\n", MemoryLines(view)));
-            _sceneUi.SetText("Execution Text", "실행 전 확인\n\n" + ExecutionPreview(view) + "\n\n" + SelectionHint(view));
-            _sceneUi.SetText("Submit Label", SubmissionButtonLabel(view));
+            string narrative = _lastOutcome == "READY" || _lastOutcome == "RESTORED"
+                ? CampaignPremise(view)
+                : ShortNarrative(_lastNarrative);
+            string[] dialoguePages = BuildDialoguePages(narrative);
+            string dialogueSignature = string.Join("\u001f", dialoguePages);
+            if (!string.Equals(_authoredDialogueSignature, dialogueSignature, StringComparison.Ordinal))
+            {
+                _authoredDialogueSignature = dialogueSignature;
+                _authoredDialoguePage = 0;
+                if (_playerWalking)
+                    _reopenDialogueAfterWalk = true;
+                else
+                    _authoredDialogueDismissed = false;
+            }
+            _sceneUi.SetObjectActive("Story Panel", !_authoredDialogueDismissed);
+            _authoredDialoguePage = Mathf.Clamp(_authoredDialoguePage, 0, Mathf.Max(0, dialoguePages.Length - 1));
+            bool showingNarration = _authoredDialoguePage == 0;
+            _sceneUi.SetText("Scene Location", CurrentAreaName(view) + " · " + CurrentBiomeLabel(view));
+            _sceneUi.SetText("Scene Title", StoryBeat(view));
+            _sceneUi.SetText("Dialogue Speaker", showingNarration ? "이야기" : "코드리아 주민");
+            _sceneUi.SetText("Story Text", dialoguePages[_authoredDialoguePage]);
+            bool hasNextDialogue = _authoredDialoguePage < dialoguePages.Length - 1;
+            _sceneUi.SetText("Next Dialogue Label", hasNextDialogue ? "다음 ▶" : "대화 끝");
+            _sceneUi.SetButtonState("Next Dialogue Button", true);
+            _sceneUi.SetText("Action Hint", _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : NarrativeSelectionHint());
+
+            SetAbilityButton("Move Button", AbilityKind.Move);
+            SetAbilityButton("Copy Skill Button", AbilityKind.Copy);
+            SetAbilityButton("Delete Skill Button", AbilityKind.Delete);
+            SetAbilityButton("Connect Skill Button", AbilityKind.Connect);
+            SetAbilityButton("Restore Skill Button", AbilityKind.Restore);
+            SetAbilityButton("Undo Skill Button", AbilityKind.Undo);
+            _sceneUi.SetText("Confirm Action Label", "실행");
+            _sceneUi.SetButtonState("Confirm Action Button",
+                RunIsPlaying(view) && !_showPause && !_serverPending && !_playerWalking && CanSubmitCurrentSelection());
             _sceneUi.SetText("Ending Heading", "코드리아의 결말");
             _sceneUi.SetText("Ending Text", EndingTitle(EndingCode(view)) + "\n\n" + EndingDescription(EndingCode(view)) +
-                "\n\n턴 " + CurrentTurn(view) + " · 확정 사실 " + CanonicalFactCount(view) + " · 열린 훅 " + OpenLoopCount(view));
-
-            string[] abilityNames = { "Move", "Copy", "Delete", "Connect", "Restore", "Undo" };
-            for (int i = 0; i < abilityNames.Length; i++)
-            {
-                AbilityKind ability = AbilityByName(abilityNames[i]);
-                _sceneUi.SetButtonState("Ability " + abilityNames[i], IsSkillEnabledForCurrentTarget(ability), _ability == ability);
-            }
-            _sceneUi.SetButtonState("Submit Button", RunIsPlaying(view) && !_showPause && !_serverPending && CanSubmitCurrentSelection());
+                "\n\n당신의 선택이 코드리아에 남긴 결말입니다.");
         }
 
         public void UiStartNewRun() => StartNewRun();
@@ -329,8 +379,51 @@ namespace KeyboardWanderer.Demo
         public void UiCyclePoi(int direction) => CyclePoi(direction);
         public void UiSetAbility(string abilityName) => SetAbility(AbilityByName(abilityName));
         public void UiSubmit() => Submit();
+        public void UiAdvanceDialogue()
+        {
+            string[] pages = BuildDialoguePages(_service == null ? _lastNarrative :
+                (_lastOutcome == "READY" || _lastOutcome == "RESTORED" ? CampaignPremise(_service.CurrentView) : ShortNarrative(_lastNarrative)));
+            if (_authoredDialoguePage < pages.Length - 1)
+            {
+                _authoredDialoguePage++;
+            }
+            else
+            {
+                _authoredDialogueDismissed = true;
+                _sceneUi?.SetObjectActive("Story Panel", false);
+            }
+            PlaySfx(AssetClip("UiAcceptSound"));
+        }
         public void UiResume() => _showPause = false;
         public void UiShowTitle() => ShowTitle();
+
+        private void SetAbilityButton(string buttonName, AbilityKind ability)
+        {
+            _sceneUi.SetButtonState(buttonName, !_playerWalking && IsSkillEnabledForCurrentTarget(ability), _ability == ability);
+        }
+
+        private string[] BuildDialoguePages(string narrative)
+        {
+            var pages = new List<string>();
+            if (!string.IsNullOrWhiteSpace(narrative)) pages.Add(narrative.Trim());
+            for (int i = 0; i < _lastDialogue.Length; i++)
+                if (!string.IsNullOrWhiteSpace(_lastDialogue[i])) pages.Add(_lastDialogue[i].Trim());
+            if (pages.Count == 0) pages.Add("코드리아의 다음 이야기가 시작되기를 기다리고 있습니다.");
+            return pages.ToArray();
+        }
+
+        private string NarrativeSelectionHint()
+        {
+            switch (_ability)
+            {
+                case AbilityKind.Move: return string.IsNullOrWhiteSpace(_movementSelectionFeedback)
+                    ? "이동할 타일을 고른 뒤 실행을 누르세요. 캐릭터는 길을 따라 걷습니다."
+                    : _movementSelectionFeedback;
+                case AbilityKind.Connect: return "이어 주고 싶은 두 대상을 지도에서 차례로 고르세요.";
+                case AbilityKind.Undo: return "직전 선택을 되돌립니다.";
+                default: return "이 선택을 적용할 대상을 지도에서 고르세요.";
+            }
+        }
 
         public void UiOpenSettings()
         {
@@ -807,7 +900,7 @@ namespace KeyboardWanderer.Demo
                 PlaySfx(_showPause ? AssetClip("UiCancelSound") : AssetClip("UiAcceptSound"));
                 return;
             }
-            if (_showPause || !RunIsPlaying(_service.CurrentView) || _serverPending)
+            if (_showPause || !RunIsPlaying(_service.CurrentView) || _serverPending || _playerWalking)
                 return;
 
             if (keyboard.digit1Key.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame) SetAbility(AbilityKind.Move);
@@ -824,10 +917,12 @@ namespace KeyboardWanderer.Demo
         private void HandleMapClick()
         {
             Mouse mouse = Mouse.current;
-            if (_showPause || mouse == null || !mouse.leftButton.wasPressedThisFrame || _camera == null)
+            if (_showPause || _playerWalking || mouse == null || !mouse.leftButton.wasPressedThisFrame || _camera == null)
                 return;
 
             Vector2 mousePosition = mouse.position.ReadValue();
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                return;
             if (!_camera.pixelRect.Contains(mousePosition))
                 return;
 
@@ -847,6 +942,13 @@ namespace KeyboardWanderer.Demo
             string abilityName = _ability.ToString();
             if (abilityName == "Move")
             {
+                if (!CanSelectMovementDestination(view, coord))
+                {
+                    _movementSelectionFeedback = "그곳까지 이어지는 통행 가능한 경로가 없습니다.";
+                    PlaySfx(AssetClip("UiCancelSound"));
+                    return;
+                }
+                _movementSelectionFeedback = string.Empty;
                 _selectedCoord = coord;
                 _selectedTarget = null;
                 _selectedSecondaryTarget = null;
@@ -937,7 +1039,7 @@ namespace KeyboardWanderer.Demo
 
         private void Submit()
         {
-            if (_service == null || _showPause || _serverPending)
+            if (_service == null || _showPause || _serverPending || _playerWalking)
                 return;
             RunView view = _service.CurrentView;
             if (!RunIsPlaying(view))
@@ -958,6 +1060,7 @@ namespace KeyboardWanderer.Demo
         private void SubmitLocalTurn()
         {
             RunView view = _service.CurrentView;
+            TryGetPlayerPosition(view, out GridCoord playerPositionBefore);
 
             string abilityName = _ability.ToString();
             GridCoord? destination = abilityName == "Move" || abilityName == "Copy" || abilityName == "Connect"
@@ -1001,6 +1104,13 @@ namespace KeyboardWanderer.Demo
                 AddLog(HumanizeEvent(response.Events[i]));
             CaptureLocalRestorableTarget(response, view);
 
+            RunView committedView = response.Run ?? _service.CurrentView;
+            if (_ability == AbilityKind.Move)
+            {
+                List<GridCoord> path = FindLocalVisualPath(committedView, playerPositionBefore,
+                    committedView.PlayerPosition);
+                BeginPlayerPathAnimation(path, committedView);
+            }
             SyncEntityVisuals(response.Run ?? _service.CurrentView);
             UpdateSelectionVisual(_service.CurrentView);
             LocalRunSaveService.Save(_service);
@@ -1158,6 +1268,7 @@ namespace KeyboardWanderer.Demo
             _gmPending = false;
             _serverStatus = "안전 탐색 경로 검증 중";
             GridCoord destinationCoord = _selectedCoord.Value;
+            TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPositionBefore);
             var destination = new GameApiClient.PositionSnapshot { x = destinationCoord.X, y = destinationCoord.Y };
             string requestId = "unity-travel-" + Guid.NewGuid().ToString("N");
             int campaignTurnBefore = _serverRun.currentTurn;
@@ -1224,6 +1335,9 @@ namespace KeyboardWanderer.Demo
                 : "위치와 이동 시간만 변경 · 캠페인 턴 유지 · D20 없음";
             _lastDialogue = Array.Empty<string>();
             SyncRestorableCandidateFromServer();
+            TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPositionAfter);
+            List<GridCoord> visualPath = NavigationVisualPath(navigation, playerPositionBefore, playerPositionAfter);
+            BeginPlayerPathAnimation(visualPath, _service.CurrentView);
             SyncServerEntityVisuals(_serverRun);
             _selectedCoord = encounterOpened ? _encounterStagingCoord : null;
             _selectedTarget = null;
@@ -1470,7 +1584,7 @@ namespace KeyboardWanderer.Demo
 
         private void BuildWorld(RunView view)
         {
-            if (_worldRoot != null)
+            if (_worldRoot != null && (authoredWorld == null || _worldRoot != authoredWorld.gameObject))
                 Destroy(_worldRoot);
             for (int i = 0; i < _runtimeTiles.Count; i++)
                 if (_runtimeTiles[i] != null)
@@ -1480,21 +1594,34 @@ namespace KeyboardWanderer.Demo
             GameApiClient.WorldSnapshot serverWorld = _serverOnline ? _serverRun?.world : null;
             bool useServerWorld = serverWorld != null && serverWorld.HasCompleteLayout;
             string layoutHash = useServerWorld ? serverWorld.layoutHash : view.Region.LayoutHash;
-            _worldRoot = new GameObject("Persistent World · " + ShortHash(layoutHash));
-            _worldRoot.transform.SetParent(transform, false);
             Vector2 origin = MapOrigin(view);
             int worldWidth = useServerWorld ? serverWorld.width : view.Region.Width;
             int worldHeight = useServerWorld ? serverWorld.height : view.Region.Height;
 
             // One Tilemap renders the immutable 160x160 terrain. Online, the server snapshot is the
             // sole geometry authority; the local map remains only an offline continuity fallback.
-            _worldRoot.AddComponent<Grid>();
-            var terrainObject = new GameObject("Immutable Terrain Tilemap");
-            terrainObject.transform.SetParent(_worldRoot.transform, false);
-            terrainObject.transform.position = new Vector3(origin.x, origin.y, 0f);
-            var tilemap = terrainObject.AddComponent<Tilemap>();
-            var tilemapRenderer = terrainObject.AddComponent<TilemapRenderer>();
-            tilemapRenderer.sortingOrder = 0;
+            Tilemap tilemap;
+            if (authoredWorld != null && authoredWorld.TerrainTilemap != null)
+            {
+                _worldRoot = authoredWorld.gameObject;
+                _worldRoot.name = "Authored World · " + ShortHash(layoutHash);
+                authoredWorld.ResetRuntimeContent();
+                tilemap = authoredWorld.TerrainTilemap;
+                tilemap.transform.position = new Vector3(origin.x, origin.y, 0f);
+                _selectionRenderer = authoredWorld.SelectionCursor;
+            }
+            else
+            {
+                _worldRoot = new GameObject("Persistent World · " + ShortHash(layoutHash));
+                _worldRoot.transform.SetParent(transform, false);
+                _worldRoot.AddComponent<Grid>();
+                var terrainObject = new GameObject("Immutable Terrain Tilemap");
+                terrainObject.transform.SetParent(_worldRoot.transform, false);
+                terrainObject.transform.position = new Vector3(origin.x, origin.y, 0f);
+                tilemap = terrainObject.AddComponent<Tilemap>();
+                var tilemapRenderer = terrainObject.AddComponent<TilemapRenderer>();
+                tilemapRenderer.sortingOrder = 0;
+            }
             var tilePalette = new Dictionary<TileKind, Tile>();
 
             for (int y = 0; y < worldHeight; y++)
@@ -1526,14 +1653,17 @@ namespace KeyboardWanderer.Demo
 
             CreateCampaignLandmarkMarkers(view, origin, useServerWorld);
 
-            var selection = new GameObject("Selection Cursor");
-            selection.transform.SetParent(_worldRoot.transform, false);
-            _selectionRenderer = selection.AddComponent<SpriteRenderer>();
+            if (_selectionRenderer == null)
+            {
+                var selection = new GameObject("Selection Cursor");
+                selection.transform.SetParent(WorldContentRoot, false);
+                _selectionRenderer = selection.AddComponent<SpriteRenderer>();
+            }
             _selectionRenderer.sprite = _grassSprite;
             _selectionRenderer.color = new Color(1f, 0.85f, 0.35f, 0.42f);
             _selectionRenderer.sortingOrder = 900;
             _selectionRenderer.enabled = false;
-            ScaleSprite(selection.transform, _grassSprite, 1.02f);
+            ScaleSprite(_selectionRenderer.transform, _grassSprite, 1.02f);
         }
 
         private void SyncEntityVisuals(RunView view)
@@ -1550,9 +1680,13 @@ namespace KeyboardWanderer.Demo
                     _entityVisuals.Add(entity.EntityId, visual);
                 }
 
-                visual.TargetPosition = WorldPosition(origin, entity.Position);
-                if (Vector3.Distance(visual.Root.transform.position, visual.TargetPosition) > 8f)
-                    visual.Root.transform.position = visual.TargetPosition;
+                Vector3 authoritativePosition = WorldPosition(origin, entity.Position);
+                if (!visual.IsPlayer || !_playerWalking)
+                {
+                    visual.TargetPosition = authoritativePosition;
+                    if (Vector3.Distance(visual.Root.transform.position, visual.TargetPosition) > 8f)
+                        visual.Root.transform.position = visual.TargetPosition;
+                }
                 UpdateEntityHealthVisual(visual, entity);
             }
 
@@ -1561,10 +1695,7 @@ namespace KeyboardWanderer.Demo
             {
                 if (active.Contains(pair.Key))
                     continue;
-                if (pair.Value.Root != null) Destroy(pair.Value.Root);
-                if (pair.Value.HealthBack != null) Destroy(pair.Value.HealthBack);
-                if (pair.Value.HealthFill != null) Destroy(pair.Value.HealthFill);
-                if (pair.Value.RootComponentLabel != null) Destroy(pair.Value.RootComponentLabel);
+                DestroyEntityVisual(pair.Value);
                 removed.Add(pair.Key);
             }
             for (int i = 0; i < removed.Count; i++)
@@ -1589,21 +1720,25 @@ namespace KeyboardWanderer.Demo
                 if (!_entityVisuals.TryGetValue(id, out EntityVisual visual))
                 {
                     string componentSuffix = string.IsNullOrWhiteSpace(rootComponent) ? string.Empty : " · " + rootComponent;
-                    var root = new GameObject((entity.name ?? "Entity") + " · " + entity.assetId + componentSuffix);
-                    root.transform.SetParent(_worldRoot.transform, false);
+                    GameObject root = CreateEntityViewObject(
+                        (entity.name ?? "Entity") + " · " + entity.assetId + componentSuffix,
+                        hostile,
+                        out KeyboardWandererEntityView authoredView,
+                        out SpriteRenderer renderer);
                     var coord = new GridCoord(entity.position.x, entity.position.y);
                     root.transform.position = WorldPosition(origin, coord);
-                    var renderer = root.AddComponent<SpriteRenderer>();
                     Sprite sprite = SpriteForServerEntity(entity, isPlayer);
                     renderer.sprite = sprite;
                     renderer.sortingOrder = 500 - entity.position.y * 4;
-                    float desired = isPlayer ? 1.34f : hostile ? 0.92f : 0.98f;
-                    ScaleSprite(root.transform, sprite, desired);
+                    float desired = VisualSize(isPlayer, hostile);
+                    ScaleSprite(authoredView != null ? renderer.transform : root.transform, sprite, desired);
                     visual = new EntityVisual
                     {
+                        AuthoredView = authoredView,
                         Root = root,
                         Renderer = renderer,
                         IdleFrames = FramesForAsset(entity.assetId, entity.kind, isPlayer),
+                        WalkFrames = isPlayer ? _playerWalkFrames : Array.Empty<Sprite>(),
                         AttackFrames = isPlayer ? _playerAttackFrames : Array.Empty<Sprite>(),
                         TargetPosition = root.transform.position,
                         BaseColor = ServerEntityTint(entity),
@@ -1612,20 +1747,22 @@ namespace KeyboardWanderer.Demo
                         IsHostile = hostile
                     };
                     if (!string.IsNullOrWhiteSpace(rootComponent))
-                        visual.RootComponentLabel = CreateRootComponentLabel(rootComponent, entity.name, visual.BaseColor);
+                        visual.RootComponentLabel = CreateRootComponentLabel(rootComponent, entity.name, visual.BaseColor, authoredView);
                     renderer.color = visual.BaseColor;
                     if (hostile && entity.state != null && entity.state.maxHp > 0)
                     {
-                        visual.HealthBack = CreateHealthBarObject((entity.name ?? "Enemy") + " HP bg",
-                            new Color(0.08f, 0.035f, 0.025f, 0.95f), 510);
-                        visual.HealthFill = CreateHealthBarObject((entity.name ?? "Enemy") + " HP", Ruby, 511);
+                        ConfigureHealthBars(visual, entity.name ?? "Enemy");
                     }
                     _entityVisuals.Add(id, visual);
                 }
 
-                visual.TargetPosition = WorldPosition(origin, new GridCoord(entity.position.x, entity.position.y));
-                if (Vector3.Distance(visual.Root.transform.position, visual.TargetPosition) > 8f)
-                    visual.Root.transform.position = visual.TargetPosition;
+                Vector3 authoritativePosition = WorldPosition(origin, new GridCoord(entity.position.x, entity.position.y));
+                if (!visual.IsPlayer || !_playerWalking)
+                {
+                    visual.TargetPosition = authoritativePosition;
+                    if (Vector3.Distance(visual.Root.transform.position, visual.TargetPosition) > 8f)
+                        visual.Root.transform.position = visual.TargetPosition;
+                }
                 if (visual.RootComponentLabel != null)
                     visual.RootComponentLabel.transform.position = visual.TargetPosition + new Vector3(0f, -0.72f, -0.2f);
                 UpdateServerHealthVisual(visual, entity);
@@ -1636,10 +1773,7 @@ namespace KeyboardWanderer.Demo
             {
                 if (active.Contains(pair.Key))
                     continue;
-                if (pair.Value.Root != null) Destroy(pair.Value.Root);
-                if (pair.Value.HealthBack != null) Destroy(pair.Value.HealthBack);
-                if (pair.Value.HealthFill != null) Destroy(pair.Value.HealthFill);
-                if (pair.Value.RootComponentLabel != null) Destroy(pair.Value.RootComponentLabel);
+                DestroyEntityVisual(pair.Value);
                 removed.Add(pair.Key);
             }
             for (int i = 0; i < removed.Count; i++)
@@ -1661,47 +1795,125 @@ namespace KeyboardWanderer.Demo
 
         private EntityVisual CreateEntityVisual(EntityView entity, Vector2 origin)
         {
-            var root = new GameObject(entity.DisplayName + " · " + entity.AssetId);
-            root.transform.SetParent(_worldRoot.transform, false);
+            bool isPlayer = entity.EntityId == _service.CurrentView.PlayerEntityId;
+            bool hostile = entity.Kind == EntityKind.Enemy;
+            GameObject root = CreateEntityViewObject(
+                entity.DisplayName + " · " + entity.AssetId,
+                hostile,
+                out KeyboardWandererEntityView authoredView,
+                out SpriteRenderer renderer);
             root.transform.position = WorldPosition(origin, entity.Position);
-            var renderer = root.AddComponent<SpriteRenderer>();
             Sprite sprite = SpriteForEntity(entity);
             renderer.sprite = sprite;
             renderer.sortingOrder = 500 - entity.Position.Y * 4;
-            float desired = entity.EntityId == _service.CurrentView.PlayerEntityId ? 1.34f : entity.Kind == EntityKind.Enemy ? 0.92f : 0.98f;
-            ScaleSprite(root.transform, sprite, desired);
+            float desired = VisualSize(isPlayer, hostile);
+            ScaleSprite(authoredView != null ? renderer.transform : root.transform, sprite, desired);
 
             var visual = new EntityVisual
             {
+                AuthoredView = authoredView,
                 Root = root,
                 Renderer = renderer,
                 IdleFrames = FramesForEntity(entity),
-                AttackFrames = entity.EntityId == _service.CurrentView.PlayerEntityId ? _playerAttackFrames : Array.Empty<Sprite>(),
+                WalkFrames = isPlayer ? _playerWalkFrames : Array.Empty<Sprite>(),
+                AttackFrames = isPlayer ? _playerAttackFrames : Array.Empty<Sprite>(),
                 TargetPosition = root.transform.position,
                 BaseColor = EntityTint(entity),
                 DesiredSize = desired,
-                IsPlayer = entity.EntityId == _service.CurrentView.PlayerEntityId,
+                IsPlayer = isPlayer,
                 IsHostile = entity.IsHostile
             };
             renderer.color = visual.BaseColor;
 
             if (visual.IsHostile)
-            {
-                visual.HealthBack = CreateHealthBarObject(entity.DisplayName + " HP bg", new Color(0.08f, 0.035f, 0.025f, 0.95f), 510);
-                visual.HealthFill = CreateHealthBarObject(entity.DisplayName + " HP", Ruby, 511);
-            }
+                ConfigureHealthBars(visual, entity.DisplayName);
             return visual;
+        }
+
+        private GameObject CreateEntityViewObject(
+            string objectName,
+            bool hostile,
+            out KeyboardWandererEntityView authoredView,
+            out SpriteRenderer renderer)
+        {
+            KeyboardWandererEntityView prefab = authoringSettings != null ? authoringSettings.EntityVisualPrefab : null;
+            if (prefab != null)
+            {
+                authoredView = Instantiate(prefab, WorldContentRoot);
+                authoredView.name = objectName;
+                authoredView.Prepare(_whiteSprite, hostile);
+                renderer = authoredView.ActorRenderer;
+                if (renderer != null)
+                    return authoredView.gameObject;
+                Destroy(authoredView.gameObject);
+            }
+
+            authoredView = null;
+            var root = new GameObject(objectName);
+            root.transform.SetParent(WorldContentRoot, false);
+            renderer = root.AddComponent<SpriteRenderer>();
+            return root;
+        }
+
+        private float VisualSize(bool isPlayer, bool hostile)
+        {
+            if (authoringSettings == null)
+                return isPlayer ? 1.34f : hostile ? 0.92f : 0.98f;
+            return isPlayer
+                ? authoringSettings.PlayerVisualSize
+                : hostile ? authoringSettings.EnemyVisualSize : authoringSettings.NeutralVisualSize;
+        }
+
+        private void ConfigureHealthBars(EntityVisual visual, string displayName)
+        {
+            if (visual.AuthoredView != null && visual.AuthoredView.HealthBack != null && visual.AuthoredView.HealthFill != null)
+            {
+                visual.HealthBack = visual.AuthoredView.HealthBack;
+                visual.HealthFill = visual.AuthoredView.HealthFill;
+                visual.HealthBack.name = displayName + " HP bg";
+                visual.HealthFill.name = displayName + " HP";
+                SpriteRenderer back = visual.HealthBack.GetComponent<SpriteRenderer>();
+                SpriteRenderer fill = visual.HealthFill.GetComponent<SpriteRenderer>();
+                back.color = new Color(0.08f, 0.035f, 0.025f, 0.95f);
+                back.sortingOrder = 510;
+                fill.color = Ruby;
+                fill.sortingOrder = 511;
+                return;
+            }
+
+            visual.HealthBack = CreateHealthBarObject(displayName + " HP bg",
+                new Color(0.08f, 0.035f, 0.025f, 0.95f), 510);
+            visual.HealthFill = CreateHealthBarObject(displayName + " HP", Ruby, 511);
         }
 
         private GameObject CreateHealthBarObject(string name, Color color, int order)
         {
             var bar = new GameObject(name);
-            bar.transform.SetParent(_worldRoot.transform, false);
+            bar.transform.SetParent(WorldContentRoot, false);
             var renderer = bar.AddComponent<SpriteRenderer>();
             renderer.sprite = _whiteSprite;
             renderer.color = color;
             renderer.sortingOrder = order;
             return bar;
+        }
+
+        private static void DestroyEntityVisual(EntityVisual visual)
+        {
+            if (visual == null)
+                return;
+            DestroyDetachedVisual(visual.HealthBack, visual.Root);
+            DestroyDetachedVisual(visual.HealthFill, visual.Root);
+            DestroyDetachedVisual(visual.RootComponentLabel, visual.Root);
+            if (visual.Root != null)
+                Destroy(visual.Root);
+        }
+
+        private static void DestroyDetachedVisual(GameObject item, GameObject root)
+        {
+            if (item == null)
+                return;
+            if (root == null || !item.transform.IsChildOf(root.transform))
+                Destroy(item);
         }
 
         private void UpdateEntityHealthVisual(EntityVisual visual, EntityView entity)
@@ -1732,17 +1944,41 @@ namespace KeyboardWanderer.Demo
                 EntityVisual visual = pair.Value;
                 if (visual.Root == null)
                     continue;
-                visual.Root.transform.position = Vector3.Lerp(visual.Root.transform.position, visual.TargetPosition, smoothing);
-                Sprite[] frames = visual.IsPlayer && Time.unscaledTime < _playerActionUntil && visual.AttackFrames.Length > 0
-                    ? visual.AttackFrames
-                    : visual.IdleFrames;
+                bool walkingThisFrame = visual.IsPlayer && _playerWalking;
+                if (walkingThisFrame)
+                {
+                    Vector3 before = visual.Root.transform.position;
+                    visual.Root.transform.position = Vector3.MoveTowards(before, visual.TargetPosition,
+                        PlayerWalkSpeed * Time.unscaledDeltaTime);
+                    float horizontal = visual.Root.transform.position.x - before.x;
+                    if (Mathf.Abs(horizontal) > 0.0001f)
+                        visual.Renderer.flipX = horizontal < 0f;
+                    if (Vector3.SqrMagnitude(visual.Root.transform.position - visual.TargetPosition) < 0.0004f)
+                    {
+                        visual.Root.transform.position = visual.TargetPosition;
+                        if (visual.MovementPath.Count > 0)
+                            visual.TargetPosition = visual.MovementPath.Dequeue();
+                        else
+                            CompletePlayerPathAnimation();
+                    }
+                }
+                else
+                {
+                    visual.Root.transform.position = Vector3.Lerp(visual.Root.transform.position, visual.TargetPosition, smoothing);
+                }
+                Sprite[] frames = walkingThisFrame && visual.WalkFrames.Length > 0
+                    ? visual.WalkFrames
+                    : visual.IsPlayer && Time.unscaledTime < _playerActionUntil && visual.AttackFrames.Length > 0
+                        ? visual.AttackFrames
+                        : visual.IdleFrames;
                 if (frames.Length > 0)
                 {
                     Sprite frame = frames[_animationFrame % frames.Length];
                     if (visual.Renderer.sprite != frame)
                     {
                         visual.Renderer.sprite = frame;
-                        ScaleSprite(visual.Root.transform, frame, visual.DesiredSize);
+                        ScaleSprite(visual.AuthoredView != null ? visual.Renderer.transform : visual.Root.transform,
+                            frame, visual.DesiredSize);
                     }
                 }
 
@@ -1762,6 +1998,186 @@ namespace KeyboardWanderer.Demo
             }
         }
 
+        private void BeginPlayerPathAnimation(IReadOnlyList<GridCoord> path, RunView view)
+        {
+            if (path == null || path.Count < 2 || !TryGetPlayerVisual(view, out EntityVisual visual))
+                return;
+            visual.MovementPath.Clear();
+            Vector2 origin = MapOrigin(view);
+            for (int i = 1; i < path.Count; i++)
+                visual.MovementPath.Enqueue(WorldPosition(origin, path[i]));
+            if (visual.MovementPath.Count == 0)
+                return;
+            visual.TargetPosition = visual.MovementPath.Dequeue();
+            _playerWalking = true;
+            _reopenDialogueAfterWalk = true;
+            _authoredDialogueDismissed = true;
+            _sceneUi?.SetObjectActive("Story Panel", false);
+            _cameraInspectCoord = null;
+            _cameraInspectUntil = 0f;
+        }
+
+        private void CompletePlayerPathAnimation()
+        {
+            _playerWalking = false;
+            if (_reopenDialogueAfterWalk)
+            {
+                _reopenDialogueAfterWalk = false;
+                _authoredDialogueDismissed = false;
+                _sceneUi?.SetObjectActive("Story Panel", true);
+            }
+        }
+
+        private bool TryGetPlayerVisual(RunView view, out EntityVisual visual)
+        {
+            Guid playerId = view.PlayerEntityId;
+            if (_serverOnline && _serverRun != null && Guid.TryParse(_serverRun.playerEntityId, out Guid serverId))
+                playerId = serverId;
+            return _entityVisuals.TryGetValue(playerId, out visual) && visual?.Root != null;
+        }
+
+        private bool CanSelectMovementDestination(RunView view, GridCoord goal)
+        {
+            if (!TryGetPlayerPosition(view, out GridCoord start) || start == goal)
+                return false;
+            if (_serverOnline && _serverRun?.world != null)
+                return !IsServerOccupied(goal) && FindServerVisualPath(start, goal).Count > 1;
+            if (!view.Region.IsWalkable(goal))
+                return false;
+            for (int i = 0; i < view.Entities.Count; i++)
+                if (view.Entities[i].EntityId != view.PlayerEntityId && view.Entities[i].Position == goal)
+                    return false;
+            List<GridCoord> path = GridPathfinder.FindPath(view.Region, start, goal, coord =>
+            {
+                for (int i = 0; i < view.Entities.Count; i++)
+                    if (view.Entities[i].EntityId != view.PlayerEntityId && view.Entities[i].Position == coord)
+                        return true;
+                return false;
+            });
+            return path.Count > 1;
+        }
+
+        private static List<GridCoord> FindLocalVisualPath(RunView view, GridCoord start, GridCoord goal)
+        {
+            if (start == goal)
+                return new List<GridCoord> { start };
+            return GridPathfinder.FindPath(view.Region, start, goal, coord =>
+            {
+                if (coord == goal)
+                    return false;
+                for (int i = 0; i < view.Entities.Count; i++)
+                {
+                    EntityView entity = view.Entities[i];
+                    if (entity.EntityId != view.PlayerEntityId && entity.Position == coord)
+                        return true;
+                }
+                return false;
+            });
+        }
+
+        private List<GridCoord> NavigationVisualPath(GameApiClient.NavigationSnapshot navigation,
+            GridCoord start, GridCoord goal)
+        {
+            var path = new List<GridCoord>();
+            if (navigation?.path != null)
+            {
+                for (int i = 0; i < navigation.path.Length; i++)
+                {
+                    GameApiClient.PositionSnapshot step = navigation.path[i];
+                    if (step == null)
+                        continue;
+                    var coord = new GridCoord(step.x, step.y);
+                    if (path.Count == 0 || path[path.Count - 1] != coord)
+                        path.Add(coord);
+                }
+            }
+            if (path.Count == 0 || path[0] != start)
+                path.Insert(0, start);
+            if (path[path.Count - 1] != goal)
+                path.Add(goal);
+            return PathIsContiguous(path) ? path : FindServerVisualPath(start, goal);
+        }
+
+        private List<GridCoord> FindServerVisualPath(GridCoord start, GridCoord goal)
+        {
+            var empty = new List<GridCoord>();
+            if (!IsServerWalkable(start) || !IsServerWalkable(goal))
+                return empty;
+            var queue = new Queue<GridCoord>();
+            var visited = new HashSet<GridCoord> { start };
+            var cameFrom = new Dictionary<GridCoord, GridCoord>();
+            queue.Enqueue(start);
+            var directions = new[]
+            {
+                new GridCoord(1, 0), new GridCoord(-1, 0),
+                new GridCoord(0, 1), new GridCoord(0, -1)
+            };
+            while (queue.Count > 0)
+            {
+                GridCoord current = queue.Dequeue();
+                if (current == goal)
+                {
+                    var path = new List<GridCoord> { current };
+                    while (cameFrom.TryGetValue(current, out GridCoord previous))
+                    {
+                        current = previous;
+                        path.Add(current);
+                    }
+                    path.Reverse();
+                    return path;
+                }
+                for (int i = 0; i < directions.Length; i++)
+                {
+                    var next = new GridCoord(current.X + directions[i].X, current.Y + directions[i].Y);
+                    if (visited.Contains(next) || !IsServerWalkable(next) || IsServerVisualBlocker(next, goal))
+                        continue;
+                    visited.Add(next);
+                    cameFrom[next] = current;
+                    queue.Enqueue(next);
+                }
+            }
+            return empty;
+        }
+
+        private bool IsServerWalkable(GridCoord coord)
+        {
+            GameApiClient.WorldSnapshot world = _serverRun?.world;
+            if (world == null || !world.HasCompleteLayout || coord.X < 0 || coord.Y < 0 ||
+                coord.X >= world.width || coord.Y >= world.height)
+                return false;
+            TileKind kind = TileKindForServer(world, world.tileCodes[coord.Y * world.width + coord.X]);
+            return kind != TileKind.Wall && kind != TileKind.Water;
+        }
+
+        private bool IsServerVisualBlocker(GridCoord coord, GridCoord goal)
+        {
+            return coord != goal && IsServerOccupied(coord);
+        }
+
+        private bool IsServerOccupied(GridCoord coord)
+        {
+            if (_serverRun?.entities == null)
+                return false;
+            for (int i = 0; i < _serverRun.entities.Length; i++)
+            {
+                GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                if (entity?.position != null && !string.Equals(entity.id, _serverRun.playerEntityId, StringComparison.OrdinalIgnoreCase) &&
+                    entity.position.x == coord.X && entity.position.y == coord.Y)
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool PathIsContiguous(IReadOnlyList<GridCoord> path)
+        {
+            if (path == null || path.Count == 0)
+                return false;
+            for (int i = 1; i < path.Count; i++)
+                if (path[i - 1].ManhattanDistance(path[i]) != 1)
+                    return false;
+            return true;
+        }
+
         private void UpdateSelectionVisual(RunView view)
         {
             if (_selectionRenderer == null)
@@ -1778,7 +2194,7 @@ namespace KeyboardWanderer.Demo
 
         private void ConfigureCamera()
         {
-            _camera = Camera.main;
+            _camera = authoredCamera != null ? authoredCamera : Camera.main;
             if (_camera == null)
             {
                 var cameraObject = new GameObject("Main Camera");
@@ -1786,8 +2202,10 @@ namespace KeyboardWanderer.Demo
                 _camera = cameraObject.AddComponent<Camera>();
             }
             _camera.orthographic = true;
-            _camera.orthographicSize = 8.25f;
-            _camera.backgroundColor = new Color(0.025f, 0.033f, 0.02f, 1f);
+            _camera.orthographicSize = authoringSettings != null ? authoringSettings.CameraOrthographicSize : 8.25f;
+            _camera.backgroundColor = authoringSettings != null
+                ? authoringSettings.CameraBackground
+                : new Color(0.025f, 0.033f, 0.02f, 1f);
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.transform.position = new Vector3(0f, 0f, -10f);
             if (_camera.GetComponent<AudioListener>() == null && FindAnyObjectByType<AudioListener>() == null)
@@ -1801,11 +2219,7 @@ namespace KeyboardWanderer.Demo
                 return;
             _lastScreenWidth = Screen.width;
             _lastScreenHeight = Screen.height;
-            _camera.rect = new Rect(
-                LeftWidth / LogicalWidth,
-                BottomHeight / LogicalHeight,
-                (LogicalWidth - LeftWidth - RightWidth) / LogicalWidth,
-                (LogicalHeight - TopHeight - BottomHeight) / LogicalHeight);
+            _camera.rect = new Rect(0f, 0f, 1f, 1f);
         }
 
         private void UpdateCameraFollow()
@@ -1817,7 +2231,9 @@ namespace KeyboardWanderer.Demo
                 ? _cameraInspectCoord.Value
                 : playerPosition;
             if (Time.unscaledTime >= _cameraInspectUntil) _cameraInspectCoord = null;
-            Vector3 desired = WorldPosition(MapOrigin(view), cameraTarget);
+            Vector3 desired = _playerWalking && !_cameraInspectCoord.HasValue && TryGetPlayerVisual(view, out EntityVisual playerVisual)
+                ? playerVisual.Root.transform.position
+                : WorldPosition(MapOrigin(view), cameraTarget);
             float halfHeight = _camera.orthographicSize;
             float aspect = _camera.pixelHeight > 0 ? _camera.pixelWidth / (float)_camera.pixelHeight : 1.3f;
             float halfWidth = halfHeight * aspect;
@@ -1848,10 +2264,10 @@ namespace KeyboardWanderer.Demo
 
         private void ConfigureAudio()
         {
-            _musicSource = gameObject.AddComponent<AudioSource>();
+            _musicSource = authoredMusicSource != null ? authoredMusicSource : gameObject.AddComponent<AudioSource>();
             _musicSource.loop = true;
             _musicSource.playOnAwake = false;
-            _sfxSource = gameObject.AddComponent<AudioSource>();
+            _sfxSource = authoredSfxSource != null ? authoredSfxSource : gameObject.AddComponent<AudioSource>();
             _sfxSource.loop = false;
             _sfxSource.playOnAwake = false;
             ApplyAudioVolumes();
@@ -1895,7 +2311,11 @@ namespace KeyboardWanderer.Demo
 
         private void LoadNinjaAdventureAssets()
         {
-            _assets = Resources.Load<NinjaAdventureAssetManifest>("NinjaAdventureAssetManifest");
+            _assets = authoredAssetManifest != null
+                ? authoredAssetManifest
+                : authoringSettings != null && authoringSettings.AssetManifest != null
+                    ? authoringSettings.AssetManifest
+                    : Resources.Load<NinjaAdventureAssetManifest>("NinjaAdventureAssetManifest");
             try
             {
                 _koreanFont = Font.CreateDynamicFontFromOSFont(
@@ -1918,6 +2338,7 @@ namespace KeyboardWanderer.Demo
             if (_assets != null)
             {
                 _playerIdleFrames = CreateSheetFrames(_assets.PlayerIdleSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Idle");
+                _playerWalkFrames = CreateSheetFrames(_assets.PlayerWalkSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Walk");
                 _playerAttackFrames = CreateSheetFrames(_assets.PlayerAttackSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Attack");
                 _slimeFrames = CreateSheetFrames(_assets.SlimeSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Slime");
                 _villagerFrames = CreateSheetFrames(_assets.VillagerWalkSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Villager");
@@ -2105,14 +2526,24 @@ namespace KeyboardWanderer.Demo
 
         private void CreateLandmarkMarker(string label, string campaignRole, GridCoord coord, Vector2 origin, bool root)
         {
-            var marker = new GameObject("Landmark · " + (label ?? campaignRole ?? "POI"));
-            marker.transform.SetParent(_worldRoot.transform, false);
+            GameObject prefab = authoringSettings != null ? authoringSettings.LandmarkPrefab : null;
+            GameObject marker = prefab != null
+                ? Instantiate(prefab, WorldContentRoot)
+                : new GameObject("Landmark");
+            marker.name = "Landmark · " + (label ?? campaignRole ?? "POI");
+            if (prefab == null)
+                marker.transform.SetParent(WorldContentRoot, false);
             marker.transform.position = WorldPosition(origin, coord) + new Vector3(0f, 0.1f, -0.05f);
-            var renderer = marker.AddComponent<SpriteRenderer>();
+            SpriteRenderer renderer = marker.GetComponent<SpriteRenderer>();
+            if (renderer == null)
+                renderer = marker.AddComponent<SpriteRenderer>();
             renderer.sprite = root ? _d20Sprite : (_bookSprite != null ? _bookSprite : _whiteSprite);
             renderer.color = CampaignRoleColor(campaignRole);
             renderer.sortingOrder = 80;
-            ScaleSprite(marker.transform, renderer.sprite, root ? 0.68f : 0.42f);
+            float size = authoringSettings == null
+                ? root ? 0.68f : 0.42f
+                : root ? authoringSettings.RootLandmarkVisualSize : authoringSettings.LandmarkVisualSize;
+            ScaleSprite(marker.transform, renderer.sprite, size);
         }
 
         private static Color CampaignRoleColor(string campaignRole)
@@ -2196,11 +2627,27 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        private GameObject CreateRootComponentLabel(string component, string displayName, Color tint)
+        private GameObject CreateRootComponentLabel(
+            string component,
+            string displayName,
+            Color tint,
+            KeyboardWandererEntityView authoredView = null)
         {
-            var label = new GameObject("Finale label · " + component);
-            label.transform.SetParent(_worldRoot.transform, false);
-            var text = label.AddComponent<TextMesh>();
+            GameObject label;
+            TextMesh text;
+            if (authoredView != null && authoredView.FinaleLabelText != null)
+            {
+                label = authoredView.FinaleLabel;
+                text = authoredView.FinaleLabelText;
+                label.SetActive(true);
+            }
+            else
+            {
+                label = new GameObject("Finale label");
+                label.transform.SetParent(WorldContentRoot, false);
+                text = label.AddComponent<TextMesh>();
+            }
+            label.name = "Finale label · " + component;
             text.text = RootComponentLabel(component, displayName);
             text.anchor = TextAnchor.MiddleCenter;
             text.alignment = TextAlignment.Center;

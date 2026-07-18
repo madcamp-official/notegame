@@ -18,6 +18,7 @@ namespace KeyboardWanderer.Demo
         private readonly Dictionary<string, Button> _buttons = new Dictionary<string, Button>(StringComparer.Ordinal);
         private readonly Dictionary<string, Slider> _sliders = new Dictionary<string, Slider>(StringComparer.Ordinal);
         private readonly Dictionary<string, Toggle> _toggles = new Dictionary<string, Toggle>(StringComparer.Ordinal);
+        private readonly Dictionary<string, GameObject> _objects = new Dictionary<string, GameObject>(StringComparer.Ordinal);
         private bool _bound;
 
         public bool IsReady => titleScreen != null && gameHud != null && settingsScreen != null;
@@ -43,15 +44,14 @@ namespace KeyboardWanderer.Demo
             BindButton("Settings Button", controller.UiOpenSettings);
             BindButton("Settings Back Button", controller.UiCloseSettings);
             BindButton("Delete Save Button", controller.UiDeleteSave);
-            BindButton("Previous POI Button", () => controller.UiCyclePoi(-1));
-            BindButton("Next POI Button", () => controller.UiCyclePoi(1));
-            BindButton("Ability Move", () => controller.UiSetAbility("Move"));
-            BindButton("Ability Copy", () => controller.UiSetAbility("Copy"));
-            BindButton("Ability Delete", () => controller.UiSetAbility("Delete"));
-            BindButton("Ability Connect", () => controller.UiSetAbility("Connect"));
-            BindButton("Ability Restore", () => controller.UiSetAbility("Restore"));
-            BindButton("Ability Undo", () => controller.UiSetAbility("Undo"));
-            BindButton("Submit Button", controller.UiSubmit);
+            BindButton("Move Button", () => controller.UiSetAbility("Move"));
+            BindButton("Copy Skill Button", () => controller.UiSetAbility("Copy"));
+            BindButton("Delete Skill Button", () => controller.UiSetAbility("Delete"));
+            BindButton("Connect Skill Button", () => controller.UiSetAbility("Connect"));
+            BindButton("Restore Skill Button", () => controller.UiSetAbility("Restore"));
+            BindButton("Undo Skill Button", () => controller.UiSetAbility("Undo"));
+            BindButton("Confirm Action Button", controller.UiSubmit);
+            BindButton("Next Dialogue Button", controller.UiAdvanceDialogue);
             BindButton("Resume Button", controller.UiResume);
             BindButton("Pause Settings Button", controller.UiOpenSettingsFromPause);
             BindButton("Title Button", controller.UiShowTitle);
@@ -93,6 +93,12 @@ namespace KeyboardWanderer.Demo
             ColorBlock colors = button.colors;
             colors.normalColor = selected ? new Color(0.72f, 0.55f, 0.20f, 1f) : new Color(0.28f, 0.20f, 0.13f, 1f);
             button.colors = colors;
+        }
+
+        public void SetObjectActive(string controlName, bool active)
+        {
+            if (_objects.TryGetValue(controlName, out GameObject target) && target.activeSelf != active)
+                target.SetActive(active);
         }
 
         public void SetSlider(string controlName, float value)
@@ -138,6 +144,8 @@ namespace KeyboardWanderer.Demo
             _buttons.Clear();
             _sliders.Clear();
             _toggles.Clear();
+            _objects.Clear();
+            foreach (Transform item in GetComponentsInChildren<Transform>(true)) _objects[item.gameObject.name] = item.gameObject;
             foreach (Text text in GetComponentsInChildren<Text>(true)) _texts[text.gameObject.name] = text;
             foreach (Button button in GetComponentsInChildren<Button>(true)) _buttons[button.gameObject.name] = button;
             foreach (Slider slider in GetComponentsInChildren<Slider>(true)) _sliders[slider.gameObject.name] = slider;
