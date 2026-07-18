@@ -1,30 +1,27 @@
-# Keyboard Wanderer — product contract v3
+# 넙죽이와 붕괴한 코드 왕국 — product contract v4
 
-## Product
+## Product identity
 
-Keyboard Wanderer is a 30–50 meaningful-turn fantasy adventure played across one sealed, explorable pixel world. A seed establishes the physical world; a schema-validated LLM plan gives existing places their run-specific people, tensions, clues, milestones, consequences, and ending context. The current player presentation is NinjaAdventure's `NinjaGreen`.
+`넙죽이와 붕괴한 코드 왕국` is a map-first pixel adventure set in Codria (`WORLD_CODRIA`). Nupjukyi (`PROTAGONIST_NUPJUKYI`) awakens the Administrator Keyboard (`ARTIFACT_ADMIN_KEYBOARD`), investigates a systemic collapse, recovers three administrator-access levels, and decides the final deployment inside the Root System.
 
-The game structure is fixed, but the scenario is not. A new seed must produce more than renamed copies of one plot.
+NinjaAdventure's `NinjaGreen` is the current temporary visual asset. It does not rename, replace, or define Nupjukyi.
 
-The supplied screenshot is a UI-feel reference only. It can inform the dominant map, top status strip, right narrative/objective/D20 rail, bottom command deck, compact information rhythm, and warm pixel materials. Its world, characters, enemies, quests, economy, copy, and exact placement have no product authority.
+The supplied image is a UI-feel reference only: it supports a dominant map, compact top status, right information rail, bottom command deck, dense rhythm, and warm pixel materials. Its world, character, enemies, quests, labels, icons, and level arrangement have no product authority.
 
-## Preview and run creation
+## Sealed world
 
-Campaign preview derives cheap metadata from the seed and makes no LLM request. Confirming a run performs one creation transaction:
+A run generates one deterministic 160×160 world, validates reachability and required content, and seals it with a `layoutHash`. Ordinary turns, save/resume, Restore, and Undo never regenerate or relocate tiles, area boundaries, routes, POIs, or placement slots. Runtime play activates existing slots and moves entities through the sealed graph.
 
-1. Freeze seed, target turn count, world generator version, and campaign planner version.
-2. Generate a default 160×160 tile world with six biome families, areas, routes, alternate paths, POIs, encounter slots, and finale candidates.
-3. Assign six generic campaign roles to compatible, reachable areas.
-4. Give the planner only valid IDs and spatial constraints.
-5. Validate schema, references, role coverage, three milestones, recovery paths, turn budget, and finale bindings.
-6. Repair deterministically or retry once within a bound.
-7. Persist the sealed world, campaign plan, and `layoutHash` atomically.
+Codria has six fixed region axes:
 
-Ordinary turns never regenerate or relocate tiles, biome boundaries, areas, fixed POIs, or routes. Only validated sparse state can change.
+1. `REGION_BUG_FOREST`
+2. `REGION_BUFFER_VILLAGE`
+3. `REGION_DEADLOCK_CITY`
+4. `REGION_DATA_GRAND_LIBRARY`
+5. `REGION_LEGACY_CITADEL`
+6. `REGION_ROOT_SYSTEM`
 
-## Six biomes
-
-Every world contains all six `BiomeDescriptor` values:
+Region axes describe canonical place identity and story function. The six physical biomes describe terrain, palette, traversal, and environment rules:
 
 1. `temperate_forest_field`
 2. `river_wetland`
@@ -33,65 +30,67 @@ Every world contains all six `BiomeDescriptor` values:
 5. `subterranean_cavern`
 6. `ancient_ruins`
 
-Biomes own environment art, movement costs, palette, and terrain rules. They are not story stages.
+Every world contains all six axes and all six physical biomes, but they remain independent dimensions. A seed may bind axes to compatible areas; it must not turn them into biome aliases or a fixed one-to-one stage order.
 
-## Six campaign roles
+## Authoritative campaign shape
 
-Every run assigns these separate narrative functions:
+The macro progression has exactly nine beats:
 
-1. `ARRIVAL_CATALYST` — the event that gives the player a reason to intervene.
-2. `LOCAL_STAKES` — an immediate regional problem with visible failure costs.
-3. `RELATIONSHIP_CONFLICT` — incompatible goals between recurring people or groups.
-4. `HIDDEN_TRUTH` — evidence that changes the interpretation of prior events.
-5. `CONSEQUENCE_RETURN` — earlier promises, sacrifices, shortcuts, or debt returning.
-6. `FINAL_CONVERGENCE` — key people, evidence, and milestones meeting in a final spatial decision.
+1. Arrival and Administrator Keyboard awakening
+2. First collapse problem
+3. Administrator Access I
+4. Administrator Access II
+5. Discovery that the internal administrator-control system caused the collapse
+6. Technical-debt backflow
+7. Administrator Access III
+8. Root System entry
+9. Final deployment and ending
 
-Names, inhabitants, antagonists, goals, causes, and legal solutions come from the run plan. Roles may be mapped to different biomes and positions per seed.
+Authoritative progression uses exactly `ADMIN_ACCESS_LEVEL_1`, `ADMIN_ACCESS_LEVEL_2`, and `ADMIN_ACCESS_LEVEL_3`. Each level must have at least two acquisition candidates located in different areas and resolved through different action contexts. A single failed candidate cannot make completion impossible.
 
-## Three milestones
+The Root gate requires all three access levels and the essential root-cause clue. Narration, a lucky roll, or a model proposal cannot bypass this gate.
 
-Authoritative progression uses `MILESTONE_TOKEN_1`, `MILESTONE_TOKEN_2`, and `MILESTONE_TOKEN_3`. The plan supplies each token's display name, meaning, evidence conditions, eligible role, and at least two recovery routes. Narration alone cannot grant a token. The final role remains gated until all required rule conditions are satisfied.
+## Actions and turns
 
-## Travel and turns
+The client submits only:
 
-Safe movement over known passable tiles and routes is exploration travel. It can advance travel time and discovery, but consumes neither a D20 nor a meaningful turn. A dangerous route may open an encounter. Combat, investigation, negotiation, defense, puzzle resolution, recovery, and committed keyboard placement are meaningful turns. Tactical `Move` inside an encounter is distinct from world travel.
+- `MOVE` with a destination. Safe travel changes navigation/discovery without D20 or campaign-turn consumption. Dangerous travel can stage the player and activate an encounter; the later meaningful action consumes the turn.
+- `USE_SKILL` with one of `COPY`, `DELETE`, `CONNECT`, `RESTORE`, or `UNDO`, plus validated targets. The server classifies it as `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, or `DEPLOYMENT` and commits exactly one meaningful turn.
 
-The six primary commands are Move, Copy, Delete, Connect, Restore, and Undo. Attack, Interact/Investigate, Negotiate, and Rest are subordinate contextual actions. The Rule Engine owns legality, paths, occupancy, D20, modifiers, damage, resources, milestone progression, accumulated metrics, and endings. Undo appends compensation; it does not rewind immutable geometry, rolls, turn numbers, or irreversible facts.
+Attack, Interact, Negotiate, and Rest are not public skills or new input types. `playerNote` is optional flavor context. It cannot provide coordinates, make an illegal target legal, change a roll, grant access, erase debt, or choose an ending.
 
-## Constrained Gemini use
+The Rule Engine owns legality, paths, occupancy, D20, modifiers, damage, resources, facts, access, progression, debt changes, and endings. Undo appends a compensating event; it does not rewind turn numbers, rolls, immutable facts, or world geometry.
 
-The server uses `GEMINI_API_KEY`, defaults to `gemini-2.5-flash-lite`, sets thinking budget to zero, keeps contexts and outputs small, retries at most once, and always has a deterministic fallback.
+## Persistent consequence
 
-At run creation Gemini may propose a campaign title, description, tone, and beats/NPCs/quests/endings/area flavors that reference supplied IDs. It may define milestone meaning and propose finale bindings. During play it may propose narration, dialogue, reactions, memory candidates, rumors, hooks, and visual-intent tags for supplied entities.
+Save and resume preserve the sealed-world identity and the histories that make later callbacks deterministic:
 
-It may not create coordinates, tiles, biome boundaries, exits, routes, rolls, damage, resources, milestones, metrics, endings, unknown IDs, or asset paths. AssetResolver maps validated visual intent to the NinjaAdventure manifest.
+- `majorChoices`
+- `regionOutcomes`
+- `npcRelationships`
+- `canonicalFacts`
+- `unresolvedHooks`
+- `abilityUsageHistory`
+- `adminAccessAcquisitionHistory`
+- `technicalDebtEntries`
 
-## Generic finale
+Technical debt is both a metric and a causal ledger. Each entry identifies its originating turn, operation, target, delta, deferred consequence, and resolution provenance. Normal success never silently reduces prior debt. Only an explicit recovery, acceptance of responsibility, resource payment, or NPC-cooperation action can resolve it.
 
-The final spatial puzzle binds actual run entities to a subset of these semantic components:
+## Gemini boundary and cost profile
 
-- `anchor`: what holds the present world together
-- `safeguard`: what limits destructive outcomes
-- `memory`: a record, relationship, or testimony worth preserving
-- `freedom`: a person, group, or force seeking autonomy
-- `threat`: unresolved danger
-- `passage`: escape, migration, transition, or return
-- `witness`: who remembers and carries the result forward
+Gemini is non-authoritative. It receives bounded IDs and state, returns small structured proposals or short narration, is schema/semantics validated, retries at most once, and falls back deterministically. It may vary scene phrasing, dialogue, reactions, and epilogue details that agree with committed facts. It may not create geometry, rolls, rewards, access levels, canonical facts, debt resolution, or an ending ID.
 
-A versioned recipe DSL evaluates placement, connection, protection/removal, milestone state, and accumulated metrics. The Rule Engine selects a legal ending ID; Gemini writes only the run-specific epilogue inside that result. A stored deterministic recipe completes the run if generation or narration is unavailable, and the hard cap always yields a valid terminal state.
+The default cost profile is `gemini-2.5-flash-lite`, thinking budget 0, minimal context, small output, one bounded retry, and deterministic fallback. `GEMINI_API_KEY` exists only in the server environment.
 
-## Persistence and done criteria
+The Rule Engine selects `endingId` from committed state. Gemini writes only an epilogue inside that result.
 
-Persist seed and versions, `layoutHash`, base world plus sparse overrides, role assignments, campaign plan, milestone evidence, player and NPC state, facts and unresolved threads, travel and meaningful-turn events, complete D20/intent records, provider metadata, and finale bindings. Resume verifies the base hash before applying sparse state.
+## UI acceptance
 
-The v3 contract is complete when:
-
-- the same seed/version reproduces the same sealed 160×160 layout;
-- all six biomes and six independent roles are present and required locations are reachable;
-- three milestones have separated evidence and recovery paths;
-- safe travel consumes no meaningful turn while each valid encounter action commits exactly one idempotent turn;
-- different seeds materially vary people, conflicts, secrets, milestone meanings, and ending context;
-- provider failure cannot block rules, save/resume, or a hard-cap ending;
-- `NinjaGreen` and environmental sprites resolve through the NinjaAdventure manifest;
-- the UI carries only the reference image's hierarchy and material feel, never its content; and
-- Unity, server, PostgreSQL, tests, and documentation describe the same contract.
+- The sealed world is dominant; the interface never implies that the model builds a new map each turn.
+- One primary objective, at most two secondary objectives, and two or three recommended actions are visible.
+- MOVE and the five skills are explicit; unavailable skills remain disabled with a reason.
+- Confirmation shows target, skill, turn consumption, and risk before commit.
+- Results appear as judgement, state changes, then two to four sentences of narration.
+- Optional `playerNote` never blocks an otherwise valid action.
+- Administrator access, essential clue, and causal technical debt remain inspectable.
+- The reference screenshot contributes interaction feel only, never product content.

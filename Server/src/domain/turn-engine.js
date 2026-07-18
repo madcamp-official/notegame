@@ -5,11 +5,24 @@ import { advanceStoryDirector, campaignAct, chooseEnding, resolveFinale } from "
 import { TILE, areaAt, isWalkable, movementCost, publicWorld, tileAt } from "./world.js";
 import { analyzeIntent, detectIntentActions, realizationAlignment } from "./intent.js";
 import { containsProtectedFactReference } from "./protected-mechanics.js";
+import {
+  ADMIN_ACCESS_LEVELS,
+  ARTIFACT_ADMIN_KEYBOARD,
+  CAMPAIGN_ACTION_CONTEXTS,
+  GAME_TITLE,
+  KEYBOARD_SKILLS,
+  PROTAGONIST_NAME_KO,
+  PROTAGONIST_NUPJUKYI,
+  ROOT_SYSTEM,
+  WORLD_CODRIA,
+  WORLD_NAME_KO,
+  rootSystemGate,
+  technicalDebtDelta
+} from "./codria-contract.js";
 
-export const CORE_ABILITIES = Object.freeze(["move", "copy", "delete", "connect", "restore", "undo"]);
-export const CONTEXT_ACTIONS = Object.freeze(["attack", "interact", "investigate", "negotiate", "rest"]);
+export const CORE_ABILITIES = Object.freeze(KEYBOARD_SKILLS.map((item) => item.toLowerCase()));
+export const CONTEXT_ACTIONS = CAMPAIGN_ACTION_CONTEXTS;
 export const ABILITIES = CORE_ABILITIES;
-const REQUEST_ACTIONS = Object.freeze([...CORE_ABILITIES, ...CONTEXT_ACTIONS]);
 export const RUN_STATUSES = Object.freeze(["active", "abandoned", "completed"]);
 export const OUTCOMES = Object.freeze(["critical_failure", "failure", "partial_success", "success", "critical_success"]);
 export const DIRECTOR_OPS = Object.freeze(["SET_WORLD_FACT", "ADD_RUMOR", "ADD_NPC_MEMORY", "CHANGE_AFFINITY", "CREATE_HOOK", "START_QUEST", "ADVANCE_QUEST", "SET_VISUAL_INTENT", "BIND_SLOT_ENTITY"]);
@@ -40,76 +53,91 @@ function exactKeys(object, allowed, code) {
 
 function point(value, fieldName) {
   assert(value && typeof value === "object" && !Array.isArray(value), 400, "DESTINATION_INVALID", `${fieldName} must be an object.`);
-  exactKeys(value, ["x", "y"], "DESTINATION_INVALID");
+  exactKeys(value, ["areaId", "x", "y"], "DESTINATION_INVALID");
   assert(Number.isInteger(value.x) && Number.isInteger(value.y), 400, "DESTINATION_INVALID", `${fieldName} requires integer x and y.`);
-  return { x: value.x, y: value.y };
+  assert(value.areaId === undefined || (typeof value.areaId === "string" && value.areaId.length >= 1 && value.areaId.length <= 120), 400, "DESTINATION_INVALID", `${fieldName}.areaId must be a bounded string.`);
+  return { ...(value.areaId === undefined ? {} : { areaId: value.areaId }), x: value.x, y: value.y };
 }
 
 export function normalizeTravelRequest(input) {
   assert(input && typeof input === "object" && !Array.isArray(input), 400, "TRAVEL_REQUEST_INVALID", "A JSON travel request is required.");
-  exactKeys(input, ["idempotencyKey", "expectedRunVersion", "destination", "intent"], "TRAVEL_REQUEST_INVALID");
+  exactKeys(input, ["inputType", "idempotencyKey", "expectedRunVersion", "destination", "playerNote"], "TRAVEL_REQUEST_INVALID");
+  assert(["TRAVEL", "MOVE"].includes(String(input.inputType || "").toUpperCase()), 400, "INPUT_TYPE_INVALID", "Travel inputType must be MOVE (TRAVEL is accepted as an HTTP compatibility alias).");
   assert(typeof input.idempotencyKey === "string" && IDEMPOTENCY_PATTERN.test(input.idempotencyKey), 400, "IDEMPOTENCY_KEY_INVALID", "idempotencyKey must be 8-128 safe characters.");
   assert(Number.isSafeInteger(input.expectedRunVersion) && input.expectedRunVersion >= 1, 400, "RUN_VERSION_INVALID", "expectedRunVersion must be a positive integer.");
-  const intent = input.intent === undefined ? "safe exploration travel" : input.intent;
-  assert(typeof intent === "string" && intent.trim().length >= 1 && intent.length <= 240, 400, "INTENT_INVALID", "travel intent must contain 1-240 characters.");
-  return { idempotencyKey: input.idempotencyKey, expectedRunVersion: input.expectedRunVersion, destination: point(input.destination, "destination"), intent: intent.trim() };
+  const playerNote = input.playerNote ?? null;
+  assert(playerNote === null || (typeof playerNote === "string" && playerNote.trim().length <= 240), 400, "PLAYER_NOTE_INVALID", "playerNote must contain at most 240 characters.");
+  return {
+    inputType: "MOVE",
+    idempotencyKey: input.idempotencyKey,
+    expectedRunVersion: input.expectedRunVersion,
+    destination: point(input.destination, "destination"),
+    playerNote: playerNote?.trim() || null,
+    intent: "server-authorized safe travel"
+  };
 }
 
 export function travelFingerprint(request) {
-  return fingerprint({ expectedRunVersion: request.expectedRunVersion, destination: request.destination, intent: request.intent });
+  return fingerprint({ inputType: "MOVE", expectedRunVersion: request.expectedRunVersion, destination: request.destination, playerNote: request.playerNote || null });
 }
 
 export function normalizeTurnRequest(input) {
   assert(input && typeof input === "object" && !Array.isArray(input), 400, "TURN_REQUEST_INVALID", "A JSON turn request is required.");
-  exactKeys(input, ["idempotencyKey", "expectedRunVersion", "ability", "targetEntityId", "secondaryTargetEntityId", "destination", "intent"], "TURN_REQUEST_INVALID");
+  exactKeys(input, ["inputType", "idempotencyKey", "expectedRunVersion", "skillId", "targetIds", "destination", "playerNote", "forcedOverride", "resolvesDebtEntryId"], "TURN_REQUEST_INVALID");
   assert(typeof input.idempotencyKey === "string" && IDEMPOTENCY_PATTERN.test(input.idempotencyKey), 400, "IDEMPOTENCY_KEY_INVALID", "idempotencyKey must be 8-128 safe characters.");
   assert(Number.isSafeInteger(input.expectedRunVersion) && input.expectedRunVersion >= 1, 400, "RUN_VERSION_INVALID", "expectedRunVersion must be a positive integer.");
-  assert(typeof input.intent === "string" && input.intent.trim().length >= 1 && input.intent.length <= 800, 400, "INTENT_INVALID", "intent must contain 1-800 characters.");
 
   const normalizeEntityId = (value, name) => {
     if (value === undefined || value === null) return null;
     assert(typeof value === "string" && UUID_PATTERN.test(value), 400, "TARGET_INVALID", `${name} must be a UUID.`);
     return value.toLowerCase();
   };
-  const targetEntityId = normalizeEntityId(input.targetEntityId, "targetEntityId");
-  const secondaryTargetEntityId = normalizeEntityId(input.secondaryTargetEntityId, "secondaryTargetEntityId");
+  assert(String(input.inputType || "").toUpperCase() === "USE_SKILL", 400, "INPUT_TYPE_INVALID", "Campaign actions require inputType USE_SKILL.");
+  assert(Array.isArray(input.targetIds) && input.targetIds.length <= 2, 400, "TARGET_INVALID", "targetIds must contain at most two entity UUIDs.");
+  const targetIds = input.targetIds.map((value, index) => normalizeEntityId(value, `targetIds[${index}]`));
+  const targetEntityId = targetIds[0] || null;
+  const secondaryTargetEntityId = targetIds[1] || null;
   const destination = input.destination === undefined || input.destination === null ? null : point(input.destination, "destination");
-  const explicitAbility = typeof input.ability === "string" ? input.ability.toLowerCase() : "";
-  const detectedActions = detectIntentActions(input.intent).map((item) => item === "investigate" ? "interact" : item);
-  let requestedAbility = explicitAbility;
-  if (!requestedAbility) {
-    const structurallyPreferred = secondaryTargetEntityId
-      ? "connect"
-      : targetEntityId && destination
-        ? "copy"
-        : destination
-          ? "move"
-          : detectedActions.find((action) => ["delete", "restore", "attack", "interact", "negotiate", "undo", "rest", "copy", "connect", "move"].includes(action));
-    requestedAbility = structurallyPreferred || "";
-  }
-  assert(REQUEST_ACTIONS.includes(requestedAbility), 400, "ABILITY_INVALID", `ability must be explicit or inferable from intent as one of: ${REQUEST_ACTIONS.join(", ")}.`);
-  const ability = requestedAbility === "investigate" ? "interact" : requestedAbility;
+  const skillId = String(input.skillId || "").toUpperCase();
+  assert(KEYBOARD_SKILLS.includes(skillId), 400, "SKILL_INVALID", `skillId must be one of: ${KEYBOARD_SKILLS.join(", ")}. Movement and generic interactions must use travel or a keyboard skill.`);
+  const expectedTargets = skillId === "CONNECT" ? 2 : skillId === "UNDO" ? 0 : 1;
+  assert([targetEntityId, secondaryTargetEntityId].filter(Boolean).length === expectedTargets, 400, "TARGET_INVALID", `${skillId} requires exactly ${expectedTargets} selected target(s).`);
+  const playerNote = input.playerNote ?? null;
+  assert(playerNote === null || (typeof playerNote === "string" && playerNote.trim().length <= 400), 400, "PLAYER_NOTE_INVALID", "playerNote must contain at most 400 characters.");
+  assert(input.forcedOverride === undefined || typeof input.forcedOverride === "boolean", 400, "FORCED_OVERRIDE_INVALID", "forcedOverride must be boolean.");
+  const resolvesDebtEntryId = input.resolvesDebtEntryId === undefined || input.resolvesDebtEntryId === null ? null : normalizeEntityId(input.resolvesDebtEntryId, "resolvesDebtEntryId");
+  const ability = skillId.toLowerCase();
+  const targetSummary = [targetEntityId, secondaryTargetEntityId].filter(Boolean).join(" and ") || "the last reversible operation";
   return {
+    inputType: "USE_SKILL",
     idempotencyKey: input.idempotencyKey,
     expectedRunVersion: input.expectedRunVersion,
+    skillId,
     ability,
     targetEntityId,
     secondaryTargetEntityId,
     destination,
-    intent: input.intent.trim(),
-    abilitySource: explicitAbility ? "explicit_selection" : "natural_language_grounding"
+    intent: `Use ${skillId} on ${targetSummary}`,
+    playerNote: playerNote?.trim() || null,
+    abilitySource: "structured_selection",
+    forcedOverride: input.forcedOverride === true,
+    resolvesDebtEntryId
   };
 }
 
 export function turnFingerprint(request) {
   return fingerprint({
     expectedRunVersion: request.expectedRunVersion,
+    inputType: request.inputType,
+    skillId: request.skillId,
     ability: request.ability,
     targetEntityId: request.targetEntityId,
     secondaryTargetEntityId: request.secondaryTargetEntityId,
     destination: request.destination,
-    intent: request.intent,
-    abilitySource: request.abilitySource
+    playerNote: request.playerNote || null,
+    abilitySource: request.abilitySource,
+    forcedOverride: request.forcedOverride === true,
+    resolvesDebtEntryId: request.resolvesDebtEntryId || null
   });
 }
 
@@ -120,7 +148,7 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   const npcSlots = world.placementSlots.filter((slot) => slot.kind === "npc");
   const propSlots = world.placementSlots.filter((slot) => slot.kind === "prop");
   const enemySlots = world.placementSlots.filter((slot) => slot.kind === "enemy");
-  const entities = [entity(playerId, "player", "player.ninja-green.v1", campaign.protagonistName || "키보드 워리어", entry, true, true, false, { hp: 12, maxHp: 12, role: "keyboard warrior", signatureArtifact: "keyboard" })];
+  const entities = [entity(playerId, "player", "player.ninja-green.v1", PROTAGONIST_NAME_KO, entry, true, true, false, { hp: 12, maxHp: 12, protagonistId: PROTAGONIST_NUPJUKYI, role: "developer", signatureArtifact: ARTIFACT_ADMIN_KEYBOARD })];
   for (let index = 0; index < campaign.npcRoles.length; index += 1) {
     const role = campaign.npcRoles[index];
     const roleSlots = npcSlots.filter((slot) => slot.campaignRole === role.campaignRole);
@@ -134,26 +162,47 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   const roadTiles = [];
   for (let y = 0; y < world.height; y += 1) for (let x = 0; x < world.width; x += 1) if (tileAt(world, { x, y }) === TILE.ROAD) roadTiles.push({ x, y });
   const distanceFromRoad = (slot) => roadTiles.reduce((minimum, road) => Math.min(minimum, manhattan(slot, road)), Number.POSITIVE_INFINITY);
-  const enemySlot = [...enemySlots].sort((left, right) => distanceFromRoad(right) - distanceFromRoad(left) || left.id.localeCompare(right.id))[0];
+  const enemySlot = enemySlots.filter((slot) => !slot.tags.includes("admin_access_candidate")).sort((left, right) => distanceFromRoad(right) - distanceFromRoad(left) || left.id.localeCompare(right.id))[0];
   const enemyNames = ["안개 슬라임", "가시 그림자", "황혼 포식자", "메아리 짐승", "잿빛 도깨비"];
   entities.push(entity(deterministicUuid(`${runId}:enemy:first`), "enemy", enemySlot.allowedAssetIds[0], enemyNames[Math.abs(Number(campaign.worldSeed || 0)) % enemyNames.length], enemySlot, true, false, false, { hp: 5, maxHp: 5, slotId: enemySlot.id }));
   const evidenceNames = {
-    MILESTONE_TOKEN_1: "첫 여정의 증표", MILESTONE_TOKEN_2: "관계의 증표", MILESTONE_TOKEN_3: "되돌아온 결과의 증표", STORY_REVELATION: "숨겨진 진실의 기록"
+    ADMIN_ACCESS_LEVEL_1: "관리자 권한 I 후보", ADMIN_ACCESS_LEVEL_2: "관리자 권한 II 후보", ADMIN_ACCESS_LEVEL_3: "관리자 권한 III 후보", STORY_REVELATION: "관리자 통제 시스템의 내부 기록"
   };
   for (const beat of campaign.requiredStoryBeats || []) if (beat.requiredEvidenceKey) evidenceNames[beat.requiredEvidenceKey] = `${beat.title} 증거`;
-  const evidenceSlots = world.placementSlots.filter((slot) => slot.tags.includes("milestone_candidate") || slot.tags.includes("revelation_candidate"));
+  const evidenceSlots = world.placementSlots.filter((slot) => !slot.tags.includes("admin_access_candidate") && slot.tags.includes("revelation_candidate"));
   for (const [index, slot] of evidenceSlots.entries()) {
     const evidenceKey = slot.reservedFor;
-    entities.push(entity(deterministicUuid(`${runId}:evidence:${slot.id}`), "prop", slot.allowedAssetIds[index % slot.allowedAssetIds.length], evidenceNames[evidenceKey] || "여정의 증거", slot, false, true, false, {
+    entities.push(entity(deterministicUuid(`${runId}:evidence:${slot.id}`), "prop", slot.allowedAssetIds[index % slot.allowedAssetIds.length], evidenceNames[evidenceKey] || "여정의 증거", slot, false, evidenceKey !== "STORY_REVELATION", evidenceKey === "STORY_REVELATION", {
       slotId: slot.id, campaignRole: slot.campaignRole, evidenceKey, designatedCampaignEvidence: true, immutableAnchor: true
     }));
   }
+  for (const candidate of world.adminAccessCandidates || []) {
+    const slot = world.placementSlots.find((item) => item.id === candidate.slotId);
+    const kind = candidate.actionContext === "COMBAT" ? "enemy" : candidate.actionContext === "NEGOTIATION" ? "npc" : "prop";
+    const candidateId = deterministicUuid(`${runId}:admin-access:${candidate.id}`);
+    const access = ADMIN_ACCESS_LEVELS.find((item) => item.id === candidate.accessLevelId);
+    entities.push(entity(candidateId, kind, slot.allowedAssetIds[0], `${access.nameKo} · ${candidate.regionAxis}`, slot, kind === "enemy", false, false, {
+      hp: kind === "enemy" ? 6 : undefined,
+      maxHp: kind === "enemy" ? 6 : undefined,
+      slotId: slot.id,
+      candidateId: candidate.id,
+      adminAccessLevelId: candidate.accessLevelId,
+      requiredSkillId: candidate.skillId,
+      actionContext: candidate.actionContext,
+      regionAxis: candidate.regionAxis,
+      designatedCampaignEvidence: true,
+      evidenceKey: candidate.accessLevelId
+    }));
+  }
   const fixtureDefinitions = [
-    { evidenceKey: "MILESTONE_TOKEN_1", campaignRole: "LOCAL_STAKES", name: "복제 가능한 현장 기록", fixtureType: "copy_fixture", cloneable: true },
-    { evidenceKey: "MILESTONE_TOKEN_3", campaignRole: "CONSEQUENCE_RETURN", name: "복구 가능한 기억 조각", fixtureType: "restore_fixture", cloneable: false }
+    { evidenceKey: "LOCAL_DEBUG_RECORD", campaignRole: "LOCAL_STAKES", name: "복제 가능한 현장 기록", fixtureType: "copy_fixture", cloneable: true },
+    { evidenceKey: "LEGACY_RECOVERY_RECORD", campaignRole: "CONSEQUENCE_RETURN", name: "복구 가능한 기억 조각", fixtureType: "restore_fixture", cloneable: false }
   ];
   for (const definition of fixtureDefinitions) {
-    const slot = world.placementSlots.find((item) => item.kind === "loot" && item.campaignRole === definition.campaignRole);
+    const slot = world.placementSlots.find((item) => ["loot", "prop", "quest"].includes(item.kind)
+      && item.campaignRole === definition.campaignRole
+      && !item.tags.includes("admin_access_candidate")
+      && !entities.some((itemEntity) => samePoint(itemEntity.position, item)));
     assert(slot, 500, "CAMPAIGN_FIXTURE_MISSING", `No deterministic fixture slot exists for ${definition.evidenceKey}.`);
     entities.push(entity(deterministicUuid(`${runId}:fixture:${definition.fixtureType}`), "prop", slot.allowedAssetIds[0], definition.name, slot, false, false, definition.cloneable, {
       slotId: slot.id, campaignRole: definition.campaignRole, evidenceKey: definition.evidenceKey, designatedCampaignEvidence: true, fixtureType: definition.fixtureType
@@ -186,8 +235,13 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   return {
     id: runId,
     campaignId: campaign.id,
-    campaignTitle: campaign.generatedTitle || campaign.title,
-    worldName: campaign.worldName || world.worldNameKo || "이름 없는 경계",
+    campaignTitle: GAME_TITLE,
+    gameTitle: GAME_TITLE,
+    worldId: WORLD_CODRIA,
+    worldName: WORLD_NAME_KO,
+    protagonistId: PROTAGONIST_NUPJUKYI,
+    protagonistName: PROTAGONIST_NAME_KO,
+    artifactId: ARTIFACT_ADMIN_KEYBOARD,
     archetype: campaign.archetype,
     premise: campaign.premise,
     templateId: campaign.templateId,
@@ -213,6 +267,9 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     progressLevel: 0,
     progressTokens: [],
     progressTokenDefinitions: clone(campaign.progressTokenDefinitions || campaign.accessTokenDefinitions || []),
+    adminAccessLevels: clone(ADMIN_ACCESS_LEVELS),
+    adminAccessCandidates: clone(world.adminAccessCandidates || []),
+    adminAccessAcquisitionHistory: [],
     metrics: { worldStability: 55, worldAutonomy: 45, publicTrust: 50, technicalDebt: 25, companionBond: 10, turnPressure: 0 },
     navigationSequence: 0,
     safeTravelCount: 0,
@@ -231,6 +288,12 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     canonicalFacts,
     rumors: clone(campaign.initialRumors || []),
     openLoops: [{ id: deterministicUuid(`${runId}:opening-loop`), summary: firstBeat.title, status: "open", createdTurn: 0, expiresTurn: Math.min(campaign.turnLimit, 8), source: "campaign_director" }],
+    unresolvedHooks: [{ id: deterministicUuid(`${runId}:opening-loop`), summary: firstBeat.title, status: "open", createdTurn: 0, expiresTurn: Math.min(campaign.turnLimit, 8), source: "campaign_director" }],
+    majorChoices: [],
+    regionOutcomes: [],
+    abilityUsageHistory: [],
+    technicalDebtEntries: [],
+    finalPlacement: null,
     npcMemories: [],
     npcRelationships,
     activeQuests: [
@@ -395,7 +458,7 @@ function findUnrestrictedTravelPath(run, start, goal) {
 }
 
 function finaleGateEligible(run) {
-  return run.progressLevel >= 3 && (run.progressTokenDefinitions || []).length === 3 && run.progressTokenDefinitions.every((token) => run.progressTokens.includes(token.id));
+  return rootSystemGate(run).eligible;
 }
 
 export function resolveSafeTravel({ run: originalRun, request, now = new Date().toISOString() }) {
@@ -405,7 +468,8 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
   assert(player, 409, "PLAYER_MISSING", "The authoritative player entity is missing.");
   assert(!samePoint(player.position, request.destination), 422, "DESTINATION_INVALID", "Player is already on that tile.");
   const destinationArea = areaAt(originalRun.world, request.destination);
-  if (destinationArea.campaignRole === "FINAL_CONVERGENCE") assert(finaleGateEligible(originalRun), 422, "FINALE_ACCESS_DENIED", "Finale travel requires all three validated run milestones.");
+  assert(!request.destination.areaId || request.destination.areaId === destinationArea.id, 422, "DESTINATION_AREA_MISMATCH", "destination.areaId does not contain the selected coordinates.");
+  if (destinationArea.regionAxis === ROOT_SYSTEM) assert(finaleGateEligible(originalRun), 422, "ROOT_SYSTEM_ACCESS_DENIED", "Root System travel requires all three administrator access levels and the internal-collapse clue.", rootSystemGate(originalRun));
   const immutableLayout = fingerprint(publicWorld(originalRun.world));
   let path = findSafeTravelPath(originalRun, player.position, request.destination);
   let encounter = null;
@@ -424,7 +488,8 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
   const run = clone(originalRun);
   const runPlayer = entityById(run, run.playerEntityId);
   const from = clone(runPlayer.position);
-  const actualDestination = clone(path.path.at(-1));
+  const pathDestination = path.path.at(-1);
+  const actualDestination = { x: pathDestination.x, y: pathDestination.y };
   runPlayer.position = actualDestination;
   run.version += 1;
   run.navigationSequence = (run.navigationSequence || 0) + 1;
@@ -444,7 +509,8 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
       openedNavigationSequence: run.navigationSequence,
       openedAt: now,
       campaignTurnOpened: run.currentTurn,
-      suggestedActions: ["attack", "interact", "investigate", "negotiate", "move"]
+      suggestedActionContexts: [...CAMPAIGN_ACTION_CONTEXTS],
+      suggestedSkillIds: [...KEYBOARD_SKILLS]
     };
     run.encounterHistory.push(clone(run.activeEncounter));
   }
@@ -460,7 +526,7 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
     expectedRunVersion: request.expectedRunVersion,
     committedRunVersion: run.version,
     from,
-    to: actualDestination,
+    to: { areaId: actualArea.id, ...actualDestination },
     requestedDestination: clone(request.destination),
     path: path.path,
     pathCost: path.cost,
@@ -509,6 +575,33 @@ function prepare(run, request) {
   }
   const target = request.targetEntityId ? entityAnyById(run, request.targetEntityId) : null;
   assert(target, 422, "ENTITY_NOT_FOUND", "A valid target entity is required.");
+  if (target.state?.adminAccessLevelId) {
+    const candidate = (run.adminAccessCandidates || []).find((item) => item.id === target.state.candidateId);
+    assert(candidate && target.active, 422, "ADMIN_ACCESS_CANDIDATE_INVALID", "The selected administrator access candidate is unavailable.");
+    assert(candidate.skillId === request.skillId, 422, "ADMIN_ACCESS_SKILL_MISMATCH", `This candidate requires ${candidate.skillId}.`);
+    assert(!(run.adminAccessAcquisitionHistory || []).some((item) => item.accessLevelId === candidate.accessLevelId), 422, "ADMIN_ACCESS_ALREADY_ACQUIRED", `${candidate.accessLevelId} has already been acquired through another path.`);
+    const accessLevel = ADMIN_ACCESS_LEVELS.find((item) => item.id === candidate.accessLevelId);
+    assert(accessLevel.level === (run.adminAccessAcquisitionHistory || []).length + 1, 422, "ADMIN_ACCESS_ORDER_INVALID", `Acquire ${ADMIN_ACCESS_LEVELS[(run.adminAccessAcquisitionHistory || []).length].id} first.`);
+    assert(run.currentStoryBeat?.requiredEvidenceKey === candidate.accessLevelId, 422, "ADMIN_ACCESS_STAGE_INVALID", `${candidate.accessLevelId} can only be acquired during its active campaign beat.`);
+    assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Administrator access candidates must be within 3 tiles.");
+    let secondary = null;
+    if (request.skillId === "CONNECT") {
+      secondary = entityById(run, request.secondaryTargetEntityId);
+      assert(secondary && secondary.id !== target.id && manhattan(player.position, secondary.position) <= 5, 422, "SECONDARY_TARGET_REQUIRED", "CONNECT requires a distinct nearby second target.");
+    }
+    const focusCost = { COPY: 1, DELETE: 1, CONNECT: 2, RESTORE: 3, UNDO: 3 }[request.skillId];
+    assert(run.focus >= focusCost, 422, "INSUFFICIENT_FOCUS", `${request.skillId} requires ${focusCost} focus.`);
+    return {
+      difficulty: { COMBAT: 12, INVESTIGATION: 10, NEGOTIATION: 11, DEPLOYMENT: 13 }[candidate.actionContext],
+      modifier: 3,
+      focusCost,
+      target,
+      secondary,
+      actionContext: candidate.actionContext,
+      adminAccessCandidate: candidate,
+      normalizedAttempt: `${candidate.actionContext} with ${request.skillId} at ${candidate.regionAxis} for ${candidate.accessLevelId}`
+    };
+  }
   if (request.ability === "attack") {
     assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Attack accepts exactly one entity target.");
     const relationship = run.npcRelationships.find((item) => item.npcId === target.id);
@@ -547,7 +640,7 @@ function prepare(run, request) {
   if (request.ability === "delete") {
     assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Delete accepts exactly one entity target.");
     assert(target.active && target.id !== run.playerEntityId && !target.protected, 422, "ENTITY_PROTECTED", "The selected entity cannot be deleted.");
-    if (target.state?.finaleComponent) assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all milestones and physical finale entry.");
+    if (target.state?.finaleComponent) assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all three administrator access levels, the essential clue, and physical Root System entry.");
     assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Delete target must be within 3 tiles.");
     return { difficulty: 12, modifier: 3, focusCost: 1, target, normalizedAttempt: `Delete the removable entity ${target.name}` };
   }
@@ -561,7 +654,7 @@ function prepare(run, request) {
     const finaleRelated = target.state?.finaleComponent || secondary.state?.finaleComponent;
     if (finaleRelated) {
       const bothPuzzleEntities = (target.state?.finaleComponent || target.id === run.playerEntityId) && (secondary.state?.finaleComponent || secondary.id === run.playerEntityId);
-      assert(bothPuzzleEntities && finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale links require puzzle entities, all milestones, and physical finale entry.");
+      assert(bothPuzzleEntities && finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale links require puzzle entities, all three administrator access levels, the essential clue, and physical Root System entry.");
     }
     return { difficulty: 13, modifier: 2, focusCost: 2, target, secondary, normalizedAttempt: `Create a temporary allowed connection between ${target.name} and ${secondary.name}` };
   }
@@ -573,6 +666,17 @@ function prepare(run, request) {
   const restoreEntityOperation = restoration.inverseOps.find((operation) => operation.type === "restore_entity" && operation.entity.id === target.id);
   if (restoreEntityOperation) assert(!isActiveOccupied(run, restoreEntityOperation.entity.position), 422, "RESTORE_DESTINATION_OCCUPIED", "Restore destination is occupied by an active entity.");
   return { difficulty: 14, modifier: 2, focusCost: 3, target, restoration, normalizedAttempt: `Restore permitted recent damage or removal on ${target.name} from the authoritative snapshot recorded on turn ${restoration.turnNo}` };
+}
+
+function classifyActionContext(run, request, preparation) {
+  if (preparation.actionContext) return preparation.actionContext;
+  const target = preparation.target || null;
+  const relationship = target ? run.npcRelationships.find((item) => item.npcId === target.id) : null;
+  if (run.activeEncounter?.status === "active" || target?.kind === "enemy" || relationship?.stance === "hostile") return "COMBAT";
+  const playerArea = areaAt(run.world, entityById(run, run.playerEntityId).position);
+  if (playerArea.regionAxis === ROOT_SYSTEM || target?.state?.finaleComponent) return "DEPLOYMENT";
+  if (target?.kind === "npc") return "NEGOTIATION";
+  return "INVESTIGATION";
 }
 
 function outcomeFor(score, d20) {
@@ -640,7 +744,40 @@ function applyInverseOperation(run, operation, events) {
 
 function applyPrimaryEffect(run, request, preparation, turnNo, events) {
   const inverseOps = [];
-  if (request.ability === "move") {
+  if (preparation.adminAccessCandidate) {
+    const candidate = preparation.adminAccessCandidate;
+    const acquisition = {
+      id: deterministicUuid(`${run.id}:admin-access:${candidate.accessLevelId}:${turnNo}`),
+      accessLevelId: candidate.accessLevelId,
+      candidateId: candidate.id,
+      turnNo,
+      areaId: candidate.areaId,
+      regionAxis: candidate.regionAxis,
+      actionContext: candidate.actionContext,
+      skillId: candidate.skillId,
+      targetIds: [request.targetEntityId, request.secondaryTargetEntityId].filter(Boolean)
+    };
+    run.adminAccessAcquisitionHistory.push(acquisition);
+    if (!run.progressTokens.includes(candidate.accessLevelId)) run.progressTokens.push(candidate.accessLevelId);
+    run.progressLevel = run.adminAccessAcquisitionHistory.length;
+    preparation.target.state.adminAccessResolved = true;
+    preparation.target.state.adminAccessResolvedTurn = turnNo;
+    run.majorChoices.push({
+      id: deterministicUuid(`${run.id}:major-choice:admin-access:${turnNo}`),
+      type: "ADMIN_ACCESS_PATH_CHOSEN",
+      turnNo,
+      accessLevelId: candidate.accessLevelId,
+      regionAxis: candidate.regionAxis,
+      actionContext: candidate.actionContext,
+      skillId: candidate.skillId
+    });
+    const priorOutcome = run.regionOutcomes.find((item) => item.regionAxis === candidate.regionAxis);
+    const regionOutcome = { regionAxis: candidate.regionAxis, areaId: candidate.areaId, outcome: "ADMIN_ACCESS_ACQUIRED", lastChangedTurn: turnNo, accessLevelId: candidate.accessLevelId };
+    if (priorOutcome) Object.assign(priorOutcome, regionOutcome);
+    else run.regionOutcomes.push(regionOutcome);
+    events.push({ type: "admin_access_acquired", ...clone(acquisition) });
+    events.push({ type: "major_choice_recorded", choiceId: run.majorChoices.at(-1).id, choiceType: "ADMIN_ACCESS_PATH_CHOSEN" });
+  } else if (request.ability === "move") {
     const player = entityById(run, run.playerEntityId);
     const from = clone(player.position);
     player.position = clone(request.destination);
@@ -808,6 +945,8 @@ function applyDirectorOperations(run, narrative, turnNo, budget, events) {
       if (run.turnLimit - turnNo <= 3) { reject("ENDING_WINDOW_LOCKED"); continue; }
       const loop = { id: deterministicUuid(`${run.id}:hook:${turnNo}:${appliedOps.length}`), summary: operation.summary, status: "open", createdTurn: turnNo, expiresTurn: Math.min(run.turnLimit, turnNo + Math.max(1, Math.min(operation.ttlTurns || 5, run.turnLimit - turnNo))), source: "validated_director" };
       run.openLoops.push(loop);
+      run.unresolvedHooks ||= [];
+      run.unresolvedHooks.push(clone(loop));
       events.push({ type: "open_loop_created", loopId: loop.id, summary: loop.summary });
     } else if (operation.op === "START_QUEST") {
       if (run.turnLimit - turnNo <= 5 || run.activeQuests.filter((quest) => quest.status === "active").length >= 3) { reject("QUEST_HORIZON_LOCKED"); continue; }
@@ -876,6 +1015,8 @@ function expireNarrativeState(run, turnNo, events, forceConvergence = false) {
     if (loop.status === "open" && Number.isInteger(loop.expiresTurn) && loop.expiresTurn <= turnNo) {
       loop.status = "expired";
       loop.closedTurn = turnNo;
+      const hook = (run.unresolvedHooks || []).find((item) => item.id === loop.id);
+      if (hook) Object.assign(hook, { status: "expired", closedTurn: turnNo });
       events.push({ type: "open_loop_closed", loopId: loop.id, reason: "ttl_expired" });
     }
   }
@@ -890,6 +1031,8 @@ function expireNarrativeState(run, turnNo, events, forceConvergence = false) {
     if (loop.status !== "open") continue;
     loop.status = "closed";
     loop.closedTurn = turnNo;
+    const hook = (run.unresolvedHooks || []).find((item) => item.id === loop.id);
+    if (hook) Object.assign(hook, { status: "closed", closedTurn: turnNo });
     events.push({ type: "open_loop_closed", loopId: loop.id, reason: "ending_convergence" });
   }
   const allRequiredBeatsCompleted = run.requiredStoryBeats.every((beat) => beat.status === "completed");
@@ -902,22 +1045,54 @@ function expireNarrativeState(run, turnNo, events, forceConvergence = false) {
   }
 }
 
-function updateCampaignMetrics(run, request, outcome, turnNo, events) {
+function updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events) {
   const before = clone(run.metrics);
   const success = SUCCESS_OUTCOMES.has(outcome);
   const critical = outcome === "critical_success" || outcome === "critical_failure";
   const shift = success ? (critical ? 3 : 2) : (critical ? -4 : -2);
   run.metrics.worldStability += shift;
   run.metrics.publicTrust += success ? 1 : -2;
-  run.metrics.technicalDebt += success ? -1 : 3;
-  if (request.ability === "copy") { run.metrics.worldAutonomy += 2; run.metrics.technicalDebt += 1; }
+  // Failed checks do not silently create or erase debt. Only an applied editing
+  // operation (or an explicit repair of a ledger entry) changes technical debt.
+  if (request.ability === "copy") run.metrics.worldAutonomy += 2;
   if (request.ability === "delete") { run.metrics.worldStability += 2; run.metrics.worldAutonomy -= 1; }
   if (request.ability === "connect") { run.metrics.worldAutonomy += 2; run.metrics.publicTrust += 2; run.metrics.companionBond += 1; }
-  if (["restore", "undo"].includes(request.ability)) { run.metrics.worldStability += 2; run.metrics.technicalDebt -= 2; }
-  if (request.ability === "interact") { run.metrics.publicTrust += 2; run.metrics.companionBond += 2; }
-  if (request.ability === "negotiate") { run.metrics.publicTrust += success ? 4 : -2; run.metrics.worldAutonomy += success ? 2 : 0; run.metrics.companionBond += success ? 2 : 0; }
-  if (request.ability === "attack") { run.metrics.worldStability += success ? 1 : -1; run.metrics.publicTrust -= 1; }
-  if (request.ability === "rest") { run.metrics.companionBond += 1; run.metrics.technicalDebt -= 1; }
+  if (["restore", "undo"].includes(request.ability)) run.metrics.worldStability += 2;
+  if (actionContext === "NEGOTIATION") { run.metrics.publicTrust += success ? 3 : -1; run.metrics.companionBond += success ? 2 : 0; }
+  if (actionContext === "COMBAT") run.metrics.publicTrust -= 1;
+  const debtDelta = technicalDebtDelta({
+    skillId: request.skillId,
+    successful: success,
+    forcedOverride: request.forcedOverride,
+    resolvesDebtEntryId: request.resolvesDebtEntryId
+  });
+  run.metrics.technicalDebt += debtDelta;
+  if (success && request.resolvesDebtEntryId) {
+    const resolved = run.technicalDebtEntries.find((item) => item.id === request.resolvesDebtEntryId && item.resolvedAt === null);
+    if (resolved) {
+      resolved.resolvedAt = turnNo;
+      resolved.resolutionSkillId = request.skillId;
+      events.push({ type: "technical_debt_resolved", entryId: resolved.id, debtDelta });
+    }
+  }
+  if (debtDelta > 0) {
+    const entry = {
+      id: deterministicUuid(`${run.id}:technical-debt:${turnNo}:${request.skillId}`),
+      runId: run.id,
+      turnId: deterministicUuid(`${run.id}:turn:${turnNo}`),
+      turnNo,
+      skillId: request.skillId,
+      operationType: request.skillId,
+      actionContext,
+      targetId: request.targetEntityId || request.resolvesDebtEntryId || "LAST_REVERSIBLE_ACTION",
+      forcedOverride: request.forcedOverride === true,
+      debtDelta,
+      deferredConsequenceType: { COPY: "DUPLICATED_STATE", DELETE: "REMOVED_DEPENDENCY", CONNECT: "COUPLING_RISK", UNDO: "COMPENSATION_DRIFT" }[request.skillId] || "EDIT_SIDE_EFFECT",
+      resolvedAt: null
+    };
+    run.technicalDebtEntries.push(entry);
+    events.push({ type: "technical_debt_recorded", entryId: entry.id, debtDelta, deferredConsequenceType: entry.deferredConsequenceType });
+  }
   run.metrics.turnPressure = Math.max(run.metrics.turnPressure, Math.round((turnNo / run.turnLimit) * 70 + Math.min(30, run.pressure * 2)));
   for (const keyName of Object.keys(run.metrics)) run.metrics[keyName] = Math.max(0, Math.min(100, Math.round(run.metrics[keyName])));
   const changes = Object.entries(run.metrics).filter(([keyName, value]) => value !== before[keyName]).map(([keyName, value]) => ({ metric: keyName, from: before[keyName], to: value }));
@@ -926,11 +1101,18 @@ function updateCampaignMetrics(run, request, outcome, turnNo, events) {
 
 export function resolveTurn({ run: originalRun, request, d20Source = new DeterministicD20Source(), forcedD20 = null, now = new Date().toISOString(), directorOutput = null }) {
   assert(originalRun.status === "active", 409, "RUN_NOT_ACTIVE", "The run does not accept turns.");
+  assert(request.inputType === "USE_SKILL" && KEYBOARD_SKILLS.includes(request.skillId), 400, "TURN_REQUEST_INVALID", "Only structured USE_SKILL commands consume campaign turns.");
+  if (request.resolvesDebtEntryId) {
+    assert(["RESTORE", "UNDO"].includes(request.skillId), 422, "TECHNICAL_DEBT_RESOLUTION_INVALID", "Only RESTORE or UNDO can explicitly resolve a technical debt entry.");
+    assert(originalRun.technicalDebtEntries.some((item) => item.id === request.resolvesDebtEntryId && item.resolvedAt === null), 422, "TECHNICAL_DEBT_ENTRY_INVALID", "The selected technical debt entry is not unresolved.");
+  }
   const stateHashBefore = stateFingerprint(originalRun);
   const openedEncounter = originalRun.activeEncounter?.status === "active" ? clone(originalRun.activeEncounter) : null;
   if (openedEncounter) assert(request.ability !== "rest", 422, "ENCOUNTER_ACTION_REQUIRED", "An active encounter requires a nearby meaningful action; rest cannot bypass it.", { activeEncounter: openedEncounter });
   const immutableLayout = fingerprint(publicWorld(originalRun.world));
   const preparation = prepare(originalRun, request);
+  const actionContext = classifyActionContext(originalRun, request, preparation);
+  assert(CAMPAIGN_ACTION_CONTEXTS.includes(actionContext), 500, "ACTION_CONTEXT_INVALID", "The server failed to classify a consuming action context.");
   const intentAnalysis = analyzeIntent({ run: originalRun, request, legalExecution: preparation.normalizedAttempt });
   const turnNo = originalRun.currentTurn + 1;
   const d20 = forcedD20 ?? d20Source.roll({ resolutionSeed: originalRun.resolutionSeed, runId: originalRun.id, turnNo });
@@ -939,6 +1121,12 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   const outcome = outcomeFor(score, d20);
   const budget = consequenceBudget(d20);
   const run = clone(originalRun);
+  run.majorChoices ||= [];
+  run.regionOutcomes ||= [];
+  run.abilityUsageHistory ||= [];
+  run.adminAccessAcquisitionHistory ||= [];
+  run.technicalDebtEntries ||= [];
+  run.unresolvedHooks ||= clone(run.openLoops || []);
   const events = [];
 
   if (preparation.focusCost > 0) {
@@ -974,23 +1162,34 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   }
 
   run.currentTurn = turnNo;
+  run.abilityUsageHistory.push({
+    id: deterministicUuid(`${run.id}:ability-usage:${turnNo}`),
+    turnNo,
+    skillId: request.skillId,
+    actionContext,
+    targetIds: [request.targetEntityId, request.secondaryTargetEntityId].filter(Boolean),
+    outcome,
+    d20,
+    forcedOverride: request.forcedOverride === true
+  });
   if (openedEncounter) {
     const resolvedEncounter = { ...openedEncounter, status: "resolved", resolvedTurn: turnNo, resolutionAction: request.ability, resolutionOutcome: outcome, resolvedAt: now };
     run.encounterHistory = (run.encounterHistory || []).map((item) => item.id === resolvedEncounter.id ? clone(resolvedEncounter) : item);
     run.activeEncounter = null;
     events.push({ type: "encounter_resolved", encounterId: resolvedEncounter.id, action: request.ability, outcome, campaignTurnConsumed: true });
   }
-  updateCampaignMetrics(run, request, outcome, turnNo, events);
+  updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events);
   evaluateFinalePuzzle(run, turnNo, events);
-  const contextualActions = SUCCESS_OUTCOMES.has(outcome) && ["interact", "negotiate"].includes(request.ability) ? [request.ability, request.ability === "interact" ? "investigate" : request.ability] : [];
   const campaignRole = areaAt(run.world, entityById(run, run.playerEntityId).position).campaignRole;
+  const currentArea = areaAt(run.world, entityById(run, run.playerEntityId).position);
   const targetEvidenceKeys = [preparation.target, preparation.secondary]
     .filter(Boolean)
     .flatMap((item) => [item.state?.evidenceKey, item.state?.finaleComponent ? "FINALE_PUZZLE_COMPONENT" : null])
     .filter(Boolean);
   if (run.finalePuzzle?.status === "resolved") targetEvidenceKeys.push("FINALE_PUZZLE_RESOLVED");
+  if (currentArea.regionAxis === ROOT_SYSTEM) targetEvidenceKeys.push("ROOT_SYSTEM_ENTERED");
   advanceStoryDirector(run, turnNo, events, {
-    ability: request.ability, outcome, contextualActions, campaignRole,
+    ability: request.ability, outcome, contextualActions: [actionContext.toLowerCase()], campaignRole,
     targetEvidenceKeys,
     finalePuzzleResolved: run.finalePuzzle?.status === "resolved",
     finaleEndingId: run.finalePuzzle?.matchedEndingId || null
@@ -1008,6 +1207,15 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   events.push({ type: "turn_committed", turnNo, runVersion: run.version });
   if (explicitFinaleReady || forcedTurnLimitFallback) {
     const ending = chooseEnding(run);
+    const playerAtEnding = entityById(run, run.playerEntityId);
+    const endingArea = areaAt(run.world, playerAtEnding.position);
+    run.finalPlacement = {
+      areaId: endingArea.id,
+      regionAxis: endingArea.regionAxis,
+      position: clone(playerAtEnding.position),
+      selectedEndingId: ending.id,
+      turnNo
+    };
     run.status = "completed";
     run.endingCode = ending.id;
     run.currentAct = "finale_resolution";
@@ -1031,6 +1239,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     expectedRunVersion: request.expectedRunVersion,
     committedRunVersion: run.version,
     request: clone(request),
+    actionContext,
     normalizedAttempt: intentAnalysis.normalizedAttempt,
     intentAnalysis: clone(intentAnalysis),
     d20,
@@ -1051,7 +1260,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     mechanicalScore: score,
     outcome,
     consequenceBudget: budget,
-    rulesetVersion: "keyboard-wanderer-rules.v3",
+    rulesetVersion: "codria-rules.v4",
     stateHashBefore,
     stateHashAfter: stateFingerprint(run),
     events,
@@ -1063,6 +1272,11 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
       npcMemories: run.npcMemories.filter((memory) => memory.createdTurn === turnNo),
       relationships: run.npcRelationships.filter((item) => item.lastChangedTurn === turnNo),
       quests: run.activeQuests.filter((quest) => quest.createdTurn === turnNo),
+      majorChoices: run.majorChoices.filter((choice) => choice.turnNo === turnNo),
+      regionOutcomes: run.regionOutcomes.filter((item) => item.lastChangedTurn === turnNo),
+      abilityUsageHistory: run.abilityUsageHistory.filter((item) => item.turnNo === turnNo),
+      adminAccessHistory: run.adminAccessAcquisitionHistory.filter((item) => item.turnNo === turnNo),
+      technicalDebtEntries: run.technicalDebtEntries.filter((item) => item.turnNo === turnNo || item.resolvedAt === turnNo),
       appliedOps: directorPlan.appliedOps,
       rejectedOps: directorPlan.rejectedOps
     },
@@ -1106,8 +1320,8 @@ export function directorContext(run, turn) {
   return {
     schemaVersion: "2.0",
     requestType: "TURN_NARRATION",
-    campaign: { title: run.campaignTitle, worldName: run.worldName, premise: run.premise, contentHash: run.campaignContentHash },
-    progression: { level: run.progressLevel, tokens: clone(run.progressTokens), tokenDefinitions: clone(run.progressTokenDefinitions) },
+    campaign: { title: GAME_TITLE, worldId: WORLD_CODRIA, worldName: WORLD_NAME_KO, protagonistId: PROTAGONIST_NUPJUKYI, protagonistName: PROTAGONIST_NAME_KO, artifactId: ARTIFACT_ADMIN_KEYBOARD, premise: run.premise, contentHash: run.campaignContentHash },
+    progression: { level: run.progressLevel, tokens: clone(run.progressTokens), tokenDefinitions: clone(run.progressTokenDefinitions), rootSystemGate: rootSystemGate(run) },
     turnNo: turn.turnNo,
     remainingTurns,
     act: campaignAct(turn.turnNo, run.turnLimit),
@@ -1115,7 +1329,10 @@ export function directorContext(run, turn) {
     area: currentArea.name,
     areaSummary: currentArea.summary,
     intent: turn.request.intent,
+    playerNote: turn.request.playerNote,
     ability: turn.request.ability,
+    skillId: turn.request.skillId,
+    actionContext: turn.actionContext,
     normalizedAttempt: turn.normalizedAttempt,
     intentAnalysis: clone(turn.intentAnalysis),
     d20: turn.d20,
@@ -1141,7 +1358,14 @@ export function directorContext(run, turn) {
     openLoops: run.openLoops.filter((loop) => loop.status === "open").slice(-8),
     rumors: run.rumors.filter((rumor) => rumor.status === "active").slice(-6),
     npcRelationships: run.npcRelationships.filter((item) => visibleEntities.some((entityItem) => entityItem.id === item.npcId)),
-    recentMemories: run.npcMemories.filter((item) => !item.expired).slice(-8)
+    recentMemories: run.npcMemories.filter((item) => !item.expired).slice(-8),
+    majorChoices: (run.majorChoices || []).slice(-8),
+    regionOutcomes: (run.regionOutcomes || []).slice(-6),
+    abilityUsageHistory: (run.abilityUsageHistory || []).slice(-8),
+    adminAccessHistory: clone(run.adminAccessAcquisitionHistory || []),
+    technicalDebtEntries: (run.technicalDebtEntries || []).filter((item) => item.resolvedAt === null).slice(-8),
+    unresolvedHooks: (run.unresolvedHooks || []).filter((item) => item.status === "open").slice(-8),
+    endingFactors: run.status === "completed" ? clone(run.finaleResolution?.endingFactors || null) : null
   };
 }
 
@@ -1189,7 +1413,12 @@ export function publicRun(run) {
     id: run.id,
     campaignId: run.campaignId,
     campaignTitle: run.campaignTitle,
+    gameTitle: run.gameTitle || GAME_TITLE,
+    worldId: run.worldId || WORLD_CODRIA,
     worldName: run.worldName,
+    protagonistId: run.protagonistId || PROTAGONIST_NUPJUKYI,
+    protagonistName: run.protagonistName || PROTAGONIST_NAME_KO,
+    artifactId: run.artifactId || ARTIFACT_ADMIN_KEYBOARD,
     archetype: run.archetype,
     premise: run.premise,
     templateId: run.templateId,
@@ -1225,11 +1454,8 @@ export function publicRun(run) {
     discoveredAreaIds: run.discoveredAreaIds,
     activeEncounter: run.activeEncounter ? clone(run.activeEncounter) : null,
     encounterHistory: (run.encounterHistory || []).slice(-12).map((item) => clone(item)),
-    finaleGate: {
-      eligible: finaleGateEligible(run),
-      requiredProgressLevel: 3,
-      missingProgressTokens: (run.progressTokenDefinitions || []).filter((token) => !run.progressTokens.includes(token.id)).map((token) => token.id)
-    },
+    rootSystemGate: rootSystemGate(run),
+    finaleGate: { ...rootSystemGate(run), requiredProgressLevel: 3, missingProgressTokens: rootSystemGate(run).missingAdminAccessLevels },
     endingCandidates: run.endingCandidates.map((item) => item.title),
     endingCandidateDetails: run.endingCandidates,
     playerEntityId: run.playerEntityId,
@@ -1242,11 +1468,20 @@ export function publicRun(run) {
     rumors: run.rumors.filter((item) => item.status === "active"),
     npcRelationships: run.npcRelationships.map((item) => ({ ...item, npcName: entityNames.get(item.npcId) || "", score: item.affinity, label: item.stance, reason: "authoritative relationship state" })),
     npcMemories: run.npcMemories.filter((item) => !item.expired).map((item) => ({ ...item, npcName: entityNames.get(item.npcId) || "", memory: item.summary, importance: Math.round(item.importance * 100), turnNo: item.createdTurn })),
+    majorChoices: clone(run.majorChoices || []),
+    regionOutcomes: clone(run.regionOutcomes || []),
+    abilityUsageHistory: clone(run.abilityUsageHistory || []),
+    adminAccessLevels: clone(run.adminAccessLevels || ADMIN_ACCESS_LEVELS),
+    adminAccessCandidates: clone(run.adminAccessCandidates || []),
+    adminAccessAcquisitionHistory: clone(run.adminAccessAcquisitionHistory || []),
+    technicalDebtEntries: clone(run.technicalDebtEntries || []),
+    unresolvedHooks: clone((run.unresolvedHooks || []).filter((item) => item.status === "open")),
     restoreCandidates: restoreCandidatesForRun(run),
     generationPlan: run.generationPlan,
     campaignContentHash: run.campaignContentHash,
     abilities: CORE_ABILITIES,
-    contextActions: CONTEXT_ACTIONS,
+    actionContexts: CONTEXT_ACTIONS,
+    inputTypes: ["MOVE", "USE_SKILL"],
     createdAt: run.createdAt,
     updatedAt: run.updatedAt
   };
@@ -1269,6 +1504,8 @@ export function publicTurn(turn) {
     expectedRunVersion: turn.expectedRunVersion,
     committedRunVersion: turn.committedRunVersion,
     request: turn.request,
+    actionContext: turn.actionContext,
+    campaignTurnConsumed: true,
     normalizedAttempt: turn.normalizedAttempt,
     intentAnalysis: turn.intentAnalysis,
     d20: turn.d20,

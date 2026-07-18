@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 586898fc9bb214262819bfb5564de88a, type: 3}
+  m_Name: KeyboardWandererAuthoringSettings
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererAuthoringSettings
+  assetManifest: {fileID: 11400000, guid: d012343ab86804d75b78bd510c02c5ad, type: 2}
+  entityVisualPrefab: {fileID: 723654025824541679, guid: bc3871cc4f5a6439ebb52e83328b87fc, type: 3}
+  landmarkPrefab: {fileID: 7071910225199613648, guid: a8e685c5288dd4e35b64ae8fb0712b1b, type: 3}
+  playerWalkSpeed: 4.2
+  cameraOrthographicSize: 8.25
+  cameraBackground: {r: 0.025, g: 0.033, b: 0.02, a: 1}
+  playerVisualSize: 1.34
+  enemyVisualSize: 0.92
+  neutralVisualSize: 0.98
+  landmarkVisualSize: 0.42
+  rootLandmarkVisualSize: 0.68

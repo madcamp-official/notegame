@@ -8,7 +8,7 @@ namespace KeyboardWanderer.Editor
     public static class NinjaAdventureManifestBuilder
     {
         private const string ManifestPath = "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset";
-        private const int CurrentManifestVersion = 2;
+        private const int CurrentManifestVersion = 3;
 
         [InitializeOnLoadMethod]
         private static void ScheduleEnsureManifest()
@@ -66,6 +66,13 @@ namespace KeyboardWanderer.Editor
             manifest.Crate = LoadFirstSprite("Assets/NinjaAdventure/Items/Object/CrateEmpty.png");
             manifest.TreasureChest = LoadFirstSprite("Assets/NinjaAdventure/Items/Treasure/BigTreasureChest.png");
             manifest.D20 = LoadFirstSprite("Assets/NinjaAdventure/Items/Object/Dice 20.png");
+
+            manifest.PlayerAnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                "Assets/KeyboardWanderer/Animations/Generated/Player.controller");
+            manifest.SlimeAnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                "Assets/KeyboardWanderer/Animations/Generated/Slime.controller");
+            manifest.VillagerAnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                "Assets/KeyboardWanderer/Animations/Generated/Villager.controller");
 
             manifest.WoodPanel = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_panel.png");

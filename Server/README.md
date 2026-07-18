@@ -1,70 +1,35 @@
-# Keyboard Wanderer authoritative server — v3
+# 《넙죽이와 붕괴한 코드 왕국》 authoritative server
 
-This service runs a seed-composed, 30–50 meaningful-turn keyboard-fantasy TRPG roguelike. Every run owns a newly generated campaign genome and one sealed world. There is no fixed kingdom, named protagonist, authority ladder, or predetermined finale scenario.
+이 서버는 코드리아 v4 캠페인의 규칙 권위를 소유합니다. LLM은 확정된 판정의 짧은 서사만 제안하며 월드 geometry, 이동, D20, 비용, 관리자 권한, 기술 부채와 결말 ID를 바꾸지 못합니다.
 
-The server owns all rules: world generation, coordinates, paths, occupancy, D20, difficulty, damage, focus, metrics, milestone evidence, ending recipes, idempotency, persistence, and convergence. Gemini is a low-cost constrained proposal engine. It never becomes a rules engine.
+## 고정 제품 계약
 
-## Quick start
+- 게임: `넙죽이와 붕괴한 코드 왕국`
+- 세계: `WORLD_CODRIA` / 코드리아
+- 주인공: `PROTAGONIST_NUPJUKYI` / 넙죽이
+- 유물: `ARTIFACT_ADMIN_KEYBOARD` / 관리자 키보드
+- 입력: `MOVE`, `USE_SKILL`
+- 스킬: `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`
+- 행동 문맥: `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT`
+- 권한: `ADMIN_ACCESS_LEVEL_1`, `ADMIN_ACCESS_LEVEL_2`, `ADMIN_ACCESS_LEVEL_3`
+- 캠페인 길이: 30–50 의미 턴, 기본 40턴
 
-Node.js 20.11 or newer is required.
+Seed는 위 항목을 바꾸지 않습니다. 여섯 지역 축의 실제 area·terrain biome·POI 배치, 경로, NPC 이름과 역할, 사건, 퀘스트, 권한 획득 후보 및 에필로그 요소만 바꿉니다.
 
-```bash
-cd Server
-npm install
-npm test
-npm start
-```
+## 월드와 지역
 
-Memory storage and deterministic model fallbacks are enabled by default. PostgreSQL and Gemini are optional for local development.
+160×160 월드는 런 시작 시 한 번 생성·검증되고 `layoutHash`로 봉인됩니다. 턴, 저장·재개, Restore와 Undo는 geometry를 재생성하지 않습니다.
 
-```bash
-cp .env.example .env
-node --env-file=.env src/index.js
-```
+고정 지역 축은 물리 바이옴과 다른 레이어입니다.
 
-Never commit `.env`. `GEMINI_API_KEY` is server-only, sent in the `x-goog-api-key` header, and excluded from URLs, prompts, logs, database plan JSON, health responses, and Unity DTOs.
+1. `REGION_BUG_FOREST`
+2. `REGION_BUFFER_VILLAGE`
+3. `REGION_DEADLOCK_CITY`
+4. `REGION_DATA_GRAND_LIBRARY`
+5. `REGION_LEGACY_CITADEL`
+6. `REGION_ROOT_SYSTEM`
 
-## Campaign preview versus run creation
-
-`POST /v1/campaigns` creates a deterministic preview using `generative-keyboard-fantasy`. It does not call Gemini. The preview gives selection UI a reproducible title, premise, genome, quest seeds, ending subset, world, and content hash.
-
-`POST /v1/campaigns/:id/runs` creates the playable content:
-
-1. choose or validate a run `worldSeed` and 30–50 `turnLimit`;
-2. generate and validate exactly one complete world;
-3. create a deterministic campaign blueprint from the same seed;
-4. expose a read-only world summary to `CAMPAIGN_PLAN`;
-5. accept only validated flavor fields keyed by immutable IDs, or use deterministic fallback;
-6. create the run and seal its world, generation plan, hashes, entities, and progress state.
-
-The optional `themeHint` is bounded untrusted text. It may influence flavor but cannot widen the output schema or change rules.
-
-## Campaign genome
-
-The deterministic blueprint composes a world name, title, motif, crisis, hidden cause, community, dilemma, companion temperament, NPC display content, three quest seeds, beat copy, token display meaning, and an ending subset. Same seed/version/turn limit gives the same blueprint and content hash; different seeds vary multiple narrative dimensions.
-
-The six invariant campaign roles are:
-
-1. `ARRIVAL_CATALYST`
-2. `LOCAL_STAKES`
-3. `RELATIONSHIP_CONFLICT`
-4. `HIDDEN_TRUTH`
-5. `CONSEQUENCE_RETURN`
-6. `FINAL_CONVERGENCE`
-
-Roles are narrative functions, not terrain types. A seed assigns each role once to a generated area and compatible semantic slots.
-
-Progress uses stable server IDs with seed-specific display names and meanings:
-
-- `MILESTONE_TOKEN_1`
-- `MILESTONE_TOKEN_2`
-- `MILESTONE_TOKEN_3`
-
-Every beat requires a successful or partially successful allowed action, the correct role area, and designated evidence. A deadline does not auto-complete a beat. Unresolved beats become explicit convergence costs at the hard limit.
-
-## One sealed world
-
-The production world is 160×160, contains 12 areas, and includes all six terrain biomes exactly twice as area anchors:
+월드 전체에는 다음 여섯 물리 바이옴이 모두 존재합니다.
 
 - `temperate_forest_field`
 - `river_wetland`
@@ -73,193 +38,103 @@ The production world is 160×160, contains 12 areas, and includes all six terrai
 - `subterranean_cavern`
 - `ancient_ruins`
 
-World generation is logical-first:
+각 관리자 권한은 서로 다른 area와 행동 문맥에 걸친 후보를 최소 두 개 갖습니다. 루트 시스템은 세 권한과 데이터 대도서관의 필수 붕괴 원인 단서가 모두 있어야 이동할 수 있습니다.
 
-1. build the six-node progression DAG and three-milestone finale gate;
-2. place twelve constrained area anchors and assign all six biomes;
-3. connect anchors with a minimum spanning tree plus seeded alternate routes;
-4. rasterize clustered terrain, multi-tile roads, clearings, POIs, and semantic slots;
-5. validate staged reachability, clearance, uniqueness, campaign candidates, and finale locking;
-6. apply deterministic local repairs, seal the generation report, and hash every immutable layer.
+## 턴 계약
 
-Turns mutate only run/entity/narrative state. They never rebuild tiles, biome boundaries, areas, routes, exits, POIs, or placement slots.
+`MOVE`는 안전 이동입니다. D20과 캠페인 턴을 소비하지 않고 run version만 증가시킵니다. 위험 구간에서는 안전 지점까지만 이동하고 encounter를 활성화합니다. 실제 `USE_SKILL` 행동이 D20과 의미 턴을 소비합니다.
 
-Generate an inspectable JSON world and SVG preview, or validate a seed batch:
+```json
+{
+  "inputType": "MOVE",
+  "destination": { "areaId": "area-id", "x": 18, "y": 27 },
+  "expectedRunVersion": 4,
+  "idempotencyKey": "move-00000001"
+}
+```
+
+```json
+{
+  "inputType": "USE_SKILL",
+  "skillId": "CONNECT",
+  "targetIds": ["entity-uuid-1", "entity-uuid-2"],
+  "expectedRunVersion": 5,
+  "idempotencyKey": "skill-00000001"
+}
+```
+
+`playerNote`는 선택적 분위기 메모입니다. 입력하지 않아도 전체 캠페인을 완료할 수 있고, 입력해도 합법성·난이도·효과에 영향을 주지 않습니다. `/travel`은 기존 HTTP 클라이언트의 `TRAVEL` 표기를 `MOVE` 호환 별칭으로만 허용합니다.
+
+## 캠페인 골격
+
+모든 런은 다음 9개 거시 비트를 유지합니다.
+
+1. 코드리아 추락과 관리자 키보드 각성
+2. 붕괴 현상과 첫 지역 문제
+3. 관리자 권한 I
+4. 관리자 권한 II
+5. 관리자 통제 시스템 내부 원인 확인
+6. 기술 부채와 과거 선택의 역류
+7. 관리자 권한 III
+8. 루트 시스템 진입
+9. 최종 배치와 결말
+
+서버는 `majorChoices`, `regionOutcomes`, `npcRelationships`, `canonicalFacts`, `unresolvedHooks`, `abilityUsageHistory`, `adminAccessAcquisitionHistory`, `technicalDebtEntries`를 권위 상태로 유지합니다. 일반 성공은 기술 부채를 자동 감소시키지 않습니다. 명시적인 복구 또는 보상 행동만 기존 원장을 해결합니다.
+
+## LLM 경계
+
+Gemini 요청은 구조화 JSON, 작은 출력, thinking budget 0, 최대 1회 repair로 제한합니다. 실패하면 deterministic fallback을 사용하며 게임 상태 commit은 서버 검증 뒤에만 일어납니다.
+
+기본값은 비용 우선 설정인 `gemini-2.5-flash-lite`입니다. 이 모델은 2026-10-16 종료 예정이므로 배포 시 환경 변수만 바꿔 `gemini-3.1-flash-lite`로 전환할 수 있습니다.
+
+- 가격: <https://ai.google.dev/gemini-api/docs/pricing>
+- 모델 수명주기: <https://ai.google.dev/gemini-api/docs/deprecations>
+
+Gemini 키는 `GEMINI_API_KEY` 환경 변수에만 둡니다. `.env`, Unity 클라이언트, API 응답, 로그, PostgreSQL plan과 snapshot에 키를 기록하지 않습니다.
+
+## 실행
 
 ```bash
-npm run world:generate -- --seed 20260717 --output ./generated/world-20260717
-npm run world:generate -- --seed 100 --count 20 --output ./generated/batch
-npm run world:validate
+cp .env.example .env
+npm install
+npm start
 ```
 
-For multi-world output, the CLI writes `world-<seed>.json` and `world-<seed>.svg` under the selected directory. Finale POIs are highlighted by the generic `FINAL_CONVERGENCE` role.
-
-## Abilities, travel, and turns
-
-The six product abilities are `move`, `copy`, `delete`, `connect`, `restore`, and `undo`. Attack, Interact/Investigate, Negotiate, and Rest are contextual actions.
-
-- Safe travel uses `/v1/runs/:id/travel`; it increments run version and travel state without a D20 or campaign turn.
-- Entering danger commits only a safe staging point and opens an encounter.
-- A local encounter action validates targets and paths, resolves one D20, and consumes exactly one meaningful turn.
-- `restore` replays a permitted recent removal or damage snapshot.
-- `undo` appends compensation for the previous reversible result.
-- Neither operation rewinds turn numbers, rolls, immutable geometry, canonical facts, memories, or irreversible events.
-
-The six accumulated metrics are `worldStability`, `worldAutonomy`, `publicTrust`, `technicalDebt`, `companionBond`, and `turnPressure`. Only the Rule Engine changes them.
-
-## Generic finale recipes
-
-Each seed selects four server-defined ending candidates plus `ENDING_EMERGENCY_WITHDRAWAL`. Candidate text varies; IDs and mechanics do not. Recipes use this DSL:
-
-```json
-{
-  "requiredLinks": [["anchor", "safeguard"]],
-  "requiredRemoved": ["threat"],
-  "requiredActive": ["memory", "witness"],
-  "forbiddenLinks": [["player", "freedom"]],
-  "metricConditions": {
-    "publicTrust": { "min": 45 },
-    "technicalDebt": { "max": 65 }
-  }
-}
-```
-
-The sealed finale cluster contains `anchor`, `safeguard`, `memory`, `freedom`, `threat`, `passage`, and `witness`, plus the player. The Rule Engine evaluates connections, removal/active state, and metrics. The model can rewrite only validated titles/descriptions; it cannot add candidates or alter a recipe.
-
-## `CAMPAIGN_PLAN` boundary
-
-The planner receives no tile array or coordinates. Its read-only context includes:
-
-- seed, turn limit, optional untrusted theme hint;
-- immutable beat/NPC/quest/ending/area IDs;
-- deterministic genome summary;
-- layout hash, dimensions, six biome descriptors, area-to-biome IDs, and capacity counts;
-- an explicit allowlist and forbidden-content list.
-
-The only valid response shape is:
-
-```json
-{
-  "campaign": {
-    "title": "...",
-    "description": "...",
-    "tone": ["..."]
-  },
-  "beats": [{ "id": "existing-id", "title": "...", "description": "..." }],
-  "npcs": [{ "id": "existing-id", "title": "display name", "description": "flavor" }],
-  "quests": [{ "id": "existing-id", "title": "...", "description": "..." }],
-  "endings": [{ "id": "existing-id", "title": "...", "description": "..." }],
-  "areaFlavors": [{ "areaId": "existing-id", "flavor": "..." }]
-}
-```
-
-Unknown fields, IDs, mechanics, coordinates, slots, asset paths, numeric rewards, and recipe language reject the entire proposal. The deterministic blueprint remains playable.
-
-## Turn narration boundary
-
-A meaningful turn is mechanically preflighted before the model call. The bounded context includes only relevant IDs, facts, loops, quests, relationships, allowed scene operations, and consequence budget. After the call, schema and semantic validation run again while building the commit plan.
-
-Allowed proposals can add bounded narrative facts, rumors, memories, relationship changes, short quest hooks, visual intent, or a scene entity binding to one supplied ambient slot and one asset already allowed by that slot. The model cannot choose raw coordinates, arbitrary assets, mechanics, rewards, progress, or endings.
-
-## Gemini cost profile
-
-Defaults use the lightweight profile:
-
-```dotenv
-GEMINI_FAST_MODEL=gemini-2.5-flash-lite
-GEMINI_FAST_OUTPUT_TOKENS=384
-GEMINI_QUALITY_MODEL=gemini-2.5-flash-lite
-GEMINI_QUALITY_OUTPUT_TOKENS=640
-```
-
-Campaign preview uses zero model calls. Run planning uses the fast model, 384 output tokens by default, one JSON candidate, `thinkingBudget: 0`, and at most one retry. Ordinary turn narration uses the same bounded settings. Any timeout, transport failure, invalid JSON, or invalid semantics returns deterministic fallback.
-
-## REST API
-
-All endpoints except `/health` use the authenticated UUID in `x-user-id`. `AUTH_MODE=local` supplies `DEFAULT_USER_ID` for development.
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health` | Process, storage, authority, and model profile health |
-| `POST` | `/v1/campaigns` | Create deterministic campaign preview |
-| `GET` | `/v1/campaigns` | List owned campaign previews |
-| `GET` | `/v1/campaigns/:id` | Get one preview and its world |
-| `POST` | `/v1/campaigns/:id/runs` | Generate and seal a playable run |
-| `GET` | `/v1/runs/:id` | Get current authoritative run DTO |
-| `POST` | `/v1/runs/:id/travel` | Perform safe exploration travel |
-| `POST` | `/v1/runs/:id/turns` | Resolve and commit one meaningful turn |
-| `GET` | `/v1/runs/:id/turns` | List committed turns |
-| `GET` | `/v1/runs/:id/turns/:turnNo` | Get one committed turn |
-| `POST` | `/v1/runs/:id/abandon` | Abandon at an expected version |
-| `POST` | `/v1/runs/:id/resume` | Resume at an expected version |
-| `POST` | `/v1/gm/narrate` | Stateless compatibility narration; never mutates a run |
-
-Create a preview:
-
-```json
-{
-  "title": "선택적 표시 제목",
-  "worldSeed": 20260717,
-  "turnLimit": 40,
-  "archetype": "generative-keyboard-fantasy"
-}
-```
-
-Create a run:
-
-```json
-{
-  "worldSeed": 20260718,
-  "turnLimit": 40,
-  "themeHint": "유리비와 오래된 약속"
-}
-```
-
-A normal turn preserves free-form intent while selecting explicit mechanical scope:
-
-```json
-{
-  "idempotencyKey": "unity-turn-0001",
-  "expectedRunVersion": 1,
-  "ability": "connect",
-  "targetEntityId": "UUID",
-  "secondaryTargetEntityId": "UUID",
-  "destination": null,
-  "intent": "두 증언이 공유하는 약속을 잠시 연결해 확인한다"
-}
-```
-
-Identical key/payload replay returns the original response. Reusing a key with different input or submitting a stale version returns `409`.
-
-## Commit workflow
-
-1. Normalize action, targets, destination, and natural-language intent; hash the request.
-2. Read the expected run and deterministically preflight legality, D20, difficulty, normalized attempt, consequence budget, and before/after state hashes.
-3. Call the configured narrator outside a database transaction.
-4. Validate JSON, IDs, assets, slots, canonical facts, convergence horizon, and budget.
-5. Open a short owner-scoped serializable transaction, lock the run, and recheck idempotency/version.
-6. Force the preflight roll and atomically persist mechanics, validated narrative state, generic progress, event ledger, reversibility data, and turn record.
-7. Return the authoritative run/turn DTO.
-
-Provider failure does not reject a legal turn. Concurrent state change returns `409` and must be retried from fresh state.
-
-## PostgreSQL
-
-Apply the files in [`../Database/migrations`](../Database/migrations) in lexical order, then configure:
+외부 서비스 없이 시작하려면 `STORAGE=memory`와 빈 `GEMINI_API_KEY`를 유지합니다. PostgreSQL을 사용하려면 migration 001→008과 seed를 적용한 뒤 다음을 설정합니다.
 
 ```dotenv
 STORAGE=postgres
-DATABASE_URL=postgresql://keyboard_wanderer:change-me@127.0.0.1:5432/keyboard_wanderer
-DATABASE_SSL=false
+DATABASE_URL=postgresql://user:password@127.0.0.1:5432/database
 ```
 
-The adapter persists one optional campaign-preview world and one run-scoped world per run, immutable generation plans, generic progress state, RLS owner context, idempotent travel/turn ledgers, complete `world_state`, normalized positions, reversible actions, and deep-resume evidence. Unity calls this HTTP API and never connects directly to PostgreSQL.
-
-## Tests
+## 검증
 
 ```bash
 npm test
-TEST_DATABASE_URL=postgresql://... npm test
+npm run world:validate
+find src test scripts -name '*.js' -print0 | xargs -0 -n1 node --check
 ```
 
-The suite covers seed determinism/diversity, six biomes and six roles, 30/40/50-turn convergence, immutable world layers, staged finale reachability, semantic slot clearance, run-per-world generation, natural-language ability inference, legal/illegal ability paths, Restore/Undo, ending recipes, invalid model fallback, retry/token/thinking settings, ownership, idempotency, optimistic versions, and the optional PostgreSQL adapter.
+PostgreSQL integration을 포함하려면 다음 환경 변수를 추가합니다.
+
+```bash
+TEST_DATABASE_URL=postgresql://user:password@127.0.0.1:5432/test_database npm test
+```
+
+## API
+
+| Method | Path | 역할 |
+| --- | --- | --- |
+| `GET` | `/health` | 제품 계약·storage·model profile |
+| `POST` | `/v1/campaigns` | 코드리아 캠페인 preview |
+| `POST` | `/v1/campaigns/:id/runs` | run 월드 생성·검증·봉인 |
+| `GET` | `/v1/runs/:id` | 현재 권위 상태 |
+| `POST` | `/v1/runs/:id/travel` | 턴 미소비 `MOVE` |
+| `POST` | `/v1/runs/:id/actions` | 턴 소비 `USE_SKILL` |
+| `POST` | `/v1/runs/:id/turns` | `/actions` 호환 경로 |
+| `GET` | `/v1/runs/:id/turns` | 커밋된 행동 목록 |
+| `GET` | `/v1/runs/:id/turns/:turnNo` | 특정 행동 결과 |
+| `POST` | `/v1/runs/:id/abandon` | 런 중단 |
+| `POST` | `/v1/runs/:id/resume` | checksum·plan hash·layout hash 검증 후 재개 |
+
+요청은 `x-user-id` UUID로 격리됩니다. 로컬 모드는 `DEFAULT_USER_ID`를 사용하고 운영은 `AUTH_MODE=required`로 두어야 합니다.

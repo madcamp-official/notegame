@@ -2,7 +2,10 @@
   "name": "KeyboardWanderer.Editor",
   "rootNamespace": "KeyboardWanderer.Editor",
   "references": [
-    "KeyboardWanderer.Runtime"
+    "KeyboardWanderer.Runtime",
+    "Unity.2D.Sprite.Editor",
+    "Unity.InputSystem",
+    "Unity.ugui"
   ],
   "includePlatforms": [
     "Editor"

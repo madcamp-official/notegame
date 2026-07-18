@@ -14,8 +14,8 @@ namespace KeyboardWanderer.Core
     /// </summary>
     public static class DeterministicRegionGenerator
     {
-        public const string CurrentVersion = "seeded-local-world.v7";
-        public const string ProgressionVersion = "seeded-local-progression.v3";
+        public const string CurrentVersion = "codria-local-world.v9";
+        public const string ProgressionVersion = "codria-access-progression.v4";
         public const int DefaultWidth = 160;
         public const int DefaultHeight = 160;
         public const int AreaColumns = 4;
@@ -27,15 +27,16 @@ namespace KeyboardWanderer.Core
 
         private static readonly string[] CampaignBeatIds =
         {
-            "arrival", "adaptation", "expansion", "truth", "backflow", "finale"
+            "arrival", "admin-access-1", "admin-access-2", "truth", "admin-access-3", "root-entry"
         };
 
         private static readonly string[] ProgressionNodeIds =
         {
-            "catalyst", "milestone1", "conflict", "hidden-truth", "milestone3", "convergence"
+            "keyboard-awakening", "admin-access-1", "admin-access-2", "internal-failure",
+            "admin-access-3", "root-system"
         };
 
-        private static readonly string[] MilestoneTokens = CampaignCatalog.MilestoneTokenIds;
+        private static readonly string[] AccessTokens = CampaignCatalog.AdminAccessLevelIds;
 
         private static readonly GridCoord[] CardinalDirections =
         {
@@ -82,7 +83,7 @@ namespace KeyboardWanderer.Core
             // 1. Fix the campaign spine and its executable recovery modes before coordinates.
             string[][] progressionModes = CreateProgressionModes();
 
-            // 2. Bind the six campaign roles to distinct constrained areas, independently of biome.
+            // 2. Bind the six fixed Codria region axes to distinct areas, independently of biome.
             int[] roleArea = SelectRoleAreas(random);
             var roleByArea = new Dictionary<int, string>();
             for (int i = 0; i < CampaignRoles.Length; i++) roleByArea[roleArea[i]] = CampaignRoles[i];
@@ -286,7 +287,7 @@ namespace KeyboardWanderer.Core
             var selectedKeys = new HashSet<string>();
             var disjoint = new DisjointSet(RequiredAreaCount);
 
-            // Connect every pre-finale area first so the locked convergence can never be an early bridge.
+            // Connect every pre-root area first so ROOT_SYSTEM can never become an early bridge.
             for (int i = 0; i < candidates.Count && selected.Count < RequiredAreaCount - 2; i++)
             {
                 EdgeCandidate edge = candidates[i];
@@ -300,7 +301,7 @@ namespace KeyboardWanderer.Core
                 if (candidates[i].Left == rootAreaIndex || candidates[i].Right == rootAreaIndex)
                     rootCandidates.Add(candidates[i]);
             if (rootCandidates.Count < 2)
-                throw new InvalidOperationException("The finale convergence requires two deterministic route candidates.");
+                throw new InvalidOperationException("ROOT_SYSTEM requires two deterministic route candidates.");
             AddRoutePlan(selected, selectedKeys, rootCandidates[0], false, "major");
             AddRoutePlan(selected, selectedKeys, rootCandidates[1], true, "minor");
 
@@ -401,7 +402,7 @@ namespace KeyboardWanderer.Core
                     plan.IsLoop,
                     gated,
                     gated ? 3 : 0,
-                    gated ? MilestoneTokens : Array.Empty<string>(),
+                    gated ? AccessTokens : Array.Empty<string>(),
                     path));
             }
             return routes;
@@ -436,7 +437,7 @@ namespace KeyboardWanderer.Core
                 }
             }
             if (parent[goalIndex] == -2)
-                throw new InvalidOperationException("A pre-finale route could not avoid the gated convergence footprint.");
+                throw new InvalidOperationException("A pre-root route could not avoid the gated ROOT_SYSTEM footprint.");
 
             var path = new List<GridCoord>();
             for (int index = goalIndex; index >= 0; index = parent[index])
@@ -510,40 +511,42 @@ namespace KeyboardWanderer.Core
         {
             var nodes = new List<ProgressionNode>
             {
-                new ProgressionNode("catalyst", CampaignRoles[0], areas[roleArea[0]].Id,
+                new ProgressionNode("keyboard-awakening", CampaignRoles[0], areas[roleArea[0]].Id,
                     "slot-catalyst", 0, 0, 0, string.Empty, Array.Empty<string>(), modes[0],
                     new[]
                     {
-                        CandidatePath("slot-catalyst", "interact"),
-                        CandidatePath(NpcSlotId(roleArea[0]), "negotiate")
+                        CandidatePath("slot-catalyst", "copy")
                     }),
-                new ProgressionNode("milestone1", CampaignRoles[1], areas[roleArea[1]].Id,
-                    "slot-milestone-1", 1, 0, 1, MilestoneTokens[0], new[] { "catalyst" }, modes[1],
-                    new[] { CandidatePath("slot-milestone-1", "copy", "interact") }),
-                new ProgressionNode("conflict", CampaignRoles[2], areas[roleArea[2]].Id,
-                    "slot-milestone-2", 2, 1, 2, MilestoneTokens[1], new[] { "milestone1" }, modes[2],
+                new ProgressionNode("admin-access-1", CampaignRoles[1], areas[roleArea[1]].Id,
+                    "slot-admin-access-1", 1, 0, 1, AccessTokens[0], new[] { "keyboard-awakening" }, modes[1],
                     new[]
                     {
-                        CandidatePath("slot-milestone-2", "connect"),
-                        CandidatePath(NpcSlotId(roleArea[2]), "negotiate")
+                        CandidatePath("slot-admin-access-1", "connect"),
+                        CandidatePath("slot-admin-access-1-alt", "copy")
                     }),
-                new ProgressionNode("hidden-truth", CampaignRoles[3], areas[roleArea[3]].Id,
-                    "slot-hidden-truth-primary", 3, 2, 0, string.Empty, new[] { "conflict" }, modes[3],
+                new ProgressionNode("admin-access-2", CampaignRoles[2], areas[roleArea[2]].Id,
+                    "slot-admin-access-2", 2, 1, 2, AccessTokens[1], new[] { "admin-access-1" }, modes[2],
                     new[]
                     {
-                        CandidatePath("slot-hidden-truth-primary", "interact"),
-                        CandidatePath("slot-hidden-truth-backup", "interact"),
-                        CandidatePath(NpcSlotId(roleArea[3]), "negotiate")
+                        CandidatePath("slot-admin-access-2", "delete"),
+                        CandidatePath("slot-admin-access-2-alt", "connect")
                     }),
-                new ProgressionNode("milestone3", CampaignRoles[4], areas[roleArea[4]].Id,
-                    "slot-milestone-3", 4, 2, 3, MilestoneTokens[2], new[] { "hidden-truth" }, modes[4],
+                new ProgressionNode("internal-failure", CampaignRoles[3], areas[roleArea[3]].Id,
+                    "slot-internal-failure-primary", 3, 2, 0, string.Empty, new[] { "admin-access-2" }, modes[3],
                     new[]
                     {
-                        CandidatePath("slot-milestone-3-echo", "restore"),
-                        CandidatePath("slot-milestone-3", "interact")
+                        CandidatePath("slot-internal-failure-primary", "copy"),
+                        CandidatePath("slot-internal-failure-backup", "copy")
                     }),
-                new ProgressionNode("convergence", CampaignRoles[5], areas[roleArea[5]].Id,
-                    "slot-finale-anchor", 5, 3, 0, string.Empty, new[] { "milestone3" }, modes[5],
+                new ProgressionNode("admin-access-3", CampaignRoles[4], areas[roleArea[4]].Id,
+                    "slot-admin-access-3", 4, 2, 3, AccessTokens[2], new[] { "internal-failure" }, modes[4],
+                    new[]
+                    {
+                        CandidatePath("slot-admin-access-3", "restore"),
+                        CandidatePath("slot-admin-access-3-alt", "copy")
+                    }),
+                new ProgressionNode("root-system", CampaignRoles[5], areas[roleArea[5]].Id,
+                    "slot-finale-anchor", 5, 3, 0, string.Empty, new[] { "admin-access-3" }, modes[5],
                     new[]
                     {
                         CandidatePath("slot-finale-anchor", "connect"),
@@ -557,13 +560,13 @@ namespace KeyboardWanderer.Core
             };
             var edges = new List<ProgressionEdge>
             {
-                new ProgressionEdge("catalyst", "milestone1"),
-                new ProgressionEdge("milestone1", "conflict"),
-                new ProgressionEdge("conflict", "hidden-truth"),
-                new ProgressionEdge("hidden-truth", "milestone3"),
-                new ProgressionEdge("milestone3", "convergence")
+                new ProgressionEdge("keyboard-awakening", "admin-access-1"),
+                new ProgressionEdge("admin-access-1", "admin-access-2"),
+                new ProgressionEdge("admin-access-2", "internal-failure"),
+                new ProgressionEdge("internal-failure", "admin-access-3"),
+                new ProgressionEdge("admin-access-3", "root-system")
             };
-            return new ProgressionGraph(ProgressionVersion, nodes, edges, 3, MilestoneTokens);
+            return new ProgressionGraph(ProgressionVersion, nodes, edges, 3, AccessTokens);
         }
 
         private static ProgressionCandidatePath CandidatePath(string slotId, params string[] modes)
@@ -737,51 +740,60 @@ namespace KeyboardWanderer.Core
             var used = new HashSet<GridCoord>();
             var slots = new List<PlacementSlot>();
             WorldArea arrival = areas[roleArea[0]];
-            WorldArea milestone1 = areas[roleArea[1]];
-            WorldArea milestone2 = areas[roleArea[2]];
+            WorldArea access1 = areas[roleArea[1]];
+            WorldArea access2 = areas[roleArea[2]];
             WorldArea truth = areas[roleArea[3]];
-            WorldArea milestone3 = areas[roleArea[4]];
-            WorldArea convergence = areas[roleArea[5]];
+            WorldArea access3 = areas[roleArea[4]];
+            WorldArea rootSystem = areas[roleArea[5]];
 
             AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, arrival, "slot-player-entry", "entry",
                 start, "player", "safe_travel");
             AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, arrival, "slot-catalyst", "artifact",
-                Offset(start, 2, 0), "keyboard_relic", "protected", "catalyst");
-            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, milestone1, "slot-milestone-1", "milestone",
-                SeededPreferred(milestone1.Center, random, 2, 5), "reserved", "milestone_token", "tier_1");
-            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, milestone2, "slot-milestone-2", "milestone",
-                SeededPreferred(milestone2.Center, random, 2, 5), "reserved", "milestone_token", "tier_2");
-            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, milestone3, "slot-milestone-3", "milestone",
-                SeededPreferred(milestone3.Center, random, 2, 5), "reserved", "milestone_token", "tier_3");
-            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, milestone3, "slot-milestone-3-echo", "prop",
-                SeededPreferred(milestone3.Center, random, 2, 5), "reserved", "milestone_recovery",
-                "tier_3", "restorable_evidence");
-            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, truth, "slot-hidden-truth-primary", "truth",
-                SeededPreferred(truth.Center, random, 1, 4), "reserved", "hidden_truth", "record");
-            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, truth, "slot-hidden-truth-backup", "truth",
-                SeededPreferred(truth.Center, random, 3, 6), "reserved", "hidden_truth", "redundant_clue");
+                Offset(start, 2, 0), "administrator_keyboard", "protected", "keyboard_awakening");
+            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, access1, "slot-admin-access-1", "admin_access",
+                SeededPreferred(access1.Center, random, 2, 5), "reserved", "admin_access_candidate", "admin_level_1",
+                "context_negotiation", "skill_connect");
+            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, arrival, "slot-admin-access-1-alt", "admin_access",
+                SeededPreferred(arrival.Center, random, 3, 6), "reserved", "admin_access_candidate", "admin_level_1",
+                "context_investigation", "skill_copy");
+            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, access2, "slot-admin-access-2", "admin_access",
+                SeededPreferred(access2.Center, random, 2, 5), "reserved", "admin_access_candidate", "admin_level_2",
+                "context_combat", "skill_delete");
+            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, access1, "slot-admin-access-2-alt", "admin_access",
+                SeededPreferred(access1.Center, random, 3, 6), "reserved", "admin_access_candidate", "admin_level_2",
+                "context_negotiation", "skill_connect");
+            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, access3, "slot-admin-access-3", "admin_access",
+                SeededPreferred(access3.Center, random, 2, 5), "reserved", "admin_access_candidate", "admin_level_3",
+                "context_deployment", "skill_restore");
+            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, truth, "slot-admin-access-3-alt", "admin_access",
+                SeededPreferred(truth.Center, random, 4, 7), "reserved", "admin_access_candidate", "admin_level_3",
+                "context_investigation", "skill_copy");
+            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, truth, "slot-internal-failure-primary", "truth",
+                SeededPreferred(truth.Center, random, 1, 4), "reserved", "internal_failure", "record");
+            AddSlot(slots, used, tiles, width, height, reachableBeforeRoot, truth, "slot-internal-failure-backup", "truth",
+                SeededPreferred(truth.Center, random, 3, 6), "reserved", "internal_failure", "redundant_clue");
 
-            AddSlot(slots, used, tiles, width, height, reachable, convergence, "slot-finale-approach", "finale",
-                Offset(exit, -5, 0), "reserved", "finale_approach", "requires_3_milestones");
-            AddSlot(slots, used, tiles, width, height, reachable, convergence, "slot-finale-anchor", "finale",
-                exit, "reserved", "finale_anchor", "finale_puzzle", "protected", "requires_3_milestones");
-            AddSlot(slots, used, tiles, width, height, reachable, convergence, "slot-finale-safeguard", "finale_puzzle",
+            AddSlot(slots, used, tiles, width, height, reachable, rootSystem, "slot-finale-approach", "finale",
+                Offset(exit, -5, 0), "reserved", "root_approach", "requires_admin_access_3");
+            AddSlot(slots, used, tiles, width, height, reachable, rootSystem, "slot-finale-anchor", "finale",
+                exit, "reserved", "root_anchor", "finale_puzzle", "protected", "requires_admin_access_3");
+            AddSlot(slots, used, tiles, width, height, reachable, rootSystem, "slot-finale-safeguard", "finale_puzzle",
                 Offset(exit, 3, 0), "finale_puzzle", "safeguard");
-            AddSlot(slots, used, tiles, width, height, reachable, convergence, "slot-finale-passage", "finale_puzzle",
+            AddSlot(slots, used, tiles, width, height, reachable, rootSystem, "slot-finale-passage", "finale_puzzle",
                 Offset(exit, 0, 3), "finale_puzzle", "passage");
-            AddSlot(slots, used, tiles, width, height, reachable, convergence, "slot-finale-freedom", "finale_puzzle",
+            AddSlot(slots, used, tiles, width, height, reachable, rootSystem, "slot-finale-freedom", "finale_puzzle",
                 Offset(exit, -3, 0), "finale_puzzle", "freedom");
-            AddSlot(slots, used, tiles, width, height, reachable, convergence, "slot-finale-threat", "finale_puzzle",
+            AddSlot(slots, used, tiles, width, height, reachable, rootSystem, "slot-finale-threat", "finale_puzzle",
                 Offset(exit, 3, 3), "finale_puzzle", "threat");
-            AddSlot(slots, used, tiles, width, height, reachable, convergence, "slot-finale-memory", "finale_puzzle",
+            AddSlot(slots, used, tiles, width, height, reachable, rootSystem, "slot-finale-memory", "finale_puzzle",
                 Offset(exit, 0, -3), "finale_puzzle", "memory");
-            AddSlot(slots, used, tiles, width, height, reachable, convergence, "slot-finale-witness", "finale_puzzle",
+            AddSlot(slots, used, tiles, width, height, reachable, rootSystem, "slot-finale-witness", "finale_puzzle",
                 Offset(exit, -3, -3), "finale_puzzle", "witness");
 
             for (int i = 0; i < areas.Count; i++)
             {
                 WorldArea area = areas[i];
-                HashSet<GridCoord> areaReachable = area.Id == convergence.Id ? reachable : reachableBeforeRoot;
+                HashSet<GridCoord> areaReachable = area.Id == rootSystem.Id ? reachable : reachableBeforeRoot;
                 AddSlot(slots, used, tiles, width, height, areaReachable, area,
                     NpcSlotId(i), "npc",
                     SeededPreferred(area.Center, random, 2, 7), "role_slot", "asset_catalog_required");
@@ -861,13 +873,13 @@ namespace KeyboardWanderer.Core
             {
                 representedBiomes.Add(areas[i].Biome);
                 if (!string.IsNullOrEmpty(areas[i].CampaignRole) && !representedRoles.Add(areas[i].CampaignRole))
-                    throw new InvalidOperationException("Campaign roles must map to distinct areas.");
+                    throw new InvalidOperationException("Codria region axes must map to distinct areas.");
             }
             if (representedBiomes.Count != RequiredBiomeCount)
                 throw new InvalidOperationException("Every biome family must be represented.");
             for (int i = 0; i < CampaignRoles.Length; i++)
                 if (!representedRoles.Contains(CampaignRoles[i]))
-                    throw new InvalidOperationException("Missing campaign role " + CampaignRoles[i]);
+                    throw new InvalidOperationException("Missing Codria region axis " + CampaignRoles[i]);
             WorldArea rootArea = areas[roleArea[5]];
 
             int loopCount = 0;
@@ -882,10 +894,10 @@ namespace KeyboardWanderer.Core
                 bool incidentToRoot = route.Connects(rootArea.Id);
                 if (incidentToRoot != route.IsGated || (incidentToRoot &&
                     (route.RequiredAdminAccess != 3 ||
-                     !SameStringSet(route.RequiredAccessTokens, MilestoneTokens))))
-                    throw new InvalidOperationException("Finale routes must carry all milestone tokens.");
+                     !SameStringSet(route.RequiredAccessTokens, AccessTokens))))
+                    throw new InvalidOperationException("ROOT_SYSTEM routes must carry all three administrator access IDs.");
                 if (!incidentToRoot && RouteFootprintTouchesArea(route, rootArea))
-                    throw new InvalidOperationException("A pre-finale route crosses the gated convergence footprint.");
+                    throw new InvalidOperationException("A pre-root route crosses the gated ROOT_SYSTEM footprint.");
             }
             if (routes.Count < areas.Count || loopCount < 2)
                 throw new InvalidOperationException("The route graph requires an MST and at least two loops.");
@@ -900,7 +912,7 @@ namespace KeyboardWanderer.Core
                     throw new InvalidOperationException("Pre-finale area requires traversal through the finale: " + areas[i].Id);
             }
             if (start.ManhattanDistance(exit) < Math.Min(width, height) / 2)
-                throw new InvalidOperationException("Final convergence is too close to the arrival area.");
+                throw new InvalidOperationException("ROOT_SYSTEM is too close to Nupjukyi's arrival area.");
 
             var slotCoordinates = new HashSet<GridCoord>();
             for (int i = 0; i < slots.Count; i++)
@@ -917,14 +929,21 @@ namespace KeyboardWanderer.Core
                     throw new InvalidOperationException("Pre-finale slot requires traversal through the finale: " + slot.Id);
             }
 
-            var milestones = slots.FindAll(slot => HasTag(slot, "milestone_token"));
-            if (milestones.Count != 3)
-                throw new InvalidOperationException("Exactly three milestone token slots are required.");
-            int minimumDistance = Math.Max(10, Math.Min(width, height) / 8);
-            for (int i = 0; i < milestones.Count; i++)
-                for (int j = i + 1; j < milestones.Count; j++)
-                    if (milestones[i].Coord.ManhattanDistance(milestones[j].Coord) < minimumDistance)
-                        throw new InvalidOperationException("Milestone candidates are too close together.");
+            var accessCandidates = slots.FindAll(slot => HasTag(slot, "admin_access_candidate"));
+            if (accessCandidates.Count != 6)
+                throw new InvalidOperationException("Each of three administrator levels requires two candidate slots.");
+            for (int level = 1; level <= 3; level++)
+            {
+                string levelTag = "admin_level_" + level;
+                List<PlacementSlot> levelCandidates = accessCandidates.FindAll(slot => HasTag(slot, levelTag));
+                if (levelCandidates.Count != 2 || levelCandidates[0].AreaId == levelCandidates[1].AreaId)
+                    throw new InvalidOperationException("Administrator access candidates must use two different areas: " + levelTag);
+                string firstContext = FindTagWithPrefix(levelCandidates[0], "context_");
+                string secondContext = FindTagWithPrefix(levelCandidates[1], "context_");
+                if (string.IsNullOrEmpty(firstContext) || string.IsNullOrEmpty(secondContext) ||
+                    firstContext == secondContext)
+                    throw new InvalidOperationException("Administrator access candidates must use different contexts: " + levelTag);
+            }
 
             if (!IsAcyclic(progression))
                 throw new InvalidOperationException("Progression graph must be acyclic.");
@@ -948,7 +967,9 @@ namespace KeyboardWanderer.Core
                 {
                     ProgressionCandidatePath path = node.CandidatePaths[pathIndex];
                     PlacementSlot candidateSlot = slots.Find(slot => slot.Id == path.SlotId);
-                    if (candidateSlot == null || candidateSlot.AreaId != node.AreaId ||
+                    bool accessCandidate = node.RewardAdminAccess > 0 && candidateSlot != null &&
+                        HasTag(candidateSlot, "admin_level_" + node.RewardAdminAccess);
+                    if (candidateSlot == null || (!accessCandidate && candidateSlot.AreaId != node.AreaId) ||
                         !candidateSlotIds.Add(path.SlotId) || path.AcquisitionModes.Count == 0)
                         throw new InvalidOperationException("Progression slot path is invalid: " + node.Id);
                     var uniquePathModes = new HashSet<string>();
@@ -959,6 +980,10 @@ namespace KeyboardWanderer.Core
                             throw new InvalidOperationException("Progression slot path uses a non-executable mode: " + node.Id);
                         candidateModes.Add(mode);
                     }
+                    HashSet<string> candidateStageAreas = ReachableAreaIds(routes, areas[roleArea[0]].Id,
+                        node.RequiredAdminAccess, TokensForLevel(node.RequiredAdminAccess));
+                    if (!candidateStageAreas.Contains(candidateSlot.AreaId))
+                        throw new InvalidOperationException("Progression candidate is spatially unreachable: " + path.SlotId);
                 }
                 if (!candidateSlotIds.Contains(node.SlotId) ||
                     !SameStringSet(candidateModes, expectedModes))
@@ -972,7 +997,7 @@ namespace KeyboardWanderer.Core
             HashSet<string> beforeRoot = ReachableAreaIds(routes, areas[roleArea[0]].Id, 0,
                 Array.Empty<string>());
             HashSet<string> afterRoot = ReachableAreaIds(routes, areas[roleArea[0]].Id, 3,
-                MilestoneTokens);
+                AccessTokens);
             if (beforeRoot.Contains(areas[roleArea[5]].Id) || !afterRoot.Contains(areas[roleArea[5]].Id) ||
                 afterRoot.Count != areas.Count)
                 throw new InvalidOperationException("Finale route gate failed stage-aware reachability.");
@@ -991,13 +1016,13 @@ namespace KeyboardWanderer.Core
                 LoopRouteCount = loopCount
             };
             summary.Checks.Add("six_biomes_represented");
-            summary.Checks.Add("six_campaign_roles_bound_independently");
+            summary.Checks.Add("six_codria_region_axes_bound_independently");
             summary.Checks.Add("mst_and_loop_routes_connected");
             summary.Checks.Add("major_route_width_at_least_three");
             summary.Checks.Add("all_slots_unique_inside_area_and_reachable");
             summary.Checks.Add("pre_finale_routes_and_slots_avoid_finale_before_gate");
             summary.Checks.Add("progression_acyclic_with_executable_slot_paths");
-            summary.Checks.Add("finale_locked_before_three_milestones_and_reachable_after");
+            summary.Checks.Add("root_system_locked_before_admin_access_3_and_reachable_after");
             summary.Checks.Add("finale_components_bounded");
             return summary;
         }
@@ -1122,9 +1147,9 @@ namespace KeyboardWanderer.Core
         private static string[] TokensForLevel(int level)
         {
             if (level <= 0) return Array.Empty<string>();
-            if (level == 1) return new[] { MilestoneTokens[0] };
-            if (level == 2) return new[] { MilestoneTokens[0], MilestoneTokens[1] };
-            return (string[])MilestoneTokens.Clone();
+            if (level == 1) return new[] { AccessTokens[0] };
+            if (level == 2) return new[] { AccessTokens[0], AccessTokens[1] };
+            return (string[])AccessTokens.Clone();
         }
 
         private static WorldArea FindArea(List<WorldArea> areas, string id)
@@ -1152,12 +1177,12 @@ namespace KeyboardWanderer.Core
         {
             switch (role)
             {
-                case CampaignCatalog.ArrivalCatalystRole: return index % 2 == 0 ? "fallen_relic_grove" : "crash_shrine";
-                case CampaignCatalog.LocalStakesRole: return index % 2 == 0 ? "settlement" : "repair_outpost";
-                case CampaignCatalog.RelationshipConflictRole: return index % 2 == 0 ? "contested_citadel" : "sealed_crossroads";
-                case CampaignCatalog.HiddenTruthRole: return index % 2 == 0 ? "archive_temple" : "memory_vault";
-                case CampaignCatalog.ConsequenceReturnRole: return index % 2 == 0 ? "legacy_fortress" : "returning_ruin";
-                case CampaignCatalog.FinalConvergenceRole: return index % 2 == 0 ? "sealed_convergence_temple" : "crystal_convergence";
+                case CampaignCatalog.ArrivalCatalystRole: return index % 2 == 0 ? "bug_grove" : "crash_debugger";
+                case CampaignCatalog.LocalStakesRole: return index % 2 == 0 ? "buffer_settlement" : "queue_outpost";
+                case CampaignCatalog.RelationshipConflictRole: return index % 2 == 0 ? "deadlock_citadel" : "mutex_crossroads";
+                case CampaignCatalog.HiddenTruthRole: return index % 2 == 0 ? "data_archive" : "record_vault";
+                case CampaignCatalog.ConsequenceReturnRole: return index % 2 == 0 ? "legacy_fortress" : "debt_ruin";
+                case CampaignCatalog.FinalConvergenceRole: return index % 2 == 0 ? "root_terminal" : "kernel_chamber";
                 default: return index % 3 == 0 ? "camp" : biome == "ancient_ruins" ? "ruins" : "shrine";
             }
         }
@@ -1166,24 +1191,24 @@ namespace KeyboardWanderer.Core
         {
             switch (role)
             {
-                case CampaignCatalog.ArrivalCatalystRole: return biomeName + " · 도착의 촉매";
-                case CampaignCatalog.LocalStakesRole: return biomeName + " · 지역 위기지";
-                case CampaignCatalog.RelationshipConflictRole: return biomeName + " · 관계 충돌지";
-                case CampaignCatalog.HiddenTruthRole: return biomeName + " · 숨은 기록소";
-                case CampaignCatalog.ConsequenceReturnRole: return biomeName + " · 결과 귀환지";
-                case CampaignCatalog.FinalConvergenceRole: return biomeName + " · 마지막 수렴지";
+                case CampaignCatalog.ArrivalCatalystRole: return "버그 숲 · " + biomeName;
+                case CampaignCatalog.LocalStakesRole: return "버퍼 마을 · " + biomeName;
+                case CampaignCatalog.RelationshipConflictRole: return "교착 도시 · " + biomeName;
+                case CampaignCatalog.HiddenTruthRole: return "데이터 대도서관 · " + biomeName;
+                case CampaignCatalog.ConsequenceReturnRole: return "레거시 성채 · " + biomeName;
+                case CampaignCatalog.FinalConvergenceRole: return "루트 시스템 · " + biomeName;
                 default: return biomeName + " 관심 지점 " + (index + 1);
             }
         }
 
         private static string DescriptionFor(string role, string biomeName)
         {
-            if (role == CampaignCatalog.ArrivalCatalystRole) return "방랑자가 키보드 유물의 편집 범위를 발견하는 시작지";
-            if (role == CampaignCatalog.LocalStakesRole) return "지역의 이해관계와 첫 핵심 표식이 배치되는 후보지";
-            if (role == CampaignCatalog.RelationshipConflictRole) return "인물들의 상반된 선택과 두 번째 표식을 다루는 후보지";
-            if (role == CampaignCatalog.HiddenTruthRole) return "소문과 확정 사실을 분리할 기록과 증언이 있는 곳";
-            if (role == CampaignCatalog.ConsequenceReturnRole) return "과거 선택의 결과와 세 번째 표식이 돌아오는 후보지";
-            if (role == CampaignCatalog.FinalConvergenceRole) return "세 표식 뒤에 마지막 공간 퍼즐을 시작할 수 있는 수렴 구역";
+            if (role == CampaignCatalog.ArrivalCatalystRole) return "넙죽이가 관리자 키보드를 깨우는 버그 숲 지역 축";
+            if (role == CampaignCatalog.LocalStakesRole) return "버퍼 과부하와 주민 관계를 다루는 관리자 권한 후보 지역";
+            if (role == CampaignCatalog.RelationshipConflictRole) return "교착된 파벌의 전투·협상·배치 해법을 제공하는 지역";
+            if (role == CampaignCatalog.HiddenTruthRole) return "관리자 통제 내부의 붕괴 원인을 보존한 기록 지역";
+            if (role == CampaignCatalog.ConsequenceReturnRole) return "과거 편집의 기술 부채와 책임이 역류하는 지역";
+            if (role == CampaignCatalog.FinalConvergenceRole) return "관리자 권한 3단계와 내부 단서 뒤에 진입하는 ROOT_SYSTEM";
             return biomeName + "의 기존 지형과 에셋 안에서 사건 역할을 배정할 수 있는 관심 지점";
         }
 
@@ -1192,7 +1217,7 @@ namespace KeyboardWanderer.Core
             var tags = new List<string> { "poi", landmark, "encounter_space" };
             if (!string.IsNullOrEmpty(role)) tags.Add("campaign_role");
             if (role == CampaignCatalog.LocalStakesRole || role == CampaignCatalog.RelationshipConflictRole ||
-                role == CampaignCatalog.ConsequenceReturnRole) tags.Add("milestone_candidate");
+                role == CampaignCatalog.ConsequenceReturnRole) tags.Add("admin_access_region_candidate");
             if (role == CampaignCatalog.HiddenTruthRole) tags.Add("truth_candidate");
             if (role == CampaignCatalog.FinalConvergenceRole) tags.Add("finale_candidate");
             return tags;
@@ -1203,6 +1228,13 @@ namespace KeyboardWanderer.Core
             for (int i = 0; i < slot.Tags.Length; i++)
                 if (string.Equals(slot.Tags[i], tag, StringComparison.Ordinal)) return true;
             return false;
+        }
+
+        private static string FindTagWithPrefix(PlacementSlot slot, string prefix)
+        {
+            for (int i = 0; i < slot.Tags.Length; i++)
+                if (slot.Tags[i].StartsWith(prefix, StringComparison.Ordinal)) return slot.Tags[i];
+            return string.Empty;
         }
 
         private static GridCoord Offset(GridCoord coord, int x, int y)

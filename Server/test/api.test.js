@@ -34,7 +34,7 @@ class FakeNarrator {
   async narrate(context) {
     return {
       summary: `A bounded scene unfolds in ${context.area}`,
-      body: "The world responds to the player's declared intent without adding mechanical claims.",
+      body: "The server applies the selected keyboard skill. The confirmed state remains inside the sealed Codria world.",
       dialogue: [],
       proposedOps: [],
       fallbackUsed: false,
@@ -77,6 +77,8 @@ test("health and campaign endpoints expose deterministic previews while each run
   const health = await jsonRequest(baseUrl, "/health", { userId: undefined });
   assert.equal(health.response.status, 200);
   assert.equal(health.payload.authoritativeTurns, true);
+  assert.equal(health.payload.productContract.world.id, "WORLD_CODRIA");
+  assert.deepEqual(health.payload.productContract.skills, ["COPY", "DELETE", "CONNECT", "RESTORE", "UNDO"]);
 
   const created = await jsonRequest(baseUrl, "/v1/campaigns", {
     method: "POST",
@@ -92,9 +94,11 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.equal(new Set(created.payload.campaign.world.areas.map((item) => item.campaignRole).filter(Boolean)).size, 6);
   assert.ok(created.payload.campaign.world.routes.length >= 13);
   assert.equal(created.payload.campaign.world.generationReport.status, "valid");
-  assert.equal(created.payload.campaign.archetype, "generative-keyboard-fantasy");
+  assert.equal(created.payload.campaign.archetype, "codria-admin-keyboard-roguelike");
+  assert.equal(created.payload.campaign.gameTitle, "넙죽이와 붕괴한 코드 왕국");
+  assert.equal(created.payload.campaign.worldId, "WORLD_CODRIA");
   assert.ok(created.payload.campaign.premise.length > 20);
-  assert.equal(created.payload.campaign.requiredStoryBeats.length, 6);
+  assert.equal(created.payload.campaign.requiredStoryBeats.length, 9);
   assert.equal(created.payload.campaign.endingCandidates.length, 5);
   assert.equal("tiles" in created.payload.campaign.world, false);
 
@@ -114,16 +118,17 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.equal(runCreated.payload.run.currentTurn, 0);
   assert.notEqual(runCreated.payload.run.world.layoutHash, created.payload.campaign.world.layoutHash);
   assert.equal(runCreated.payload.run.currentBeat, runCreated.payload.run.currentStoryBeat.title);
-  assert.notEqual(runCreated.payload.run.campaignTitle, created.payload.campaign.generatedTitle);
+  assert.equal(runCreated.payload.run.campaignTitle, "넙죽이와 붕괴한 코드 왕국");
   assert.notEqual(runCreated.payload.run.campaignContentHash, created.payload.campaign.contentHash);
   assert.equal(runCreated.payload.run.generationPlan.generationMetadata.fallbackUsed, true);
-  assert.equal(runCreated.payload.run.canonicalFacts.length, 5);
+  assert.equal(runCreated.payload.run.canonicalFacts.length, 7);
   assert.equal(runCreated.payload.run.rumors.length, 1);
-  assert.equal(runCreated.payload.run.npcRelationships.length, 6);
+  assert.ok(runCreated.payload.run.npcRelationships.length >= 6);
   assert.equal(runCreated.payload.run.health, 12);
   assert.equal(runCreated.payload.run.maxHealth, 12);
   assert.equal(runCreated.payload.run.maxFocus, 10);
-  assert.deepEqual(runCreated.payload.run.abilities, ["move", "copy", "delete", "connect", "restore", "undo"]);
+  assert.deepEqual(runCreated.payload.run.abilities, ["copy", "delete", "connect", "restore", "undo"]);
+  assert.deepEqual(runCreated.payload.run.inputTypes, ["MOVE", "USE_SKILL"]);
 
   const hidden = await jsonRequest(baseUrl, `/v1/campaigns/${campaignId}`, { userId: OTHER_USER_ID });
   assert.equal(hidden.response.status, 404);
@@ -138,23 +143,38 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
   const playerBefore = run.entities.find((entity) => entity.id === run.playerEntityId);
-  const destination = adjacentWalkable(run.world, playerBefore.position);
   const entry = run.world.points.find((point) => point.id === "entry");
   assert.deepEqual(playerBefore.position, { x: entry.x, y: entry.y });
 
+  const stored = application.store.runs.get(run.id);
+  const target = stored.entities.find((entity) => entity.kind === "prop" && !entity.protected && !entity.state?.adminAccessLevelId);
+  target.position = { ...stored.entities.find((entity) => entity.id === stored.playerEntityId).position };
+  application.store.runs.set(run.id, stored);
+  const legacyAction = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, {
+    method: "POST",
+    body: { idempotencyKey: "legacy-action-0001", expectedRunVersion: 1, ability: "delete", targetEntityId: target.id, intent: "지워" }
+  });
+  assert.equal(legacyAction.response.status, 400);
+  assert.equal(legacyAction.payload.error.code, "TURN_REQUEST_INVALID");
+  const legacyTravel = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, {
+    method: "POST",
+    body: { idempotencyKey: "legacy-travel-0001", expectedRunVersion: 1, destination: adjacentWalkable(run.world, playerBefore.position) }
+  });
+  assert.equal(legacyTravel.response.status, 400);
+  assert.equal(legacyTravel.payload.error.code, "INPUT_TYPE_INVALID");
   const request = {
+    inputType: "USE_SKILL",
     idempotencyKey: "turn-0001",
     expectedRunVersion: run.version,
-    ability: "move",
-    destination,
-    intent: "Move toward the next witness"
+    skillId: "DELETE",
+    targetIds: [target.id]
   };
-  const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/turns`, { method: "POST", body: request });
+  const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, { method: "POST", body: request });
   assert.equal(first.response.status, 201);
   assert.equal(first.payload.turn.d20, 20);
   assert.equal(first.payload.turn.outcome, "critical_success");
   assert.equal(first.payload.turn.dice.raw, 20);
-  assert.equal(first.payload.turn.dice.difficulty, 9);
+  assert.equal(first.payload.turn.dice.difficulty, 12);
   assert.equal(first.payload.turn.dice.modifier, 3);
   assert.equal(typeof first.payload.turn.dice.intentAlignment, "number");
   assert.ok(first.payload.turn.dice.outcomeExplanation.includes("difficulty"));
@@ -164,22 +184,24 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   assert.equal(first.payload.run.version, 2);
   assert.equal(first.payload.run.currentTurn, 1);
   assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
-  assert.deepEqual(first.payload.run.entities.find((entity) => entity.id === run.playerEntityId).position, destination);
+  assert.equal(first.payload.turn.actionContext, "INVESTIGATION");
+  assert.equal(first.payload.run.entities.some((entity) => entity.id === target.id), false);
+  assert.equal(first.payload.run.abilityUsageHistory.length, 1);
 
-  const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/turns`, { method: "POST", body: request });
+  const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, { method: "POST", body: request });
   assert.equal(replay.response.status, 200);
   assert.equal(replay.payload.fromIdempotencyCache, true);
   assert.equal(replay.payload.run.currentTurn, 1);
   assert.equal(replay.payload.turn.id, first.payload.turn.id);
 
-  const conflict = await jsonRequest(baseUrl, `/v1/runs/${run.id}/turns`, {
+  const conflict = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, {
     method: "POST",
-    body: { ...request, intent: "A different payload" }
+    body: { ...request, playerNote: "A different optional note" }
   });
   assert.equal(conflict.response.status, 409);
   assert.equal(conflict.payload.error.code, "IDEMPOTENCY_CONFLICT");
 
-  const stale = await jsonRequest(baseUrl, `/v1/runs/${run.id}/turns`, {
+  const stale = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, {
     method: "POST",
     body: { ...request, idempotencyKey: "turn-0002" }
   });
@@ -246,7 +268,7 @@ test("GM narration endpoint has no state access and rejects mechanical operation
     outcome: "success",
     normalizedAttempt: "Speak to the nearby witness",
     allowedEffects: ["npc_memory_hint", "quest_hint"],
-    recentFacts: ["The final region remains sealed until all three story milestones are resolved."]
+    recentFacts: ["Root System remains sealed until all three administrator access levels and the essential clue are established."]
   };
   const narrated = await jsonRequest(baseUrl, "/v1/gm/narrate", { method: "POST", body: compact });
   assert.equal(narrated.response.status, 200);

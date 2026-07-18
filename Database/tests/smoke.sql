@@ -15,11 +15,21 @@ declare
     area_truth uuid := gen_random_uuid();
     area_consequence uuid := gen_random_uuid();
     area_finale uuid := gen_random_uuid();
+    poi_bug_forest uuid := gen_random_uuid();
+    poi_buffer_village uuid := gen_random_uuid();
+    poi_deadlock_city uuid := gen_random_uuid();
+    poi_data_library uuid := gen_random_uuid();
+    poi_legacy_citadel uuid := gen_random_uuid();
+    poi_root_system uuid := gen_random_uuid();
     test_slot uuid := gen_random_uuid();
     test_player uuid := gen_random_uuid();
     test_npc uuid := gen_random_uuid();
+    test_relationship uuid := gen_random_uuid();
+    test_safe_travel uuid := gen_random_uuid();
     test_plan uuid := gen_random_uuid();
     test_turn uuid := gen_random_uuid();
+    test_hook uuid := gen_random_uuid();
+    test_debt_entry uuid := gen_random_uuid();
     test_save_slot uuid := gen_random_uuid();
     test_snapshot uuid := gen_random_uuid();
     test_last_event bigint;
@@ -31,6 +41,8 @@ declare
     snapshot_checksum constant text := repeat('e', 64);
     biome_codes text[];
     role_codes text[];
+    axis_codes text[];
+    access_codes text[];
 begin
     perform set_config('app.user_id', test_owner::text, true);
 
@@ -62,6 +74,30 @@ begin
         raise exception 'the six generic progression roles are incomplete: %', role_codes;
     end if;
 
+    select array_agg(code order by display_order)
+      into axis_codes
+      from campaign_region_axis_catalog;
+    if axis_codes is distinct from array[
+        'REGION_BUG_FOREST', 'REGION_BUFFER_VILLAGE', 'REGION_DEADLOCK_CITY',
+        'REGION_DATA_GRAND_LIBRARY', 'REGION_LEGACY_CITADEL', 'REGION_ROOT_SYSTEM'
+    ]::text[] then
+        raise exception 'the six fixed Codria region axes are incomplete: %', axis_codes;
+    end if;
+
+    select array_agg(code order by access_level)
+      into access_codes
+      from admin_access_level_catalog;
+    if access_codes is distinct from array[
+        'ADMIN_ACCESS_LEVEL_1', 'ADMIN_ACCESS_LEVEL_2', 'ADMIN_ACCESS_LEVEL_3'
+    ]::text[] then
+        raise exception 'the three fixed administrator access levels are incomplete: %', access_codes;
+    end if;
+
+    if (select display_name_ko from product_identity_catalog where code = 'PROTAGONIST_NUPJUKYI') <> '넙죽이'
+       or not exists (select 1 from product_identity_catalog where code = 'WORLD_CODRIA') then
+        raise exception 'the fixed Codria and Nupjukyi product identities are incomplete';
+    end if;
+
     insert into profiles (id, display_name, locale)
     values (test_owner, 'Generative Schema Smoke', 'ko-KR');
 
@@ -69,9 +105,9 @@ begin
         id, owner_id, title, world_seed, turn_limit, status,
         ruleset_version, premise, settings, created_at, updated_at
     ) values (
-        test_campaign, test_owner, 'Generated Boundary Smoke', 20260717, 40, 'active',
-        'generative-run.v1', 'A seed-defined world whose choices converge within forty turns.',
-        '{"templateId":"keyboard-wanderer-generative","sealedWorld":true}'::jsonb,
+        test_campaign, test_owner, '넙죽이와 붕괴한 코드 왕국', 20260717, 40, 'active',
+        'codria-campaign.v4', '넙죽이가 코드리아의 관리자 권한 세 단계를 획득한다.',
+        '{"templateId":"codria-v4","sealedWorld":true,"worldContractCode":"WORLD_CODRIA"}'::jsonb,
         test_time, test_time
     );
 
@@ -83,7 +119,7 @@ begin
         generation_metadata, generated_at, created_at, updated_at
     ) values (
         test_world, test_campaign, test_owner, 'run', test_run,
-        'keyboard-wanderer-world.v6', expected_layout_hash, 160, 160,
+        'codria-world.v7', expected_layout_hash, 160, 160,
         '{"format":"generative-smoke-v5","coordinateSpace":"world_global","sealed":true}'::jsonb,
         '{"generatedOnce":true,"placementSlotsSealed":true,"routesSealed":true}'::jsonb,
         test_time, test_time, test_time
@@ -104,28 +140,28 @@ begin
         origin_x, origin_y, width, height, entry_x, entry_y, exit_x, exit_y,
         layout_hash, tile_json, created_at, updated_at
     ) values
-    (area_arrival, test_world, test_region, test_owner, 'area.arrival', 'Arrival Verge', 'campaign_region',
+    (area_arrival, test_world, test_region, test_owner, 'area.bug-forest', '버그 숲', 'campaign_region',
      0, 0, 20, 20, 1, 1, 18, 18, repeat('2', 64), '{"biomeId":"temperate_forest_field","sealed":true}'::jsonb, test_time, test_time),
-    (area_stakes, test_world, test_region, test_owner, 'area.local-stakes', 'River Settlement', 'campaign_region',
+    (area_stakes, test_world, test_region, test_owner, 'area.buffer-village', '버퍼 마을', 'campaign_region',
      30, 0, 20, 20, 1, 1, 18, 18, repeat('3', 64), '{"biomeId":"river_wetland","sealed":true}'::jsonb, test_time, test_time),
-    (area_relationship, test_world, test_region, test_owner, 'area.relationship', 'Crossed Promises', 'campaign_region',
+    (area_relationship, test_world, test_region, test_owner, 'area.deadlock-city', '데드락 시티', 'campaign_region',
      60, 0, 20, 20, 1, 1, 18, 18, repeat('4', 64), '{"biomeId":"arid_desert","sealed":true}'::jsonb, test_time, test_time),
-    (area_truth, test_world, test_region, test_owner, 'area.hidden-truth', 'Hidden Cause', 'campaign_region',
+    (area_truth, test_world, test_region, test_owner, 'area.data-grand-library', '데이터 대도서관', 'campaign_region',
      0, 30, 20, 20, 1, 1, 18, 18, repeat('5', 64), '{"biomeId":"frost_highland","sealed":true}'::jsonb, test_time, test_time),
-    (area_consequence, test_world, test_region, test_owner, 'area.consequence', 'Returning Cost', 'campaign_region',
+    (area_consequence, test_world, test_region, test_owner, 'area.legacy-citadel', '레거시 성채', 'campaign_region',
      30, 30, 20, 20, 1, 1, 18, 18, repeat('6', 64), '{"biomeId":"subterranean_cavern","sealed":true}'::jsonb, test_time, test_time),
-    (area_finale, test_world, test_region, test_owner, 'area.final-convergence', 'Final Convergence', 'campaign_region',
+    (area_finale, test_world, test_region, test_owner, 'area.root-system', '루트 시스템', 'campaign_region',
      60, 30, 20, 20, 1, 1, 18, 18, repeat('7', 64), '{"biomeId":"ancient_ruins","sealed":true}'::jsonb, test_time, test_time);
 
     insert into world_area_descriptors (
         area_id, world_id, owner_id, area_key, biome_id, campaign_role, descriptor_json
     ) values
-    (area_arrival, test_world, test_owner, 'area.arrival', 'temperate_forest_field', 'ARRIVAL_CATALYST', '{"phase":1}'::jsonb),
-    (area_stakes, test_world, test_owner, 'area.local-stakes', 'river_wetland', 'LOCAL_STAKES', '{"phase":2}'::jsonb),
-    (area_relationship, test_world, test_owner, 'area.relationship', 'arid_desert', 'RELATIONSHIP_CONFLICT', '{"phase":3}'::jsonb),
-    (area_truth, test_world, test_owner, 'area.hidden-truth', 'frost_highland', 'HIDDEN_TRUTH', '{"phase":4}'::jsonb),
-    (area_consequence, test_world, test_owner, 'area.consequence', 'subterranean_cavern', 'CONSEQUENCE_RETURN', '{"phase":5}'::jsonb),
-    (area_finale, test_world, test_owner, 'area.final-convergence', 'ancient_ruins', 'FINAL_CONVERGENCE', '{"phase":6}'::jsonb);
+    (area_arrival, test_world, test_owner, 'area.bug-forest', 'temperate_forest_field', 'ARRIVAL_CATALYST', '{"axis":"REGION_BUG_FOREST"}'::jsonb),
+    (area_stakes, test_world, test_owner, 'area.buffer-village', 'river_wetland', 'LOCAL_STAKES', '{"axis":"REGION_BUFFER_VILLAGE"}'::jsonb),
+    (area_relationship, test_world, test_owner, 'area.deadlock-city', 'arid_desert', 'RELATIONSHIP_CONFLICT', '{"axis":"REGION_DEADLOCK_CITY"}'::jsonb),
+    (area_truth, test_world, test_owner, 'area.data-grand-library', 'frost_highland', 'HIDDEN_TRUTH', '{"axis":"REGION_DATA_GRAND_LIBRARY"}'::jsonb),
+    (area_consequence, test_world, test_owner, 'area.legacy-citadel', 'subterranean_cavern', 'CONSEQUENCE_RETURN', '{"axis":"REGION_LEGACY_CITADEL"}'::jsonb),
+    (area_finale, test_world, test_owner, 'area.root-system', 'ancient_ruins', 'FINAL_CONVERGENCE', '{"axis":"REGION_ROOT_SYSTEM"}'::jsonb);
 
     insert into area_connections (
         owner_id, world_id, from_area_id, to_area_id,
@@ -134,20 +170,43 @@ begin
     (test_owner, test_world, area_arrival, area_stakes, 18, 18, 1, 1, 'bidirectional', 'safe_route',
      '{"routeId":"route.arrival.stakes","gated":false,"requirements":{"requiresProgressLevel":0,"requiresProgressTokens":[]},"coordinateSpace":"area_local"}'::jsonb),
     (test_owner, test_world, area_consequence, area_finale, 18, 18, 1, 1, 'bidirectional', 'safe_route',
-     '{"routeId":"route.consequence.finale","gated":true,"requirements":{"requiresProgressLevel":3,"requiresProgressTokens":["MILESTONE_TOKEN_1","MILESTONE_TOKEN_2","MILESTONE_TOKEN_3"]},"coordinateSpace":"area_local"}'::jsonb);
+     '{"routeId":"route.legacy.root","gated":true,"requirements":{"requiresAdminAccess":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"requiresEssentialClue":true},"coordinateSpace":"area_local"}'::jsonb);
 
     insert into world_pois (
-        world_id, owner_id, area_id, poi_key, poi_kind, display_name,
+        id, world_id, owner_id, area_id, poi_key, poi_kind, display_name,
         x, y, biome_id, campaign_role, visual_intent,
         is_gated, gate_requirements, tags
     ) values
-    (test_world, test_owner, area_arrival, 'entry', 'entry', 'Arrival Marker',
+    (poi_bug_forest, test_world, test_owner, area_arrival, 'bug-forest-anchor', 'axis_anchor', '버그 숲 앵커',
      1, 1, 'temperate_forest_field', 'ARRIVAL_CATALYST', 'navigation anchor',
      false, '{}'::jsonb, '["entry"]'::jsonb),
-    (test_world, test_owner, area_finale, 'finale', 'finale', 'Convergence Marker',
+    (poi_buffer_village, test_world, test_owner, area_stakes, 'buffer-village-anchor', 'axis_anchor', '버퍼 마을 앵커',
+     1, 1, 'river_wetland', 'LOCAL_STAKES', 'settlement anchor',
+     false, '{}'::jsonb, '["settlement"]'::jsonb),
+    (poi_deadlock_city, test_world, test_owner, area_relationship, 'deadlock-city-anchor', 'axis_anchor', '데드락 시티 앵커',
+     1, 1, 'arid_desert', 'RELATIONSHIP_CONFLICT', 'negotiation anchor',
+     false, '{}'::jsonb, '["negotiation"]'::jsonb),
+    (poi_data_library, test_world, test_owner, area_truth, 'data-library-anchor', 'axis_anchor', '데이터 대도서관 앵커',
+     1, 1, 'frost_highland', 'HIDDEN_TRUTH', 'investigation anchor',
+     false, '{}'::jsonb, '["essential-clue"]'::jsonb),
+    (poi_legacy_citadel, test_world, test_owner, area_consequence, 'legacy-citadel-anchor', 'axis_anchor', '레거시 성채 앵커',
+     1, 1, 'subterranean_cavern', 'CONSEQUENCE_RETURN', 'technical debt anchor',
+     false, '{}'::jsonb, '["technical-debt"]'::jsonb),
+    (poi_root_system, test_world, test_owner, area_finale, 'root-system-anchor', 'axis_anchor', '루트 시스템 앵커',
      1, 1, 'ancient_ruins', 'FINAL_CONVERGENCE', 'sealed finale anchor',
-     true, '{"requiresProgressLevel":3,"requiresProgressTokens":["MILESTONE_TOKEN_1","MILESTONE_TOKEN_2","MILESTONE_TOKEN_3"]}'::jsonb,
+     true, '{"requiresAdminAccess":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"requiresEssentialClue":true}'::jsonb,
      '["finale","gated"]'::jsonb);
+
+    insert into world_region_axis_bindings (
+        world_id, owner_id, region_axis_code, area_id, terrain_biome_id,
+        primary_poi_id, binding_seed, binding_metadata
+    ) values
+    (test_world, test_owner, 'REGION_BUG_FOREST', area_arrival, 'temperate_forest_field', poi_bug_forest, 101, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_BUFFER_VILLAGE', area_stakes, 'river_wetland', poi_buffer_village, 102, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_DEADLOCK_CITY', area_relationship, 'arid_desert', poi_deadlock_city, 103, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_DATA_GRAND_LIBRARY', area_truth, 'frost_highland', poi_data_library, 104, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_LEGACY_CITADEL', area_consequence, 'subterranean_cavern', poi_legacy_citadel, 105, '{"seedBound":true}'::jsonb),
+    (test_world, test_owner, 'REGION_ROOT_SYSTEM', area_finale, 'ancient_ruins', poi_root_system, 106, '{"seedBound":true}'::jsonb);
 
     insert into placement_slots (
         id, slot_key, owner_id, world_id, area_id, slot_kind,
@@ -165,7 +224,7 @@ begin
         required_ability, target_turn, display_order, created_at, updated_at
     ) values (
         test_campaign, test_owner, 'beat.arrival_catalyst', 'The First Witness',
-        'Confirm one bounded local stake.', 'interact', 1, 0, test_time, test_time
+        'Confirm one bounded local stake.', 'connect', 1, 0, test_time, test_time
     );
 
     insert into runs (
@@ -176,7 +235,9 @@ begin
         test_run, test_campaign, test_world, test_owner, 'playing', 1,
         0, 40, 8, 0, area_arrival,
         jsonb_build_object(
-            'campaignTitle', 'Generated Boundary Smoke',
+            'campaignTitle', '넙죽이와 붕괴한 코드 왕국',
+            'worldContractCode', 'WORLD_CODRIA',
+            'protagonistContractCode', 'PROTAGONIST_NUPJUKYI',
             'campaignContentHash', expected_plan_hash,
             'currentAct', 'arrival',
             'progressLevel', 0,
@@ -191,11 +252,11 @@ begin
         generation_seed, plan_hash, source, fallback_used, validation_status,
         validation_report, validation_errors, plan_json, validated_at, created_at
     ) values (
-        test_plan, test_run, test_owner, test_world, 'keyboard-wanderer-run-plan.v1',
-        'keyboard-wanderer-world.v6', 20260717, expected_plan_hash, 'deterministic', false, 'validated',
+        test_plan, test_run, test_owner, test_world, 'codria-run-plan.v4',
+        'codria-world.v7', 20260717, expected_plan_hash, 'deterministic', false, 'validated',
         '{"schemaValid":true,"immutableGeometryValidated":true,"placementSlotsValidated":true}'::jsonb,
         '[]'::jsonb,
-        '{"title":"Generated Boundary Smoke","beats":["beat.arrival_catalyst"],"endings":["ENDING_EMERGENCY_WITHDRAWAL"]}'::jsonb,
+        '{"worldContractCode":"WORLD_CODRIA","protagonistContractCode":"PROTAGONIST_NUPJUKYI","regionAxes":["REGION_BUG_FOREST","REGION_BUFFER_VILLAGE","REGION_DEADLOCK_CITY","REGION_DATA_GRAND_LIBRARY","REGION_LEGACY_CITADEL","REGION_ROOT_SYSTEM"],"adminAccessCodes":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"beats":["beat.arrival_catalyst"],"endings":["ENDING_EMERGENCY_WITHDRAWAL"]}'::jsonb,
         test_time, test_time
     );
 
@@ -219,7 +280,7 @@ begin
         display_name, is_protected, is_cloneable, is_active, state_json
     ) values
     (test_player, test_owner, test_run, test_world, 'PLAYER', 'player.ninja.green.v1',
-     'Keyboard Warrior', true, false, true, '{"hp":10,"maxHp":10,"blocking":true}'::jsonb),
+     '넙죽이', true, false, true, '{"canonicalIdentity":"PROTAGONIST_NUPJUKYI","hp":10,"maxHp":10,"blocking":true}'::jsonb),
     (test_npc, test_owner, test_run, test_world, 'NPC', 'npc.villager.green.v1',
      'Arrival Witness', true, false, true,
      jsonb_build_object('slotId', 'slot.0123456789abcdefabcd', 'campaignRole', 'ARRIVAL_CATALYST', 'blocking', false));
@@ -229,6 +290,15 @@ begin
     ) values
     (test_player, test_owner, test_run, 'player', 10, 10, 8, 8),
     (test_npc, test_owner, test_run, 'npc', 8, 8, 0, 0);
+
+    insert into npc_relationships (
+        id, owner_id, run_id, subject_actor_id, object_actor_id,
+        affinity, trust, fear, relationship_state, notes, last_changed_turn,
+        created_at, updated_at
+    ) values (
+        test_relationship, test_owner, test_run, test_npc, test_player,
+        0, 0, 0, 'neutral', '{}'::jsonb, 0, test_time, test_time
+    );
 
     insert into entity_positions (
         entity_id, owner_id, run_id, world_id, area_id, x, y, blocks_movement
@@ -255,13 +325,24 @@ begin
         raise exception 'the player binding did not advance the run version';
     end if;
 
-    insert into turn_records (
-        id, run_id, owner_id, idempotency_key, request_fingerprint,
-        expected_run_version, request_json, received_at, created_at, updated_at
+    insert into safe_travels (
+        id, run_id, owner_id, sequence_no, idempotency_key, request_fingerprint,
+        expected_run_version, committed_run_version, from_x, from_y,
+        requested_x, requested_y, to_x, to_y, path_cost, travel_time_units,
+        cumulative_travel_time_units, entered_area_key, entered_biome_id,
+        campaign_role, traversed_area_ids, reached_poi_ids, path_json,
+        encounter_opened, encounter_json, campaign_turn_consumed,
+        campaign_turn_before, campaign_turn_after, layout_hash,
+        command_schema_version, input_type, world_id, destination_area_id,
+        turn_context, created_at
     ) values (
-        test_turn, test_run, test_owner, 'generative-smoke-turn-0001', repeat('f', 64),
-        2, '{"ability":"move","abilitySource":"explicit_selection","destination":{"x":2,"y":1},"intent":"Move to the next legal tile."}'::jsonb,
-        test_time, test_time, test_time
+        test_safe_travel, test_run, test_owner, 1, 'codria-smoke-move-0001', repeat('8', 64),
+        2, 3, 1, 1, 2, 1, 2, 1, 1, 1, 1,
+        'area.bug-forest', 'temperate_forest_field', 'ARRIVAL_CATALYST',
+        jsonb_build_array(area_arrival::text), '[]'::jsonb,
+        '[[1,1],[2,1]]'::jsonb, false, null, false, 0, 0, expected_layout_hash,
+        'codria-action.v4', 'MOVE', test_world, area_arrival,
+        '{"safe":true,"encounterOpened":false}'::jsonb, test_time
     );
 
     update entity_positions
@@ -269,26 +350,55 @@ begin
      where entity_id = test_player and owner_id = test_owner and run_id = test_run;
 
     update runs
-       set current_turn = 1,
-           version = 3,
-           world_state = world_state || '{"currentTurn":1,"version":3,"lastAbility":"move"}'::jsonb
+       set version = 3,
+           world_state = world_state || '{"currentTurn":0,"version":3,"lastInputType":"MOVE"}'::jsonb
      where id = test_run and owner_id = test_owner and version = 2;
     if not found then
-        raise exception 'the committed turn did not advance the authoritative run';
+        raise exception 'safe MOVE did not advance the run version';
+    end if;
+
+    insert into turn_records (
+        id, run_id, owner_id, idempotency_key, request_fingerprint,
+        expected_run_version, request_json, command_schema_version, input_type,
+        skill_id, target_ids, action_context, turn_context,
+        campaign_turn_before, campaign_turn_after, campaign_turn_consumed,
+        received_at, created_at, updated_at
+    ) values (
+        test_turn, test_run, test_owner, 'codria-smoke-action-0001', repeat('f', 64),
+        3,
+        jsonb_build_object(
+            'inputType', 'USE_SKILL', 'skillId', 'CONNECT',
+            'targetIds', jsonb_build_array(test_npc::text)
+        ),
+        'codria-action.v4', 'USE_SKILL', 'CONNECT',
+        jsonb_build_array(test_npc::text), 'NEGOTIATION',
+        jsonb_build_object('areaId', area_arrival, 'regionAxis', 'REGION_BUG_FOREST'),
+        0, 0, false, test_time, test_time, test_time
+    );
+
+    update runs
+       set current_turn = 1,
+           version = 4,
+           world_state = world_state || '{"currentTurn":1,"version":4,"lastInputType":"USE_SKILL","lastSkillId":"CONNECT"}'::jsonb
+     where id = test_run and owner_id = test_owner and version = 3;
+    if not found then
+        raise exception 'the meaningful USE_SKILL action did not advance the campaign turn';
     end if;
 
     update turn_records
        set status = 'committed',
            turn_no = 1,
-           committed_run_version = 3,
+           committed_run_version = 4,
+           campaign_turn_after = 1,
+           campaign_turn_consumed = true,
            result_json = jsonb_build_object(
                'outcome', 'success',
                'd20', 12,
-               'rulesetVersion', 'keyboard-wanderer-rules.v3',
+               'rulesetVersion', 'codria-rules.v4',
                'stateHashBefore', state_hash_before,
                'stateHashAfter', state_hash_after
            ),
-           narrative_json = '{"summary":"The legal move settles into the sealed world.","proposedOps":[],"appliedOps":[],"rejectedOps":[]}'::jsonb,
+           narrative_json = '{"summary":"넙죽이의 CONNECT가 버그 숲의 목격자와 신뢰를 연결했다.","proposedOps":[],"appliedOps":[],"rejectedOps":[]}'::jsonb,
            fallback_used = false,
            model = 'smoke-rule-director',
            completed_at = test_time
@@ -301,24 +411,105 @@ begin
         costs_json, guaranteed_operations, allowed_effects, state_delta,
         state_hash_before, state_hash_after, rng_audit, created_at
     ) values (
-        test_turn, test_run, test_owner, 1, 'keyboard-wanderer-rules.v3',
-        '{"ability":"move","abilitySource":"explicit_selection","legalExecution":"move to area-local tile (2,1)"}'::jsonb,
+        test_turn, test_run, test_owner, 1, 'codria-rules.v4',
+        jsonb_build_object(
+            'inputType', 'USE_SKILL', 'skillId', 'CONNECT',
+            'targetIds', jsonb_build_array(test_npc::text), 'actionContext', 'NEGOTIATION'
+        ),
         12, 3, '[{"source":"keyboard_affinity","value":3}]'::jsonb,
         15, 9, 'success', 0,
-        '{}'::jsonb, '[{"op":"MOVE","entityId":"player"}]'::jsonb,
-        '["entity_moved"]'::jsonb, '{"position":{"from":[1,1],"to":[2,1]}}'::jsonb,
+        '{"focus":2}'::jsonb, '[{"op":"CONNECT","durationTurns":3}]'::jsonb,
+        '["relationship_changed","admin_access_candidate"]'::jsonb,
+        '{"relationship":{"trustDelta":10},"technicalDebtDelta":2}'::jsonb,
         state_hash_before, state_hash_after,
         '{"algorithm":"sha256_modulo_d20.v2","secretRedacted":true}'::jsonb,
         test_time
     );
 
+    update npc_relationships
+       set affinity = 5, trust = 10, relationship_state = 'cooperative',
+           notes = '{"connectedBy":"CONNECT"}'::jsonb,
+           last_changed_turn = 1, updated_at = test_time
+     where id = test_relationship and owner_id = test_owner and run_id = test_run;
+
     insert into turn_events (
         turn_record_id, run_id, owner_id, event_index, event_type, payload, created_at
     ) values
-    (test_turn, test_run, test_owner, 0, 'ENTITY_MOVED',
-     '{"type":"entity_moved","from":{"x":1,"y":1},"to":{"x":2,"y":1}}'::jsonb, test_time),
+    (test_turn, test_run, test_owner, 0, 'RELATIONSHIP_CHANGED',
+     '{"type":"relationship_changed","affinityDelta":5,"trustDelta":10}'::jsonb, test_time),
     (test_turn, test_run, test_owner, 1, 'TURN_COMMITTED',
-     '{"type":"turn_committed","turnNo":1,"runVersion":3}'::jsonb, test_time);
+     '{"type":"turn_committed","turnNo":1,"runVersion":4}'::jsonb, test_time);
+
+    insert into admin_access_acquisition_history (
+        run_id, owner_id, world_id, turn_id, turn_no, admin_access_code,
+        region_axis_code, area_id, action_context, acquisition_method,
+        skill_id, evidence, acquired_at
+    ) values (
+        test_run, test_owner, test_world, test_turn, 1, 'ADMIN_ACCESS_LEVEL_1',
+        'REGION_BUG_FOREST', area_arrival, 'NEGOTIATION', 'witness-cooperation',
+        'CONNECT', '{"candidateCount":3,"seedSelected":true}'::jsonb, test_time
+    );
+
+    insert into major_choices (
+        run_id, owner_id, turn_id, turn_no, choice_key, option_key,
+        region_axis_code, action_context, immediate_effects, long_term_tags, created_at
+    ) values (
+        test_run, test_owner, test_turn, 1, 'choice.bug-forest.coexist', 'coexist-with-errors',
+        'REGION_BUG_FOREST', 'NEGOTIATION', '{"publicTrustDelta":2}'::jsonb,
+        '["coexistence","npc-callback"]'::jsonb, test_time
+    );
+
+    insert into region_outcomes (
+        run_id, owner_id, turn_id, turn_no, region_axis_code, sequence_no,
+        outcome_key, outcome_status, outcome_state, ending_tags, created_at
+    ) values (
+        test_run, test_owner, test_turn, 1, 'REGION_BUG_FOREST', 1,
+        'outcome.bug-forest.cooperative-stability', 'STABILIZED',
+        '{"errorsRemoved":false,"coexistence":true}'::jsonb,
+        '["world-autonomy","public-trust"]'::jsonb, test_time
+    );
+
+    insert into npc_relationship_history (
+        relationship_id, run_id, owner_id, turn_id, turn_no,
+        affinity_delta, trust_delta, fear_delta, affinity_after, trust_after,
+        fear_after, relationship_state_after, reason_code, context, created_at
+    ) values (
+        test_relationship, test_run, test_owner, test_turn, 1,
+        5, 10, 0, 5, 10, 0, 'cooperative', 'CONNECT_COOPERATION',
+        '{"regionAxis":"REGION_BUG_FOREST"}'::jsonb, test_time
+    );
+
+    insert into ability_usage_history (
+        run_id, owner_id, turn_id, turn_no, skill_id, action_context,
+        target_ids, outcome, effects_json, created_at
+    ) values (
+        test_run, test_owner, test_turn, 1, 'CONNECT', 'NEGOTIATION',
+        jsonb_build_array(test_npc::text), 'success',
+        '{"relationshipChanged":true,"adminAccessAcquired":"ADMIN_ACCESS_LEVEL_1"}'::jsonb,
+        test_time
+    );
+
+    insert into unresolved_hooks (
+        id, run_id, owner_id, hook_key, region_axis_code, npc_actor_id,
+        introduced_turn_id, introduced_turn_no, summary, hook_payload,
+        deadline_turn, created_at, updated_at
+    ) values (
+        test_hook, test_run, test_owner, 'hook.legacy.connect-feedback',
+        'REGION_LEGACY_CITADEL', test_npc, test_turn, 1,
+        'The forced semantic edge may return from the Legacy Citadel.',
+        '{"callbackAt":"REGION_LEGACY_CITADEL","sourceSkill":"CONNECT"}'::jsonb,
+        20, test_time, test_time
+    );
+
+    insert into technical_debt_entries (
+        id, run_id, owner_id, turn_id, turn_no, skill_id, operation_type,
+        target_id, forced_override, debt_delta, deferred_consequence_type,
+        metadata, created_at
+    ) values (
+        test_debt_entry, test_run, test_owner, test_turn, 1, 'CONNECT', 'CONNECT',
+        test_npc::text, false, 2, 'RELATIONSHIP_FEEDBACK',
+        '{"hookKey":"hook.legacy.connect-feedback"}'::jsonb, test_time
+    );
 
     select max(id)
       into strict test_last_event
@@ -330,8 +521,8 @@ begin
            last_turn_no = 1,
            completed_node_keys = '["beat.arrival_catalyst"]'::jsonb,
            current_node_key = 'beat.local_stakes',
-           progress_state = '{"level":1,"tokens":["MILESTONE_TOKEN_1"]}'::jsonb,
-           rule_state = '{"focus":8,"pressure":0,"lastOutcome":"success"}'::jsonb
+           progress_state = '{"adminAccess":["ADMIN_ACCESS_LEVEL_1"],"regionAxis":"REGION_BUG_FOREST"}'::jsonb,
+           rule_state = '{"focus":6,"pressure":0,"lastOutcome":"success","technicalDebt":2}'::jsonb
      where run_id = test_run and owner_id = test_owner;
 
     insert into save_slots (
@@ -346,12 +537,12 @@ begin
         snapshot_kind, world_id, generation_plan_id, plan_hash, layout_hash,
         last_turn_record_id, last_event_id, resume_metadata, created_at
     ) values (
-        test_snapshot, test_save_slot, test_owner, test_campaign, test_run, 3,
-        1, 'keyboard-wanderer-save.v3',
+        test_snapshot, test_save_slot, test_owner, test_campaign, test_run, 4,
+        1, 'codria-save.v4',
         jsonb_build_object(
             'campaignContentHash', expected_plan_hash,
             'currentTurn', 1,
-            'version', 3,
+            'version', 4,
             'world', jsonb_build_object('layoutHash', expected_layout_hash),
             'secretFieldsRedacted', jsonb_build_array('resolutionSeed')
         ),
@@ -379,11 +570,28 @@ begin
     if (select count(*) from world_area_descriptors where world_id = test_world) <> 6 then
         raise exception 'the sealed run world did not persist all six biome areas';
     end if;
+    if (
+        select count(*) = 6 and count(distinct terrain_biome_id) = 6
+          from world_region_axis_bindings
+         where world_id = test_world and owner_id = test_owner
+    ) is not true then
+        raise exception 'the run world did not seal exactly six axis-to-area/biome/POI bindings';
+    end if;
     if not exists (
         select 1 from worlds
          where id = test_world and world_scope = 'run' and run_scope_key = test_run
     ) then
         raise exception 'the run-scoped world reservation was not persisted';
+    end if;
+    if not exists (
+        select 1 from runs
+         where id = test_run
+           and world_contract_code = 'WORLD_CODRIA'
+           and protagonist_contract_code = 'PROTAGONIST_NUPJUKYI'
+           and artifact_contract_code = 'ARTIFACT_ADMIN_KEYBOARD'
+           and product_contract_version = 'codria.v4'
+    ) then
+        raise exception 'the run does not retain the fixed Codria product identities';
     end if;
     if not exists (
         select 1 from run_generation_plans
@@ -403,10 +611,61 @@ begin
         select 1 from turn_records tr
         join turn_rule_resolutions rr on rr.turn_record_id = tr.id
          where tr.id = test_turn and tr.status = 'committed'
-           and tr.committed_run_version = 3 and rr.d20_raw = 12
+           and tr.committed_run_version = 4 and tr.input_type = 'USE_SKILL'
+           and tr.skill_id = 'CONNECT' and tr.action_context = 'NEGOTIATION'
+           and tr.campaign_turn_before = 0 and tr.campaign_turn_after = 1
+           and tr.campaign_turn_consumed and rr.d20_raw = 12
            and rr.roll_total = 15 and rr.outcome = 'success'
     ) then
         raise exception 'the committed turn is missing its authoritative Rule Engine resolution';
+    end if;
+    if not exists (
+        select 1 from safe_travels
+         where id = test_safe_travel and input_type = 'MOVE'
+           and command_schema_version = 'codria-action.v4'
+           and expected_run_version = 2 and committed_run_version = 3
+           and campaign_turn_before = 0 and campaign_turn_after = 0
+           and campaign_turn_consumed = false
+    ) then
+        raise exception 'the structured MOVE was not persisted as non-turn-consuming safe travel';
+    end if;
+    if (
+        select array_agg(input_type order by input_type)
+          from structured_action_history
+         where run_id = test_run and owner_id = test_owner
+    ) is distinct from array['MOVE', 'USE_SKILL']::text[] then
+        raise exception 'the unified structured action history must expose MOVE and USE_SKILL';
+    end if;
+    if not exists (
+        select 1
+          from admin_access_acquisition_history a
+          join major_choices c on c.run_id = a.run_id and c.turn_id = a.turn_id
+          join current_region_outcomes o on o.run_id = a.run_id and o.turn_id = a.turn_id
+          join npc_relationship_history n on n.run_id = a.run_id and n.turn_id = a.turn_id
+          join ability_usage_history u on u.run_id = a.run_id and u.turn_id = a.turn_id
+         where a.run_id = test_run and a.admin_access_code = 'ADMIN_ACCESS_LEVEL_1'
+           and a.region_axis_code = 'REGION_BUG_FOREST'
+           and c.choice_key = 'choice.bug-forest.coexist'
+           and o.outcome_status = 'STABILIZED'
+           and n.relationship_state_after = 'cooperative'
+           and u.skill_id = 'CONNECT'
+    ) then
+        raise exception 'the authoritative choice, region, relationship, skill, and access histories are incomplete';
+    end if;
+    if not exists (
+        select 1 from unresolved_hooks
+         where id = test_hook and status = 'OPEN' and deadline_turn = 20
+    ) or not exists (
+        select 1 from technical_debt_entries
+         where id = test_debt_entry and operation_type = 'CONNECT'
+           and debt_delta = 2 and deferred_consequence_type = 'RELATIONSHIP_FEEDBACK'
+           and resolved_at is null
+    ) or not exists (
+        select 1 from technical_debt_summaries
+         where run_id = test_run and net_technical_debt = 2
+           and unresolved_consequence_count = 1
+    ) then
+        raise exception 'the unresolved hook and causal technical debt ledgers are incomplete';
     end if;
     if not exists (
         select 1 from save_snapshots ss
@@ -420,7 +679,7 @@ begin
     end if;
     if not exists (
         select 1 from run_summaries
-         where id = test_run and version = 3 and current_turn = 1
+         where id = test_run and version = 4 and current_turn = 1
     ) then
         raise exception 'the client-safe run summary did not expose committed state';
     end if;
@@ -439,6 +698,24 @@ begin
            set x = 4
          where id = test_slot;
         raise exception 'immutable placement slot was unexpectedly updated';
+    exception when sqlstate '55000' then
+        null;
+    end;
+
+    begin
+        update world_region_axis_bindings
+           set binding_seed = 999
+         where world_id = test_world and region_axis_code = 'REGION_BUG_FOREST';
+        raise exception 'immutable region axis binding was unexpectedly updated';
+    exception when sqlstate '55000' then
+        null;
+    end;
+
+    begin
+        update technical_debt_entries
+           set debt_delta = 1
+         where id = test_debt_entry;
+        raise exception 'technical debt cause was unexpectedly rewritten';
     exception when sqlstate '55000' then
         null;
     end;

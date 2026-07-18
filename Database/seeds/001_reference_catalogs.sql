@@ -2,14 +2,49 @@ begin;
 
 set local search_path = keyboard_wanderer, public;
 
+insert into product_identity_catalog (code, identity_kind, display_name_ko, metadata)
+values
+    ('WORLD_CODRIA', 'world', '코드리아', '{"fixedAcrossRuns":true}'::jsonb),
+    ('PROTAGONIST_NUPJUKYI', 'protagonist', '넙죽이', '{"fixedAcrossRuns":true,"origin":"reality"}'::jsonb),
+    ('ARTIFACT_ADMIN_KEYBOARD', 'artifact', '관리자 키보드', '{"fixedAcrossRuns":true}'::jsonb)
+on conflict (code) do update set
+    identity_kind = excluded.identity_kind,
+    display_name_ko = excluded.display_name_ko,
+    metadata = excluded.metadata;
+
+insert into campaign_region_axis_catalog (
+    code, display_order, display_name_ko, narrative_purpose, metadata
+) values
+    ('REGION_BUG_FOREST', 1, '버그 숲', '오류 제거와 공존의 첫 선택', '{"fixedAxis":true}'::jsonb),
+    ('REGION_BUFFER_VILLAGE', 2, '버퍼 마을', '생존 자원과 공공 신뢰', '{"fixedAxis":true}'::jsonb),
+    ('REGION_DEADLOCK_CITY', 3, '데드락 시티', '엉킨 관계와 협상', '{"fixedAxis":true}'::jsonb),
+    ('REGION_DATA_GRAND_LIBRARY', 4, '데이터 대도서관', '붕괴 원인의 기록과 필수 단서', '{"fixedAxis":true}'::jsonb),
+    ('REGION_LEGACY_CITADEL', 5, '레거시 성채', '기술 부채와 과거 선택의 역류', '{"fixedAxis":true}'::jsonb),
+    ('REGION_ROOT_SYSTEM', 6, '루트 시스템', '최종 배치와 결말', '{"fixedAxis":true,"requiresAllAdminAccess":true}'::jsonb)
+on conflict (code) do update set
+    display_order = excluded.display_order,
+    display_name_ko = excluded.display_name_ko,
+    narrative_purpose = excluded.narrative_purpose,
+    metadata = excluded.metadata;
+
+insert into admin_access_level_catalog (code, access_level, display_name_ko, metadata)
+values
+    ('ADMIN_ACCESS_LEVEL_1', 1, '관리자 권한 I', '{"fixedAcrossRuns":true}'::jsonb),
+    ('ADMIN_ACCESS_LEVEL_2', 2, '관리자 권한 II', '{"fixedAcrossRuns":true}'::jsonb),
+    ('ADMIN_ACCESS_LEVEL_3', 3, '관리자 권한 III', '{"fixedAcrossRuns":true}'::jsonb)
+on conflict (code) do update set
+    access_level = excluded.access_level,
+    display_name_ko = excluded.display_name_ko,
+    metadata = excluded.metadata;
+
 insert into campaign_template_catalog (code, version, display_name, is_enabled, metadata)
 values
     (
-        'keyboard-wanderer-generative',
-        'generative-run.v1',
-        'Keyboard Wanderer: Generative TRPG',
+        'codria-v4',
+        'codria-campaign.v4',
+        '넙죽이와 붕괴한 코드 왕국',
         true,
-        '{"language":"ko-KR","turnRange":[30,50],"defaultTurns":40,"biomeCount":6,"sealedWorld":true,"runScopedPlan":true}'::jsonb
+        '{"language":"ko-KR","turnRange":[30,50],"defaultTurns":40,"biomeCount":6,"regionAxisCount":6,"sealedWorld":true,"runScopedPlan":true,"worldContractCode":"WORLD_CODRIA","protagonistContractCode":"PROTAGONIST_NUPJUKYI","artifactContractCode":"ARTIFACT_ADMIN_KEYBOARD","adminAccessCodes":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"inputTypes":["MOVE","USE_SKILL"]}'::jsonb
     )
 on conflict (code) do update set
     version = excluded.version,
@@ -18,21 +53,27 @@ on conflict (code) do update set
     metadata = excluded.metadata,
     updated_at = now();
 
+update campaign_template_catalog
+   set is_enabled = false,
+       updated_at = now()
+ where code <> 'codria-v4'
+   and is_enabled;
+
 insert into ability_catalog (
     code, display_name, description, target_mode, focus_cost,
     min_range, max_range, is_enabled, display_order, metadata
 )
 values
-    ('MOVE', 'Move', 'Move the player over a legal path costing at most five movement points.', 'tile', 0, 0, 5, true, 10, '{"mvp":true}'::jsonb),
-    ('COPY', 'Copy', 'Clone an eligible entity into an unoccupied destination tile.', 'entity_and_tile', 1, 0, 4, true, 20, '{"mvp":true}'::jsonb),
-    ('DELETE', 'Delete', 'Remove an unprotected entity from the current run.', 'entity', 1, 0, 3, true, 30, '{"mvp":true}'::jsonb),
-    ('CONNECT', 'Connect', 'Create a temporary semantic connection between eligible world objects.', 'entity', 2, 0, 5, true, 40, '{"mvp":true,"temporary":true}'::jsonb),
-    ('RESTORE', 'Restore', 'Restore permitted recent damage or removal from an authoritative snapshot.', 'entity', 3, 0, null, true, 50, '{"mvp":true,"compensating":true}'::jsonb),
-    ('UNDO', 'Undo', 'Append compensation for the immediately preceding reversible result without rewinding history.', 'none', 3, 0, null, true, 60, '{"mvp":true,"compensating":true}'::jsonb),
-    ('ATTACK', 'Attack', 'Deal bounded damage to one adjacent hostile actor.', 'entity', 0, 1, 1, true, 70, '{"contextual":true}'::jsonb),
-    ('INTERACT', 'Interact / Investigate', 'Inspect a nearby NPC or evidence object; investigate is an API alias.', 'entity', 0, 0, 2, true, 80, '{"contextual":true,"aliases":["investigate"]}'::jsonb),
-    ('NEGOTIATE', 'Negotiate', 'Resolve one bounded agreement with a nearby non-hostile NPC.', 'entity', 0, 0, 2, true, 90, '{"contextual":true}'::jsonb),
-    ('REST', 'Rest', 'Spend one meaningful turn to recover bounded focus and health.', 'none', 0, 0, null, true, 100, '{"contextual":true}'::jsonb)
+    ('MOVE', 'Move', 'Traverse a legal safe path without a D20 or campaign-turn cost.', 'tile', 0, 0, 5, true, 10, '{"canonicalInputType":"MOVE","campaignTurnConsumed":false,"d20":false}'::jsonb),
+    ('COPY', 'Copy', 'Clone an eligible entity into an unoccupied destination tile.', 'entity_and_tile', 1, 0, 4, true, 20, '{"canonicalInputType":"USE_SKILL","technicalDebtTracked":true}'::jsonb),
+    ('DELETE', 'Delete', 'Remove an unprotected entity from the current run.', 'entity', 1, 0, 3, true, 30, '{"canonicalInputType":"USE_SKILL","technicalDebtTracked":true}'::jsonb),
+    ('CONNECT', 'Connect', 'Create a temporary semantic connection between eligible world objects.', 'entity', 2, 0, 5, true, 40, '{"canonicalInputType":"USE_SKILL","temporary":true,"technicalDebtTracked":true}'::jsonb),
+    ('RESTORE', 'Restore', 'Append an explicit recovery of permitted damage, removal, or technical debt.', 'entity', 3, 0, null, true, 50, '{"canonicalInputType":"USE_SKILL","compensating":true,"technicalDebtTracked":true}'::jsonb),
+    ('UNDO', 'Undo', 'Append compensation for the immediately preceding reversible result without rewinding history.', 'none', 3, 0, null, true, 60, '{"canonicalInputType":"USE_SKILL","compensating":true,"technicalDebtTracked":true}'::jsonb),
+    ('ATTACK', 'Attack (legacy)', 'Disabled compatibility row. Combat is an action context for one of the five keyboard skills.', 'entity', 0, 1, 1, false, 70, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
+    ('INTERACT', 'Interact (legacy)', 'Disabled compatibility row. Investigation is an action context for one of the five keyboard skills.', 'entity', 0, 0, 2, false, 80, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
+    ('NEGOTIATE', 'Negotiate (legacy)', 'Disabled compatibility row. Negotiation is an action context for one of the five keyboard skills.', 'entity', 0, 0, 2, false, 90, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
+    ('REST', 'Rest (legacy)', 'Disabled compatibility row. It is not a Codria v4 canonical input.', 'none', 0, 0, null, false, 100, '{"legacyCompatibility":true,"canonical":false}'::jsonb)
 on conflict (code) do update set
     display_name = excluded.display_name,
     description = excluded.description,
@@ -55,17 +96,23 @@ on conflict (code) do update set display_name=excluded.display_name, display_nam
 
 insert into campaign_region_role_catalog (code, phase_no, display_name_ko, metadata) values
     ('ARRIVAL_CATALYST',1,'도착의 촉매','{"generative":true}'),
-    ('LOCAL_STAKES',2,'지역의 삶과 대가','{"generative":true,"milestone":"MILESTONE_TOKEN_1"}'),
-    ('RELATIONSHIP_CONFLICT',3,'관계와 약속의 충돌','{"generative":true,"milestone":"MILESTONE_TOKEN_2"}'),
+    ('LOCAL_STAKES',2,'지역의 삶과 대가','{"generative":true,"adminAccess":"ADMIN_ACCESS_LEVEL_1"}'),
+    ('RELATIONSHIP_CONFLICT',3,'관계와 약속의 충돌','{"generative":true,"adminAccess":"ADMIN_ACCESS_LEVEL_2"}'),
     ('HIDDEN_TRUTH',4,'감춰진 원인의 발견','{"generative":true}'),
-    ('CONSEQUENCE_RETURN',5,'되돌아온 선택의 결과','{"generative":true,"milestone":"MILESTONE_TOKEN_3"}'),
+    ('CONSEQUENCE_RETURN',5,'되돌아온 선택의 결과','{"generative":true,"adminAccess":"ADMIN_ACCESS_LEVEL_3"}'),
     ('FINAL_CONVERGENCE',6,'선택의 최종 수렴','{"generative":true}')
 on conflict (code) do update set phase_no=excluded.phase_no, display_name_ko=excluded.display_name_ko, metadata=excluded.metadata;
 
 insert into campaign_phase_catalog (code, display_order, display_name_ko) values
-    ('arrival',1,'낯선 세계의 징후'), ('local_stakes',2,'눈앞의 삶과 대가'),
-    ('relationship_conflict',3,'얽힌 약속의 충돌'), ('hidden_truth',4,'감춰진 원인의 발견'),
-    ('consequence_return',5,'되돌아온 선택'), ('final_convergence',6,'모든 갈래의 수렴')
+    ('codria_crash',1,'코드리아 추락과 관리자 키보드 각성'),
+    ('first_region_problem',2,'붕괴 현상과 첫 지역 문제'),
+    ('admin_access_1',3,'관리자 권한 I 획득'),
+    ('admin_access_2',4,'관리자 권한 II 획득'),
+    ('internal_cause',5,'관리자 통제 시스템 내부 원인 확인'),
+    ('technical_debt_return',6,'기술 부채와 과거 선택의 역류'),
+    ('admin_access_3',7,'관리자 권한 III 획득'),
+    ('root_system_entry',8,'루트 시스템 진입'),
+    ('final_deployment',9,'최종 배치와 결말')
 on conflict (code) do update set display_order=excluded.display_order, display_name_ko=excluded.display_name_ko;
 
 insert into ending_catalog (code, category, display_name_ko, description_ko) values
@@ -153,7 +200,13 @@ values
     ('ENCOUNTER_RESOLVED', 'Encounter Resolved', 'A staged travel encounter consumed one meaningful D20 turn.', true),
     ('NEGOTIATION_RESOLVED', 'Negotiation Resolved', 'A bounded NPC negotiation changed authoritative relationship state.', false),
     ('VISUAL_INTENT_RECORDED', 'Visual Intent Recorded', 'Narrative visual intent was recorded without changing geometry.', false),
-    ('QUEST_CLOSED', 'Quest Closed', 'A bounded quest was completed, failed, or closed during convergence.', true)
+    ('QUEST_CLOSED', 'Quest Closed', 'A bounded quest was completed, failed, or closed during convergence.', true),
+    ('ADMIN_ACCESS_ACQUIRED', 'Administrator Access Acquired', 'One ordered administrator access level was acquired.', true),
+    ('MAJOR_CHOICE_RECORDED', 'Major Choice Recorded', 'A player choice was retained for later callbacks.', true),
+    ('REGION_OUTCOME_RECORDED', 'Region Outcome Recorded', 'A fixed Codria region axis received a new outcome revision.', true),
+    ('ABILITY_USAGE_RECORDED', 'Ability Usage Recorded', 'A committed keyboard skill use was normalized for ending inputs.', true),
+    ('TECHNICAL_DEBT_CHANGED', 'Technical Debt Changed', 'A causal technical-debt delta and deferred consequence were recorded.', true),
+    ('DEFERRED_CONSEQUENCE_RESOLVED', 'Deferred Consequence Resolved', 'An explicit recovery action resolved a deferred consequence.', true)
 on conflict (code) do update set
     display_name = excluded.display_name,
     description = excluded.description,

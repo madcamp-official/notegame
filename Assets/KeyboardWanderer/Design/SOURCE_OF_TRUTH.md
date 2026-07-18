@@ -1,40 +1,64 @@
-# Keyboard Wanderer — source of truth v3
+# 넙죽이와 붕괴한 코드 왕국 — Source of Truth v4
 
-이 문서는 고정 시나리오 초안이나 UI 레퍼런스가 현재 제품 계약으로 오인되지 않도록 구현 권위를 정리합니다.
+이 문서는 과거의 일반 생성형 판타지 계약과 UI 레퍼런스가 현재 제품 계약으로 오인되지 않도록 권위를 정리합니다.
 
 ## 권위 순서
 
 1. 제품 소유자의 최신 명시적 지시
-2. 사용자가 연결한 Notion 컬렉션의 현재 제품 문서
-3. 이 폴더의 v3 제품·디자인 문서와 프로젝트 README
-4. 서버·Unity의 현재 코드, 스키마와 자동 테스트
-5. 첨부 이미지는 인터페이스의 구성·밀도·재질을 판단할 때만 참고
+2. 연결된 Notion의 현재 제품 문서
+3. 이 폴더의 v4 문서와 저장소 루트 README
+4. PostgreSQL, 서버, Unity의 코드와 자동 테스트
+5. 첨부 이미지는 인터페이스 감각에만 사용
 
-충돌하면 더 높은 항목을 따릅니다. 이전 고정 세계관의 명칭, 주인공 설정, 정해진 세 지역 또는 정해진 결말은 제품 사실로 유지하지 않습니다.
+충돌하면 상위 항목을 따릅니다. 기존 폴더·namespace의 `KeyboardWanderer`는 기술적 호환 이름일 뿐 제품명이 아닙니다.
 
-## 구속력 있는 제품 사실
+## 변경할 수 없는 제품 사실
 
-- 제품명은 Keyboard Wanderer입니다. 매 런의 구체적인 세계와 시나리오는 seed와 검증된 LLM 기획의 조합으로 생성됩니다.
-- 목표 길이는 30–50 의미 턴입니다. 안전한 탐색 이동은 의미 턴과 D20을 소비하지 않습니다.
-- 캠페인 미리보기는 LLM을 호출하지 않습니다. 새 런을 확정할 때만 월드와 캠페인 기획을 만들고 저장합니다.
-- 기본 월드는 160×160이며 런 시작 시 한 번 생성·검증해 봉인합니다. 이후에는 발견·점유·상태 같은 허용된 희소 변경만 적용합니다.
-- 정확히 여섯 바이옴을 포함합니다: `temperate_forest_field`, `river_wetland`, `arid_desert`, `frost_highland`, `subterranean_cavern`, `ancient_ruins`.
-- 정확히 여섯 일반 역할을 포함합니다: `ARRIVAL_CATALYST`, `LOCAL_STAKES`, `RELATIONSHIP_CONFLICT`, `HIDDEN_TRUTH`, `CONSEQUENCE_RETURN`, `FINAL_CONVERGENCE`.
-- 진척 토큰은 `MILESTONE_TOKEN_1`, `MILESTONE_TOKEN_2`, `MILESTONE_TOKEN_3`입니다. 이름과 의미는 런마다 달라질 수 있습니다.
-- 마지막 공간 퍼즐은 `anchor`, `safeguard`, `memory`, `freedom`, `threat`, `passage`, `witness` 구성 요소를 이번 런의 entity에 바인딩해 구성합니다.
-- 현재 플레이어 표현은 NinjaAdventure의 `NinjaGreen`입니다. LLM은 파일 경로나 스프라이트 ID를 만들지 않습니다.
-- Rule Engine은 geometry, 경로, 점유, 합법성, D20, 자원, 진척과 결말의 유일한 권위입니다. Gemini는 검증 가능한 기획과 확정 결과의 서술만 제안합니다.
-- 비용 기본값은 서버의 `gemini-2.5-flash-lite`, thinking budget 0, 작은 컨텍스트·출력, 제한 재시도와 결정적 폴백입니다.
+- 제품명: `넙죽이와 붕괴한 코드 왕국`
+- 세계: `WORLD_CODRIA` / 코드리아
+- 주인공: `PROTAGONIST_NUPJUKYI` / 넙죽이
+- 유물: `ARTIFACT_ADMIN_KEYBOARD` / 관리자 키보드
+- NinjaAdventure `NinjaGreen`: 현재의 임시 표현 에셋일 뿐 캐릭터 정체성이 아님
+- 월드: 런 시작 시 한 번 생성·검증·봉인하는 160×160 맵; 이후에는 재생성 없이 이동·활성화만 수행
+- 지역 축: `REGION_BUG_FOREST`, `REGION_BUFFER_VILLAGE`, `REGION_DEADLOCK_CITY`, `REGION_DATA_GRAND_LIBRARY`, `REGION_LEGACY_CITADEL`, `REGION_ROOT_SYSTEM`
+- 여섯 지역 축과 여섯 물리 바이옴은 독립된 차원
+- 입력: `MOVE`, `USE_SKILL`만 사용
+- 기술: `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`만 사용하며 MOVE는 기술이 아님
+- 소비 맥락: `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT`
+- 안전 MOVE: D20과 캠페인 턴을 소비하지 않음; 위험 이동은 조우 활성화와 실제 행동을 분리
+- `playerNote`: 선택적 flavor이며 규칙 권위가 없음
+- 관리자 권한: `ADMIN_ACCESS_LEVEL_1..3` 정확히 세 단계; 단계별로 서로 다른 영역·맥락의 후보 최소 2개
+- 루트 게이트: 권한 3/3과 내부 통제 원인 핵심 단서 모두 필요
+
+## 고정 캠페인 구조
+
+진행은 정확히 아홉 비트입니다.
+
+1. 도착과 관리자 키보드 각성
+2. 첫 붕괴 문제
+3. 관리자 권한 I
+4. 관리자 권한 II
+5. 내부 관리자 통제 시스템이 원인임을 확인
+6. 기술 부채 역류
+7. 관리자 권한 III
+8. 루트 시스템 진입
+9. 최종 배포와 결말
+
+## 상태와 권위
+
+저장·재개는 `majorChoices`, `regionOutcomes`, `npcRelationships`, `canonicalFacts`, `unresolvedHooks`, `abilityUsageHistory`, `adminAccessAcquisitionHistory`, `technicalDebtEntries`를 보존합니다. 기술 부채는 원인·지연 결과·해소 근거를 가진 ledger이며 일반 성공으로 자동 감소하지 않습니다.
+
+Rule Engine이 geometry, 경로, 점유, 합법성, D20, 자원, 권한, 사실, 부채와 `endingId`를 확정합니다. Gemini는 bounded structured output과 확정 결과의 짧은 서술만 제안하며, 1회 재시도 후 결정적 폴백을 사용합니다. 비용 기본값은 `gemini-2.5-flash-lite`, thinking budget 0, 작은 context와 출력입니다.
 
 ## 레퍼런스 이미지 경계
 
-유지할 수 있는 것은 큰 중앙 맵, 상단 상태 바, 우측 로그·목표·D20 레일, 하단 명령 덱, 따뜻한 목재·금속 픽셀 감각입니다. 이미지의 세계, 캐릭터, 지형 구성, 적, 퀘스트, 재화, 문구와 정확한 좌표는 복사하거나 제품 설정으로 추론하지 않습니다.
+큰 중앙 맵, 상단 상태, 우측 정보 레일, 하단 명령 덱, 따뜻한 픽셀 재질과 정보 밀도만 참고할 수 있습니다. 이미지의 세계, 캐릭터, 적, 퀘스트, 문구, 아이콘 의미, 재화와 레벨 배치는 복사하거나 제품 사실로 추론하지 않습니다.
 
-## 허용되지 않는 구현 가정
+## 금지되는 구현
 
-- 런마다 이름만 바뀌는 단일 고정 줄거리
-- 매 턴 LLM이 새 타일·경로·출구·POI를 만드는 방식
-- 이동 한 칸마다 의미 턴과 D20을 소비하는 방식
-- 바이옴과 서사 역할을 같은 열거형으로 취급하는 방식
-- LLM이 좌표, 에셋 경로, 주사위, 보상, 마일스톤 또는 결말을 직접 확정하는 방식
-- 레퍼런스 이미지의 콘텐츠를 프로젝트의 세계관이나 레벨 설계로 사용하는 방식
+- 매 턴 LLM이 타일, 경로, POI 또는 지역을 생성하는 구조
+- 지역 축과 물리 바이옴을 같은 열거형으로 취급하는 구조
+- Attack, Interact, Negotiate, Rest 또는 자유 입력을 새 권위 행동으로 추가하는 구조
+- 자연어 메모가 없으면 행동할 수 없는 UI
+- LLM이 권한, 핵심 사실, 기술 부채 해소, D20 또는 결말을 직접 확정하는 구조
+- `NinjaGreen`이나 레퍼런스 이미지의 콘텐츠를 제품 컨셉으로 사용하는 구조

@@ -310,6 +310,7 @@ namespace KeyboardWanderer.Networking
         [Serializable]
         public sealed class WorldSnapshot
         {
+            public string worldId;
             public string generatorVersion;
             public string worldName;
             public string worldNameKo;
@@ -365,6 +366,11 @@ namespace KeyboardWanderer.Networking
         {
             public string id;
             public string title;
+            public string worldId;
+            public string worldName;
+            public string protagonistId;
+            public string protagonistName;
+            public string artifactId;
             public string generatedTitle;
             public string generatedTitleKo;
             public long worldSeed;
@@ -547,6 +553,32 @@ namespace KeyboardWanderer.Networking
         }
 
         [Serializable]
+        public sealed class TechnicalDebtEntrySnapshot
+        {
+            public string id;
+            public int turnNo;
+            public string skillId;
+            public string operationType;
+            public string targetId;
+            public bool forcedOverride;
+            public int debtDelta;
+            public string deferredConsequenceType;
+            public string resolvedAt;
+            public int resolvedTurn;
+        }
+
+        [Serializable]
+        public sealed class AdminAccessHistorySnapshot
+        {
+            public string accessLevelId;
+            public int level;
+            public string regionAxis;
+            public string actionContext;
+            public string skillId;
+            public int turnNo;
+        }
+
+        [Serializable]
         public sealed class AccessTokenSnapshot
         {
             public string id;
@@ -638,7 +670,11 @@ namespace KeyboardWanderer.Networking
             public string id;
             public string campaignId;
             public string campaignTitle;
+            public string worldId;
             public string worldName;
+            public string protagonistId;
+            public string protagonistName;
+            public string artifactId;
             public string archetype;
             public string premise;
             public string status;
@@ -685,6 +721,12 @@ namespace KeyboardWanderer.Networking
             public NpcRelationshipSnapshot[] npcRelationships;
             public NpcMemorySnapshot[] npcMemories;
             public RestoreCandidateSnapshot[] restoreCandidates;
+            public TechnicalDebtEntrySnapshot[] technicalDebtEntries;
+            public AdminAccessHistorySnapshot[] adminAccessHistory;
+            public string[] majorChoices;
+            public string[] regionOutcomes;
+            public string[] abilityUsageHistory;
+            public string[] unresolvedHooks;
         }
 
         [Serializable]
@@ -786,6 +828,10 @@ namespace KeyboardWanderer.Networking
             public string runId;
             public int turnNo;
             public string normalizedAttempt;
+            public string inputType;
+            public string skillId;
+            public string actionContext;
+            public string[] targetIds;
             public DiceSnapshot dice;
             public int mechanicalScore;
             public string outcome;
@@ -1050,9 +1096,30 @@ namespace KeyboardWanderer.Networking
             string intent,
             Action<Result<CommittedTurn>> completed)
         {
-            string body = BuildTurnJson(idempotencyKey, expectedRunVersion, ability, targetEntityId,
-                secondaryTargetEntityId, destination, intent);
-            yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/turns", body, raw =>
+            var targetIds = new List<string>();
+            if (!string.IsNullOrWhiteSpace(targetEntityId)) targetIds.Add(targetEntityId);
+            if (!string.IsNullOrWhiteSpace(secondaryTargetEntityId)) targetIds.Add(secondaryTargetEntityId);
+            yield return SubmitAction(runId, idempotencyKey, expectedRunVersion, ability,
+                targetIds.ToArray(), destination, completed);
+        }
+
+        public IEnumerator SubmitAction(
+            string runId,
+            string idempotencyKey,
+            long expectedRunVersion,
+            string skillId,
+            string[] targetIds,
+            PositionSnapshot destination,
+            Action<Result<CommittedTurn>> completed)
+        {
+            if (!IsCanonicalSkillId(skillId))
+            {
+                completed?.Invoke(Result<CommittedTurn>.Failure(0, "INVALID_SKILL",
+                    "USE_SKILL accepts only COPY, DELETE, CONNECT, RESTORE, or UNDO."));
+                yield break;
+            }
+            string body = BuildActionJson(idempotencyKey, expectedRunVersion, skillId, targetIds, destination);
+            yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/actions", body, raw =>
             {
                 TurnEnvelope envelope = raw.Success ? SafeParse<TurnEnvelope>(raw.Json) : null;
                 if (envelope?.turn == null || envelope.run == null)
@@ -1075,7 +1142,17 @@ namespace KeyboardWanderer.Networking
             string intent,
             Action<Result<CommittedNavigation>> completed)
         {
-            string body = BuildTravelJson(idempotencyKey, expectedRunVersion, destination, intent);
+            yield return SubmitTravel(runId, idempotencyKey, expectedRunVersion, destination, completed);
+        }
+
+        public IEnumerator SubmitTravel(
+            string runId,
+            string idempotencyKey,
+            long expectedRunVersion,
+            PositionSnapshot destination,
+            Action<Result<CommittedNavigation>> completed)
+        {
+            string body = BuildTravelJson(idempotencyKey, expectedRunVersion, destination);
             yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/travel", body, raw =>
             {
                 NavigationEnvelope envelope = raw.Success ? SafeParse<NavigationEnvelope>(raw.Json) : null;
@@ -1194,47 +1271,60 @@ namespace KeyboardWanderer.Networking
             }
         }
 
-        private static string BuildTurnJson(
+        private static string BuildActionJson(
             string idempotencyKey,
             long expectedVersion,
-            string ability,
-            string targetEntityId,
-            string secondaryTargetEntityId,
-            PositionSnapshot destination,
-            string intent)
+            string skillId,
+            string[] targetIds,
+            PositionSnapshot destination)
         {
             var fields = new List<string>
             {
+                "\"inputType\":\"USE_SKILL\"",
                 "\"idempotencyKey\":\"" + EscapeJson(idempotencyKey) + "\"",
                 "\"expectedRunVersion\":" + expectedVersion.ToString(CultureInfo.InvariantCulture),
-                "\"ability\":\"" + EscapeJson((ability ?? string.Empty).ToLowerInvariant()) + "\""
+                "\"skillId\":\"" + EscapeJson((skillId ?? string.Empty).ToUpperInvariant()) + "\""
             };
-            if (!string.IsNullOrWhiteSpace(targetEntityId))
-                fields.Add("\"targetEntityId\":\"" + EscapeJson(targetEntityId) + "\"");
-            if (!string.IsNullOrWhiteSpace(secondaryTargetEntityId))
-                fields.Add("\"secondaryTargetEntityId\":\"" + EscapeJson(secondaryTargetEntityId) + "\"");
+            var encodedTargets = new List<string>();
+            if (targetIds != null)
+            {
+                for (int i = 0; i < targetIds.Length && i < 2; i++)
+                    if (!string.IsNullOrWhiteSpace(targetIds[i]))
+                        encodedTargets.Add("\"" + EscapeJson(targetIds[i]) + "\"");
+            }
+            fields.Add("\"targetIds\":[" + string.Join(",", encodedTargets) + "]");
             if (destination != null)
             {
                 fields.Add("\"destination\":{\"x\":" + destination.x.ToString(CultureInfo.InvariantCulture) +
                            ",\"y\":" + destination.y.ToString(CultureInfo.InvariantCulture) + "}");
             }
-            fields.Add("\"intent\":\"" + EscapeJson((intent ?? string.Empty).Trim()) + "\"");
             return "{" + string.Join(",", fields) + "}";
+        }
+
+        private static bool IsCanonicalSkillId(string skillId)
+        {
+            switch ((skillId ?? string.Empty).Trim().ToUpperInvariant())
+            {
+                case "COPY":
+                case "DELETE":
+                case "CONNECT":
+                case "RESTORE":
+                case "UNDO": return true;
+                default: return false;
+            }
         }
 
         private static string BuildTravelJson(
             string idempotencyKey,
             long expectedVersion,
-            PositionSnapshot destination,
-            string intent)
+            PositionSnapshot destination)
         {
             if (destination == null)
                 return string.Empty;
-            return "{\"idempotencyKey\":\"" + EscapeJson(idempotencyKey) + "\"," +
+            return "{\"inputType\":\"MOVE\",\"idempotencyKey\":\"" + EscapeJson(idempotencyKey) + "\"," +
                    "\"expectedRunVersion\":" + expectedVersion.ToString(CultureInfo.InvariantCulture) + "," +
                    "\"destination\":{\"x\":" + destination.x.ToString(CultureInfo.InvariantCulture) +
-                   ",\"y\":" + destination.y.ToString(CultureInfo.InvariantCulture) + "}," +
-                   "\"intent\":\"" + EscapeJson((intent ?? "safe exploration travel").Trim()) + "\"}";
+                   ",\"y\":" + destination.y.ToString(CultureInfo.InvariantCulture) + "}}";
         }
 
         private static string EscapeJson(string value)

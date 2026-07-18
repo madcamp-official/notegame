@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace KeyboardWanderer.Demo
 {
-    [CreateAssetMenu(fileName = "NinjaAdventureAssetManifest", menuName = "Keyboard Wanderer/Ninja Adventure Asset Manifest")]
+    [CreateAssetMenu(fileName = "NinjaAdventureAssetManifest", menuName = "Codria/Ninja Adventure Asset Manifest")]
     public sealed class NinjaAdventureAssetManifest : ScriptableObject
     {
         [HideInInspector]
@@ -41,6 +41,11 @@ namespace KeyboardWanderer.Demo
         public Sprite Crate;
         public Sprite TreasureChest;
         public Sprite D20;
+
+        [Header("Generated animator controllers")]
+        public RuntimeAnimatorController PlayerAnimatorController;
+        public RuntimeAnimatorController SlimeAnimatorController;
+        public RuntimeAnimatorController VillagerAnimatorController;
 
         [Header("Interface")]
         public Sprite WoodPanel;

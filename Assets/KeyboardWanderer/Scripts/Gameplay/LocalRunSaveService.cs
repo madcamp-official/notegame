@@ -12,8 +12,8 @@ namespace KeyboardWanderer.Gameplay
     /// </summary>
     public static class LocalRunSaveService
     {
-        private const string FileName = "keyboard-wanderer-save.json";
-        private const int CurrentSchemaVersion = 4;
+        private const string FileName = "codria-save-v4.json";
+        private const int CurrentSchemaVersion = 6;
 
         public static string SavePath => Path.Combine(Application.persistentDataPath, FileName);
         public static bool HasSave => File.Exists(SavePath);
@@ -40,7 +40,7 @@ namespace KeyboardWanderer.Gameplay
             }
             catch (Exception exception)
             {
-                Debug.LogWarning("Keyboard Wanderer save could not be loaded: " + exception.Message);
+                Debug.LogWarning("Codria save could not be loaded: " + exception.Message);
                 return null;
             }
         }
@@ -90,9 +90,7 @@ namespace KeyboardWanderer.Gameplay
             public string layoutHash;
             public string playerEntityId;
             public int enemiesDefeated;
-            // adminAccess is retained as a wire/save alias for schema v4 snapshots.
             public int adminAccess;
-            public int milestoneProgress;
             public int worldStability;
             public int worldAutonomy;
             public int publicTrust;
@@ -117,6 +115,10 @@ namespace KeyboardWanderer.Gameplay
             public List<string> rumors = new List<string>();
             public List<string> forbiddenEvents = new List<string>();
             public List<NpcData> npcStories = new List<NpcData>();
+            public List<DebtData> technicalDebtEntries = new List<DebtData>();
+            public List<AccessData> adminAccessHistory = new List<AccessData>();
+            public List<string> majorChoices = new List<string>();
+            public List<string> regionOutcomes = new List<string>();
 
             public string lastIntentText;
             public string lastNormalizedAttempt;
@@ -160,7 +162,6 @@ namespace KeyboardWanderer.Gameplay
                     playerEntityId = state.PlayerEntityId.ToString("N"),
                     enemiesDefeated = state.EnemiesDefeated,
                     adminAccess = state.AdminAccess,
-                    milestoneProgress = state.MilestoneProgress,
                     worldStability = state.WorldStability,
                     worldAutonomy = state.WorldAutonomy,
                     publicTrust = state.PublicTrust,
@@ -181,6 +182,8 @@ namespace KeyboardWanderer.Gameplay
                     openLoops = new List<string>(state.OpenLoops),
                     rumors = new List<string>(state.Rumors),
                     forbiddenEvents = new List<string>(state.ForbiddenEvents),
+                    majorChoices = new List<string>(state.MajorChoices),
+                    regionOutcomes = new List<string>(state.RegionOutcomes),
                     lastIntentText = state.LastIntentText,
                     lastNormalizedAttempt = state.LastNormalizedAttempt,
                     lastRollRaw = state.LastRollRaw,
@@ -203,6 +206,10 @@ namespace KeyboardWanderer.Gameplay
                     data.npcStories.Add(NpcData.FromState(state.NpcStories[i]));
                 for (int i = 0; i < state.RestorationLedger.Count; i++)
                     data.restorationLedger.Add(RestorationData.FromState(state.RestorationLedger[i]));
+                for (int i = 0; i < state.TechnicalDebtEntries.Count; i++)
+                    data.technicalDebtEntries.Add(DebtData.FromState(state.TechnicalDebtEntries[i]));
+                for (int i = 0; i < state.AdminAccessAcquisitionHistory.Count; i++)
+                    data.adminAccessHistory.Add(AccessData.FromState(state.AdminAccessAcquisitionHistory[i]));
                 data.lastReversibleTurn = state.LastReversibleTurn == null
                     ? null
                     : UndoData.FromState(state.LastReversibleTurn);
@@ -245,7 +252,7 @@ namespace KeyboardWanderer.Gameplay
                     LastIntentAlignment = lastIntentAlignment,
                     LastOutcome = (RuleOutcome)lastOutcome,
                     LastOutcomeExplanation = lastOutcomeExplanation ?? string.Empty,
-                    MilestoneProgress = Math.Max(adminAccess, milestoneProgress),
+                    AdminAccess = adminAccess,
                     WorldStability = worldStability,
                     WorldAutonomy = worldAutonomy,
                     PublicTrust = publicTrust,
@@ -268,6 +275,12 @@ namespace KeyboardWanderer.Gameplay
                 state.IntentHistory.AddRange(intentHistory ?? new List<string>());
                 for (int i = 0; i < restorationLedger.Count; i++)
                     state.RestorationLedger.Add(restorationLedger[i].ToState(region.RegionId));
+                for (int i = 0; i < technicalDebtEntries.Count; i++)
+                    state.TechnicalDebtEntries.Add(technicalDebtEntries[i].ToState());
+                for (int i = 0; i < adminAccessHistory.Count; i++)
+                    state.AdminAccessAcquisitionHistory.Add(adminAccessHistory[i].ToState());
+                state.MajorChoices.AddRange(majorChoices ?? new List<string>());
+                state.RegionOutcomes.AddRange(regionOutcomes ?? new List<string>());
                 state.LastReversibleTurn = lastReversibleTurn == null
                     ? null
                     : lastReversibleTurn.ToState(region.RegionId);
@@ -288,8 +301,9 @@ namespace KeyboardWanderer.Gameplay
             public string title;
             public string objective;
             public int triggerAbility;
+            public int requiredContext;
             public string roleId;
-            public string milestoneTokenId;
+            public string adminAccessRewardId;
             public bool required;
             public bool completed;
             public bool skipped;
@@ -299,8 +313,9 @@ namespace KeyboardWanderer.Gameplay
             public static BeatData FromState(CampaignBeatState state)
             {
                 return new BeatData { id = state.Id, title = state.Title, objective = state.Objective,
-                    triggerAbility = (int)state.TriggerAbility, required = state.IsRequired,
-                    roleId = state.RoleId, milestoneTokenId = state.MilestoneTokenId,
+                    triggerAbility = (int)state.TriggerAbility, requiredContext = (int)state.RequiredContext,
+                    required = state.IsRequired,
+                    roleId = state.RoleId, adminAccessRewardId = state.AdminAccessRewardId,
                     completed = state.IsCompleted, skipped = state.IsSkipped,
                     resolvedTurn = state.ResolvedTurn, resolution = state.Resolution };
             }
@@ -308,9 +323,62 @@ namespace KeyboardWanderer.Gameplay
             public CampaignBeatState ToState()
             {
                 return new CampaignBeatState(id, title, objective, (AbilityKind)triggerAbility, required,
-                    roleId, milestoneTokenId)
+                    roleId, adminAccessRewardId, (ActionContext)requiredContext)
                 { IsCompleted = completed, IsSkipped = skipped, ResolvedTurn = resolvedTurn,
                     Resolution = resolution ?? string.Empty };
+            }
+        }
+
+        [Serializable]
+        private sealed class DebtData
+        {
+            public string id;
+            public int turnNo;
+            public int skill;
+            public string operationType;
+            public string targetId;
+            public bool forcedOverride;
+            public int debtDelta;
+            public string deferredConsequenceType;
+            public int resolvedTurn;
+
+            public static DebtData FromState(TechnicalDebtEntry state)
+            {
+                return new DebtData { id = state.Id, turnNo = state.TurnNo, skill = (int)state.Skill,
+                    operationType = state.OperationType, targetId = state.TargetId,
+                    forcedOverride = state.ForcedOverride, debtDelta = state.DebtDelta,
+                    deferredConsequenceType = state.DeferredConsequenceType,
+                    resolvedTurn = state.ResolvedTurn };
+            }
+
+            public TechnicalDebtEntry ToState()
+            {
+                return new TechnicalDebtEntry(id, turnNo, (AbilityKind)skill, operationType, targetId,
+                    forcedOverride, debtDelta, deferredConsequenceType) { ResolvedTurn = resolvedTurn };
+            }
+        }
+
+        [Serializable]
+        private sealed class AccessData
+        {
+            public int level;
+            public string accessId;
+            public string regionAxis;
+            public int context;
+            public int skill;
+            public int turnNo;
+
+            public static AccessData FromState(AdminAccessAcquisitionRecord state)
+            {
+                return new AccessData { level = state.Level, accessId = state.AccessId,
+                    regionAxis = state.RegionAxis, context = (int)state.Context,
+                    skill = (int)state.Skill, turnNo = state.TurnNo };
+            }
+
+            public AdminAccessAcquisitionRecord ToState()
+            {
+                return new AdminAccessAcquisitionRecord(level, accessId, regionAxis,
+                    (ActionContext)context, (AbilityKind)skill, turnNo);
             }
         }
 

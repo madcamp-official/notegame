@@ -63,17 +63,27 @@ namespace KeyboardWanderer.Gameplay
                 return StoreFailure(request, fingerprint, TurnErrorCode.RunVersionConflict,
                     "Run version is stale. Refresh authoritative state.");
 
-            if (IsPlayerExplorationMove(_state, request) && !_state.HasActiveEncounter)
+            if (IsPlayerExplorationMove(_state, request))
             {
                 if (TryPrepareSafeExplorationMove(_state, request, out RulePreparation safeTravel))
                     return CommitSafeTravel(request, fingerprint, safeTravel);
-                if (CanOpenTravelEncounter(_state, request))
+                if (_state.HasActiveEncounter)
+                {
+                    RulePreparation reposition = _ruleEngine.Prepare(_state, request);
+                    if (reposition.IsValid)
+                        return CommitSafeTravel(request, fingerprint, reposition);
+                }
+                if (!_state.HasActiveEncounter && CanOpenTravelEncounter(_state, request))
                     return CommitTravelEncounter(request, fingerprint);
             }
 
             RulePreparation preparation = _ruleEngine.Prepare(_state, request);
             if (!preparation.IsValid)
                 return StoreFailure(request, fingerprint, preparation.ErrorCode, preparation.ErrorMessage);
+            ActionContext actionContext = RuleEngine.ClassifyAction(_state, request);
+            if (!RuleEngine.ConsumesCampaignTurn(actionContext))
+                return StoreFailure(request, fingerprint, TurnErrorCode.InvalidRequest,
+                    "Only COMBAT, INVESTIGATION, NEGOTIATION, and DEPLOYMENT actions consume a campaign turn.");
 
             int rawD20 = _d20.Roll();
             int mechanicalScore = rawD20 + preparation.Modifier - preparation.Difficulty;
@@ -90,15 +100,15 @@ namespace KeyboardWanderer.Gameplay
             GridCoord beforePosition = GetPlayer(working).Position;
             string beforeArea = AreaId(working, beforePosition);
 
-            working.RecordIntent(nextTurn, request.Ability, request.IntentText);
+            working.RecordIntent(nextTurn, request.Ability, preparation.NormalizedAttempt);
             List<string> events = _ruleEngine.Apply(working, request, preparation, outcome, nextTurn);
             ApplyHazard(working, events);
             ApplyEnemyPhase(working, nextTurn, events);
 
             working.CurrentTurn = nextTurn;
             working.Version++;
-            CampaignDirector.ProcessCommittedTurn(working, request, outcome, nextTurn, events);
-            if (working.HasActiveEncounter && IsEncounterResolutionAction(request.Ability))
+            CampaignDirector.ProcessCommittedTurn(working, request, actionContext, outcome, nextTurn, events);
+            if (working.HasActiveEncounter && RuleEngine.ConsumesCampaignTurn(actionContext))
             {
                 working.HasActiveEncounter = false;
                 working.ActiveEncounterReason = string.Empty;
@@ -124,14 +134,14 @@ namespace KeyboardWanderer.Gameplay
             if (player.Health <= 0)
             {
                 working.Status = RunStatus.Dead;
-                working.EndingCode = "FALLEN_IN_" + working.CampaignId.ToUpperInvariant().Replace('.', '_').Replace('-', '_');
+                working.EndingCode = CampaignCatalog.FallbackEndingCode;
                 events.Add("RUN_FAILED:" + working.EndingCode);
             }
             else
             {
                 string selectedEnding = CampaignDirector.SelectEnding(working);
                 bool finaleWindowOpen = working.CurrentTurn >= Math.Max(6, working.TurnLimit - 12);
-                bool finaleResolved = finaleWindowOpen && working.MilestoneProgress >= 3 &&
+                bool finaleResolved = finaleWindowOpen && working.AdminAccess >= 3 &&
                                       working.CurrentBeat == null &&
                                       !string.Equals(selectedEnding, CampaignCatalog.FallbackEndingCode,
                                           StringComparison.Ordinal);
@@ -150,7 +160,7 @@ namespace KeyboardWanderer.Gameplay
                     (working.Region.AreaAt(player.Position)?.DisplayName ?? afterArea));
 
             CampaignConstraints constraints = CampaignDirector.Evaluate(working.CurrentTurn, working.TurnLimit);
-            string narrative = FallbackNarrative.Create(request.Ability, outcome, rawD20,
+            string narrative = FallbackNarrative.Create(request.Ability, actionContext, outcome, rawD20,
                 preparation.NormalizedAttempt, constraints, working.CampaignTitle,
                 working.CurrentBeat == null ? "결말" : working.CurrentBeat.Title, events);
             working.AddLog("[" + nextTurn + "턴 · D20 " + rawD20 + "] " + narrative);
@@ -166,7 +176,8 @@ namespace KeyboardWanderer.Gameplay
             _state = working;
             var response = TurnResponse.Success(nextTurn, rawD20, preparation.Modifier, preparation.Difficulty,
                 mechanicalScore, preparation.IntentAlignment, outcome, outcomeExplanation,
-                preparation.NormalizedAttempt, narrative, RuleEngine.ConsequenceBudget(rawD20), events, CurrentView);
+                preparation.NormalizedAttempt, narrative, RuleEngine.ConsequenceBudget(rawD20), events, CurrentView,
+                true, actionContext);
             _idempotency.Add(request.IdempotencyKey, new StoredTurn(fingerprint, response));
             return response;
         }
@@ -182,14 +193,16 @@ namespace KeyboardWanderer.Gameplay
             out RulePreparation preparation)
         {
             preparation = null;
-            if (!IsPlayerExplorationMove(state, request) || string.IsNullOrWhiteSpace(request.IntentText) ||
+            if (!IsPlayerExplorationMove(state, request) ||
                 !state.Region.IsWalkable(request.Destination.Value))
                 return false;
             if (!state.Spatial.TryGetEntity(state.PlayerEntityId, out EntityState player) ||
                 player.Position == request.Destination.Value)
                 return false;
             WorldArea destinationArea = state.Region.AreaAt(request.Destination.Value);
-            if (destinationArea != null && destinationArea.RequiredAdminAccess > state.MilestoneProgress)
+            if (destinationArea != null && destinationArea.RequiredAdminAccess > state.AdminAccess)
+                return false;
+            if (IsRootSystemArea(destinationArea) && !CampaignDirector.CanEnterRootSystem(state))
                 return false;
 
             List<GridCoord> path = GridPathfinder.FindPath(state.Region, player.Position, request.Destination.Value,
@@ -199,7 +212,7 @@ namespace KeyboardWanderer.Gameplay
                 return false;
             preparation = RulePreparation.Valid("Travel safely to " + request.Destination.Value + " through " +
                 (path.Count - 1) + " immutable-world steps", 0, 0, 0, path, player.EntityId)
-                .WithIntentAlignment(request.IntentText.Length >= 8 ? 2 : 1);
+                .WithIntentAlignment(0);
             return true;
         }
 
@@ -214,7 +227,9 @@ namespace KeyboardWanderer.Gameplay
                     return false;
             }
             WorldArea area = state.Region.AreaAt(coord);
-            if (area != null && area.RequiredAdminAccess > state.MilestoneProgress)
+            if (area != null && area.RequiredAdminAccess > state.AdminAccess)
+                return false;
+            if (IsRootSystemArea(area) && !CampaignDirector.CanEnterRootSystem(state))
                 return false;
             bool discovered = area != null && state.VisitedAreaIds.Contains(area.Id);
             return discovered || kind == TileKind.Dirt || kind == TileKind.Bridge;
@@ -222,11 +237,12 @@ namespace KeyboardWanderer.Gameplay
 
         private static bool CanOpenTravelEncounter(RunState state, TurnRequest request)
         {
-            if (!IsPlayerExplorationMove(state, request) || string.IsNullOrWhiteSpace(request.IntentText) ||
+            if (!IsPlayerExplorationMove(state, request) ||
                 !state.Region.IsWalkable(request.Destination.Value))
                 return false;
             WorldArea area = state.Region.AreaAt(request.Destination.Value);
-            return area == null || area.RequiredAdminAccess <= state.AdminAccess;
+            return area == null || area.RequiredAdminAccess <= state.AdminAccess &&
+                   (!IsRootSystemArea(area) || CampaignDirector.CanEnterRootSystem(state));
         }
 
         private TurnResponse CommitTravelEncounter(TurnRequest request, string fingerprint)
@@ -251,13 +267,14 @@ namespace KeyboardWanderer.Gameplay
                 working.VisitedAreaIds.Add(stagingArea.Id);
             working.TravelTime += travelSteps;
             working.Version++;
-            working.RecordIntent(working.CurrentTurn, request.Ability, request.IntentText);
+            working.RecordIntent(working.CurrentTurn, request.Ability,
+                "Safe travel stopped before " + destination);
             working.LastNormalizedAttempt = "Safe travel stopped at " + staging + " before " + destination;
             working.LastRollRaw = 0;
             working.LastRollModifier = 0;
             working.LastRollDifficulty = 0;
             working.LastMechanicalScore = 0;
-            working.LastIntentAlignment = request.IntentText.Length >= 8 ? 2 : 1;
+            working.LastIntentAlignment = 0;
             working.LastOutcome = RuleOutcome.Success;
             working.LastOutcomeExplanation = "안전 이동이 사건 앞에서 멈췄으며 D20과 의미 있는 캠페인 턴은 아직 소비하지 않았다.";
             var events = new List<string>
@@ -271,7 +288,9 @@ namespace KeyboardWanderer.Gameplay
             _state = working;
             var response = TurnResponse.Success(working.CurrentTurn, 0, 0, 0, 0,
                 working.LastIntentAlignment, RuleOutcome.Success, working.LastOutcomeExplanation,
-                working.LastNormalizedAttempt, "안전 구간 끝에서 사건이 열렸다.", 0, events, CurrentView, false);
+                working.LastNormalizedAttempt, "넙죽이는 안전 구간 끝에서 사건을 발견했다. " +
+                "다음 전투·조사·협상·배치 행동부터 D20과 캠페인 턴이 소비된다.", 0, events,
+                CurrentView, false, ActionContext.SafeTravel);
             _idempotency.Add(request.IdempotencyKey, new StoredTurn(fingerprint, response));
             return response;
         }
@@ -327,12 +346,6 @@ namespace KeyboardWanderer.Gameplay
             return "unsafe_or_blocked_route";
         }
 
-        private static bool IsEncounterResolutionAction(AbilityKind ability)
-        {
-            return ability == AbilityKind.Move || ability == AbilityKind.Attack ||
-                   ability == AbilityKind.Interact || ability == AbilityKind.Negotiate;
-        }
-
         private TurnResponse CommitSafeTravel(TurnRequest request, string fingerprint,
             RulePreparation preparation)
         {
@@ -340,7 +353,7 @@ namespace KeyboardWanderer.Gameplay
             string immutableLayoutHash = working.Region.LayoutHash;
             EntityState beforePlayer = GetPlayer(working);
             WorldArea beforeArea = working.Region.AreaAt(beforePlayer.Position);
-            working.RecordIntent(working.CurrentTurn, request.Ability, request.IntentText);
+            working.RecordIntent(working.CurrentTurn, request.Ability, preparation.NormalizedAttempt);
             List<string> events = _ruleEngine.Apply(working, request, preparation, RuleOutcome.Success,
                 working.CurrentTurn);
             WorldArea afterArea = working.Region.AreaAt(GetPlayer(working).Position);
@@ -368,7 +381,7 @@ namespace KeyboardWanderer.Gameplay
             var response = TurnResponse.Success(working.CurrentTurn, 0, 0, 0, 0,
                 preparation.IntentAlignment, RuleOutcome.Success, working.LastOutcomeExplanation,
                 preparation.NormalizedAttempt, "안전한 길을 따라 이미 생성된 같은 월드 안에서 이동했다.",
-                0, events, CurrentView, false);
+                0, events, CurrentView, false, ActionContext.SafeTravel);
             _idempotency.Add(request.IdempotencyKey, new StoredTurn(fingerprint, response));
             return response;
         }
@@ -378,7 +391,7 @@ namespace KeyboardWanderer.Gameplay
         {
             if (turnLimit < 30 || turnLimit > MaximumCampaignTurnLimit)
                 throw new ArgumentOutOfRangeException(nameof(turnLimit), "Turn limit must be between 30 and 50.");
-            RegionMap region = DeterministicRegionGenerator.Generate(worldSeed, "wanderer-world",
+            RegionMap region = DeterministicRegionGenerator.Generate(worldSeed, "codria-world",
                 DemoWorldWidth, DemoWorldHeight);
             CampaignBlueprint campaign = CampaignCatalog.Create(worldSeed);
             Guid runId = DeterministicGuid.Create("run:" + worldSeed + ":" + CampaignCatalog.RulesVersion);
@@ -407,9 +420,9 @@ namespace KeyboardWanderer.Gameplay
                 MaxFocus = 8,
                 Gold = 5
             };
-            state.Inventory.Add("키보드 편집 유물");
+            state.Inventory.Add(CampaignCatalog.AdministratorKeyboardName);
             CampaignDirector.Install(state, campaign, npcs);
-            state.AddLog("160x160 월드와 6개 지형 바이옴, 12개 관심 지점이 한 번 생성되었다. 이후에는 레이아웃을 다시 만들지 않는다.");
+            state.AddLog("코드리아의 160x160 월드와 6개 지형 바이옴은 런 시작 시 봉인되었다. 이후 geometry는 바뀌지 않는다.");
             state.AddLog(campaign.Title + " — " + campaign.Premise);
             return new LocalTurnService(state,
                 d20Source ?? new SeededD20Source(unchecked((int)worldSeed)));
@@ -421,13 +434,15 @@ namespace KeyboardWanderer.Gameplay
             Guid id = DeterministicGuid.Create(slot.Id + ":" + worldSeed);
             switch (slot.Id)
             {
-                case "slot-catalyst": return NewEntity(id, EntityKind.Prop, "artifact.keyboard", "키보드 편집 유물", false, true, false, false, 1, region, slot);
-                case "slot-milestone-1": return NewEntity(id, EntityKind.Prop, "story.milestone-token-1", "첫 번째 핵심 표식", false, true, false, false, 1, region, slot);
-                case "slot-milestone-2": return NewEntity(id, EntityKind.Prop, "story.milestone-token-2", "두 번째 핵심 표식", false, true, false, false, 1, region, slot);
-                case "slot-milestone-3": return NewEntity(id, EntityKind.Prop, "story.milestone-token-3", "세 번째 핵심 표식", false, true, false, false, 1, region, slot);
-                case "slot-milestone-3-echo": return NewEntity(id, EntityKind.Prop, "story.milestone-token-3.echo", "손상된 선택의 메아리", true, false, true, false, 2, region, slot);
-                case "slot-hidden-truth-primary": return NewEntity(id, EntityKind.Prop, "story.hidden-truth", "감춰진 진실의 주 기록", false, true, false, false, 1, region, slot);
-                case "slot-hidden-truth-backup": return NewEntity(id, EntityKind.Prop, "story.hidden-truth.backup", "남겨진 증언", false, true, false, false, 1, region, slot);
+                case "slot-catalyst": return NewEntity(id, EntityKind.Prop, CampaignCatalog.AdministratorKeyboardId, CampaignCatalog.AdministratorKeyboardName, false, true, false, false, 1, region, slot);
+                case "slot-admin-access-1": return NewEntity(id, EntityKind.Npc, "story.admin-access-1.negotiation", "권한 I 협력 관리자", true, true, false, false, 8, region, slot);
+                case "slot-admin-access-1-alt": return NewEntity(id, EntityKind.Prop, "story.admin-access-1.investigation", "권한 I 디버그 기록", false, true, false, false, 1, region, slot);
+                case "slot-admin-access-2": return NewEntity(id, EntityKind.Enemy, "story.admin-access-2.combat", "권한 II 교착 프로세스", true, false, false, true, 6, region, slot);
+                case "slot-admin-access-2-alt": return NewEntity(id, EntityKind.Npc, "story.admin-access-2.negotiation", "권한 II 중재 관리자", true, true, false, false, 8, region, slot);
+                case "slot-admin-access-3": return NewEntity(id, EntityKind.Prop, "story.admin-access-3.deployment", "권한 III 손상 레코드", false, true, false, false, 1, region, slot);
+                case "slot-admin-access-3-alt": return NewEntity(id, EntityKind.Prop, "story.admin-access-3.investigation", "권한 III 책임 기록", false, true, false, false, 1, region, slot);
+                case "slot-internal-failure-primary": return NewEntity(id, EntityKind.Prop, "story.internal-failure", "관리자 통제 내부 오류 기록", false, true, false, false, 1, region, slot);
+                case "slot-internal-failure-backup": return NewEntity(id, EntityKind.Prop, "story.internal-failure.backup", "남겨진 내부 오류 증언", false, true, false, false, 1, region, slot);
                 case "slot-finale-anchor": return NewEntity(id, EntityKind.Prop, "finale.anchor", "수렴의 닻", true, true, false, false, 10, region, slot);
                 case "slot-finale-safeguard": return NewEntity(id, EntityKind.Prop, "finale.safeguard", "보호막", true, true, false, false, 6, region, slot);
                 case "slot-finale-passage": return NewEntity(id, EntityKind.Prop, "finale.passage", "다음 세계의 통로", true, true, false, false, 6, region, slot);
@@ -581,11 +596,18 @@ namespace KeyboardWanderer.Gameplay
         {
             return state.Region.AreaAt(position)?.Id ?? "unknown";
         }
+
+        private static bool IsRootSystemArea(WorldArea area)
+        {
+            return area != null && string.Equals(area.CampaignRole, CampaignCatalog.RootSystemAxis,
+                StringComparison.Ordinal);
+        }
     }
 
     public static class FallbackNarrative
     {
-        public static string Create(AbilityKind ability, RuleOutcome outcome, int d20, string attempt,
+        public static string Create(AbilityKind ability, ActionContext actionContext, RuleOutcome outcome,
+            int d20, string attempt,
             CampaignConstraints constraints, string campaignTitle, string currentBeat,
             IReadOnlyList<string> events = null)
         {
@@ -603,18 +625,33 @@ namespace KeyboardWanderer.Gameplay
                 default:
                     result = "명령은 실패했지만 세계의 고정 레이아웃과 사실은 훼손되지 않았다."; break;
             }
-            string pacing = constraints.MustAdvanceMainPlot
-                ? " 남은 턴이 줄어들며 ‘" + currentBeat + "’ 비트와 가능한 결말이 좁혀진다."
-                : string.Empty;
-            return "[" + campaignTitle + "] D20 " + d20 + " · " + ability + " — " + attempt + ". " +
-                   result + pacing;
+            string first = "넙죽이의 " + CampaignCatalog.ContextLabel(actionContext) + " 행동에서 D20 " + d20 +
+                " 판정이 " + KoreanOutcome(outcome) + "으로 확정되었다.";
+            string second = result;
+            string third = constraints.MustAdvanceMainPlot
+                ? "남은 턴이 줄어들며 ‘" + currentBeat + "’ 목표와 가능한 결말이 좁혀진다."
+                : "코드리아의 봉인된 geometry는 그대로 유지된다.";
+            return first + " " + second + " " + third;
         }
 
         // Compatibility overload for older callers while the UI/network layer migrates.
         public static string Create(AbilityKind ability, RuleOutcome outcome, int d20, string attempt,
             CampaignConstraints constraints, IReadOnlyList<string> events = null)
         {
-            return Create(ability, outcome, d20, attempt, constraints, "생성 캠페인", "현재 이야기", events);
+            return Create(ability, ActionContext.Investigation, outcome, d20, attempt, constraints,
+                CampaignCatalog.CampaignTitle, "현재 이야기", events);
+        }
+
+        private static string KoreanOutcome(RuleOutcome outcome)
+        {
+            switch (outcome)
+            {
+                case RuleOutcome.CriticalSuccess: return "대성공";
+                case RuleOutcome.Success: return "성공";
+                case RuleOutcome.PartialSuccess: return "부분 성공";
+                case RuleOutcome.CriticalFailure: return "대실패";
+                default: return "실패";
+            }
         }
     }
 }

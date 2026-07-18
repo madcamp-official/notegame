@@ -1,7 +1,7 @@
 using System;
+using System.Collections;
 using System.Linq;
 using System.Reflection;
-using System.Collections;
 using KeyboardWanderer.Core;
 using KeyboardWanderer.Demo;
 using KeyboardWanderer.Gameplay;
@@ -30,31 +30,29 @@ namespace KeyboardWanderer.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator Controller_SubmitsFreeTextIntent_ThenSaveResumePreservesAuthoritativeState()
+        public IEnumerator Controller_SubmitsCanonicalSkill_AndResumePreservesAuthoritativeState()
         {
             RunState state = LocalTurnService.CreateDemo(7301).CreateSnapshot();
-            EntityState npc = state.Spatial.Entities.First(entity => entity.IsActive &&
-                entity.Kind == EntityKind.Npc);
-            MovePlayerNear(state, npc);
+            EntityState keyboard = state.Spatial.Entities.Single(entity =>
+                entity.AssetId == CampaignCatalog.AdministratorKeyboardId);
             var service = new LocalTurnService(state, new SequenceD20Source(20));
 
-            _controllerObject = new GameObject("KeyboardWanderer Controller PlayMode Test");
+            _controllerObject = new GameObject("Codria Controller PlayMode Test");
             KeyboardWandererDemoController controller =
                 _controllerObject.AddComponent<KeyboardWandererDemoController>();
             yield return null;
 
             Invoke(controller, "StartRun", service, false);
             SetField(controller, "_gmEnabled", false);
-            SetField(controller, "_ability", AbilityKind.Negotiate);
-            SetField(controller, "_selectedTarget", (Guid?)npc.EntityId);
-            SetField(controller, "_intent", "서로 지킬 조건을 먼저 듣고 강제 없는 해결책을 제안한다");
+            SetField(controller, "_ability", AbilityKind.Copy);
+            SetField(controller, "_selectedTarget", (Guid?)keyboard.EntityId);
             Invoke(controller, "Submit");
             yield return null;
 
             Assert.That(service.CurrentView.CurrentTurn, Is.EqualTo(1));
-            Assert.That(service.CurrentView.LastIntentText,
-                Is.EqualTo("서로 지킬 조건을 먼저 듣고 강제 없는 해결책을 제안한다"));
-            Assert.That(service.CurrentView.IntentHistory.Last(), Does.Contain("강제 없는 해결책"));
+            Assert.That(service.CurrentView.LastIntentText, Does.Contain("관리자 키보드"));
+            Assert.That(service.CurrentView.LastIntentAlignment, Is.Zero);
+            Assert.That(service.CurrentView.Region.LayoutHash, Is.Not.Empty);
 
             string json = LocalRunSaveService.Serialize(service);
             LocalTurnService resumed = LocalRunSaveService.Deserialize(json);
@@ -64,43 +62,40 @@ namespace KeyboardWanderer.Tests.PlayMode
             Assert.That(resumed.CurrentView.Region.LayoutHash, Is.EqualTo(service.CurrentView.Region.LayoutHash));
         }
 
-        [Test]
-        public void RunDto_ParsesGeneratedCampaignAndNavigationState()
+        [UnityTest]
+        public IEnumerator Controller_OffersTwoOrThreeCanonicalRecommendationsAndAtMostTwoSecondaryObjectives()
         {
-            const string json = "{\"campaignTitle\":\"Seed 이야기\",\"premise\":\"생성된 전제\"," +
-                                "\"safeTravelCount\":4,\"currentBeat\":\"숨은 진실\"," +
-                                "\"endingCode\":\"MEMORY_REWEAVE\"}";
-            GameApiClient.RunSnapshot run = JsonUtility.FromJson<GameApiClient.RunSnapshot>(json);
+            LocalTurnService service = LocalTurnService.CreateDemo(7302);
+            _controllerObject = new GameObject("Codria Low Cognitive UI Test");
+            KeyboardWandererDemoController controller =
+                _controllerObject.AddComponent<KeyboardWandererDemoController>();
+            yield return null;
 
-            Assert.That(run.campaignTitle, Is.EqualTo("Seed 이야기"));
-            Assert.That(run.premise, Is.EqualTo("생성된 전제"));
-            Assert.That(run.safeTravelCount, Is.EqualTo(4));
-            Assert.That(run.currentBeat, Is.EqualTo("숨은 진실"));
-            Assert.That(run.endingCode, Is.EqualTo("MEMORY_REWEAVE"));
+            Invoke(controller, "StartRun", service, false);
+            var actions = (AbilityKind[])Invoke(controller, "RecommendedActions", service.CurrentView);
+            string secondary = (string)Invoke(controller, "SecondaryObjectiveText", service.CurrentView);
+
+            Assert.That(actions.Length, Is.InRange(2, 3));
+            Assert.That(actions.All(action => action == AbilityKind.Move ||
+                TurnRequest.IsPublicKeyboardSkill(action)), Is.True);
+            Assert.That(secondary.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length,
+                Is.LessThanOrEqualTo(2));
         }
 
-        private static void MovePlayerNear(RunState state, EntityState target)
+        [Test]
+        public void RunDto_ParsesCodriaCampaignAndSharedEndingState()
         {
-            for (int distance = 1; distance <= 2; distance++)
-            {
-                for (int y = target.Position.Y - distance; y <= target.Position.Y + distance; y++)
-                {
-                    for (int x = target.Position.X - distance; x <= target.Position.X + distance; x++)
-                    {
-                        var candidate = new GridCoord(x, y);
-                        if (candidate.ManhattanDistance(target.Position) != distance ||
-                            !state.Region.IsWalkable(candidate) ||
-                            state.Spatial.IsBlockingOccupied(state.Region.RegionId, candidate, 0,
-                                state.PlayerEntityId)) continue;
-                        MoveResult result = state.Spatial.TryMove(state.PlayerEntityId,
-                            state.Region.RegionId, candidate, 0, (regionId, coord) =>
-                                regionId == state.Region.RegionId && state.Region.IsWalkable(coord));
-                        Assert.That(result.IsSuccess, Is.True);
-                        return;
-                    }
-                }
-            }
-            Assert.Fail("No empty coordinate near NPC for PlayMode fixture.");
+            const string json = "{\"campaignTitle\":\"넙죽이와 붕괴한 코드 왕국\"," +
+                                "\"premise\":\"코드리아 붕괴 복구\",\"safeTravelCount\":4," +
+                                "\"currentBeat\":\"관리자 통제 시스템 내부 원인 확인\"," +
+                                "\"endingCode\":\"ENDING_PRESERVE_THE_SCARS\"}";
+            GameApiClient.RunSnapshot run = JsonUtility.FromJson<GameApiClient.RunSnapshot>(json);
+
+            Assert.That(run.campaignTitle, Is.EqualTo("넙죽이와 붕괴한 코드 왕국"));
+            Assert.That(run.premise, Is.EqualTo("코드리아 붕괴 복구"));
+            Assert.That(run.safeTravelCount, Is.EqualTo(4));
+            Assert.That(run.currentBeat, Does.Contain("내부 원인"));
+            Assert.That(run.endingCode, Is.EqualTo("ENDING_PRESERVE_THE_SCARS"));
         }
 
         private static object Invoke(object target, string name, params object[] values)

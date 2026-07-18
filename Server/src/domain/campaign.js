@@ -1,11 +1,23 @@
 import { createHash } from "node:crypto";
 import { assert } from "../errors.js";
+import {
+  ADMIN_ACCESS_LEVELS,
+  ADMIN_KEYBOARD,
+  ADMIN_KEYBOARD_NAME_KO,
+  CAMPAIGN_REGION_AXES,
+  GAME_TITLE,
+  PROTAGONIST_NAME_KO,
+  PROTAGONIST_NUPJUKYI,
+  WORLD_CODRIA,
+  WORLD_NAME_KO,
+  endingFactors
+} from "./codria-contract.js";
 import { clone, deterministicUuid, fingerprint } from "./serialization.js";
 
-export const CAMPAIGN_TEMPLATE_VERSION = "generative-campaign.v1";
-export const CAMPAIGN_ARCHETYPE = "generative-keyboard-fantasy";
-export const CAMPAIGN_TITLE = "키보드 방랑자의 미지 세계";
-export const WORLD_NAME = "미지의 격자권";
+export const CAMPAIGN_TEMPLATE_VERSION = "codria-campaign.v4";
+export const CAMPAIGN_ARCHETYPE = "codria-admin-keyboard-roguelike";
+export const CAMPAIGN_TITLE = GAME_TITLE;
+export const WORLD_NAME = WORLD_NAME_KO;
 
 export const GENERATIVE_ROLE_IDS = Object.freeze([
   "ARRIVAL_CATALYST",
@@ -17,35 +29,36 @@ export const GENERATIVE_ROLE_IDS = Object.freeze([
 ]);
 
 export const PROGRESS_TOKEN_DEFINITIONS = Object.freeze([
-  Object.freeze({ id: "MILESTONE_TOKEN_1", name: "첫 이정표", meaning: "지역의 문제와 연결되었다는 증표", progressLevel: 1, sourceRole: "LOCAL_STAKES" }),
-  Object.freeze({ id: "MILESTONE_TOKEN_2", name: "둘째 이정표", meaning: "관계의 교착을 통과했다는 증표", progressLevel: 2, sourceRole: "RELATIONSHIP_CONFLICT" }),
-  Object.freeze({ id: "MILESTONE_TOKEN_3", name: "셋째 이정표", meaning: "선택의 결과를 받아들였다는 증표", progressLevel: 3, sourceRole: "CONSEQUENCE_RETURN" })
+  Object.freeze({ ...ADMIN_ACCESS_LEVELS[0], name: ADMIN_ACCESS_LEVELS[0].nameKo, meaning: "코드리아의 지역 문제를 해결해 획득한 첫 관리자 권한", progressLevel: 1, sourceRole: "LOCAL_STAKES" }),
+  Object.freeze({ ...ADMIN_ACCESS_LEVELS[1], name: ADMIN_ACCESS_LEVELS[1].nameKo, meaning: "서로 충돌하는 객체 관계를 조정해 획득한 둘째 관리자 권한", progressLevel: 2, sourceRole: "RELATIONSHIP_CONFLICT" }),
+  Object.freeze({ ...ADMIN_ACCESS_LEVELS[2], name: ADMIN_ACCESS_LEVELS[2].nameKo, meaning: "기술 부채의 결과를 책임지고 획득한 셋째 관리자 권한", progressLevel: 3, sourceRole: "CONSEQUENCE_RETURN" })
 ]);
 
 export const METRIC_KEYS = Object.freeze(["worldStability", "worldAutonomy", "publicTrust", "technicalDebt", "companionBond", "turnPressure"]);
 
 export const CAMPAIGN_PHASES = Object.freeze([
-  Object.freeze({ id: "arrival", name: "Arrival", nameKo: "낯선 세계의 징후" }),
-  Object.freeze({ id: "local_stakes", name: "Local stakes", nameKo: "눈앞의 삶과 대가" }),
-  Object.freeze({ id: "relationship_conflict", name: "Relationship conflict", nameKo: "얽힌 약속의 충돌" }),
-  Object.freeze({ id: "hidden_truth", name: "Hidden truth", nameKo: "감춰진 원인의 발견" }),
-  Object.freeze({ id: "consequence_return", name: "Consequence return", nameKo: "되돌아온 선택" }),
-  Object.freeze({ id: "final_convergence", name: "Final convergence", nameKo: "모든 갈래의 수렴" })
+  Object.freeze({ id: "codria_crash", name: "Codria crash", nameKo: "코드리아 추락과 관리자 키보드 각성" }),
+  Object.freeze({ id: "first_region_problem", name: "First region problem", nameKo: "붕괴 현상과 첫 지역 문제" }),
+  Object.freeze({ id: "admin_access_1", name: "Admin access I", nameKo: "관리자 권한 I 획득" }),
+  Object.freeze({ id: "admin_access_2", name: "Admin access II", nameKo: "관리자 권한 II 획득" }),
+  Object.freeze({ id: "internal_cause", name: "Internal cause", nameKo: "관리자 통제 시스템 내부 원인 확인" }),
+  Object.freeze({ id: "technical_debt_return", name: "Technical debt return", nameKo: "기술 부채와 과거 선택의 역류" }),
+  Object.freeze({ id: "admin_access_3", name: "Admin access III", nameKo: "관리자 권한 III 획득" }),
+  Object.freeze({ id: "root_system_entry", name: "Root System entry", nameKo: "루트 시스템 진입" }),
+  Object.freeze({ id: "final_deployment", name: "Final deployment", nameKo: "최종 배치와 결말" })
 ]);
 
 const GENERATIVE_ALLOWED_ABILITIES = Object.freeze({
-  ARRIVAL_CATALYST: Object.freeze(["interact", "negotiate"]),
-  LOCAL_STAKES: Object.freeze(["copy", "interact"]),
-  RELATIONSHIP_CONFLICT: Object.freeze(["connect", "negotiate"]),
-  HIDDEN_TRUTH: Object.freeze(["interact", "negotiate"]),
-  CONSEQUENCE_RETURN: Object.freeze(["restore", "interact"]),
+  ARRIVAL_CATALYST: Object.freeze(["connect"]),
+  LOCAL_STAKES: Object.freeze(["copy", "restore"]),
+  RELATIONSHIP_CONFLICT: Object.freeze(["connect", "restore"]),
+  HIDDEN_TRUTH: Object.freeze(["copy", "connect"]),
+  CONSEQUENCE_RETURN: Object.freeze(["restore", "undo"]),
   FINAL_CONVERGENCE: Object.freeze(["connect", "delete"])
 });
 
 export const CAMPAIGN_ALLOWED_ABILITIES_BY_ROLE = GENERATIVE_ALLOWED_ABILITIES;
 
-const WORLD_PREFIXES = Object.freeze(["유리", "달그늘", "잉크", "종소리", "별실", "서리", "이끼", "황혼", "풍경", "메아리", "청동", "비늘"]);
-const WORLD_FORMS = Object.freeze(["군도", "수해", "회랑", "평원", "도서관", "고리", "분지", "정원", "천공로", "미궁"]);
 const MOTIFS = Object.freeze([
   { id: "borrowed_names", noun: "빌린 이름", image: "이름을 잃을수록 길이 선명해지는 표식" },
   { id: "sleeping_bells", noun: "잠든 종", image: "누군가의 약속에만 울리는 종소리" },
@@ -74,18 +87,12 @@ const DILEMMAS = Object.freeze([
 ]);
 const NPC_GIVEN_NAMES = Object.freeze(["라온", "모라", "해윰", "누리", "이든", "세온", "아라", "비오", "루미", "여울", "다온", "미르", "소담", "하람", "시안", "온결", "로하", "윤슬"]);
 const NPC_EPITHETS = Object.freeze(["금 간 나침반", "느린 종", "푸른 실", "마지막 등불", "거꾸로 쓴 편지", "작은 폭풍", "침묵의 지도", "따뜻한 열쇠"]);
-const TOKEN_NAMES = Object.freeze([
-  ["첫 약속의 조각", "머물렀던 자리의 표식", "생활의 매듭"],
-  ["함께 건넌 다리", "두 목소리의 인장", "갈등의 매듭"],
-  ["되돌아온 선택", "마지막 증언의 별", "결과의 매듭"]
-]);
-
 const ROLE_BLUEPRINTS = Object.freeze([
   { id: "ARRIVAL_CATALYST", npcRole: "낯선 이를 가장 먼저 알아본 길잡이", evidenceKey: "ARRIVAL_GUIDE", beatId: "beat.arrival_catalyst" },
-  { id: "LOCAL_STAKES", npcRole: "생활의 피해를 기록하는 공동체 대표", evidenceKey: "MILESTONE_TOKEN_1", beatId: "beat.local_stakes" },
-  { id: "RELATIONSHIP_CONFLICT", npcRole: "서로 다른 약속 사이에 선 중재자", evidenceKey: "MILESTONE_TOKEN_2", beatId: "beat.relationship_conflict" },
+  { id: "LOCAL_STAKES", npcRole: "생활의 피해를 기록하는 공동체 대표", evidenceKey: "ADMIN_ACCESS_LEVEL_1", beatId: "beat.local_stakes" },
+  { id: "RELATIONSHIP_CONFLICT", npcRole: "서로 다른 약속 사이에 선 중재자", evidenceKey: "ADMIN_ACCESS_LEVEL_2", beatId: "beat.relationship_conflict" },
   { id: "HIDDEN_TRUTH", npcRole: "감춰진 원인을 간직한 증언자", evidenceKey: "STORY_REVELATION", beatId: "beat.hidden_truth" },
-  { id: "CONSEQUENCE_RETURN", npcRole: "이전 선택의 결과를 들고 돌아온 생존자", evidenceKey: "MILESTONE_TOKEN_3", beatId: "beat.consequence_return" },
+  { id: "CONSEQUENCE_RETURN", npcRole: "이전 선택의 결과를 들고 돌아온 생존자", evidenceKey: "ADMIN_ACCESS_LEVEL_3", beatId: "beat.consequence_return" },
   { id: "FINAL_CONVERGENCE", npcRole: "마지막 선택들의 의미를 묻는 관찰자", evidenceKey: "FINALE_PUZZLE_RESOLVED", beatId: "beat.final_convergence" }
 ]);
 
@@ -133,11 +140,14 @@ export function campaignArchetypeIds() {
 function beatTurns(turnLimit) {
   return [
     1,
-    Math.max(5, Math.round(turnLimit * 0.16)),
-    Math.max(10, Math.round(turnLimit * 0.34)),
-    Math.max(17, Math.round(turnLimit * 0.56)),
-    Math.max(23, Math.round(turnLimit * 0.76)),
-    Math.max(28, Math.round(turnLimit * 0.92))
+    Math.max(3, Math.round(turnLimit * 0.10)),
+    Math.max(5, Math.round(turnLimit * 0.18)),
+    Math.max(8, Math.round(turnLimit * 0.30)),
+    Math.max(12, Math.round(turnLimit * 0.45)),
+    Math.max(17, Math.round(turnLimit * 0.60)),
+    Math.max(21, Math.round(turnLimit * 0.72)),
+    Math.max(25, Math.round(turnLimit * 0.84)),
+    Math.max(28, Math.round(turnLimit * 0.94))
   ];
 }
 
@@ -159,25 +169,20 @@ function seededOrder(seed, label, values) {
 }
 
 function createGenome(worldSeed) {
-  const prefix = pick(worldSeed, "world-prefix", WORLD_PREFIXES);
-  const form = pick(worldSeed, "world-form", WORLD_FORMS);
   const motif = pick(worldSeed, "motif", MOTIFS);
   const crisis = pick(worldSeed, "crisis", CRISES);
   const community = pick(worldSeed, "community", COMMUNITIES);
   const dilemma = pick(worldSeed, "dilemma", DILEMMAS);
-  const titlePattern = stableInteger(worldSeed, "title-pattern", 4);
-  const worldName = `${prefix}${form}`;
-  const titles = [
-    `${worldName}와 ${motif.noun}`,
-    `${motif.noun}의 키보드 방랑자`,
-    `${worldName}: 사라지는 길의 노래`,
-    `${community}와 ${motif.noun}`
-  ];
   return {
-    version: "campaign-genome.v1",
+    version: "codria-campaign-genome.v4",
     seed: worldSeed,
-    worldName,
-    title: titles[titlePattern],
+    worldId: WORLD_CODRIA,
+    worldName: WORLD_NAME_KO,
+    protagonistId: PROTAGONIST_NUPJUKYI,
+    protagonistName: PROTAGONIST_NAME_KO,
+    artifactId: ADMIN_KEYBOARD,
+    artifactName: ADMIN_KEYBOARD_NAME_KO,
+    title: GAME_TITLE,
     motifId: motif.id,
     motif: motif.noun,
     motifImage: motif.image,
@@ -188,21 +193,24 @@ function createGenome(worldSeed) {
     dilemma,
     palette: pick(worldSeed, "palette", ["moonlit_glass", "moss_and_copper", "ink_and_amber", "frosted_lilac", "storm_teal", "sunset_rust"]),
     companionTemperament: pick(worldSeed, "companion", ["겁이 많지만 질문을 멈추지 않는", "농담으로 불안을 숨기는", "모든 약속을 글자로 기록하는", "낯선 이를 먼저 믿어 보는", "위험 앞에서 지나치게 솔직해지는"]),
-    endingQuestion: dilemma
+    endingQuestion: dilemma,
+    regionAxes: [...CAMPAIGN_REGION_AXES]
   };
 }
 
 function progressTokenDefinitions(worldSeed, genome) {
-  const meanings = [
-    `${genome.community}의 일상에 직접 손을 보탠 기억`,
-    `${genome.motif} 아래 충돌하던 약속을 한 장면 안에 함께 남긴 증거`,
-    `${genome.hiddenCause}을 알고도 결과를 외면하지 않은 선택`
+  const acquisitionMethods = [
+    `${genome.community}의 지역 문제를 관리자 키보드로 해결`,
+    `${genome.motif} 아래 충돌하던 객체 관계를 조정`,
+    `${genome.hiddenCause}에서 비롯된 기술 부채의 결과를 책임지고 복구`
   ];
-  const nameFlavors = [genome.community, genome.motif, genome.worldName];
   return PROGRESS_TOKEN_DEFINITIONS.map((definition, index) => ({
     ...clone(definition),
-    name: `${pick(worldSeed, `token-name:${index}`, TOKEN_NAMES[index])} · ${nameFlavors[index]}`,
-    meaning: meanings[index]
+    name: definition.name,
+    nameKo: definition.nameKo,
+    meaning: definition.meaning,
+    acquisitionMethod: acquisitionMethods[index],
+    acquisitionVariant: stableInteger(worldSeed, `access-method:${index}`, 1_000_000)
   }));
 }
 
@@ -245,7 +253,7 @@ function createQuestSeeds(worldSeed, genome) {
       title: `${localObject}을 일상으로 돌려놓기`,
       description: `${genome.crisis} 속에서도 ${genome.community}가 포기하지 않은 생활의 물건을 찾아 안전하게 되돌린다.`,
       campaignRole: "LOCAL_STAKES",
-      suggestedAbilities: ["copy", "interact"],
+      suggestedAbilities: ["copy", "restore"],
       horizon: "early"
     },
     {
@@ -253,7 +261,7 @@ function createQuestSeeds(worldSeed, genome) {
       title: `${witness}에 남은 두 약속`,
       description: `갈등 당사자들이 같은 사건을 다르게 기억하는 이유를 수집하고 둘 모두가 인정할 연결점을 만든다.`,
       campaignRole: "RELATIONSHIP_CONFLICT",
-      suggestedAbilities: ["connect", "negotiate"],
+      suggestedAbilities: ["connect", "restore"],
       horizon: "middle"
     },
     {
@@ -261,7 +269,7 @@ function createQuestSeeds(worldSeed, genome) {
       title: `${genome.motif}가 되돌려 준 것`,
       description: `초반에 미뤄 둔 선택이 어떤 주민에게 돌아갔는지 확인하고 복구하거나 책임질 방법을 찾는다.`,
       campaignRole: "CONSEQUENCE_RETURN",
-      suggestedAbilities: ["restore", "interact"],
+      suggestedAbilities: ["restore", "undo"],
       horizon: "late"
     }
   ];
@@ -269,38 +277,31 @@ function createQuestSeeds(worldSeed, genome) {
 
 function createBeats(worldSeed, turnLimit, genome, tokens) {
   const targets = beatTurns(turnLimit);
-  const descriptions = [
-    `${genome.worldName}에 도착해 ${genome.motifImage}와 반응하는 지역 존재를 만나 첫 징후를 확인한다.`,
-    `${genome.crisis}으로 무너진 ${genome.community}의 생활을 직접 돕고 이 세계에 남을 이유를 얻는다.`,
-    `위기의 해법을 두고 충돌하는 약속들을 연결하거나 중재해 어느 관계를 감수할지 드러낸다.`,
-    `증언과 흔적을 모아 위기의 감춰진 원인이 '${genome.hiddenCause}'임을 확인한다.`,
-    `앞선 선택이 낳은 예상 밖의 결과가 돌아오면 복구와 책임 사이에서 실제 대가를 치른다.`,
-    `모든 인물과 증거가 모인 자리에서 '${genome.dilemma}'라는 질문에 공간 편집으로 답한다.`
+  const definitions = [
+    { id: "beat.codria_crash", role: "ARRIVAL_CATALYST", evidence: "ARRIVAL_GUIDE", abilities: ["connect"], title: "코드리아 추락과 각성", description: `넙죽이가 코드리아에 추락해 ${genome.motif}에 반응하는 관리자 키보드를 각성한다.` },
+    { id: "beat.first_region_problem", role: "LOCAL_STAKES", evidence: "LOCAL_DEBUG_RECORD", abilities: ["copy"], title: "첫 지역의 붕괴", description: `${genome.crisis}으로 무너진 ${genome.community}의 생활과 첫 지역 문제를 확인한다.` },
+    { id: "beat.admin_access_1", role: "LOCAL_STAKES", evidence: "ADMIN_ACCESS_LEVEL_1", abilities: ["copy", "delete", "connect", "restore"], reward: tokens[0], title: "관리자 권한 I", description: "서로 다른 지역과 방식 중 하나를 선택해 첫 관리자 권한을 획득한다." },
+    { id: "beat.admin_access_2", role: "RELATIONSHIP_CONFLICT", evidence: "ADMIN_ACCESS_LEVEL_2", abilities: ["copy", "delete", "connect", "restore"], reward: tokens[1], title: "관리자 권한 II", description: "관계의 교착과 지역 선택을 통과해 둘째 관리자 권한을 획득한다." },
+    { id: "beat.internal_cause", role: "HIDDEN_TRUTH", evidence: "STORY_REVELATION", abilities: ["copy", "connect"], title: "통제 시스템 내부의 원인", description: `붕괴 원인이 관리자 통제 시스템 내부의 '${genome.hiddenCause}'와 연결됐음을 확인한다.` },
+    { id: "beat.technical_debt_return", role: "CONSEQUENCE_RETURN", evidence: "LEGACY_RECOVERY_RECORD", abilities: ["connect"], title: "기술 부채의 역류", description: "관리자 키보드 편집이 남긴 기술 부채와 과거 선택의 결과를 주민 협력으로 회수한다." },
+    { id: "beat.admin_access_3", role: "CONSEQUENCE_RETURN", evidence: "ADMIN_ACCESS_LEVEL_3", abilities: ["copy", "delete", "connect", "restore"], reward: tokens[2], title: "관리자 권한 III", description: "대가를 감수한 해결 방식으로 마지막 관리자 권한을 획득한다." },
+    { id: "beat.root_system_entry", role: "FINAL_CONVERGENCE", evidence: "ROOT_SYSTEM_ENTERED", abilities: ["connect", "delete"], title: "루트 시스템 진입", description: "세 관리자 권한과 내부 원인 단서를 사용해 루트 시스템에 진입한다." },
+    { id: "beat.final_deployment", role: "FINAL_CONVERGENCE", evidence: "FINALE_PUZZLE_RESOLVED", abilities: ["connect", "delete"], finale: true, title: "최종 배치와 결말", description: `루트 시스템에서 '${genome.dilemma}'라는 질문에 최종 배치로 답한다.` }
   ];
-  const titles = [
-    `${genome.motif}의 반응`,
-    `${genome.community}의 오늘`,
-    "두 약속 사이의 길",
-    `${genome.hiddenCause}의 흔적`,
-    "되돌아온 선택의 무게",
-    `${genome.worldName}의 마지막 물음`
-  ];
-  const rewardByIndex = new Map([[1, tokens[0]], [2, tokens[1]], [4, tokens[2]]]);
-  return ROLE_BLUEPRINTS.map((definition, index) => {
-    const allowedAbilities = [...GENERATIVE_ALLOWED_ABILITIES[definition.id]];
-    const requiredAbility = pick(worldSeed, `beat-ability:${index}`, allowedAbilities);
-    const reward = rewardByIndex.get(index) || null;
+  return definitions.map((definition, index) => {
+    const requiredAbility = pick(worldSeed, `beat-ability:${index}`, definition.abilities);
+    const reward = definition.reward || null;
     return {
-      id: definition.beatId,
-      title: titles[index],
-      description: descriptions[index],
+      id: definition.id,
+      title: definition.title,
+      description: definition.description,
       phaseId: CAMPAIGN_PHASES[index].id,
       requiredAbility,
-      allowedAbilities,
-      requiredCampaignRole: definition.id,
-      requiredEvidenceKey: definition.evidenceKey,
-      requiredEvidencePolicy: index === ROLE_BLUEPRINTS.length - 1 ? "finale_resolved" : "designated_target",
-      recoveryPaths: allowedAbilities.map((ability) => ({ ability, requiresDesignatedEvidence: true })),
+      allowedAbilities: [...definition.abilities],
+      requiredCampaignRole: definition.role,
+      requiredEvidenceKey: definition.evidence,
+      requiredEvidencePolicy: definition.finale ? "finale_resolved" : "designated_target",
+      recoveryPaths: definition.abilities.map((ability) => ({ ability, requiresDesignatedEvidence: true })),
       rewardProgressToken: reward?.id || null,
       rewardProgressLevel: reward?.progressLevel ?? null,
       targetTurn: targets[index],
@@ -362,7 +363,7 @@ export function createCampaignBlueprint({ worldSeed, requestedArchetype = null, 
   for (const quest of questSeeds) quest.summary = quest.description;
   const requiredStoryBeats = createBeats(worldSeed, turnLimit, genome, tokens);
   const endingCandidates = createEndingCandidates(worldSeed, genome);
-  const premise = `키보드를 현실 편집 도구로 쓰는 방랑자가 ${genome.worldName}에 떨어진다. ${genome.crisis}을 멈추려면 ${genome.community}의 삶과 갈라진 관계를 통과해 '${genome.hiddenCause}'라는 진실을 마주하고, 끝내 ${genome.dilemma}.`;
+  const premise = `현실의 개발자 넙죽이가 코드리아에 추락해 관리자 키보드를 각성한다. ${genome.crisis}을 멈추려면 서로 다른 지역과 해결 방식으로 관리자 권한 3단계를 획득하고, 붕괴 원인이 관리자 통제 시스템 안에 있음을 밝혀 루트 시스템에서 ${genome.dilemma}.`;
   const tone = ["keyboard_fantasy", genome.palette, pick(worldSeed, "tone", ["tender_mystery", "melancholy_adventure", "hopeful_tension", "strange_folklore"] )];
 
   const blueprint = {
@@ -374,12 +375,20 @@ export function createCampaignBlueprint({ worldSeed, requestedArchetype = null, 
     worldSeed,
     generatedTitle: genome.title,
     generatedTitleKo: genome.title,
+    gameTitle: GAME_TITLE,
+    worldId: WORLD_CODRIA,
     worldName: genome.worldName,
+    protagonistId: PROTAGONIST_NUPJUKYI,
+    protagonistName: PROTAGONIST_NAME_KO,
+    artifactId: ADMIN_KEYBOARD,
+    artifactName: ADMIN_KEYBOARD_NAME_KO,
+    adminAccessLevels: clone(ADMIN_ACCESS_LEVELS),
+    regionAxes: [...CAMPAIGN_REGION_AXES],
     premise,
     premiseKo: premise,
     tone,
     genome,
-    forbiddenEvents: ["지도 재생성", "LLM 좌표·슬롯·에셋 변경", "주사위·피해·보상의 소급 변경", "서버 결말 레시피 변경", "NPC 기억의 강제 삭제"],
+    forbiddenEvents: ["코드리아가 아닌 세계 생성", "넙죽이가 아닌 주인공 생성", "관리자 권한 체계 대체", "지도 재생성", "LLM 좌표·슬롯·에셋 변경", "주사위·피해·보상의 소급 변경", "서버 결말 레시피 변경", "NPC 기억의 강제 삭제"],
     npcRoles,
     questSeeds,
     initialQuests: clone(questSeeds),
@@ -387,8 +396,10 @@ export function createCampaignBlueprint({ worldSeed, requestedArchetype = null, 
     metricDefinitions: [...METRIC_KEYS],
     campaignPhases: clone(CAMPAIGN_PHASES),
     canonicalFactTemplates: [
-      { id: deterministicUuid(`${worldSeed}:fact:world`), subject: "generated_world", predicate: "world_identity", value: `${genome.worldName}는 ${genome.motifImage}가 현실의 규칙에 영향을 주는 세계다.`, type: "canonical" },
-      { id: deterministicUuid(`${worldSeed}:fact:player`), subject: "player", predicate: "identity", value: "플레이어는 키보드의 Move, Copy, Delete, Connect, Restore, Undo 능력으로 현실을 편집하는 방랑자다.", type: "canonical" },
+      { id: deterministicUuid(`${worldSeed}:fact:world`), subject: "world", predicate: "identity", value: WORLD_CODRIA, label: WORLD_NAME_KO, type: "canonical" },
+      { id: deterministicUuid(`${worldSeed}:fact:player`), subject: "protagonist", predicate: "identity", value: PROTAGONIST_NUPJUKYI, label: PROTAGONIST_NAME_KO, type: "canonical" },
+      { id: deterministicUuid(`${worldSeed}:fact:artifact`), subject: "artifact", predicate: "identity", value: ADMIN_KEYBOARD, label: ADMIN_KEYBOARD_NAME_KO, type: "canonical" },
+      { id: deterministicUuid(`${worldSeed}:fact:collapse-origin`), subject: "collapse_origin", predicate: "inside_admin_control_system", value: false, type: "canonical" },
       { id: deterministicUuid(`${worldSeed}:fact:crisis`), subject: "campaign_crisis", predicate: "hidden_cause", value: `${genome.crisis}의 숨은 원인은 ${genome.hiddenCause}이다.`, type: "canonical" },
       { id: deterministicUuid(`${worldSeed}:fact:geometry`), subject: "world", predicate: "geometry_policy", value: "전체 월드는 런 시작 전에 한 번 생성되고 캠페인 턴 중 재생성되지 않는다.", type: "canonical" }
     ],
@@ -446,8 +457,10 @@ export function advanceStoryDirector(run, turnNo, events, evidence = {}) {
   let active = run.requiredStoryBeats.find((beat) => beat.status === "active") || run.requiredStoryBeats.find((beat) => beat.status === "pending");
   const successful = ["partial_success", "success", "critical_success"].includes(evidence.outcome);
   const contextualActions = new Set(evidence.contextualActions || []);
-  const abilityMatches = active && ((active.allowedAbilities || [active.requiredAbility]).includes(evidence.ability) || contextualActions.has(active.requiredAbility));
-  const placeMatches = active && (!active.requiredCampaignRole || active.requiredCampaignRole === evidence.campaignRole);
+  const adminAccessEvidence = active?.requiredEvidenceKey?.startsWith("ADMIN_ACCESS_LEVEL_")
+    && (evidence.targetEvidenceKeys || []).includes(active.requiredEvidenceKey);
+  const abilityMatches = active && (adminAccessEvidence || (active.allowedAbilities || [active.requiredAbility]).includes(evidence.ability) || contextualActions.has(active.requiredAbility));
+  const placeMatches = active && (adminAccessEvidence || !active.requiredCampaignRole || active.requiredCampaignRole === evidence.campaignRole);
   const availableTokens = new Set(run.progressTokens || []);
   const progressLevel = Number.isInteger(run.progressLevel) ? run.progressLevel : 0;
   const convergencePermissionMatches = active?.requiredCampaignRole !== "FINAL_CONVERGENCE" || (progressLevel >= 3 && (run.progressTokenDefinitions || PROGRESS_TOKEN_DEFINITIONS).every((token) => availableTokens.has(token.id)));
@@ -462,6 +475,14 @@ export function advanceStoryDirector(run, turnNo, events, evidence = {}) {
     active.completedTurn = turnNo;
     grantBeatRewards(run, active, turnNo, events);
     events.push({ type: "story_beat_changed", beatId: active.id, status: "completed", phaseId: active.phaseId, evidence: { ability: evidence.ability, campaignRole: evidence.campaignRole, outcome: evidence.outcome, targetEvidenceKeys: [...new Set(evidence.targetEvidenceKeys || [])], finaleEndingId } });
+    if (active.requiredCampaignRole === "HIDDEN_TRUTH") {
+      const clue = run.canonicalFacts.find((fact) => fact.subject === "collapse_origin" && fact.predicate === "inside_admin_control_system");
+      if (clue) {
+        clue.value = true;
+        clue.establishedTurn = turnNo;
+        events.push({ type: "canonical_fact_confirmed", factId: clue.id, subject: clue.subject, predicate: clue.predicate });
+      }
+    }
     const mainQuest = run.activeQuests?.find((quest) => quest.questKind === "main");
     if (mainQuest) {
       mainQuest.currentStep = active.id;
@@ -483,6 +504,8 @@ export function advanceStoryDirector(run, turnNo, events, evidence = {}) {
       const loop = { id: deterministicUuid(`${run.id}:skipped:${beat.id}`), summary: `미해결 대가: ${beat.description}`, status: "open", createdTurn: turnNo, expiresTurn: run.turnLimit, source: "campaign_convergence" };
       if (!run.openLoops.some((item) => item.id === loop.id)) {
         run.openLoops.push(loop);
+        run.unresolvedHooks ||= [];
+        run.unresolvedHooks.push(clone(loop));
         events.push({ type: "open_loop_created", loopId: loop.id, summary: loop.summary, consequence: true });
       }
     }
@@ -502,6 +525,8 @@ export function advanceStoryDirector(run, turnNo, events, evidence = {}) {
     if (!run.openLoops.some((loop) => loop.id === loopId)) {
       const loop = { id: loopId, summary: active.description, status: "open", createdTurn: turnNo, expiresTurn: Math.min(run.turnLimit, turnNo + Math.max(3, Math.ceil(run.turnLimit * 0.15))), source: "campaign_phase" };
       run.openLoops.push(loop);
+      run.unresolvedHooks ||= [];
+      run.unresolvedHooks.push(clone(loop));
       events.push({ type: "open_loop_created", loopId: loop.id, summary: loop.summary });
     }
   }
@@ -597,6 +622,7 @@ export function resolveFinalConvergence(run, ending, turnNo) {
     position: clonePoint(focus?.position || poi?.position || { x: 0, y: 0 }),
     progressLevel,
     progressTokens,
+    endingFactors: endingFactors(run, focus?.position || poi?.position || null),
     geometryChanged: false,
     resolutionMode: run.selectedEndingId ? "explicit_server_recipe" : "turn_limit_recipe_fallback",
     evidence

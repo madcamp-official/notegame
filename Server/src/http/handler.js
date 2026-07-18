@@ -39,7 +39,7 @@ export function createRequestHandler({ service, config, logger = console }) {
         sendJson(response, 201, { run: await service.createRun(ownerId, decodeURIComponent(match[1]), await readJson(request)) });
       } else if ((match = path.match(/^\/v1\/runs\/([^/]+)$/)) && request.method === "GET") {
         sendJson(response, 200, { run: await service.getRun(ownerId, decodeURIComponent(match[1])) });
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/turns$/)) && request.method === "POST") {
+      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/(?:actions|turns)$/)) && request.method === "POST") {
         const result = await service.submitTurn(ownerId, decodeURIComponent(match[1]), await readJson(request));
         sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
       } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/(?:travel|navigation)$/)) && request.method === "POST") {

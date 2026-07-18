@@ -1,58 +1,54 @@
-# Keyboard Wanderer — reference design contract v3
+# 넙죽이와 붕괴한 코드 왕국 — 레퍼런스 디자인 계약 v4
 
-## Target
+## 대상
 
-- Artifact: PC-first Unity gameplay screen for Keyboard Wanderer
-- Audience: Korean players seeking a compact, replayable 30–50 meaningful-turn generative adventure in a large pixel world
-- Product boundary: current product documents define game content; the supplied image defines only interface feeling
-- Current player art: NinjaAdventure `NinjaGreen`
+- 산출물: PC-first Unity gameplay screen
+- 제품: 코드리아의 붕괴를 조사하는 넙죽이의 관리자 키보드 어드벤처
+- 핵심 상호작용: 한 번 봉인한 160×160 월드에서 MOVE와 다섯 기술로 상태를 바꾸는 플레이
+- 주인공 표현: 제품 정체성은 넙죽이, 현재 sprite만 NinjaAdventure `NinjaGreen`
 
-## Evidence
+## 근거와 한계
 
-| Evidence | Confidence | What it establishes |
+| 근거 | 확정하는 것 | 확정하지 않는 것 |
 | --- | --- | --- |
-| User-provided 1680×945 image | observed | Dense 16:9 HUD, dominant map, top status, right information rail, bottom action deck, warm pixel material |
-| User clarification about the image | explicit | No scenario, biome, enemy, quest, character, copy, or worldbuilding may be inferred from it |
-| Linked Notion product collection and latest owner corrections | authoritative | Seed + validated LLM campaigns, 30–50 meaningful turns, one sealed large world, six biomes, generic progression |
-| NinjaAdventure pack in the workspace | observed | Top-down fantasy environment vocabulary and the current `NinjaGreen` protagonist |
-| Server and Unity contracts | implemented | Six generic roles, three milestone tokens, generic finale components, authoritative travel/turn separation |
+| 사용자가 제공한 16:9 이미지 | 큰 맵, 상단 상태, 우측 레일, 하단 명령, 따뜻한 픽셀 재질과 밀도 | 세계관, 캐릭터, 적, 퀘스트, 문구, 아이콘 의미, 정확한 배치 |
+| 사용자 정정과 Notion 제품 문서 | Codria, 넙죽이, 관리자 키보드, 6개 지역 축, 9개 비트, 3개 권한 | 레퍼런스 이미지의 콘텐츠 |
+| NinjaAdventure 에셋 | 현재 구현 가능한 top-down pixel 표현 | 넙죽이의 이름·설정·최종 아트 방향 |
+| 서버·DB 계약 | 봉인 월드, 구조화 입력, 권위 판정, 상태 이력과 결말 경계 | LLM이 규칙을 결정한다는 가정 |
 
-## Keep, reinterpret, exclude
+## 유지·재해석·제외
 
-| Keep as interface feel | Reinterpret for this project | Exclude completely |
+| 유지할 인터페이스 감각 | Codria에 맞춘 재해석 | 완전히 제외 |
 | --- | --- | --- |
-| Dominant center-left map | A camera over the sealed generated world and local encounter | Image's village and exact object placement |
-| Compact top status | Place/biome, phase, meaningful turn, milestone `0/3`, metrics | Image's title, currencies, labels, icons |
-| Right log/objective/D20 rhythm | Rule result, optional narration, generic role objective, normalized attempt | Image's encounter log and collection quest |
-| Bottom action deck | Six keyboard commands, context actions, target, intent, commit | Image's navigation labels and icon meanings |
-| Warm wood/metal pixels | A neutral fantasy command artifact supporting every biome | Literal frame pixels, logo, measured composition |
-| High information density | Readable Korean type and 44 px interactions | Tiny text and screenshot-perfect scaling |
+| 중앙의 큰 맵 | 여섯 지역 축과 별도인 여섯 물리 바이옴의 봉인 월드 | 이미지의 마을·조우·오브젝트 배치 |
+| 촘촘한 상단 상태 | 지역/바이옴, 9비트, 턴, 권한 0/3, 단서, 기술 부채 | 이미지의 title·재화·label·icon |
+| 우측 정보 리듬 | 주 목표 1, 보조 최대 2, 추천 2–3, 판정과 상태 변화 | 이미지의 퀘스트와 로그 문구 |
+| 하단 명령 덱 | MOVE, COPY, DELETE, CONNECT, RESTORE, UNDO와 확정 요약 | Attack/Interact/Negotiate/Rest와 이미지의 nav 의미 |
+| 목재·금속 픽셀 재질 | 모든 지역에서 안정적인 관리자 키보드 HUD | literal frame 복사, glass, neon, IDE dashboard |
 
-## Design stance
+## 상호작용 계약
 
-The stable HUD surrounds a world whose palette, inhabitants, conflict, secrets, and objectives vary by seed. It exposes rule authority—legal target, route, cost, D20, normalized intent, milestone evidence, and persistent consequence—without resembling a developer dashboard. Generated narration is visibly supplemental to the committed result.
+- 안전 MOVE에는 D20·턴 소비가 없고, 위험 이동은 조우 활성화와 실제 행동을 분리합니다.
+- USE_SKILL은 다섯 기술 중 하나와 검증 가능한 대상을 요구합니다.
+- 사용할 수 없는 기술은 이유와 함께 disabled 상태로 남습니다.
+- `playerNote`는 선택 사항이며 확정 가능 여부를 지배하지 않습니다.
+- 확정 전 대상, 기술, 턴 소비 여부와 위험을 보여 줍니다.
+- 결과는 판정, 상태 변화, 2–4문장 서술 순서입니다.
+- 관리자 권한 후보는 단계별 최소 두 개이고 서로 다른 영역·맥락을 사용합니다.
+- 루트 게이트는 권한 3/3과 핵심 단서를 별도 조건으로 표시합니다.
+- 기술 부채는 숫자와 원인 ledger를 함께 제공합니다.
+- Rule Engine의 `endingId`와 Gemini의 에필로그를 시각적으로 구분합니다.
 
-The screenshot never supplies content. A reviewer should be able to replace it with a different map-first fantasy HUD reference without changing the game's scenario or data model.
+## 품질 기준
 
-## Risks
-
-- Korean pixel-font licensing and complete glyph coverage require a release gate.
-- Frost/highland art may need palette-safe reuse and restrained VFX because dedicated snow coverage is limited.
-- A 160×160 world needs zoom, minimap, visibility culling, and detail levels; fitting every tile into one tactical board is unusable.
-- Generic generated objectives need fixed UI labels and predictable truncation so unfamiliar proper nouns do not break panels.
-- The six biome descriptors and six campaign roles must remain separate even when a seed maps one role to one biome.
-
-## Quality gate
-
-- [ ] Only hierarchy, density, and material cues survive from the reference image.
-- [ ] `NinjaGreen` is the visible protagonist and resolves through the NinjaAdventure manifest.
-- [ ] All six biome families are distinguishable in world data and the map.
-- [ ] The sealed world, a selected travel route, and a local encounter are inspectable.
-- [ ] Three `MilestoneToken` states and the current generic objective are always discoverable.
-- [ ] Safe exploration visibly differs from a D20 meaningful action.
-- [ ] Move, Copy, Delete, Connect, Restore, and Undo remain the primary command tier.
-- [ ] Free-form intent, normalized attempt, roll breakdown, and divergence explanation fit without debug UI.
-- [ ] Finale UI can display run-specific component bindings without assuming fixed props or a fixed ending.
-- [ ] Sprites remain pixel-snapped at all supported zoom levels.
-- [ ] Layout remains usable at 16:9 and a narrower desktop window.
-- [ ] No modern IDE, cyberpunk, glass, fixed-scenario, or reference-content styling remains.
+- [ ] 제품명, 세계, 주인공과 유물 식별자가 v4 계약과 일치합니다.
+- [ ] 여섯 지역 축이 물리 바이옴 이름이나 고정 stage 순서로 보이지 않습니다.
+- [ ] 월드는 한 번 생성된 뒤 이동·활성화만 일어나며 `layoutHash`가 유지됩니다.
+- [ ] UI가 정확히 9개 비트와 3개 관리자 권한을 설명합니다.
+- [ ] MOVE와 다섯 기술 외의 공개 action이 없습니다.
+- [ ] 주 목표 1개, 보조 목표 최대 2개, 추천 행동 2–3개 제한을 지킵니다.
+- [ ] disabled 기술, pre-confirm 위험과 결과 위계가 명확합니다.
+- [ ] 선택·지역 결과·NPC 관계·사실·hook·능력 사용·권한 획득·기술 부채가 재개 후 유지됩니다.
+- [ ] Gemini 장애에도 규칙 결과와 결말이 결정적으로 완성됩니다.
+- [ ] `NinjaGreen`은 넙죽이의 임시 시각 에셋으로만 표기됩니다.
+- [ ] 레퍼런스 이미지의 제품 콘텐츠가 남아 있지 않습니다.

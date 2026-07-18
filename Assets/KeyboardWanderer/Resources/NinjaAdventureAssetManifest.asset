@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderVersion: 2
+  BuilderVersion: 3
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -62,13 +62,16 @@ MonoBehaviour:
   PlayerFrameSize: 32
   CreatureFrameSize: 16
   PlayerIdle: {fileID: -7385789195546760866, guid: fd0dc91ff18f746dea9f1192a6d94a41, type: 3}
-  WardenIdle: {fileID: 4723107735738678597, guid: 07bb692ab5687420da17d27e29989325, type: 3}
+  WardenIdle: {fileID: -1176183960, guid: 07bb692ab5687420da17d27e29989325, type: 3}
   SlimeIdle: {fileID: 4518187702968751635, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}
   VillagerIdle: {fileID: -7385789195546760866, guid: ee8745936e2de4912a4f685588afa282, type: 3}
   RuneBook: {fileID: 2353571312451627304, guid: b724c872ed7f54eaca08c061d33b5dc3, type: 3}
   Crate: {fileID: 769504479347062634, guid: 6ecd53b1450af47f5af94ecd5e5ae9aa, type: 3}
   TreasureChest: {fileID: 8213334933265063372, guid: b53ed5982c55a4291a34c0d3b071c53b, type: 3}
   D20: {fileID: -5843691984524311486, guid: 3bea09d9b5af44d068c18afa0f0a37d6, type: 3}
+  PlayerAnimatorController: {fileID: 9100000, guid: 370da4c39c3164e489e07ecf04721c08, type: 2}
+  SlimeAnimatorController: {fileID: 9100000, guid: 7de334d523b4b4dd394ca62a64f54ed8, type: 2}
+  VillagerAnimatorController: {fileID: 9100000, guid: f33b4198cae7c48e6af7c9d001060185, type: 2}
   WoodPanel: {fileID: -8747778316048434277, guid: 481fd195d24644f91ab5b23504875a35, type: 3}
   WoodBackground: {fileID: -4030754755457138777, guid: df035b5cf01574195bb7af7cabc27e24, type: 3}
   WoodButtonNormal: {fileID: 1205776407840972037, guid: a772c7058990b4c8db9344ed9463d5a5, type: 3}

@@ -99,7 +99,7 @@ namespace KeyboardWanderer.Networking
             RunView view,
             TurnResponse response,
             AbilityKind ability,
-            string intent,
+            string normalizedSelection,
             string areaName,
             Action<Result> completed)
         {
@@ -111,6 +111,9 @@ namespace KeyboardWanderer.Networking
 
             var facts = new List<string>
             {
+                "WORLD_CODRIA · 코드리아",
+                "PROTAGONIST_NUPJUKYI · 넙죽이",
+                "ARTIFACT_ADMIN_KEYBOARD · 관리자 키보드",
                 "HP " + view.Health + "/" + view.MaxHealth,
                 "Focus " + view.Focus + "/" + view.MaxFocus,
                 "Quest: " + view.QuestProgress
@@ -127,7 +130,11 @@ namespace KeyboardWanderer.Networking
                 remainingTurns = view.RemainingTurns,
                 area = areaName ?? string.Empty,
                 ability = ability.ToString(),
-                intent = (intent ?? string.Empty).Trim(),
+                // The legacy transport field carries a rules-derived selection summary, never
+                // player-authored natural language or a mechanical instruction.
+                intent = string.IsNullOrWhiteSpace(normalizedSelection)
+                    ? response.NormalizedAttempt
+                    : normalizedSelection.Trim(),
                 d20 = response.D20,
                 outcome = SnakeCase(response.Outcome.ToString()),
                 normalizedAttempt = response.NormalizedAttempt ?? string.Empty,
@@ -161,7 +168,7 @@ namespace KeyboardWanderer.Networking
                     yield break;
                 }
 
-                string narrative = ClampText(envelope.body, 1600);
+                string narrative = ClampSentences(ClampText(envelope.body, 700), 4);
                 if (!string.IsNullOrWhiteSpace(envelope.dialogue))
                     narrative += "\n\n“" + ClampText(envelope.dialogue, 400) + "”";
                 completed?.Invoke(new Result(true, ClampText(envelope.summary, 160), narrative, null,
@@ -197,6 +204,20 @@ namespace KeyboardWanderer.Networking
                 return string.Empty;
             string text = value.Trim();
             return text.Length <= maximum ? text : text.Substring(0, maximum);
+        }
+
+        private static string ClampSentences(string value, int maximum)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            int count = 0;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+                if (c != '.' && c != '!' && c != '?') continue;
+                count++;
+                if (count == maximum) return value.Substring(0, i + 1);
+            }
+            return value;
         }
 
         private static NarrativeResponse ParseResponse(string json)

@@ -107,7 +107,13 @@ namespace KeyboardWanderer.Gameplay
             if (state == null || request == null || string.IsNullOrWhiteSpace(request.IdempotencyKey) ||
                 request.IntentText.Length > 500)
                 return RulePreparation.Invalid(TurnErrorCode.InvalidRequest,
-                    "Idempotency key and an intent of at most 500 characters are required.");
+                    "Idempotency key is required; an optional flavour note is limited to 500 characters.");
+            if ((request.Ability == AbilityKind.Move && request.InputType != PlayerInputType.MOVE) ||
+                (request.Ability != AbilityKind.Move && request.InputType != PlayerInputType.USE_SKILL) ||
+                (request.InputType == PlayerInputType.USE_SKILL &&
+                 !TurnRequest.IsPublicKeyboardSkill(request.Ability)))
+                return RulePreparation.Invalid(TurnErrorCode.InvalidRequest,
+                    "Public input is MOVE or USE_SKILL with COPY, DELETE, CONNECT, RESTORE, or UNDO.");
             if (!state.Spatial.TryGetEntity(state.PlayerEntityId, out EntityState player) ||
                 !player.IsActive || player.Health <= 0)
                 return RulePreparation.Invalid(TurnErrorCode.EntityNotFound, "Player entity is missing or defeated.");
@@ -121,13 +127,41 @@ namespace KeyboardWanderer.Gameplay
                 case AbilityKind.Connect: preparation = PrepareConnect(state, request, player); break;
                 case AbilityKind.Restore: preparation = PrepareRestore(state, request, player); break;
                 case AbilityKind.Undo: preparation = PrepareUndo(state); break;
-                case AbilityKind.Attack: preparation = PrepareAttack(state, request, player); break;
-                case AbilityKind.Interact: preparation = PrepareInteract(state, request, player); break;
-                case AbilityKind.Rest: preparation = PrepareRest(state, player); break;
-                case AbilityKind.Negotiate: preparation = PrepareNegotiate(state, request, player); break;
                 default: preparation = RulePreparation.Invalid(TurnErrorCode.InvalidRequest, "Unknown ability."); break;
             }
-            return preparation.WithIntentAlignment(ScoreIntentAlignment(state, request, preparation));
+            // Free text is never rules authority. Skill, targets, location, and scene state alone
+            // determine legality, modifier, difficulty, and outcome.
+            return preparation;
+        }
+
+        public static ActionContext ClassifyAction(RunState state, TurnRequest request)
+        {
+            if (request == null) return ActionContext.None;
+            if (request.InputType == PlayerInputType.MOVE || request.Ability == AbilityKind.Move)
+                return ActionContext.SafeTravel;
+            switch (request.Ability)
+            {
+                case AbilityKind.Copy:
+                    return ActionContext.Investigation;
+                case AbilityKind.Restore:
+                case AbilityKind.Undo: return ActionContext.Deployment;
+                case AbilityKind.Delete:
+                    if (TryTarget(state, request.TargetEntityId, out EntityState deleteTarget) &&
+                        deleteTarget.Kind == EntityKind.Enemy) return ActionContext.Combat;
+                    return ActionContext.Deployment;
+                case AbilityKind.Connect:
+                    if (TryTarget(state, request.TargetEntityId, out EntityState first) && first.Kind == EntityKind.Npc ||
+                        TryTarget(state, request.SecondaryTargetEntityId, out EntityState second) && second.Kind == EntityKind.Npc)
+                        return ActionContext.Negotiation;
+                    return ActionContext.Deployment;
+                default: return ActionContext.None;
+            }
+        }
+
+        public static bool ConsumesCampaignTurn(ActionContext context)
+        {
+            return context == ActionContext.Combat || context == ActionContext.Investigation ||
+                   context == ActionContext.Negotiation || context == ActionContext.Deployment;
         }
 
         public static RuleOutcome ResolveOutcome(int mechanicalScore, int rawD20)
@@ -153,8 +187,8 @@ namespace KeyboardWanderer.Gameplay
         {
             int score = rawD20 + preparation.Modifier - preparation.Difficulty;
             return "D20 " + rawD20 + " + 수정 " + preparation.Modifier + " - 난이도 " +
-                   preparation.Difficulty + " = " + score + "; 의도 정렬 " + preparation.IntentAlignment +
-                   "/3으로 " + outcome + " 판정.";
+                   preparation.Difficulty + " = " + score + "; 선택된 스킬·대상·장면 상태로 " +
+                   outcome + " 판정.";
         }
 
         public List<string> Apply(RunState state, TurnRequest request, RulePreparation preparation,
@@ -179,10 +213,6 @@ namespace KeyboardWanderer.Gameplay
                     case AbilityKind.Connect: ApplyConnect(state, request, events); break;
                     case AbilityKind.Restore: ApplyRestore(state, preparation, events); break;
                     case AbilityKind.Undo: ApplyUndo(state, preparation.FocusCost, events); break;
-                    case AbilityKind.Attack: ApplyAttack(state, request, outcome, turnNo, events); break;
-                    case AbilityKind.Interact: ApplyInteraction(state, request, outcome, events); break;
-                    case AbilityKind.Rest: ApplyRest(state, outcome, events); break;
-                    case AbilityKind.Negotiate: ApplyNegotiate(state, request, outcome, turnNo, events); break;
                 }
             }
             else if (request.Ability == AbilityKind.Undo && preparation.FocusCost > 0)
@@ -210,9 +240,12 @@ namespace KeyboardWanderer.Gameplay
             if (!request.Destination.HasValue || !state.Region.IsWalkable(request.Destination.Value))
                 return RulePreparation.Invalid(TurnErrorCode.DestinationInvalid, "Choose a walkable destination.");
             WorldArea destinationArea = state.Region.AreaAt(request.Destination.Value);
-            if (destinationArea != null && destinationArea.RequiredAdminAccess > state.MilestoneProgress)
+            if (destinationArea != null && destinationArea.RequiredAdminAccess > state.AdminAccess)
                 return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
-                    "The final convergence remains sealed until all three milestone tokens are acquired.");
+                    "ROOT_SYSTEM remains sealed until all three administrator access levels are acquired.");
+            if (IsRootSystemArea(destinationArea) && !CampaignDirector.CanEnterRootSystem(state))
+                return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
+                    "ROOT_SYSTEM requires all three administrator access IDs and the internal-cause clue.");
 
             EntityState mover = player;
             if (request.TargetEntityId.HasValue && request.TargetEntityId.Value != player.EntityId)
@@ -231,7 +264,9 @@ namespace KeyboardWanderer.Gameplay
             List<GridCoord> path = GridPathfinder.FindPath(state.Region, mover.Position, request.Destination.Value,
                 coord => state.Spatial.IsBlockingOccupied(state.Region.RegionId, coord, mover.Layer, mover.EntityId) ||
                          (state.Region.AreaAt(coord) != null &&
-                          state.Region.AreaAt(coord).RequiredAdminAccess > state.MilestoneProgress));
+                          (state.Region.AreaAt(coord).RequiredAdminAccess > state.AdminAccess ||
+                           IsRootSystemArea(state.Region.AreaAt(coord)) &&
+                           !CampaignDirector.CanEnterRootSystem(state))));
             if (path.Count == 0)
                 return RulePreparation.Invalid(TurnErrorCode.PathBlocked, "No legal path reaches that tile.");
             int budget = mover.EntityId == player.EntityId ? 7 : 4;
@@ -249,11 +284,21 @@ namespace KeyboardWanderer.Gameplay
                 return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Copy requires 1 focus.");
             if (!TryTarget(state, request.TargetEntityId, out EntityState target))
                 return RulePreparation.Invalid(TurnErrorCode.EntityNotFound, "Choose an active source object.");
-            bool designatedMilestoneCopy = target.AssetId == "story.milestone-token-1";
-            if (target.IsProtected && !designatedMilestoneCopy)
+            bool investigationCopy = target.AssetId == CampaignCatalog.AdministratorKeyboardId ||
+                                     target.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal) ||
+                                     target.AssetId.StartsWith("story.internal-failure", StringComparison.Ordinal);
+            if (target.IsProtected && !investigationCopy)
                 return RulePreparation.Invalid(TurnErrorCode.ProtectedEntity, "Protected objects cannot be copied.");
-            if ((!target.IsCloneable && !designatedMilestoneCopy) || target.Kind == EntityKind.Player || target.Kind == EntityKind.Npc)
+            if ((!target.IsCloneable && !investigationCopy) || target.Kind == EntityKind.Player || target.Kind == EntityKind.Npc)
                 return RulePreparation.Invalid(TurnErrorCode.NotCloneable, "This object is not cloneable.");
+            if (investigationCopy)
+            {
+                if (player.Position.ManhattanDistance(target.Position) > 4)
+                    return RulePreparation.Invalid(TurnErrorCode.OutOfRange,
+                        "Investigation target must be within 4 tiles.");
+                return RulePreparation.Valid("Inspect " + target.DisplayName + " with COPY without changing geometry",
+                    10, 4, 1, null, target.EntityId);
+            }
             if (!request.Destination.HasValue || !state.Region.IsWalkable(request.Destination.Value) ||
                 state.Spatial.IsBlockingOccupied(state.Region.RegionId, request.Destination.Value, target.Layer))
                 return RulePreparation.Invalid(TurnErrorCode.DestinationInvalid, "Choose an empty walkable destination.");
@@ -273,16 +318,16 @@ namespace KeyboardWanderer.Gameplay
             if (target.EntityId == state.PlayerEntityId || target.IsProtected || target.Kind == EntityKind.Npc)
                 return RulePreparation.Invalid(TurnErrorCode.ProtectedEntity, "Protected entities cannot be deleted.");
             if ((target.AssetId == "finale.threat" || target.AssetId == "finale.freedom") &&
-                state.MilestoneProgress < 3)
+                state.AdminAccess < 3)
                 return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
-                    "Finale components require milestone progress 3/3 before removal.");
-            if (target.Kind == EntityKind.Enemy && target.Health > 2)
-                return RulePreparation.Invalid(TurnErrorCode.TargetTooHealthy, "Damage this enemy to 2 HP or less first.");
+                    "ROOT_SYSTEM components require administrator access 3/3 before removal.");
             if (target.Kind == EntityKind.Prop && !target.IsCloneable && target.Health > 2)
                 return RulePreparation.Invalid(TurnErrorCode.InvalidTarget, "Only temporary or weakened props can be deleted.");
             if (player.Position.ManhattanDistance(target.Position) > 3)
                 return RulePreparation.Invalid(TurnErrorCode.OutOfRange, "Delete target must be within 3 tiles.");
-            return RulePreparation.Valid("Delete " + target.DisplayName, 12, 4, 1, null, target.EntityId);
+            int difficulty = target.Kind == EntityKind.Enemy ? 13 : 12;
+            return RulePreparation.Valid("Delete " + target.DisplayName, difficulty, 4, 1, null,
+                target.EntityId);
         }
 
         private static RulePreparation PrepareConnect(RunState state, TurnRequest request, EntityState player)
@@ -296,9 +341,9 @@ namespace KeyboardWanderer.Gameplay
             if (first.IsHostile || second.IsHostile)
                 return RulePreparation.Invalid(TurnErrorCode.InvalidTarget, "Hostile endpoints must be pacified first.");
             if ((first.AssetId.StartsWith("finale.", StringComparison.Ordinal) ||
-                 second.AssetId.StartsWith("finale.", StringComparison.Ordinal)) && state.MilestoneProgress < 3)
+                 second.AssetId.StartsWith("finale.", StringComparison.Ordinal)) && state.AdminAccess < 3)
                 return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
-                    "Finale links require all three milestone tokens.");
+                    "ROOT_SYSTEM links require all three administrator access levels.");
             if (player.Position.ManhattanDistance(first.Position) > 4 &&
                 player.Position.ManhattanDistance(second.Position) > 4)
                 return RulePreparation.Invalid(TurnErrorCode.OutOfRange, "Stand within 4 tiles of an endpoint.");
@@ -315,6 +360,15 @@ namespace KeyboardWanderer.Gameplay
         {
             if (state.Focus < 2)
                 return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Restore requires 2 focus.");
+            if (TryTarget(state, request.TargetEntityId, out EntityState accessCandidate) &&
+                accessCandidate.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal))
+            {
+                if (player.Position.ManhattanDistance(accessCandidate.Position) > 4)
+                    return RulePreparation.Invalid(TurnErrorCode.OutOfRange,
+                        "Administrator access repair target must be within 4 tiles.");
+                return RulePreparation.Valid("Repair " + accessCandidate.DisplayName + " with RESTORE",
+                    12, 5, 2, null, accessCandidate.EntityId);
+            }
             RestorationRecord record = state.FindRestoration(request.TargetEntityId);
             if (record == null)
                 return RulePreparation.Invalid(TurnErrorCode.NoRestorableSnapshot,
@@ -346,50 +400,6 @@ namespace KeyboardWanderer.Gameplay
                 " without rewinding time, rolls, layout, or story facts", 14, 5, 3);
         }
 
-        private static RulePreparation PrepareAttack(RunState state, TurnRequest request, EntityState player)
-        {
-            if (!TryTarget(state, request.TargetEntityId, out EntityState target) ||
-                !target.IsHostile || target.Kind != EntityKind.Enemy)
-                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget, "Choose a living hostile target.");
-            if (player.Position.ManhattanDistance(target.Position) > 1)
-                return RulePreparation.Invalid(TurnErrorCode.OutOfRange, "Attack targets must be adjacent.");
-            return RulePreparation.Valid("Strike " + target.DisplayName, 9, 5, 0, null, target.EntityId);
-        }
-
-        private static RulePreparation PrepareInteract(RunState state, TurnRequest request, EntityState player)
-        {
-            if (!TryTarget(state, request.TargetEntityId, out EntityState target) || target.IsHostile)
-                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
-                    "Choose a nearby person, container, clue, or campaign anchor.");
-            if (player.Position.ManhattanDistance(target.Position) > 2)
-                return RulePreparation.Invalid(TurnErrorCode.OutOfRange, "Interaction target must be within 2 tiles.");
-            if (target.IsOpened)
-                return RulePreparation.Invalid(TurnErrorCode.AlreadyOpened, "That container has already been opened.");
-            if (target.AssetId.StartsWith("finale.", StringComparison.Ordinal) && state.MilestoneProgress < 3)
-                return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
-                    "The final convergence rejects interaction before milestone progress reaches 3/3.");
-            return RulePreparation.Valid("Interact with " + target.DisplayName, 8, 5, 0, null, target.EntityId);
-        }
-
-        private static RulePreparation PrepareRest(RunState state, EntityState player)
-        {
-            if (player.Health >= player.MaxHealth && state.Focus >= state.MaxFocus)
-                return RulePreparation.Invalid(TurnErrorCode.InvalidRequest, "Health and focus are already full.");
-            return RulePreparation.Valid("Catch a breath and restore strength", 7, 5, 0);
-        }
-
-        private static RulePreparation PrepareNegotiate(RunState state, TurnRequest request, EntityState player)
-        {
-            if (!TryTarget(state, request.TargetEntityId, out EntityState target) || target.Kind != EntityKind.Npc || target.IsHostile)
-                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
-                    "Choose a nearby non-hostile NPC to negotiate with.");
-            if (player.Position.ManhattanDistance(target.Position) > 2)
-                return RulePreparation.Invalid(TurnErrorCode.OutOfRange,
-                    "Negotiation target must be within 2 tiles.");
-            return RulePreparation.Valid("Negotiate terms with " + target.DisplayName, 10, 4, 0, null,
-                target.EntityId);
-        }
-
         private static void ApplyMove(RunState state, TurnRequest request, List<string> events)
         {
             Guid moverId = request.TargetEntityId.HasValue ? request.TargetEntityId.Value : state.PlayerEntityId;
@@ -408,6 +418,24 @@ namespace KeyboardWanderer.Gameplay
         private static void ApplyCopy(RunState state, TurnRequest request, int turnNo, List<string> events)
         {
             state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState source);
+            if (source.AssetId == CampaignCatalog.AdministratorKeyboardId)
+            {
+                state.AddCanonicalFact("관리자 키보드는 이미 존재하는 대상과 관계만 편집한다.");
+                events.Add("ADMIN_KEYBOARD_AWAKENED:" + source.EntityId);
+                events.Add("CATALYST_AWAKENED:" + source.EntityId);
+                return;
+            }
+            if (source.AssetId.StartsWith("story.internal-failure", StringComparison.Ordinal))
+            {
+                state.AddCanonicalFact("붕괴 원인이 관리자 통제 시스템 내부에 있음을 확정했다.");
+                events.Add("INTERNAL_FAILURE_CONFIRMED:" + source.EntityId);
+                return;
+            }
+            if (source.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal))
+            {
+                events.Add("ADMIN_ACCESS_CANDIDATE_INSPECTED:" + source.EntityId);
+                return;
+            }
             Guid cloneId = DeterministicGuid.Create(state.RunId + ":" + turnNo + ":" + request.IdempotencyKey + ":copy");
             var clone = new EntityState(cloneId, source.Kind, source.AssetId, source.DisplayName + " Copy",
                 source.IsBlocking, false, source.IsCloneable, false, source.MaxHealth,
@@ -433,11 +461,20 @@ namespace KeyboardWanderer.Gameplay
             string connection = ConnectionKey(request.TargetEntityId.Value, request.SecondaryTargetEntityId.Value);
             state.Connections.Add(connection);
             events.Add("CONNECTION_CREATED:" + connection);
+            RecordConnectedNpc(state, request.TargetEntityId.Value, events);
+            RecordConnectedNpc(state, request.SecondaryTargetEntityId.Value, events);
         }
 
         private static void ApplyRestore(RunState state, RulePreparation preparation, List<string> events)
         {
             RestorationRecord record = state.FindRestoration(preparation.ResolvedTargetEntityId);
+            if (record == null && preparation.ResolvedTargetEntityId.HasValue &&
+                state.Spatial.TryGetEntity(preparation.ResolvedTargetEntityId.Value, out EntityState accessCandidate) &&
+                accessCandidate.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal))
+            {
+                events.Add("ADMIN_ACCESS_CANDIDATE_REPAIRED:" + accessCandidate.EntityId);
+                return;
+            }
             if (record == null)
                 throw new InvalidOperationException("Validated restoration snapshot disappeared during commit.");
             if (!state.Spatial.TryRestore(record.Snapshot,
@@ -507,20 +544,6 @@ namespace KeyboardWanderer.Gameplay
             events.Add("RESOURCE_CHANGED:focus:-" + focusCost);
         }
 
-        private static void ApplyAttack(RunState state, TurnRequest request, RuleOutcome outcome, int turnNo,
-            List<string> events)
-        {
-            int damage = outcome == RuleOutcome.CriticalSuccess ? 4 : outcome == RuleOutcome.Success ? 3 : 1;
-            state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState target);
-            state.RecordRestorable(target, turnNo, "damaged");
-            if (!state.Spatial.TryDamage(target.EntityId, damage, out int remaining, out bool defeated,
-                    out string error))
-                throw new InvalidOperationException("Validated attack failed during commit: " + error);
-            events.Add("ENTITY_DAMAGED:" + target.EntityId + ":" + damage + ":hp=" + remaining);
-            if (defeated)
-                RewardEnemy(state, target, events);
-        }
-
         private static void RewardEnemy(RunState state, EntityState enemy, List<string> events)
         {
             state.EnemiesDefeated++;
@@ -533,116 +556,25 @@ namespace KeyboardWanderer.Gameplay
             events.Add("RESOURCE_CHANGED:gold:+2");
         }
 
-        private static void ApplyInteraction(RunState state, TurnRequest request, RuleOutcome outcome,
-            List<string> events)
-        {
-            state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState target);
-            if (target.Kind == EntityKind.Npc)
-            {
-                int affinity = outcome == RuleOutcome.CriticalSuccess ? 2 : outcome == RuleOutcome.Success ? 1 : 0;
-                state.RecordNpcMemory(target.EntityId, string.IsNullOrWhiteSpace(request.IntentText)
-                    ? "플레이어가 말없이 다가왔다."
-                    : "플레이어가 \"" + request.IntentText.Trim() + "\"라고 의도를 밝혔다.", affinity);
-                events.Add("NPC_INTERACTED:" + target.EntityId + ":affinity=+" + affinity);
-            }
-
-            switch (target.AssetId)
-            {
-                case "artifact.keyboard":
-                    state.AddCanonicalFact("키보드 유물은 이미 존재하는 대상의 상태와 관계만 편집할 수 있다.");
-                    events.Add("CATALYST_AWAKENED:" + target.EntityId);
-                    break;
-                case "story.hidden-truth":
-                case "story.hidden-truth.backup":
-                    state.AddCanonicalFact("감춰진 기록은 현재 위기가 외부 침입이 아니라 세계 내부의 과거 선택에서 비롯되었음을 보여 준다.");
-                    events.Add("HIDDEN_TRUTH_CONFIRMED:" + target.EntityId);
-                    break;
-                case "finale.anchor":
-                    events.Add("FINALE_PUZZLE_INSPECTED:" + target.EntityId);
-                    break;
-                default:
-                    events.Add(target.AssetId.StartsWith("story.milestone-token", StringComparison.Ordinal)
-                        ? "MILESTONE_ANCHOR_INSPECTED:" + target.EntityId
-                        : "ENTITY_INSPECTED:" + target.EntityId);
-                    break;
-            }
-        }
-
-        private static void ApplyRest(RunState state, RuleOutcome outcome, List<string> events)
-        {
-            int healing = outcome == RuleOutcome.CriticalSuccess ? 5 : outcome == RuleOutcome.Success ? 3 : 2;
-            state.Spatial.TryHeal(state.PlayerEntityId, healing, out int health, out _);
-            int focusGain = outcome == RuleOutcome.CriticalSuccess ? 3 : 2;
-            state.Focus = Math.Min(state.MaxFocus, state.Focus + focusGain);
-            events.Add("PLAYER_HEALED:hp=" + health);
-            events.Add("RESOURCE_CHANGED:focus:+" + focusGain);
-        }
-
-        private static void ApplyNegotiate(RunState state, TurnRequest request, RuleOutcome outcome, int turnNo,
-            List<string> events)
-        {
-            if (!TryTarget(state, request.TargetEntityId, out EntityState target))
-                throw new InvalidOperationException("Validated negotiation target disappeared.");
-            int affinity = outcome == RuleOutcome.CriticalSuccess ? 2 : 1;
-            string actorName = state.Spatial.TryGetEntity(state.PlayerEntityId, out EntityState player)
-                ? player.DisplayName
-                : "방랑자";
-            state.RecordNpcMemory(target.EntityId,
-                actorName + "가 " + turnNo + "번째 의미 있는 턴에 강제가 아닌 협상으로 해결책을 제안했다.", affinity);
-            events.Add("NEGOTIATION_RESOLVED:" + target.EntityId + ":affinity=+" + affinity);
-        }
-
-        private static int ScoreIntentAlignment(RunState state, TurnRequest request, RulePreparation preparation)
-        {
-            if (!preparation.IsValid || string.IsNullOrWhiteSpace(request.IntentText))
-                return 0;
-            string intent = request.IntentText.Trim().ToLowerInvariant();
-            int score = intent.Length >= 8 ? 1 : 0;
-            string ability = request.Ability.ToString().ToLowerInvariant();
-            if (intent.Contains(ability) || ContainsKoreanAbility(intent, request.Ability))
-                score++;
-            Guid? targetId = preparation.ResolvedTargetEntityId ?? request.TargetEntityId;
-            if (targetId.HasValue && state.Spatial.TryGetEntity(targetId.Value, out EntityState target))
-            {
-                string name = (target.DisplayName ?? string.Empty).ToLowerInvariant();
-                if (name.Length > 0 && intent.Contains(name))
-                    score++;
-            }
-            else if (request.Destination.HasValue && (intent.Contains("좌표") || intent.Contains("가") || intent.Contains("move")))
-            {
-                score++;
-            }
-            return Math.Max(0, Math.Min(3, score));
-        }
-
-        private static bool ContainsKoreanAbility(string intent, AbilityKind ability)
-        {
-            switch (ability)
-            {
-                case AbilityKind.Move: return intent.Contains("이동") || intent.Contains("옮");
-                case AbilityKind.Copy: return intent.Contains("복사") || intent.Contains("복제");
-                case AbilityKind.Delete: return intent.Contains("삭제") || intent.Contains("지우");
-                case AbilityKind.Connect: return intent.Contains("연결") || intent.Contains("잇");
-                case AbilityKind.Restore: return intent.Contains("복구") || intent.Contains("회복") || intent.Contains("되돌");
-                case AbilityKind.Undo: return intent.Contains("실행 취소") || intent.Contains("취소") || intent.Contains("보상");
-                case AbilityKind.Attack: return intent.Contains("공격") || intent.Contains("때리");
-                case AbilityKind.Interact: return intent.Contains("대화") || intent.Contains("상호작용") || intent.Contains("조사");
-                case AbilityKind.Rest: return intent.Contains("휴식") || intent.Contains("쉬");
-                case AbilityKind.Negotiate: return intent.Contains("협상") || intent.Contains("타협") || intent.Contains("설득");
-                default: return false;
-            }
-        }
-
         private static bool IsApplied(RuleOutcome outcome)
         {
             return outcome == RuleOutcome.PartialSuccess || outcome == RuleOutcome.Success ||
                    outcome == RuleOutcome.CriticalSuccess;
         }
 
-        private static void OpenOrThrow(RunState state, EntityState target)
+        private static void RecordConnectedNpc(RunState state, Guid entityId, List<string> events)
         {
-            if (!state.Spatial.TryOpen(target.EntityId, out string error))
-                throw new InvalidOperationException("Validated interaction failed during commit: " + error);
+            if (!state.Spatial.TryGetEntity(entityId, out EntityState entity) || entity.Kind != EntityKind.Npc)
+                return;
+            state.RecordNpcMemory(entity.EntityId,
+                "넙죽이가 강제 대신 CONNECT로 공동 해결 관계를 만들었다.", 1);
+            events.Add("NPC_RELATIONSHIP_CHANGED:" + entity.EntityId + ":affinity=+1");
+        }
+
+        private static bool IsRootSystemArea(WorldArea area)
+        {
+            return area != null && string.Equals(area.CampaignRole, CampaignCatalog.RootSystemAxis,
+                StringComparison.Ordinal);
         }
 
         private static bool TryTarget(RunState state, Guid? id, out EntityState target)

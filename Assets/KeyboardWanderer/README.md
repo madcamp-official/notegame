@@ -1,18 +1,20 @@
-# Keyboard Wanderer — Unity client v3
+# 넙죽이와 붕괴한 코드 왕국 — Unity 클라이언트 v4
 
-Keyboard Wanderer는 seed와 검증된 LLM 기획으로 매 런의 장소, 인물, 갈등, 비밀과 결말 맥락이 달라지는 30–50 의미 턴 판타지 어드벤처입니다. 현재 주인공은 NinjaAdventure의 `NinjaGreen`을 사용합니다.
+코드리아(`WORLD_CODRIA`)의 붕괴 원인을 추적하고 관리자 키보드(`ARTIFACT_ADMIN_KEYBOARD`)의 세 접근 권한을 되찾는 픽셀 어드벤처입니다. 주인공은 넙죽이(`PROTAGONIST_NUPJUKYI`)이며, 현재 화면 표현만 NinjaAdventure의 `NinjaGreen` 에셋을 임시 사용합니다.
 
-## 현재 게임 계약
+`KeyboardWanderer`는 기존 Unity 폴더·namespace 이름일 뿐 제품명이나 세계관이 아닙니다.
 
-- 새 런은 기본 160×160 월드를 한 번 생성·검증하고 `layoutHash`와 함께 봉인합니다. 플레이 중 LLM과 턴 처리기는 타일, 바이옴, 경로, 영역, POI를 재생성하거나 이동하지 않습니다.
-- 월드에는 `temperate_forest_field`, `river_wetland`, `arid_desert`, `frost_highland`, `subterranean_cavern`, `ancient_ruins`의 여섯 바이옴이 모두 존재합니다.
-- 생성된 영역에는 `ARRIVAL_CATALYST`, `LOCAL_STAKES`, `RELATIONSHIP_CONFLICT`, `HIDDEN_TRUTH`, `CONSEQUENCE_RETURN`, `FINAL_CONVERGENCE`의 여섯 서사 역할이 seed별로 배정됩니다. 역할은 바이옴과 별도 데이터입니다.
-- 캠페인 진척은 `MILESTONE_TOKEN_1`, `MILESTONE_TOKEN_2`, `MILESTONE_TOKEN_3`으로 기록합니다. 각 토큰의 이름, 의미, 획득 방법은 이번 런의 검증된 기획에서 결정됩니다.
-- 마지막 역할은 `anchor`, `safeguard`, `memory`, `freedom`, `threat`, `passage`, `witness` 중 이번 런에 바인딩된 구성 요소로 공간 퍼즐과 결말을 만듭니다.
-- 캠페인 미리보기는 seed 기반 메타데이터만 보여 주며 LLM을 호출하지 않습니다. 실제 런 생성 시 월드와 캠페인 기획을 한 번 확정해 저장합니다.
-- 안전한 탐색 이동은 시간과 발견 상태만 바꾸며 D20이나 의미 턴을 소비하지 않습니다. 전투, 조사, 협상, 퍼즐, 복구와 확정된 배치만 의미 턴을 소비합니다.
+## 플레이 계약
 
-첨부 레퍼런스 이미지는 중앙의 큰 맵, 상단 상태, 우측 정보 레일, 하단 명령 덱, 따뜻한 픽셀 재질 같은 인터페이스 감각만 참고합니다. 이미지의 지역, 인물, 적, 퀘스트, 문구와 배치는 게임 콘텐츠가 아닙니다.
+- 새 런은 160×160 월드를 한 번 생성하고 `layoutHash`와 함께 봉인합니다. 일반 턴, 저장·재개, Restore와 Undo는 geometry를 바꾸지 않습니다.
+- 여섯 고정 지역 축은 `REGION_BUG_FOREST`, `REGION_BUFFER_VILLAGE`, `REGION_DEADLOCK_CITY`, `REGION_DATA_GRAND_LIBRARY`, `REGION_LEGACY_CITADEL`, `REGION_ROOT_SYSTEM`입니다.
+- 여섯 지역 축과 여섯 물리 바이옴은 별도 데이터입니다. 축은 장소의 서사 정체성이고 바이옴은 지형·팔레트·이동 규칙입니다.
+- 진행은 도착/각성부터 최종 배포/결말까지 정확히 아홉 비트입니다.
+- 관리자 권한은 `ADMIN_ACCESS_LEVEL_1`부터 `3`까지 정확히 세 단계입니다. 각 단계에는 서로 다른 영역·행동 맥락의 후보가 최소 두 개 있습니다.
+- 루트 시스템은 세 권한과 내부 관리자 통제 시스템에 관한 핵심 단서를 모두 확보해야 열립니다.
+- 기술 부채는 원인과 후속 결과를 가진 ledger입니다. 일반 성공으로 자동 감소하지 않습니다.
+
+첨부 레퍼런스 이미지는 큰 중앙 맵, 상단 상태, 우측 정보 레일, 하단 명령 덱과 따뜻한 픽셀 재질 같은 인터페이스 감각만 참고합니다. 이미지의 세계, 인물, 적, 퀘스트, 문구, 아이콘 의미와 레벨 배치는 제품 콘텐츠가 아닙니다.
 
 ## 실행
 
@@ -22,35 +24,49 @@ npm install
 npm start
 ```
 
-Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 열고 Play Mode를 시작합니다. 온라인 런은 서버 월드 `keyboard-wanderer-world.v6`를 사용합니다. 서버에 연결할 수 없으면 독립적인 결정적 폴백 `seeded-local-world.v7`이 같은 봉인 월드·진척 계약으로 실행되며, 온라인 월드와 동일한 바이트 배열을 보장하지는 않습니다.
+Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 열고 Play Mode를 시작합니다. 서버에 연결할 수 없거나 Gemini 응답이 유효하지 않으면 결정적 로컬 폴백으로 규칙 진행을 유지해야 합니다.
 
-에셋 경로가 바뀌었다면 Unity 메뉴의 **Keyboard Wanderer > Rebuild Ninja Adventure Manifest**를 실행합니다. 주인공은 manifest가 가리키는 `NinjaGreen` 스프라이트로 렌더링합니다.
+에셋 경로가 바뀌면 Unity 메뉴의 **Keyboard Wanderer > Rebuild Ninja Adventure Manifest**를 실행합니다. manifest는 넙죽이의 임시 `NinjaGreen` 표현과 환경 스프라이트만 해결하며 제품 식별자를 바꾸지 않습니다.
 
-## 조작
+## Unity 저작 에셋 구조
 
-| 키 | 명령 | 역할 |
+고정 오브젝트 구성은 런타임 코드가 아니라 Unity 에셋에 저장합니다.
+
+- `SampleScene.unity`: `Authored World`, Camera, `Authored Audio`, EventSystem과 UI Prefab 인스턴스
+- `Prefabs/UI/AuthoredUI.prefab`: 타이틀, HUD, 설정, 일시정지, 결말 화면
+- `Prefabs/World/EntityVisual.prefab`: Actor, 체력 바, 결말 라벨 계층
+- `Prefabs/World/Landmark.prefab`: 캠페인 랜드마크 표현
+- `ScriptableObjects/KeyboardWandererAuthoringSettings.asset`: Prefab 참조와 이동·카메라·표현 크기 설정
+
+씬 또는 프리팹 구성을 다시 만들려면 Play Mode를 종료하고 Unity 메뉴의 **Keyboard Wanderer > Convert Runtime Composition to Authored Assets**를 실행합니다. 변환기는 기존 에셋을 같은 경로에 갱신하고 Scene 참조를 다시 연결합니다.
+
+절차적으로 달라지는 160×160 타일 배치와 서버가 내려주는 엔티티 상태는 런타임 데이터이므로 코드에 남습니다. 다만 런타임은 오브젝트를 직접 조립하는 대신 씬의 `KeyboardWandererWorldView`와 저장된 Prefab을 채웁니다. 테스트·복구용 씬에서만 기존 코드 생성 폴백을 사용합니다.
+
+## 입력
+
+클라이언트가 전송하는 신규 입력은 두 종류뿐입니다.
+
+| 입력 | 선택 | 턴 규칙 |
 | --- | --- | --- |
-| `1` / `W` | Move | 탐색 이동 또는 조우 안의 합법적 재배치 |
-| `2` / `E` | Copy | 허용된 객체를 빈 타일에 복제 |
-| `3` / `R` | Delete | 보호되지 않은 객체나 임시 효과 제거 |
-| `4` / `C` | Connect | 두 대상 사이의 검증 가능한 관계 생성 |
-| `5` / `Q` | Restore | 최근 손상·삭제 상태를 권위 스냅샷으로 복구 |
-| `6` / `Z` | Undo | 직전 가역 결과에 보상 이벤트 추가 |
-| `T` | Attack | 인접 대상과 전투 |
-| `Space` | Interact / Investigate | NPC·소품·증거와 상호작용 또는 조사 |
-| `N` | Negotiate | 비적대 인물과 협상 |
-| `I` | Rest | 조건부 회복 |
+| `MOVE` | 검증 가능한 목적지 | 안전 이동은 D20·캠페인 턴을 소비하지 않으며 위험 이동은 조우만 활성화할 수 있음 |
+| `USE_SKILL` | `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO` | 전투·조사·협상·배치 맥락에서 의미 있는 결과를 확정하며 정확히 한 턴 소비 |
 
-Move, Copy, Delete, Connect, Restore, Undo는 여섯 주 명령입니다. 자유 입력은 의도와 서술에 반영되지만 서버가 확정한 좌표, 대상, 비용, D20과 진행 조건을 우회하지 못합니다.
+Attack, Interact, Negotiate, Rest는 공개 기술이나 별도 입력이 아닙니다. 서버는 선택한 기술과 대상을 `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT` 중 하나로 분류합니다. `playerNote`는 선택 사항이며, 자연어 없이도 합법적인 턴이 완성되어야 합니다.
 
-## 진행과 결말
+## 화면 계약
 
-상단 HUD는 현재 장소·바이옴, 캠페인 phase, 의미 턴, `마일스톤 0/3`과 주요 지표를 표시합니다. 마일스톤은 해당 런의 올바른 역할·증거·선택을 만족했을 때만 획득합니다. 마지막 영역은 세 토큰과 기획된 선행 조건을 충족하기 전까지 잠깁니다.
+- 중앙: 봉인 월드 카메라와 선택 경로
+- 상단: 장소, 물리 바이옴, 9비트 진행, 의미 턴, 관리자 권한 `0/3`, 핵심 지표
+- 우측: 주 목표 1개, 보조 목표 최대 2개, 추천 행동 2–3개, 판정 결과와 상태 변화
+- 하단: MOVE와 다섯 기술, 대상/목적지, 선택적 메모, 확정 버튼
+- 사용할 수 없는 기술은 숨기지 않고 비활성화하며 이유를 제공합니다.
+- 확정 전 대상, 기술, 턴 소비 여부와 위험을 보여 줍니다.
+- 결과는 `판정 → 상태 변화 → 2–4문장 서술` 순서로 표시합니다.
 
-최종 공간 퍼즐은 이번 캠페인에 실제로 등장한 대상만 finale 구성 요소에 바인딩합니다. Rule Engine은 배치, 연결, 보호·제거 상태와 누적 지표로 허용된 결말을 확정하고, Gemini는 확정 결과 안에서만 에필로그를 작성합니다. 공급자 실패나 50턴 도달 시에도 결정적 대체 경로가 런을 종료합니다.
+## 진행과 저장
 
-## 권위와 저장
+아홉 비트는 다음 순서를 보장합니다: 도착과 키보드 각성, 첫 붕괴 문제, 권한 I, 권한 II, 내부 통제 원인 확인, 기술 부채 역류, 권한 III, 루트 진입, 최종 배포와 결말. Rule Engine이 권한·핵심 단서·결말 ID를 확정하며 Gemini는 확정된 결말의 에필로그만 작성합니다.
 
-서버는 월드 geometry, 이동, 점유, 보호 상태, D20, 자원, 마일스톤, 지표와 결말을 확정합니다. Gemini의 기본 모델은 비용을 줄이기 위해 `gemini-2.5-flash-lite`이며, 런 생성 기획과 확정 턴의 짧은 서술만 담당합니다. API 키는 Unity나 저장 파일이 아니라 서버 환경 변수 `GEMINI_API_KEY`로만 주입합니다.
+저장은 seed/version/`layoutHash`, 위치, 아홉 비트, 권한 획득 근거, `majorChoices`, `regionOutcomes`, `npcRelationships`, `canonicalFacts`, `unresolvedHooks`, `abilityUsageHistory`, `adminAccessAcquisitionHistory`, `technicalDebtEntries`를 왕복해야 합니다.
 
-저장은 seed/version/layout hash, 발견 상태, 플레이어 위치, 의미 턴, 세 마일스톤, 캠페인 기획, NPC 기억, 미해결 갈등, 복원 ledger와 finale 바인딩을 round-trip 합니다.
+Gemini 기본 프로필은 비용 절감을 위해 `gemini-2.5-flash-lite`, thinking budget 0, 작은 구조화 출력, 최대 1회 재시도와 결정적 폴백을 사용합니다. API 키는 Unity나 저장 파일이 아니라 서버 환경 변수 `GEMINI_API_KEY`에만 둡니다.
