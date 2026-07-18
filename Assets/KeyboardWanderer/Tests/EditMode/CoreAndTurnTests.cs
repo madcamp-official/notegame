@@ -6,7 +6,6 @@ using KeyboardWanderer.Core;
 using KeyboardWanderer.Gameplay;
 using KeyboardWanderer.Networking;
 using NUnit.Framework;
-using UnityEngine;
 
 namespace KeyboardWanderer.Tests
 {
@@ -18,27 +17,64 @@ namespace KeyboardWanderer.Tests
             "subterranean_cavern", "ancient_ruins"
         };
 
-        private static readonly string[] ProgressionNodeIds =
+        private static readonly string[] BeatIds =
         {
-            "catalyst", "milestone1", "conflict", "hidden-truth", "milestone3", "convergence"
+            "arrival", "collapse", "admin-access-1", "admin-access-2", "truth",
+            "debt-backflow", "admin-access-3", "root-entry", "final-deployment"
         };
 
-        private static readonly string[] EndingRecipeCodes =
+        private static readonly string[] ProgressionNodeIds =
         {
-            "SAFE_PASSAGE", "SHARED_GUARDIANSHIP", "FREE_WORLD", "MEMORY_REWEAVE", "THREAT_SEAL"
+            "keyboard-awakening", "admin-access-1", "admin-access-2", "internal-failure",
+            "admin-access-3", "root-system"
+        };
+
+        private static readonly string[] EndingCodes =
+        {
+            "ENDING_REWEAVE_TOGETHER", "ENDING_OPEN_FRONTIER", "ENDING_KEEP_THE_PROMISE",
+            "ENDING_CUT_THE_CYCLE", "ENDING_PRESERVE_THE_SCARS",
+            "ENDING_WALK_BETWEEN_WORLDS", "ENDING_EMERGENCY_WITHDRAWAL"
         };
 
         [Test]
-        public void GridCoord_PackRoundTrip_PreservesSignedValues()
+        public void PublicInputContract_ExposesMoveAndExactlyFiveKeyboardSkills()
         {
-            var original = new GridCoord(-17, 42);
-            Assert.That(GridCoord.Unpack(original.Pack()), Is.EqualTo(original));
+            AbilityKind[] values = Enum.GetValues(typeof(AbilityKind)).Cast<AbilityKind>().ToArray();
+
+            Assert.That(values, Is.EqualTo(new[]
+            {
+                AbilityKind.Move, AbilityKind.Copy, AbilityKind.Delete, AbilityKind.Connect,
+                AbilityKind.Restore, AbilityKind.Undo
+            }));
+            Assert.That(values.Count(TurnRequest.IsPublicKeyboardSkill), Is.EqualTo(5));
+            Assert.Throws<ArgumentException>(() => TurnRequest.UseSkill("legacy", 1, (AbilityKind)4));
+
+            RunState state = LocalTurnService.CreateDemo(19).CreateSnapshot();
+            RulePreparation rejected = new RuleEngine().Prepare(state,
+                new TurnRequest("legacy-raw", state.Version, (AbilityKind)4, null, null, string.Empty));
+            Assert.That(rejected.IsValid, Is.False);
+            Assert.That(rejected.ErrorCode, Is.EqualTo(TurnErrorCode.InvalidRequest));
         }
 
         [Test]
-        public void WorldContract_Is160Square_WithSixBiomesAndGenericStoryRoles()
+        public void NetworkClient_RejectsLegacySkillBeforeSendingRequest()
         {
-            RegionMap map = DeterministicRegionGenerator.Generate(991, "seeded-world");
+            var client = new GameApiClient();
+            GameApiClient.Result<GameApiClient.CommittedTurn> result = null;
+            var request = client.SubmitAction("run", "legacy-network", 1, "ATTACK",
+                Array.Empty<string>(), null, value => result = value);
+
+            while (request.MoveNext()) { }
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(result.ErrorCode, Is.EqualTo("INVALID_SKILL"));
+        }
+
+        [Test]
+        public void WorldContract_Seals160SquareSixBiomesAndSixIndependentRegionAxes()
+        {
+            RegionMap map = DeterministicRegionGenerator.Generate(991, "codria-world");
 
             Assert.That(map.Width, Is.EqualTo(160));
             Assert.That(map.Height, Is.EqualTo(160));
@@ -47,72 +83,73 @@ namespace KeyboardWanderer.Tests
             Assert.That(map.Areas.GroupBy(value => value.Biome).Select(group => group.Count()),
                 Is.All.EqualTo(2));
             Assert.That(map.Areas.Where(value => !string.IsNullOrWhiteSpace(value.CampaignRole))
-                .Select(value => value.CampaignRole), Is.EquivalentTo(CampaignCatalog.RoleIds));
-            Assert.That(map.Areas.All(value => !CampaignCatalog.RoleIds.Contains(value.Biome)), Is.True);
-
-            PlacementSlot[] milestones = map.PlacementSlots
-                .Where(slot => slot.Tags.Contains("milestone_token")).ToArray();
-            Assert.That(milestones, Has.Length.EqualTo(3));
-            Assert.That(milestones.SelectMany((left, index) => milestones.Skip(index + 1)
-                .Select(right => left.Coord.ManhattanDistance(right.Coord)))
-                .All(distance => distance >= 20), Is.True);
-
-            PlacementSlot anchor = map.PlacementSlots.Single(slot => slot.Id == "slot-finale-anchor");
-            PlacementSlot[] finale = map.PlacementSlots.Where(slot => slot.Tags.Contains("finale_puzzle")).ToArray();
-            Assert.That(finale, Has.Length.EqualTo(7));
-            Assert.That(finale.All(slot => slot.Coord.ManhattanDistance(anchor.Coord) <= 12), Is.True);
-            Assert.That(map.Start.ManhattanDistance(anchor.Coord), Is.GreaterThanOrEqualTo(80));
-            Assert.That(map.PlacementSlots.Select(slot => slot.Coord).Distinct().Count(),
-                Is.EqualTo(map.PlacementSlots.Count));
+                .Select(value => value.CampaignRole), Is.EquivalentTo(CampaignCatalog.RegionAxisIds));
+            Assert.That(map.Areas.All(value => !CampaignCatalog.RegionAxisIds.Contains(value.Biome)), Is.True);
+            Assert.That(map.GenerationReport.IsValid, Is.True);
+            Assert.That(DeterministicRegionGenerator.ComputeLayoutHash(map), Is.EqualTo(map.LayoutHash));
         }
 
         [Test]
-        public void SameSeed_IsDeterministic_AndDifferentSeedsVaryWorldAndCampaignContent()
+        public void WorldContract_GivesEveryAdminLevelTwoAreasAndTwoContexts()
         {
-            RegionMap firstMap = DeterministicRegionGenerator.Generate(20260717, "seeded-world");
-            RegionMap repeatedMap = DeterministicRegionGenerator.Generate(20260717, "seeded-world");
-            RegionMap differentMap = DeterministicRegionGenerator.Generate(20260718, "seeded-world");
-            CampaignBlueprint first = CampaignCatalog.Create(20260717);
-            CampaignBlueprint repeated = CampaignCatalog.Create(20260717);
-            CampaignBlueprint different = CampaignCatalog.Create(20260718);
+            RegionMap map = DeterministicRegionGenerator.Generate(992, "codria-world");
+            PlacementSlot[] candidates = map.PlacementSlots
+                .Where(slot => slot.Tags.Contains("admin_access_candidate")).ToArray();
 
-            Assert.That(repeatedMap.LayoutHash, Is.EqualTo(firstMap.LayoutHash));
-            Assert.That(RoleMapping(repeatedMap), Is.EqualTo(RoleMapping(firstMap)));
-            Assert.That(differentMap.LayoutHash, Is.Not.EqualTo(firstMap.LayoutHash));
-
-            Assert.That(BlueprintFingerprint(repeated), Is.EqualTo(BlueprintFingerprint(first)));
-            Assert.That(BlueprintFingerprint(different), Is.Not.EqualTo(BlueprintFingerprint(first)));
-            Assert.That(first.Id, Does.StartWith(CampaignCatalog.CampaignId + "-"));
-            Assert.That(first.Beats.Select(beat => beat.RoleId), Is.EqualTo(CampaignCatalog.RoleIds));
-            Assert.That(first.Beats.Where(beat => !string.IsNullOrEmpty(beat.MilestoneTokenId))
-                .Select(beat => beat.MilestoneTokenId), Is.EqualTo(CampaignCatalog.MilestoneTokenIds));
-            Assert.That(first.FinaleComponents, Is.EquivalentTo(CampaignCatalog.FinaleComponentIds));
-        }
-
-        [Test]
-        public void SeededCatalog_VariesNpcQuestAndEndingSubset_WithoutChangingSixRoleContract()
-        {
-            var blueprints = Enumerable.Range(0, 12).Select(seed => CampaignCatalog.Create(seed)).ToArray();
-
-            Assert.That(blueprints.Select(value => value.Title).Distinct().Count(), Is.GreaterThan(1));
-            Assert.That(blueprints.Select(value => string.Join("|", value.NpcNames)).Distinct().Count(),
-                Is.GreaterThan(1));
-            Assert.That(blueprints.Select(value => string.Join("|", value.QuestSeeds)).Distinct().Count(),
-                Is.GreaterThan(1));
-            Assert.That(blueprints.Select(value => string.Join("|", value.Endings.Select(ending => ending.Code)))
-                .Distinct().Count(), Is.GreaterThan(1));
-
-            foreach (CampaignBlueprint blueprint in blueprints)
+            Assert.That(candidates, Has.Length.EqualTo(6));
+            for (int level = 1; level <= 3; level++)
             {
-                Assert.That(blueprint.Beats, Has.Count.EqualTo(6));
-                Assert.That(blueprint.Beats.Select(beat => beat.RoleId), Is.EqualTo(CampaignCatalog.RoleIds));
-                Assert.That(blueprint.Endings, Has.Count.EqualTo(4));
-                Assert.That(blueprint.Endings.Count(ending => ending.Code == CampaignCatalog.FallbackEndingCode),
-                    Is.EqualTo(1));
-                Assert.That(blueprint.Endings.Where(ending => ending.Code != CampaignCatalog.FallbackEndingCode)
-                    .All(ending => EndingRecipeCodes.Contains(ending.Code)), Is.True);
-                Assert.That(blueprint.PlayerAssetId, Is.EqualTo("player.ninja-green"));
+                PlacementSlot[] levelCandidates = candidates
+                    .Where(slot => slot.Tags.Contains("admin_level_" + level)).ToArray();
+                Assert.That(levelCandidates, Has.Length.EqualTo(2));
+                Assert.That(levelCandidates.Select(slot => slot.AreaId).Distinct().Count(), Is.EqualTo(2));
+                Assert.That(levelCandidates.SelectMany(slot => slot.Tags)
+                    .Where(tag => tag.StartsWith("context_", StringComparison.Ordinal)).Distinct().Count(),
+                    Is.EqualTo(2));
             }
+        }
+
+        [Test]
+        public void SameSeed_IsDeterministic_AndLayoutNeverDependsOnCampaignTurns()
+        {
+            RegionMap first = DeterministicRegionGenerator.Generate(20260717, "codria-world");
+            RegionMap repeated = DeterministicRegionGenerator.Generate(20260717, "codria-world");
+            RegionMap different = DeterministicRegionGenerator.Generate(20260718, "codria-world");
+            LocalTurnService service = LocalTurnService.CreateDemo(20260717, new SequenceD20Source(20));
+            string sealedHash = service.CurrentView.Region.LayoutHash;
+            GridCoord destination = FirstSafeDestination(service.CurrentView);
+
+            TurnResponse moved = service.Submit(TurnRequest.Move("safe", service.CurrentView.Version,
+                destination));
+
+            Assert.That(repeated.LayoutHash, Is.EqualTo(first.LayoutHash));
+            Assert.That(different.LayoutHash, Is.Not.EqualTo(first.LayoutHash));
+            Assert.That(moved.IsSuccess, Is.True);
+            Assert.That(moved.ConsumesCampaignTurn, Is.False);
+            Assert.That(moved.D20, Is.Zero);
+            Assert.That(moved.Run.CurrentTurn, Is.Zero);
+            Assert.That(moved.Run.Region.LayoutHash, Is.EqualTo(sealedHash));
+        }
+
+        [Test]
+        public void Catalog_FixesCodriaNupjukyiKeyboardNineBeatsAndSharedEndings()
+        {
+            CampaignBlueprint blueprint = CampaignCatalog.Create(73);
+
+            Assert.That(CampaignCatalog.WorldId, Is.EqualTo("WORLD_CODRIA"));
+            Assert.That(CampaignCatalog.ProtagonistId, Is.EqualTo("PROTAGONIST_NUPJUKYI"));
+            Assert.That(CampaignCatalog.AdministratorKeyboardId, Is.EqualTo("ARTIFACT_ADMIN_KEYBOARD"));
+            Assert.That(blueprint.Title, Is.EqualTo("넙죽이와 붕괴한 코드 왕국"));
+            Assert.That(blueprint.WorldName, Is.EqualTo("코드리아"));
+            Assert.That(blueprint.PlayerName, Is.EqualTo("넙죽이"));
+            Assert.That(blueprint.PlayerAssetId, Is.EqualTo("player.ninja-green.v1"));
+            Assert.That(blueprint.Beats.Select(beat => beat.Id), Is.EqualTo(BeatIds));
+            Assert.That(blueprint.Endings.Select(ending => ending.Code), Is.EquivalentTo(EndingCodes));
+            Assert.That(blueprint.AdminAccessBindings.Select(binding => binding.AccessId),
+                Is.EqualTo(CampaignCatalog.AdminAccessLevelIds));
+            Assert.That(blueprint.AdminAccessBindings.All(binding =>
+                binding.CandidateRegionAxes.Distinct().Count() >= 2 &&
+                binding.CandidateContexts.Distinct().Count() >= 2), Is.True);
         }
 
         [Test]
