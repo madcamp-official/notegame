@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body { margin: 0; background: #1c1c22; }
+  @keyframes none {}
+</style>
+</helmet>
+<div style="min-height:100vh; background:#1c1c22; color:#eae7e0; font-family: Helvetica, Arial, sans-serif; padding:32px 40px 80px;">
+  <div style="max-width:1100px; margin:0 auto;">
+    <div style="margin-bottom:36px;">
+      <div style="font-size:13px; letter-spacing:0.12em; text-transform:uppercase; color:#8f8a7f;">SRPG Tileset Concepts</div>
+      <h1 style="font-size:32px; margin:6px 0 4px; font-weight:600;">Tileset Gallery</h1>
+      <div style="font-size:14px; color:#a8a296; max-width:640px; line-height:1.5;">16&times;16 px tiles. Autotile blob sheets use a 4&times;4 grid keyed to orthogonal neighbor bitmask (N/E/S/W) &mdash; place the matching tile wherever that combination of same-terrain neighbors occurs.</div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:56px;">
+      <sc-for list="{{ regions }}" as="region" hint-placeholder-count="1">
+        <div style="border-top:1px solid #34333c; padding-top:28px;">
+          <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:18px;">
+            <h2 style="font-size:20px; margin:0; font-weight:600;">{{ region.name }}</h2>
+            <span style="font-size:12px; color:#8f8a7f;">{{ region.subtitle }}</span>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:28px;">
+            <sc-for list="{{ region.sheets }}" as="sheet" hint-placeholder-count="4">
+              <div style="background:#26252c; border:1px solid #34333c; border-radius:6px; padding:14px; width:fit-content;">
+                <div style="font-size:12px; color:#c9c4b8; margin-bottom:10px; font-weight:600;">{{ sheet.label }}</div>
+                <img src="{{ sheet.src }}" alt="{{ sheet.label }}" style="image-rendering:pixelated; width:{{ sheet.dispW }}px; height:{{ sheet.dispH }}px; display:block; background:repeating-conic-gradient(#2e2d34 0% 25%, #26252c 0% 50%) 50% / 16px 16px;" />
+                <div style="font-size:11px; color:#77726a; margin-top:8px;">{{ sheet.native }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const scale = 5;
+    const mk = (label, src, w, h) => ({ label, src, dispW: w * scale, dispH: h * scale, native: `${w}\u00d7${h}px native` });
+    const regions = [
+      {
+        name: 'General',
+        subtitle: 'Field / Slope / Water / High Ground \u2014 shared across all regions',
+        sheets: [
+          mk('Field (grass, autotile)', 'tilesets/General_Field.png', 64, 80),
+          mk('Water (autotile)', 'tilesets/General_Water.png', 64, 80),
+          mk('High Ground (plateau + cliff face, autotile)', 'tilesets/General_HighGround.png', 64, 80),
+          mk('Slope / Rack ramp (L/R)', 'tilesets/General_Slope.png', 32, 32),
+        ],
+      },
+      {
+        name: 'Bug Forest',
+        subtitle: 'Green/mint \u2014 data trees, data fruit, camps, holes, leaf beds, rocks, data lake',
+        sheets: [
+          mk('Ground (mint grass, autotile + leaf beds)', 'tilesets/BugForest_Ground.png', 64, 96),
+          mk('Data Trees (file-icon canopy, w/ fruit)', 'tilesets/BugForest_DataTree.png', 64, 44),
+          mk('Barren Camp ground (autotile)', 'tilesets/BugForest_Camp.png', 64, 96),
+          mk('Camp objects (tent, campfire)', 'tilesets/BugForest_Camp_Objects.png', 32, 20),
+          mk('Hole / Pit (autotile)', 'tilesets/BugForest_Hole.png', 64, 64),
+          mk('Rocks', 'tilesets/BugForest_Rocks.png', 48, 20),
+          mk('Blue Data Lake (autotile)', 'tilesets/BugForest_Lake.png', 64, 64),
+        ],
+      },
+      {
+        name: 'Buffer Village',
+        subtitle: 'Orange/yellow \u2014 quest hub, houses, forge, shop, fence, sign',
+        sheets: [
+          mk('Ground (dirt autotile + paving/flowerbed)', 'tilesets/BufferVillage_Ground.png', 64, 96),
+          mk('Buildings (house, forge, shop)', 'tilesets/BufferVillage_Buildings.png', 140, 72),
+          mk('Fence + Sign', 'tilesets/BufferVillage_Fence.png', 96, 20),
+        ],
+      },
+      {
+        name: 'Deadlock City',
+        subtitle: 'Gray/black gothic metropolis \u2014 red & purple virus creep',
+        sheets: [
+          mk('Ground (pavement, autotile)', 'tilesets/DeadlockCity_Ground.png', 64, 64),
+          mk('Virus Creep (red top / purple bottom, autotile)', 'tilesets/DeadlockCity_Virus.png', 64, 128),
+          mk('Gothic Buildings', 'tilesets/DeadlockCity_Buildings.png', 72, 72),
+        ],
+      },
+      {
+        name: 'Data Archive',
+        subtitle: 'Purple/pink glittery cavern \u2014 crystal rock, wood archive',
+        sheets: [
+          mk('Rock w/ crystal shards (autotile)', 'tilesets/DataArchive_Rock.png', 64, 64),
+          mk('Pure Crystal (decorative)', 'tilesets/DataArchive_Crystal.png', 48, 24),
+          mk('Wood Plank floor (autotile)', 'tilesets/DataArchive_WoodPlank.png', 64, 64),
+          mk('Bookshelf', 'tilesets/DataArchive_Bookshelf.png', 32, 36),
+        ],
+      },
+      {
+        name: 'Legacy Citadel',
+        subtitle: 'Ivory/white freezing \u2014 server-rack edifices, snow, ice',
+        sheets: [
+          mk('Snow (autotile)', 'tilesets/LegacyCitadel_Snow.png', 64, 64),
+          mk('Ice (autotile)', 'tilesets/LegacyCitadel_Ice.png', 64, 64),
+          mk('Edifice: server rack + monitor (snow-capped)', 'tilesets/LegacyCitadel_Edifice.png', 72, 56),
+          mk('Snow Goose', 'tilesets/LegacyCitadel_Goose.png', 18, 18),
+        ],
+      },
+      {
+        name: 'Root System',
+        subtitle: 'Navy/indigo core \u2014 live devices: inactive / active / destroyed',
+        sheets: [
+          mk('Ground (circuit floor, autotile)', 'tilesets/RootSystem_Ground.png', 64, 64),
+          mk('Server Core device (inactive/active/destroyed)', 'tilesets/RootSystem_Device_Server.png', 96, 60),
+          mk('Monitor Node device (inactive/active/destroyed)', 'tilesets/RootSystem_Device_Monitor.png', 96, 52),
+        ],
+      },
+    ];
+    return { regions };
+  }
+}
+
+</script>
+</body>
+</html>
