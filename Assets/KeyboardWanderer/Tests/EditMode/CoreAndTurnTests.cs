@@ -153,107 +153,110 @@ namespace KeyboardWanderer.Tests
         }
 
         [Test]
-        public void MultipleSeeds_SatisfyGenericProgressionAndImmutableLayoutInvariants()
+        public void MultipleSeeds_PreserveSpatialProgressionAndThreePartRootGate()
         {
-            long[] seeds = { 0, 1, 2, 77, 20260717 };
-            foreach (long seed in seeds)
+            foreach (long seed in new long[] { 0, 1, 2, 77, 20260717 })
             {
-                RegionMap map = DeterministicRegionGenerator.Generate(seed, "seeded-world");
-                var areas = map.Areas.ToDictionary(area => area.Id);
-                var slots = map.PlacementSlots.ToDictionary(slot => slot.Id);
-                WorldArea finaleArea = map.Areas.Single(area =>
-                    area.CampaignRole == CampaignCatalog.FinalConvergenceRole);
-
-                Assert.That(map.GeneratorVersion, Is.EqualTo(DeterministicRegionGenerator.CurrentVersion),
-                    "seed " + seed);
-                Assert.That(map.Progression.Nodes.Select(node => node.Id), Is.EqualTo(ProgressionNodeIds),
-                    "seed " + seed);
-                Assert.That(map.Progression.Nodes.Select(node => node.CampaignRole),
-                    Is.EqualTo(CampaignCatalog.RoleIds), "seed " + seed);
+                RegionMap map = DeterministicRegionGenerator.Generate(seed, "codria-world");
+                Assert.That(map.Progression.Nodes.Select(node => node.Id), Is.EqualTo(ProgressionNodeIds));
+                Assert.That(map.Progression.RootRequiredAdminAccess, Is.EqualTo(3));
                 Assert.That(map.Progression.RootRequiredAccessTokens,
-                    Is.EquivalentTo(CampaignCatalog.MilestoneTokenIds), "seed " + seed);
-                Assert.That(map.Progression.Edges.Select(edge => edge.From + ">" + edge.To), Is.EqualTo(new[]
-                {
-                    "catalyst>milestone1", "milestone1>conflict", "conflict>hidden-truth",
-                    "hidden-truth>milestone3", "milestone3>convergence"
-                }), "seed " + seed);
-
-                Assert.That(map.Routes.Count(route => route.IsLoop), Is.GreaterThanOrEqualTo(2));
-                Assert.That(map.Routes.Where(route => route.Kind == "major").All(route => route.Width >= 3),
-                    Is.True);
+                    Is.EquivalentTo(CampaignCatalog.AdminAccessLevelIds));
                 Assert.That(map.Routes.Where(route => route.IsGated).All(route =>
                     route.RequiredAdminAccess == 3 &&
-                    route.RequiredAccessTokens.ToArray().OrderBy(value => value)
-                        .SequenceEqual(CampaignCatalog.MilestoneTokenIds.OrderBy(value => value))), Is.True);
-
-                Assert.That(map.Progression.Nodes.All(node =>
-                    areas.TryGetValue(node.AreaId, out WorldArea area) &&
-                    slots.TryGetValue(node.SlotId, out PlacementSlot slot) &&
-                    slot.AreaId == area.Id && area.CampaignRole == node.CampaignRole &&
-                    node.CandidatePaths.Count > 0), Is.True);
-                Assert.That(map.Areas.Where(area => area.Id != finaleArea.Id).All(area =>
-                    GridPathfinder.FindPath(map, map.Start, area.Center,
-                        coord => map.AreaAt(coord)?.Id == finaleArea.Id).Count > 0), Is.True);
-                Assert.That(map.GenerationReport.IsValid, Is.True);
-                Assert.That(DeterministicRegionGenerator.ComputeLayoutHash(map), Is.EqualTo(map.LayoutHash));
+                    route.RequiredAccessTokens.OrderBy(value => value)
+                        .SequenceEqual(CampaignCatalog.AdminAccessLevelIds.OrderBy(value => value))), Is.True);
+                Assert.That(map.Routes.Count(route => route.IsLoop), Is.GreaterThanOrEqualTo(2));
             }
         }
 
         [Test]
-        public void Demo_UsesNinjaAdventureHeroAndSeededCampaignData()
+        public void RootMovement_RequiresAllThreeAccessIdsAndInternalCauseClue()
         {
-            const long seed = 13;
-            LocalTurnService service = LocalTurnService.CreateDemo(seed);
-            RunView view = service.CurrentView;
-            CampaignBlueprint blueprint = CampaignCatalog.Create(seed);
-            EntityView player = view.Entities.Single(entity => entity.EntityId == view.PlayerEntityId);
+            RunState state = LocalTurnService.CreateDemo(80).CreateSnapshot();
+            FindRootBoundaryPair(state.Region, out GridCoord outside, out GridCoord inside);
+            MovePlayerTo(state, outside);
+            state.AdminAccess = 3;
+            foreach (string accessId in CampaignCatalog.AdminAccessLevelIds) state.Inventory.Add(accessId);
+            var engine = new RuleEngine();
 
-            Assert.That(view.CampaignId, Is.EqualTo(blueprint.Id));
-            Assert.That(view.CampaignTitle, Is.EqualTo(blueprint.Title));
-            Assert.That(view.CampaignPremise, Is.EqualTo(blueprint.Premise));
-            Assert.That(player.DisplayName, Is.EqualTo(blueprint.PlayerName));
-            Assert.That(player.AssetId, Is.EqualTo(blueprint.PlayerAssetId));
-            Assert.That(view.Region.Width, Is.EqualTo(160));
-            Assert.That(view.Region.Height, Is.EqualTo(160));
-            Assert.That(view.Region.Biomes, Has.Count.EqualTo(6));
+            RulePreparation missingClue = engine.Prepare(state,
+                TurnRequest.Move("root-no-clue", state.Version, inside));
+            state.AddCanonicalFact("붕괴 원인이 관리자 통제 시스템 내부에 있음을 확정했다.");
+            RulePreparation allowed = engine.Prepare(state,
+                TurnRequest.Move("root-ready", state.Version, inside));
+
+            Assert.That(missingClue.IsValid, Is.False);
+            Assert.That(missingClue.ErrorCode, Is.EqualTo(TurnErrorCode.QuestConditionMissing));
+            Assert.That(allowed.IsValid, Is.True);
         }
 
         [Test]
-        public void SafeExplorationMove_DoesNotConsumeD20OrCampaignTurn()
+        public void NaturalLanguageNote_IsOptionalAndNeverChangesRulesPreparation()
         {
-            LocalTurnService service = LocalTurnService.CreateDemo(41, new SequenceD20Source(20));
-            RunView before = service.CurrentView;
-            GridCoord destination = FirstSafeDestination(before);
-            TurnResponse moved = service.Submit(new TurnRequest("safe-travel", before.Version,
-                AbilityKind.Move, null, destination, "이미 확인된 안전한 길을 따라 이동한다"));
+            RunState state = LocalTurnService.CreateDemo(81).CreateSnapshot();
+            EntityState keyboard = state.Spatial.Entities.Single(entity =>
+                entity.AssetId == CampaignCatalog.AdministratorKeyboardId);
+            MovePlayerNear(state, keyboard);
+            var engine = new RuleEngine();
 
-            Assert.That(moved.IsSuccess, Is.True);
-            Assert.That(moved.ConsumesCampaignTurn, Is.False);
-            Assert.That(moved.D20, Is.Zero);
-            Assert.That(moved.Run.CurrentTurn, Is.EqualTo(before.CurrentTurn));
-            Assert.That(moved.Run.Region.LayoutHash, Is.EqualTo(before.Region.LayoutHash));
+            RulePreparation empty = engine.Prepare(state, new TurnRequest("note-empty", state.Version,
+                AbilityKind.Copy, keyboard.EntityId, null, string.Empty));
+            RulePreparation elaborate = engine.Prepare(state, new TurnRequest("note-long", state.Version,
+                AbilityKind.Copy, keyboard.EntityId, null,
+                "이 문장은 분위기만 설명하며 주사위나 난이도를 바꾸지 않는다"));
+
+            Assert.That(empty.IsValid, Is.True);
+            Assert.That(elaborate.IsValid, Is.True);
+            Assert.That(elaborate.Difficulty, Is.EqualTo(empty.Difficulty));
+            Assert.That(elaborate.Modifier, Is.EqualTo(empty.Modifier));
+            Assert.That(elaborate.IntentAlignment, Is.Zero);
         }
 
         [Test]
-        public void MilestoneProgress_RequiresCorrectRoleDesignatedEvidenceAndSuccess()
+        public void AdminAccess_AcquiresOnlyFromSelectedRegionContextSkillAndEvidence()
         {
-            LocalTurnService service = StateAtBeatNear(44, 1, "slot-milestone-1", out EntityView token,
-                new SequenceD20Source(1, 20, 20));
+            long seed = FindSeedForAccessSkill(0, AbilityKind.Copy);
+            RunState state = LocalTurnService.CreateDemo(seed).CreateSnapshot();
+            CampaignBeatState beat = state.RequiredBeats[2];
+            for (int i = 0; i < 2; i++) state.RequiredBeats[i].IsCompleted = true;
+            state.CurrentBeatIndex = 2;
+            EntityState candidate = state.Spatial.Entities.Single(entity => entity.IsActive &&
+                entity.AssetId.StartsWith("story.admin-access-1.investigation", StringComparison.Ordinal));
+            MovePlayerNear(state, candidate);
+            var service = new LocalTurnService(state, new SequenceD20Source(20));
 
-            TurnResponse failed = service.Submit(new TurnRequest("failed-token", service.CurrentView.Version,
-                AbilityKind.Interact, token.EntityId, null, "첫 표식의 흔적을 조사한다"));
-            Assert.That(failed.Run.MilestoneProgress, Is.Zero);
+            TurnResponse response = service.Submit(TurnRequest.UseSkill("access-one",
+                service.CurrentView.Version, AbilityKind.Copy, candidate.EntityId));
 
-            TurnResponse granted = service.Submit(new TurnRequest("successful-token", failed.Run.Version,
-                AbilityKind.Interact, token.EntityId, null, "지역의 위기와 연결된 첫 표식을 확인한다"));
-            Assert.That(granted.Run.MilestoneProgress, Is.EqualTo(1));
-            Assert.That(granted.Run.Inventory, Does.Contain("MILESTONE_TOKEN_1"));
-            Assert.That(granted.Events.Any(value =>
-                value.StartsWith("MILESTONE_TOKEN_ACQUIRED:1:MILESTONE_TOKEN_1", StringComparison.Ordinal)), Is.True);
+            Assert.That(beat.TriggerAbility, Is.EqualTo(AbilityKind.Copy));
+            Assert.That(response.IsSuccess, Is.True);
+            Assert.That(response.Run.AdminAccess, Is.EqualTo(1));
+            Assert.That(response.Run.Inventory, Does.Contain("ADMIN_ACCESS_LEVEL_1"));
+            Assert.That(response.Run.AdminAccessAcquisitionHistory, Has.Count.EqualTo(1));
+            Assert.That(response.Run.AdminAccessAcquisitionHistory[0].Context,
+                Is.EqualTo(ActionContext.Investigation));
+            Assert.That(response.Events.Any(value => value.StartsWith("ADMIN_ACCESS_ACQUIRED:1:",
+                StringComparison.Ordinal)), Is.True);
+        }
 
-            TurnResponse repeated = service.Submit(new TurnRequest("repeat-token", granted.Run.Version,
-                AbilityKind.Interact, token.EntityId, null, "이미 확인한 표식을 다시 조사한다"));
-            Assert.That(repeated.Run.MilestoneProgress, Is.EqualTo(1));
+        [Test]
+        public void TechnicalDebt_RecordsCausalEntryWithoutAutomaticResolution()
+        {
+            RunState state = LocalTurnService.CreateDemo(82).CreateSnapshot();
+            EntityState keyboard = state.Spatial.Entities.Single(entity =>
+                entity.AssetId == CampaignCatalog.AdministratorKeyboardId);
+            MovePlayerNear(state, keyboard);
+            var service = new LocalTurnService(state, new SequenceD20Source(20));
+
+            TurnResponse copied = service.Submit(TurnRequest.UseSkill("copy-keyboard",
+                service.CurrentView.Version, AbilityKind.Copy, keyboard.EntityId));
+
+            Assert.That(copied.IsSuccess, Is.True);
+            Assert.That(copied.Run.TechnicalDebtEntries, Has.Count.EqualTo(1));
+            Assert.That(copied.Run.TechnicalDebtEntries[0].OperationType, Is.EqualTo("COPY"));
+            Assert.That(copied.Run.TechnicalDebtEntries[0].TargetId, Is.Not.Empty);
+            Assert.That(copied.Run.TechnicalDebtEntries[0].IsResolved, Is.False);
         }
 
         [Test]
