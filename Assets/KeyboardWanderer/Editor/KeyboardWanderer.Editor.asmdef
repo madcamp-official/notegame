@@ -3,6 +3,7 @@
   "rootNamespace": "KeyboardWanderer.Editor",
   "references": [
     "KeyboardWanderer.Runtime",
+    "Unity.2D.Sprite.Editor",
     "Unity.InputSystem",
     "Unity.ugui"
   ],

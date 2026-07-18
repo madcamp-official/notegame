@@ -62,7 +62,7 @@ MonoBehaviour:
   PlayerFrameSize: 32
   CreatureFrameSize: 16
   PlayerIdle: {fileID: -7385789195546760866, guid: fd0dc91ff18f746dea9f1192a6d94a41, type: 3}
-  WardenIdle: {fileID: 4723107735738678597, guid: 07bb692ab5687420da17d27e29989325, type: 3}
+  WardenIdle: {fileID: -1176183960, guid: 07bb692ab5687420da17d27e29989325, type: 3}
   SlimeIdle: {fileID: 4518187702968751635, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}
   VillagerIdle: {fileID: -7385789195546760866, guid: ee8745936e2de4912a4f685588afa282, type: 3}
   RuneBook: {fileID: 2353571312451627304, guid: b724c872ed7f54eaca08c061d33b5dc3, type: 3}
