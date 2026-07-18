@@ -1,0 +1,754 @@
+fileFormatVersion: 2
+guid: dc0d754cfa2ec4ba39a54f0b9f80db1e
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -1704377463382754986
+    second: NeopjukiActionPreview_0
+  - first:
+      213: 3052884086479762331
+    second: NeopjukiActionPreview_1
+  - first:
+      213: 3667046384657993290
+    second: NeopjukiActionPreview_2
+  - first:
+      213: -714284205613168223
+    second: NeopjukiActionPreview_3
+  - first:
+      213: -8155937349592381333
+    second: NeopjukiActionPreview_4
+  - first:
+      213: 1388810299371491854
+    second: NeopjukiActionPreview_5
+  - first:
+      213: -869976117431239451
+    second: NeopjukiActionPreview_6
+  - first:
+      213: -902113758471446858
+    second: NeopjukiActionPreview_7
+  - first:
+      213: 782612404191208927
+    second: NeopjukiActionPreview_8
+  - first:
+      213: 5407488901543656759
+    second: NeopjukiActionPreview_9
+  - first:
+      213: -3208585482441494208
+    second: NeopjukiActionPreview_10
+  - first:
+      213: -2921035052668477258
+    second: NeopjukiActionPreview_11
+  - first:
+      213: 6477285257413262696
+    second: NeopjukiActionPreview_12
+  - first:
+      213: -8568740957020342323
+    second: NeopjukiActionPreview_13
+  - first:
+      213: -6821984720760606762
+    second: NeopjukiActionPreview_14
+  - first:
+      213: -1766340783515269780
+    second: NeopjukiActionPreview_15
+  - first:
+      213: -101305907697631518
+    second: NeopjukiActionPreview_16
+  - first:
+      213: -8681178712971130416
+    second: NeopjukiActionPreview_17
+  - first:
+      213: 4224696245252724551
+    second: NeopjukiActionPreview_18
+  - first:
+      213: -2030124523570108184
+    second: NeopjukiActionPreview_19
+  - first:
+      213: 8221145162382229851
+    second: NeopjukiActionPreview_20
+  - first:
+      213: -4614786635543646010
+    second: NeopjukiActionPreview_21
+  - first:
+      213: -3362051170505918761
+    second: NeopjukiActionPreview_22
+  - first:
+      213: -1969885354758225985
+    second: NeopjukiActionPreview_23
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_0
+      rect:
+        serializedVersion: 2
+        x: 4
+        y: 455
+        width: 184
+        height: 130
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 659b3eb2ab5d858e0800000000000000
+      internalID: -1704377463382754986
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_1
+      rect:
+        serializedVersion: 2
+        x: 196
+        y: 454
+        width: 184
+        height: 133
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b93b11bd6e50e5a20800000000000000
+      internalID: 3052884086479762331
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_2
+      rect:
+        serializedVersion: 2
+        x: 388
+        y: 451
+        width: 184
+        height: 138
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a4e8b6c0247f3e230800000000000000
+      internalID: 3667046384657993290
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_3
+      rect:
+        serializedVersion: 2
+        x: 580
+        y: 454
+        width: 184
+        height: 133
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1a941c7ac4a5616f0800000000000000
+      internalID: -714284205613168223
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_4
+      rect:
+        serializedVersion: 2
+        x: 772
+        y: 454
+        width: 184
+        height: 133
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b68843b413a40de80800000000000000
+      internalID: -8155937349592381333
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_5
+      rect:
+        serializedVersion: 2
+        x: 964
+        y: 454
+        width: 184
+        height: 132
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e02117aeb9b064310800000000000000
+      internalID: 1388810299371491854
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_6
+      rect:
+        serializedVersion: 2
+        x: 1156
+        y: 455
+        width: 184
+        height: 131
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5ecff6d94593de3f0800000000000000
+      internalID: -869976117431239451
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_7
+      rect:
+        serializedVersion: 2
+        x: 1348
+        y: 454
+        width: 184
+        height: 132
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6be1157f05c0b73f0800000000000000
+      internalID: -902113758471446858
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_8
+      rect:
+        serializedVersion: 2
+        x: 4
+        y: 242
+        width: 184
+        height: 140
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fd5a1acc5d56cda00800000000000000
+      internalID: 782612404191208927
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_9
+      rect:
+        serializedVersion: 2
+        x: 196
+        y: 242
+        width: 184
+        height: 141
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 73d706f71824b0b40800000000000000
+      internalID: 5407488901543656759
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_10
+      rect:
+        serializedVersion: 2
+        x: 388
+        y: 242
+        width: 184
+        height: 141
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0417997e080d873d0800000000000000
+      internalID: -3208585482441494208
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_11
+      rect:
+        serializedVersion: 2
+        x: 580
+        y: 241
+        width: 184
+        height: 142
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6b02b3d88166677d0800000000000000
+      internalID: -2921035052668477258
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_12
+      rect:
+        serializedVersion: 2
+        x: 772
+        y: 242
+        width: 184
+        height: 141
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 86dfdfc9f90f3e950800000000000000
+      internalID: 6477285257413262696
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_13
+      rect:
+        serializedVersion: 2
+        x: 964
+        y: 240
+        width: 184
+        height: 144
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: dc7367caf77b51980800000000000000
+      internalID: -8568740957020342323
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_14
+      rect:
+        serializedVersion: 2
+        x: 1156
+        y: 242
+        width: 184
+        height: 141
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6dfebe77a017351a0800000000000000
+      internalID: -6821984720760606762
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_15
+      rect:
+        serializedVersion: 2
+        x: 1348
+        y: 241
+        width: 184
+        height: 142
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c6589467a62bc77e0800000000000000
+      internalID: -1766340783515269780
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_16
+      rect:
+        serializedVersion: 2
+        x: 4
+        y: 37
+        width: 184
+        height: 134
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2eeb80e40d6189ef0800000000000000
+      internalID: -101305907697631518
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_17
+      rect:
+        serializedVersion: 2
+        x: 196
+        y: 36
+        width: 184
+        height: 137
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0d94ca594f1468780800000000000000
+      internalID: -8681178712971130416
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_18
+      rect:
+        serializedVersion: 2
+        x: 388
+        y: 35
+        width: 184
+        height: 138
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 74717360ad221aa30800000000000000
+      internalID: 4224696245252724551
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_19
+      rect:
+        serializedVersion: 2
+        x: 580
+        y: 35
+        width: 184
+        height: 138
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8e86bca708c83d3e0800000000000000
+      internalID: -2030124523570108184
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_20
+      rect:
+        serializedVersion: 2
+        x: 772
+        y: 35
+        width: 184
+        height: 138
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b51c6bab7ff571270800000000000000
+      internalID: 8221145162382229851
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_21
+      rect:
+        serializedVersion: 2
+        x: 964
+        y: 35
+        width: 184
+        height: 138
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6c07332510cf4ffb0800000000000000
+      internalID: -4614786635543646010
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_22
+      rect:
+        serializedVersion: 2
+        x: 1156
+        y: 37
+        width: 184
+        height: 135
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7d6fe49f5489751d0800000000000000
+      internalID: -3362051170505918761
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NeopjukiActionPreview_23
+      rect:
+        serializedVersion: 2
+        x: 1348
+        y: 35
+        width: 184
+        height: 139
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData:
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fbf346de4bf89a4e0800000000000000
+      internalID: -1969885354758225985
+      vertices: []
+      indices:
+      edges: []
+      weights: []
+    outline: []
+    customData:
+    physicsShape: []
+    bones: []
+    spriteID:
+    internalID: 0
+    vertices: []
+    indices:
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      NeopjukiActionPreview_0: -1704377463382754986
+      NeopjukiActionPreview_1: 3052884086479762331
+      NeopjukiActionPreview_10: -3208585482441494208
+      NeopjukiActionPreview_11: -2921035052668477258
+      NeopjukiActionPreview_12: 6477285257413262696
+      NeopjukiActionPreview_13: -8568740957020342323
+      NeopjukiActionPreview_14: -6821984720760606762
+      NeopjukiActionPreview_15: -1766340783515269780
+      NeopjukiActionPreview_16: -101305907697631518
+      NeopjukiActionPreview_17: -8681178712971130416
+      NeopjukiActionPreview_18: 4224696245252724551
+      NeopjukiActionPreview_19: -2030124523570108184
+      NeopjukiActionPreview_2: 3667046384657993290
+      NeopjukiActionPreview_20: 8221145162382229851
+      NeopjukiActionPreview_21: -4614786635543646010
+      NeopjukiActionPreview_22: -3362051170505918761
+      NeopjukiActionPreview_23: -1969885354758225985
+      NeopjukiActionPreview_3: -714284205613168223
+      NeopjukiActionPreview_4: -8155937349592381333
+      NeopjukiActionPreview_5: 1388810299371491854
+      NeopjukiActionPreview_6: -869976117431239451
+      NeopjukiActionPreview_7: -902113758471446858
+      NeopjukiActionPreview_8: 782612404191208927
+      NeopjukiActionPreview_9: 5407488901543656759
+  mipmapLimitGroupName:
+  pSDRemoveMatte: 0
+  userData:
+  assetBundleName:
+  assetBundleVariant:

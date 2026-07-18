@@ -8,7 +8,9 @@ namespace KeyboardWanderer.Editor
     public static class NinjaAdventureManifestBuilder
     {
         private const string ManifestPath = "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset";
-        private const int CurrentManifestVersion = 3;
+        private const int CurrentManifestVersion = 4;
+        private const string NeopjukiAtlasPath =
+            "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
 
         [InitializeOnLoadMethod]
         private static void ScheduleEnsureManifest()
@@ -64,6 +66,9 @@ namespace KeyboardWanderer.Editor
                 "Assets/NinjaAdventure/Actor/Character/Villager/SeparateAnim/Walk.png");
             manifest.PlayerFrameSize = 32;
             manifest.CreatureFrameSize = 16;
+            manifest.NeopjukiAtlas = LoadPixelTexture(NeopjukiAtlasPath);
+            manifest.NeopjukiCellWidth = 192;
+            manifest.NeopjukiCellHeight = 208;
 
             manifest.PlayerIdle = LoadSprite("Assets/NinjaAdventure/Actor/Character/NinjaGreen/SeparateAnim/Idle.png", "Idle_1");
             manifest.WardenIdle = LoadSprite("Assets/NinjaAdventure/Actor/Character/Samurai/SeparateAnim/Idle.png", "Idle_1");

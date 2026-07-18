@@ -42,11 +42,16 @@ namespace KeyboardWanderer.Demo
             public GameObject RootComponentLabel;
             public Sprite[] IdleFrames;
             public Sprite[] WalkFrames;
+            public Sprite[] WalkLeftFrames;
+            public Sprite[] WalkUpFrames;
+            public Sprite[] WalkDownFrames;
             public Sprite[] AttackFrames;
             public Vector3 TargetPosition;
             public readonly Queue<Vector3> MovementPath = new Queue<Vector3>();
             public Color BaseColor;
             public float DesiredSize;
+            public bool FacingLeft;
+            public int FacingVertical;
             public bool IsPlayer;
             public bool IsHostile;
         }
@@ -61,6 +66,27 @@ namespace KeyboardWanderer.Demo
         private static readonly Color Leaf = Hex("65a850");
         private static readonly Color Ruby = Hex("c84c43");
         private static readonly Color FocusBlue = Hex("57a9bd");
+        private static readonly Rect NeopjukiTestPanelRect = new Rect(270f, 70f, 900f, 200f);
+        private static readonly (string Id, string Label)[] NeopjukiTestAnimations =
+        {
+            ("auto", "자동"),
+            ("idle", "기본"),
+            ("right", "오른쪽 이동"),
+            ("left", "왼쪽 이동"),
+            ("wave", "손 흔들기"),
+            ("jump", "점프"),
+            ("failed", "실패"),
+            ("waiting", "승인 대기"),
+            ("review", "리뷰"),
+            ("keyboard-attack", "오른쪽 공격"),
+            ("keyboard-magic", "키보드 마법"),
+            ("keyboard-debug", "버그 수정"),
+            ("keyboard-attack-left", "왼쪽 공격"),
+            ("keyboard-attack-up", "위쪽 공격"),
+            ("keyboard-attack-down", "아래쪽 공격"),
+            ("walking-up", "위로 걷기"),
+            ("walking-down", "아래로 걷기")
+        };
 
         private readonly Dictionary<Guid, EntityVisual> _entityVisuals = new Dictionary<Guid, EntityVisual>();
         private readonly List<Sprite> _runtimeSprites = new List<Sprite>();
@@ -124,6 +150,11 @@ namespace KeyboardWanderer.Demo
         private int _poiCursor = -1;
         private GridCoord? _cameraInspectCoord;
         private float _cameraInspectUntil;
+        // TEMP DEBUG — 구역 순회 (커밋 전 제거). 넙죽이 테스트 패널과 동일한 임시 도구.
+        private bool _debugTourActive;
+        private int _debugTourIndex;
+        private float _debugTourZoom = 32f;
+        private float _debugTourBaseOrthoSize = 8.25f;
         private string _poiLabel = "POI 탐색";
         private string _movementSelectionFeedback = string.Empty;
 
@@ -168,6 +199,12 @@ namespace KeyboardWanderer.Demo
         private Sprite _cavernCrystalSprite;
         private Sprite _ruinTreeSprite;
         private Sprite _ruinLandmarkSprite;
+        private Sprite[] _forestDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _wetlandDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _desertDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _frostDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _cavernDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _ruinDecorationSprites = Array.Empty<Sprite>();
         private Sprite _playerSprite;
         private Sprite _wardenSprite;
         private Sprite _villagerSprite;
@@ -179,9 +216,24 @@ namespace KeyboardWanderer.Demo
         private Sprite _whiteSprite;
         private Sprite[] _playerIdleFrames = Array.Empty<Sprite>();
         private Sprite[] _playerWalkFrames = Array.Empty<Sprite>();
+        private Sprite[] _playerWalkLeftFrames = Array.Empty<Sprite>();
         private Sprite[] _playerAttackFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiWaveFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiJumpFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiFailedFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiWaitingFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiReviewFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardAttackFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardMagicFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardDebugFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardAttackLeftFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardAttackUpFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardAttackDownFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiWalkUpFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiWalkDownFrames = Array.Empty<Sprite>();
         private Sprite[] _slimeFrames = Array.Empty<Sprite>();
         private Sprite[] _villagerFrames = Array.Empty<Sprite>();
+        private string _neopjukiTestAnimation = "auto";
 
         private Texture2D _inkTexture;
         private Texture2D _panelTexture;
@@ -286,11 +338,14 @@ namespace KeyboardWanderer.Demo
             UpdateAnimatedVisuals();
             UpdateCameraFollow();
             HandleKeyboard();
+            HandleDebugRegionTour(); // TEMP DEBUG — 커밋 전 제거
             HandleMapClick();
         }
 
         private void OnGUI()
         {
+            DrawNeopjukiAnimationTestPanel();
+            DrawDebugRegionTourPanel(); // TEMP DEBUG — 커밋 전 제거
             if (_sceneUi != null && _sceneUi.IsReady)
                 return;
 
@@ -322,6 +377,91 @@ namespace KeyboardWanderer.Demo
             GUI.matrix = previousMatrix;
         }
 
+        private void DrawNeopjukiAnimationTestPanel()
+        {
+            if (_screenMode != ScreenMode.Playing || _service == null || _neopjukiWaveFrames.Length == 0)
+                return;
+
+            Matrix4x4 previousMatrix = GUI.matrix;
+            Color previousColor = GUI.color;
+            Font previousFont = GUI.skin.font;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(Screen.width / LogicalWidth, Screen.height / LogicalHeight, 1f));
+            if (_koreanFont != null)
+                GUI.skin.font = _koreanFont;
+            else if (_assets != null && _assets.PixelFont != null)
+                GUI.skin.font = _assets.PixelFont;
+            EnsureStyles();
+
+            GUI.Box(NeopjukiTestPanelRect, "넙죽이 애니메이션 테스트");
+            const float buttonWidth = 166f;
+            const float buttonHeight = 32f;
+            for (int i = 0; i < NeopjukiTestAnimations.Length; i++)
+            {
+                int column = i % 5;
+                int row = i / 5;
+                var rect = new Rect(
+                    NeopjukiTestPanelRect.x + 18f + column * 174f,
+                    NeopjukiTestPanelRect.y + 34f + row * 38f,
+                    buttonWidth,
+                    buttonHeight);
+                (string id, string label) = NeopjukiTestAnimations[i];
+                GUIStyle style = string.Equals(_neopjukiTestAnimation, id, StringComparison.Ordinal)
+                    ? _selectedButtonStyle
+                    : _buttonStyle;
+                if (GUI.Button(rect, label, style))
+                    SetNeopjukiTestAnimation(id);
+            }
+
+            GUI.skin.font = previousFont;
+            GUI.color = previousColor;
+            GUI.matrix = previousMatrix;
+        }
+
+        private void SetNeopjukiTestAnimation(string animationId)
+        {
+            _neopjukiTestAnimation = string.IsNullOrWhiteSpace(animationId) ? "auto" : animationId;
+            _animationFrame = 0;
+            _nextAnimationAt = 0f;
+            PlaySfx(AssetClip("UiMoveSound"));
+        }
+
+        private Sprite[] CurrentNeopjukiTestFrames()
+        {
+            switch (_neopjukiTestAnimation)
+            {
+                case "idle": return _playerIdleFrames;
+                case "right": return _playerWalkFrames;
+                case "left": return _playerWalkLeftFrames;
+                case "wave": return _neopjukiWaveFrames;
+                case "jump": return _neopjukiJumpFrames;
+                case "failed": return _neopjukiFailedFrames;
+                case "waiting": return _neopjukiWaitingFrames;
+                case "review": return _neopjukiReviewFrames;
+                case "keyboard-attack": return _neopjukiKeyboardAttackFrames;
+                case "keyboard-magic": return _neopjukiKeyboardMagicFrames;
+                case "keyboard-debug": return _neopjukiKeyboardDebugFrames;
+                case "keyboard-attack-left": return _neopjukiKeyboardAttackLeftFrames;
+                case "keyboard-attack-up": return _neopjukiKeyboardAttackUpFrames;
+                case "keyboard-attack-down": return _neopjukiKeyboardAttackDownFrames;
+                case "walking-up": return _neopjukiWalkUpFrames;
+                case "walking-down": return _neopjukiWalkDownFrames;
+                default: return Array.Empty<Sprite>();
+            }
+        }
+
+        private Sprite[] CurrentNeopjukiAttackFrames(EntityVisual visual)
+        {
+            if (visual == null || !visual.IsPlayer)
+                return visual != null ? visual.AttackFrames : Array.Empty<Sprite>();
+            if (visual.FacingVertical > 0 && _neopjukiKeyboardAttackUpFrames.Length > 0)
+                return _neopjukiKeyboardAttackUpFrames;
+            if (visual.FacingVertical < 0 && _neopjukiKeyboardAttackDownFrames.Length > 0)
+                return _neopjukiKeyboardAttackDownFrames;
+            if (visual.FacingLeft && _neopjukiKeyboardAttackLeftFrames.Length > 0)
+                return _neopjukiKeyboardAttackLeftFrames;
+            return visual.AttackFrames;
+        }
+
         private void UpdateAuthoredUi()
         {
             if (_sceneUi == null || !_sceneUi.IsReady)
@@ -341,6 +481,7 @@ namespace KeyboardWanderer.Demo
             _sceneUi.SetText("Title Seed", "NEXT SEED  " + nextSeed);
             _sceneUi.SetText("Title Premise", preview.Title + "\n\n" + preview.Premise);
             _sceneUi.SetText("Title Status", _serverStatus + " · Ninja Adventure CC0");
+            _sceneUi.SetImageSprite("Title Character", _playerSprite);
             _sceneUi.SetButtonState("New Run Button", !_serverPending);
             _sceneUi.SetButtonState("Continue Button", !_serverPending &&
                 (LocalRunSaveService.HasSave || !string.IsNullOrWhiteSpace(PlayerPrefs.GetString(ServerRunIdKey, string.Empty))));
@@ -932,10 +1073,15 @@ namespace KeyboardWanderer.Demo
         private void HandleMapClick()
         {
             Mouse mouse = Mouse.current;
-            if (_showPause || _playerWalking || mouse == null || !mouse.leftButton.wasPressedThisFrame || _camera == null)
+            if (_debugTourActive || _showPause || _playerWalking || mouse == null || !mouse.leftButton.wasPressedThisFrame || _camera == null)
                 return;
 
             Vector2 mousePosition = mouse.position.ReadValue();
+            Vector2 logicalGuiPosition = new Vector2(
+                mousePosition.x * LogicalWidth / Mathf.Max(1f, Screen.width),
+                (Screen.height - mousePosition.y) * LogicalHeight / Mathf.Max(1f, Screen.height));
+            if (_neopjukiWaveFrames.Length > 0 && NeopjukiTestPanelRect.Contains(logicalGuiPosition))
+                return;
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
                 return;
             if (!_camera.pixelRect.Contains(mousePosition))
@@ -1756,6 +1902,9 @@ namespace KeyboardWanderer.Demo
                         Renderer = renderer,
                         IdleFrames = FramesForAsset(entity.assetId, entity.kind, isPlayer),
                         WalkFrames = isPlayer ? _playerWalkFrames : Array.Empty<Sprite>(),
+                        WalkLeftFrames = isPlayer ? _playerWalkLeftFrames : Array.Empty<Sprite>(),
+                        WalkUpFrames = isPlayer ? _neopjukiWalkUpFrames : Array.Empty<Sprite>(),
+                        WalkDownFrames = isPlayer ? _neopjukiWalkDownFrames : Array.Empty<Sprite>(),
                         AttackFrames = isPlayer ? _playerAttackFrames : Array.Empty<Sprite>(),
                         TargetPosition = root.transform.position,
                         BaseColor = ServerEntityTint(entity),
@@ -1833,6 +1982,9 @@ namespace KeyboardWanderer.Demo
                 Renderer = renderer,
                 IdleFrames = FramesForEntity(entity),
                 WalkFrames = isPlayer ? _playerWalkFrames : Array.Empty<Sprite>(),
+                WalkLeftFrames = isPlayer ? _playerWalkLeftFrames : Array.Empty<Sprite>(),
+                WalkUpFrames = isPlayer ? _neopjukiWalkUpFrames : Array.Empty<Sprite>(),
+                WalkDownFrames = isPlayer ? _neopjukiWalkDownFrames : Array.Empty<Sprite>(),
                 AttackFrames = isPlayer ? _playerAttackFrames : Array.Empty<Sprite>(),
                 TargetPosition = root.transform.position,
                 BaseColor = EntityTint(entity),
@@ -1968,8 +2120,19 @@ namespace KeyboardWanderer.Demo
                     visual.Root.transform.position = Vector3.MoveTowards(before, visual.TargetPosition,
                         PlayerWalkSpeed * Time.unscaledDeltaTime);
                     float horizontal = visual.Root.transform.position.x - before.x;
-                    if (Mathf.Abs(horizontal) > 0.0001f)
-                        visual.Renderer.flipX = horizontal < 0f;
+                    float vertical = visual.Root.transform.position.y - before.y;
+                    if (Mathf.Abs(vertical) > 0.0001f)
+                    {
+                        visual.FacingVertical = vertical > 0f ? 1 : -1;
+                        visual.FacingLeft = false;
+                        visual.Renderer.flipX = false;
+                    }
+                    else if (Mathf.Abs(horizontal) > 0.0001f)
+                    {
+                        visual.FacingVertical = 0;
+                        visual.FacingLeft = horizontal < 0f;
+                        visual.Renderer.flipX = visual.WalkLeftFrames.Length == 0 && visual.FacingLeft;
+                    }
                     if (Vector3.SqrMagnitude(visual.Root.transform.position - visual.TargetPosition) < 0.0004f)
                     {
                         visual.Root.transform.position = visual.TargetPosition;
@@ -1983,11 +2146,24 @@ namespace KeyboardWanderer.Demo
                 {
                     visual.Root.transform.position = Vector3.Lerp(visual.Root.transform.position, visual.TargetPosition, smoothing);
                 }
-                Sprite[] frames = walkingThisFrame && visual.WalkFrames.Length > 0
-                    ? visual.WalkFrames
-                    : visual.IsPlayer && Time.unscaledTime < _playerActionUntil && visual.AttackFrames.Length > 0
-                        ? visual.AttackFrames
-                        : visual.IdleFrames;
+                Sprite[] testFrames = visual.IsPlayer ? CurrentNeopjukiTestFrames() : Array.Empty<Sprite>();
+                Sprite[] walkFrames = visual.FacingVertical > 0 && visual.WalkUpFrames.Length > 0
+                    ? visual.WalkUpFrames
+                    : visual.FacingVertical < 0 && visual.WalkDownFrames.Length > 0
+                        ? visual.WalkDownFrames
+                        : visual.FacingLeft && visual.WalkLeftFrames.Length > 0
+                            ? visual.WalkLeftFrames
+                            : visual.WalkFrames;
+                Sprite[] attackFrames = CurrentNeopjukiAttackFrames(visual);
+                Sprite[] frames = testFrames.Length > 0
+                    ? testFrames
+                    : walkingThisFrame && walkFrames.Length > 0
+                        ? walkFrames
+                        : visual.IsPlayer && Time.unscaledTime < _playerActionUntil && attackFrames.Length > 0
+                            ? attackFrames
+                            : visual.IdleFrames;
+                if (testFrames.Length > 0 && visual.WalkLeftFrames.Length > 0)
+                    visual.Renderer.flipX = false;
                 if (frames.Length > 0)
                 {
                     Sprite frame = frames[_animationFrame % frames.Length];
@@ -2241,6 +2417,11 @@ namespace KeyboardWanderer.Demo
 
         private void UpdateCameraFollow()
         {
+            if (_debugTourActive) // TEMP DEBUG — 커밋 전 제거
+            {
+                UpdateDebugTourCamera();
+                return;
+            }
             RunView view = _service.CurrentView;
             if (!TryGetPlayerPosition(view, out GridCoord playerPosition))
                 return;
@@ -2266,6 +2447,181 @@ namespace KeyboardWanderer.Demo
             desired.z = -10f;
             _camera.transform.position = Vector3.SmoothDamp(_camera.transform.position, desired, ref _cameraVelocity, 0.16f,
                 Mathf.Infinity, Time.unscaledDeltaTime);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // TEMP DEBUG — 구역 순회 기능 (커밋 전 제거).
+        // F1 토글 · F2/F3 이전·다음 · +/- 줌 · F4 전체보기.
+        // 넙죽이 테스트 패널과 마찬가지로 임시 개발 도구다.
+        // ─────────────────────────────────────────────────────────────
+        private void HandleDebugRegionTour()
+        {
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null)
+                return;
+
+            if (keyboard.backquoteKey.wasPressedThisFrame)
+            {
+                _debugTourActive = !_debugTourActive;
+                if (_debugTourActive)
+                {
+                    _debugTourBaseOrthoSize = _camera != null ? _camera.orthographicSize : 8.25f;
+                    FocusDebugTourRegion(_debugTourIndex);
+                }
+                else
+                {
+                    _cameraInspectCoord = null;
+                    _cameraInspectUntil = 0f;
+                    if (_camera != null) _camera.orthographicSize = _debugTourBaseOrthoSize;
+                }
+                PlaySfx(AssetClip("UiAcceptSound"));
+            }
+
+            if (!_debugTourActive)
+                return;
+
+            int count = DebugTourRegionCount();
+            if (count > 0)
+            {
+                if (keyboard.periodKey.wasPressedThisFrame || keyboard.pageDownKey.wasPressedThisFrame)
+                    FocusDebugTourRegion(_debugTourIndex + 1);
+                if (keyboard.commaKey.wasPressedThisFrame || keyboard.pageUpKey.wasPressedThisFrame)
+                    FocusDebugTourRegion(_debugTourIndex - 1);
+            }
+            if (keyboard.equalsKey.wasPressedThisFrame || keyboard.numpadPlusKey.wasPressedThisFrame)
+                _debugTourZoom = Mathf.Max(6f, _debugTourZoom - 4f);
+            if (keyboard.minusKey.wasPressedThisFrame || keyboard.numpadMinusKey.wasPressedThisFrame)
+                _debugTourZoom = Mathf.Min(90f, _debugTourZoom + 4f);
+            if (keyboard.digit0Key.wasPressedThisFrame)
+                _debugTourZoom = 84f;
+        }
+
+        private void FocusDebugTourRegion(int index)
+        {
+            int count = DebugTourRegionCount();
+            if (count <= 0)
+                return;
+            _debugTourIndex = ((index % count) + count) % count;
+            if (TryGetDebugTourRegion(_debugTourIndex, out GridCoord center, out _))
+            {
+                _cameraInspectCoord = center;
+                _cameraInspectUntil = float.MaxValue;
+            }
+        }
+
+        private void UpdateDebugTourCamera()
+        {
+            RunView view = _service != null ? _service.CurrentView : null;
+            if (view == null || _camera == null)
+                return;
+            _camera.orthographicSize = Mathf.Lerp(_camera.orthographicSize, _debugTourZoom,
+                1f - Mathf.Exp(-8f * Time.unscaledDeltaTime));
+            if (!TryGetDebugTourRegion(_debugTourIndex, out GridCoord center, out _))
+                return;
+            Vector3 desired = WorldPosition(MapOrigin(view), center);
+            desired.z = -10f;
+            _camera.transform.position = Vector3.SmoothDamp(_camera.transform.position, desired,
+                ref _cameraVelocity, 0.16f, Mathf.Infinity, Time.unscaledDeltaTime);
+        }
+
+        private int DebugTourRegionCount()
+        {
+            RunView view = _service != null ? _service.CurrentView : null;
+            if (view == null)
+                return 0;
+            if (_serverOnline && _serverRun?.world?.areas != null)
+                return _serverRun.world.areas.Length;
+            return view.Region?.Areas?.Count ?? 0;
+        }
+
+        private bool TryGetDebugTourRegion(int index, out GridCoord center, out string label)
+        {
+            center = default;
+            label = string.Empty;
+            RunView view = _service != null ? _service.CurrentView : null;
+            if (view == null)
+                return false;
+            if (_serverOnline && _serverRun?.world?.areas != null)
+            {
+                GameApiClient.AreaSnapshot[] areas = _serverRun.world.areas;
+                if (index < 0 || index >= areas.Length)
+                    return false;
+                GameApiClient.AreaSnapshot area = areas[index];
+                center = area.anchor != null
+                    ? new GridCoord(area.anchor.x, area.anchor.y)
+                    : (area.bounds != null
+                        ? new GridCoord(area.bounds.x + area.bounds.width / 2, area.bounds.y + area.bounds.height / 2)
+                        : new GridCoord(view.Region.Width / 2, view.Region.Height / 2));
+                string name = !string.IsNullOrWhiteSpace(area.nameKo) ? area.nameKo
+                    : (!string.IsNullOrWhiteSpace(area.name) ? area.name : area.id);
+                label = name + " · " + BiomeLabelForId(area.biomeId);
+                return true;
+            }
+            if (view.Region?.Areas != null && index >= 0 && index < view.Region.Areas.Count)
+            {
+                WorldArea area = view.Region.Areas[index];
+                center = area.Center;
+                label = area.DisplayName + " · " + BiomeLabelForId(area.Biome);
+                return true;
+            }
+            return false;
+        }
+
+        private static string BiomeLabelForId(string id)
+        {
+            switch (id)
+            {
+                case "root_system": return "루트 시스템 · 코어";
+                case "temperate_forest_field": return "온대 숲·들판";
+                case "river_wetland": return "강·습지";
+                case "arid_desert": return "건조 사막";
+                case "frost_highland": return "설원 고지";
+                case "subterranean_cavern": return "지하 동굴";
+                case "ancient_ruins": return "고대 유적";
+                default: return string.IsNullOrWhiteSpace(id) ? "바이옴 미확인" : id;
+            }
+        }
+
+        private void DrawDebugRegionTourPanel()
+        {
+            if (!_debugTourActive || _screenMode != ScreenMode.Playing || _service == null)
+                return;
+
+            Matrix4x4 previousMatrix = GUI.matrix;
+            Color previousColor = GUI.color;
+            Font previousFont = GUI.skin.font;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(Screen.width / LogicalWidth, Screen.height / LogicalHeight, 1f));
+            if (_koreanFont != null)
+                GUI.skin.font = _koreanFont;
+            else if (_assets != null && _assets.PixelFont != null)
+                GUI.skin.font = _assets.PixelFont;
+            EnsureStyles();
+
+            int count = DebugTourRegionCount();
+            int rows = (count + 1) / 2;
+            var panel = new Rect(24f, 250f, 396f, 118f + rows * 34f);
+            GUI.Box(panel, "구역 순회 (임시 디버그)");
+
+            string current = TryGetDebugTourRegion(_debugTourIndex, out _, out string label) ? label : "구역 없음";
+            GUI.Label(new Rect(panel.x + 16f, panel.y + 32f, panel.width - 32f, 22f),
+                "현재 [" + (count == 0 ? 0 : _debugTourIndex + 1) + "/" + count + "]  " + current, _headerStyle);
+            GUI.Label(new Rect(panel.x + 16f, panel.y + 56f, panel.width - 32f, 40f),
+                "` 토글 · , / . 이전·다음 · - / = 줌 · 0 전체", _mutedStyle);
+
+            for (int i = 0; i < count; i++)
+            {
+                int column = i % 2;
+                int row = i / 2;
+                var rect = new Rect(panel.x + 16f + column * 184f, panel.y + 104f + row * 34f, 176f, 30f);
+                TryGetDebugTourRegion(i, out _, out string itemLabel);
+                GUIStyle style = i == _debugTourIndex ? _selectedButtonStyle : _buttonStyle;
+                if (GUI.Button(rect, itemLabel, style))
+                    FocusDebugTourRegion(i);
+            }
+
+            GUI.skin.font = previousFont;
+            GUI.color = previousColor;
+            GUI.matrix = previousMatrix;
         }
 
         private void SnapCameraToPlayer()
@@ -2369,7 +2725,7 @@ namespace KeyboardWanderer.Demo
             _wetlandLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.WatermillAtlas : null,
                 new Rect(0f, 0f, 34f, 36f), "Wetland Watermill", Hex("9a6b43"), new Vector2(0.5f, 0.08f));
             _desertPalmSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
-                new Rect(96f, 48f, 48f, 48f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
+                new Rect(112f, 72f, 48f, 48f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
             _desertLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
                 new Rect(256f, 96f, 64f, 96f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
             _frostTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
@@ -2382,6 +2738,56 @@ namespace KeyboardWanderer.Demo
                 new Rect(64f, 304f, 32f, 32f), "Ruins Dead Tree", Hex("75624f"), new Vector2(0.5f, 0.08f));
             _ruinLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
                 new Rect(176f, 0f, 80f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
+            _forestDecorationSprites = new[]
+            {
+                _forestTreeSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(32f, 304f, 32f, 32f), "Forest Pine", Hex("477a3d"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(96f, 304f, 32f, 32f), "Forest Shrub", Hex("6a9a46"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(96f, 208f, 32f, 32f), "Forest Plants", Hex("6f9e4c"), new Vector2(0.5f, 0.08f))
+            };
+            _wetlandDecorationSprites = new[]
+            {
+                _wetlandPlantSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(128f, 208f, 32f, 32f), "Wetland Plants", Hex("4f8f68"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(160f, 208f, 32f, 32f), "Wetland Flowers", Hex("6fa87b"), new Vector2(0.5f, 0.08f))
+            };
+            _desertDecorationSprites = new[]
+            {
+                _desertPalmSprite,
+                CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
+                    new Rect(160f, 72f, 48f, 48f), "Desert Palm Cluster", Hex("7f9a4d"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
+                    new Rect(208f, 72f, 48f, 48f), "Desert Oasis Plant", Hex("8ca454"), new Vector2(0.5f, 0.08f))
+            };
+            _frostDecorationSprites = new[]
+            {
+                _frostTreeSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(160f, 304f, 32f, 32f), "Frost Snow Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(192f, 304f, 32f, 32f), "Frost Bush", Hex("d4e7ed"), new Vector2(0.5f, 0.08f))
+            };
+            _cavernDecorationSprites = new[]
+            {
+                _cavernCrystalSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(32f, 112f, 32f, 32f), "Cavern Crystal Cluster", Hex("9670b8"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(64f, 112f, 32f, 32f), "Cavern Ore", Hex("8062a0"), new Vector2(0.5f, 0.08f))
+            };
+            _ruinDecorationSprites = new[]
+            {
+                _ruinTreeSprite,
+                CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
+                    new Rect(0f, 112f, 32f, 32f), "Ruin Rubble", Hex("8b7757"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
+                    new Rect(32f, 112f, 32f, 32f), "Ruin Overgrowth", Hex("788152"), new Vector2(0.5f, 0.08f))
+            };
 
             if (_assets != null)
             {
@@ -2390,6 +2796,29 @@ namespace KeyboardWanderer.Demo
                 _playerAttackFrames = CreateSheetFrames(_assets.PlayerAttackSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Attack");
                 _slimeFrames = CreateSheetFrames(_assets.SlimeSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Slime");
                 _villagerFrames = CreateSheetFrames(_assets.VillagerWalkSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Villager");
+
+                if (_assets.NeopjukiAtlas != null)
+                {
+                    int cellWidth = Mathf.Max(1, _assets.NeopjukiCellWidth);
+                    int cellHeight = Mathf.Max(1, _assets.NeopjukiCellHeight);
+                    _playerIdleFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 0, 6, "Neopjuki Idle");
+                    _playerWalkFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 1, 8, "Neopjuki Right");
+                    _playerWalkLeftFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 2, 8, "Neopjuki Left");
+                    _neopjukiWaveFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 3, 4, "Neopjuki Wave");
+                    _neopjukiJumpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 4, 5, "Neopjuki Jump");
+                    _neopjukiFailedFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 5, 8, "Neopjuki Failed");
+                    _neopjukiWaitingFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 6, 6, "Neopjuki Waiting");
+                    _neopjukiReviewFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 7, 6, "Neopjuki Review");
+                    _neopjukiKeyboardAttackFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 8, 8, "Neopjuki Keyboard Attack");
+                    _neopjukiKeyboardMagicFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 9, 8, "Neopjuki Keyboard Magic");
+                    _neopjukiKeyboardDebugFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 10, 8, "Neopjuki Keyboard Debug");
+                    _neopjukiKeyboardAttackLeftFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 11, 8, "Neopjuki Keyboard Attack Left");
+                    _neopjukiKeyboardAttackUpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 12, 8, "Neopjuki Keyboard Attack Up");
+                    _neopjukiKeyboardAttackDownFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 13, 8, "Neopjuki Keyboard Attack Down");
+                    _neopjukiWalkUpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 14, 8, "Neopjuki Walk Up");
+                    _neopjukiWalkDownFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 15, 8, "Neopjuki Walk Down");
+                    _playerAttackFrames = _neopjukiKeyboardAttackFrames;
+                }
             }
 
             _playerSprite = FirstOrSource(_playerIdleFrames, _assets != null ? _assets.PlayerIdle : null, "Player", Hex("6a9d45"));
@@ -2427,6 +2856,41 @@ namespace KeyboardWanderer.Demo
             {
                 frames[i] = Sprite.Create(texture, new Rect(i * frameSize, y, frameSize, frameSize),
                     new Vector2(0.5f, 0.42f), frameSize, 0, SpriteMeshType.FullRect);
+                frames[i].name = prefix + " " + i;
+                _runtimeSprites.Add(frames[i]);
+            }
+            return frames;
+        }
+
+        private Sprite[] CreateNeopjukiFrames(
+            Texture2D texture,
+            int cellWidth,
+            int cellHeight,
+            int rowFromTop,
+            int frameCount,
+            string prefix)
+        {
+            if (texture == null || cellWidth <= 0 || cellHeight <= 0 ||
+                texture.width < cellWidth || texture.height < cellHeight)
+                return Array.Empty<Sprite>();
+
+            int columns = texture.width / cellWidth;
+            int rows = texture.height / cellHeight;
+            if (rowFromTop < 0 || rowFromTop >= rows)
+                return Array.Empty<Sprite>();
+
+            int count = Mathf.Min(frameCount, columns);
+            int y = texture.height - (rowFromTop + 1) * cellHeight;
+            var frames = new Sprite[count];
+            for (int i = 0; i < count; i++)
+            {
+                frames[i] = Sprite.Create(
+                    texture,
+                    new Rect(i * cellWidth, y, cellWidth, cellHeight),
+                    new Vector2(0.5f, 0f),
+                    cellWidth,
+                    0,
+                    SpriteMeshType.FullRect);
                 frames[i].name = prefix + " " + i;
                 _runtimeSprites.Add(frames[i]);
             }
@@ -2506,6 +2970,7 @@ namespace KeyboardWanderer.Demo
         {
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
+                case "root_system": return _cavernFloorSprite;
                 case "river_wetland": return _darkGrassSprite;
                 case "arid_desert": return _dirtSprite;
                 case "frost_highland": return _snowSprite;
@@ -2536,11 +3001,45 @@ namespace KeyboardWanderer.Demo
                     }
                 }
             }
-            return view.Region.AreaAt(coord)?.Biome ?? string.Empty;
+            // 로컬 원반 월드는 각도 섹터로 바이옴을 정한다(생성기 SectorBiomeIndex와 동일 공식).
+            return SectorBiomeId(coord, view.Region.Width, view.Region.Height);
+        }
+
+        // 생성기 CreateBiomes()와 동일한 순서 — 파이 슬라이스 바이옴 매핑.
+        private static readonly string[] SectorBiomeOrder =
+        {
+            "temperate_forest_field", "river_wetland", "arid_desert",
+            "frost_highland", "subterranean_cavern", "ancient_ruins"
+        };
+
+        private static string SectorBiomeId(GridCoord coord, int width, int height)
+        {
+            double cx = (width - 1) / 2.0;
+            double cy = (height - 1) / 2.0;
+            double dx = coord.X - cx;
+            double dy = coord.Y - cy;
+            double centralRadius = Math.Min(width, height) * 0.12; // 중심 최종 스테이지 존(생성기와 동일)
+            if (dx * dx + dy * dy <= centralRadius * centralRadius)
+                return "root_system"; // 다크 보스 코어
+            double angle = Math.Atan2(dy, dx) + Math.PI; // 0..2π
+            int sector = (int)(angle / (2.0 * Math.PI) * SectorBiomeOrder.Length);
+            if (sector < 0) sector = 0;
+            if (sector >= SectorBiomeOrder.Length) sector = SectorBiomeOrder.Length - 1;
+            return SectorBiomeOrder[sector];
         }
 
         private static Color ApplyBiomePalette(Color tileTint, string biomeId)
         {
+            // 다크 보스 코어: 기존 타일을 크게 어둡게 낮추고 심홍/보라 기운을 더한다.
+            if (string.Equals(biomeId, "root_system", StringComparison.OrdinalIgnoreCase))
+            {
+                Color core = Hex("2a1830");
+                return new Color(
+                    Mathf.Clamp01(tileTint.r * 0.22f + core.r + 0.06f),
+                    Mathf.Clamp01(tileTint.g * 0.18f + core.g),
+                    Mathf.Clamp01(tileTint.b * 0.26f + core.b + 0.04f),
+                    tileTint.a);
+            }
             Color biome;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
@@ -2561,19 +3060,24 @@ namespace KeyboardWanderer.Demo
         private void CreateBiomeDecorations(RunView view, Vector2 origin, bool useServerWorld, int width, int height)
         {
             string layoutHash = useServerWorld ? _serverRun?.world?.layoutHash : view.Region.LayoutHash;
-            for (int y = 2; y < height - 2; y += 3)
+            HashSet<GridCoord> routeTiles = BuildRouteTileSet(view, useServerWorld);
+            // step 2로 촘촘히 훑고, 타일마다 크기를 흔들어 우거진 느낌을 낸다.
+            // 실제 route path만 비워 두므로 사막의 Dirt처럼 길과 같은 TileKind를 쓰는 넓은 지형도 채울 수 있다.
+            for (int y = 2; y < height - 2; y += 2)
             {
-                for (int x = 2; x < width - 2; x += 3)
+                for (int x = 2; x < width - 2; x += 2)
                 {
                     var coord = new GridCoord(x, y);
                     string biomeId = BiomeIdAt(view, coord);
                     TileKind tileKind = WorldTileKind(view, coord, useServerWorld);
-                    if (!SupportsDecorationTerrain(biomeId, tileKind) ||
+                    if (routeTiles.Contains(coord) || !SupportsDecorationTerrain(biomeId, tileKind) ||
                         IsNearWorldPoint(view, coord, useServerWorld, 4) ||
                         StableVisualHash(layoutHash, x, y, 17) % 100 >= DecorationDensity(biomeId))
                         continue;
-                    CreateDecoration("Scenery", DecorationSpriteForBiome(biomeId), coord, origin,
-                        DecorationTint(biomeId), 0.78f + (StableVisualHash(layoutHash, x, y, 31) % 24) / 100f);
+                    float scale = 0.62f + (StableVisualHash(layoutHash, x, y, 31) % 44) / 100f;
+                    CreateDecoration("Scenery", DecorationSpriteForBiome(
+                            biomeId, StableVisualHash(layoutHash, x, y, 47)), coord, origin,
+                        DecorationTint(biomeId), scale);
                 }
             }
 
@@ -2598,6 +3102,30 @@ namespace KeyboardWanderer.Demo
                     TryCreateBiomeLandmark(view, origin, false, area.Biome, area.Center, width, height, layoutHash, i);
                 }
             }
+        }
+
+        private HashSet<GridCoord> BuildRouteTileSet(RunView view, bool useServerWorld)
+        {
+            var result = new HashSet<GridCoord>();
+            if (useServerWorld && _serverRun?.world?.routes != null)
+            {
+                GameApiClient.WorldRouteSnapshot[] routes = _serverRun.world.routes;
+                for (int routeIndex = 0; routeIndex < routes.Length; routeIndex++)
+                {
+                    GameApiClient.PositionSnapshot[] path = routes[routeIndex]?.path;
+                    if (path == null) continue;
+                    for (int pointIndex = 0; pointIndex < path.Length; pointIndex++)
+                        if (path[pointIndex] != null)
+                            result.Add(new GridCoord(path[pointIndex].x, path[pointIndex].y));
+                }
+                return result;
+            }
+
+            IReadOnlyList<WorldRoute> localRoutes = view.Region.Routes;
+            for (int routeIndex = 0; routeIndex < localRoutes.Count; routeIndex++)
+                for (int pointIndex = 0; pointIndex < localRoutes[routeIndex].Path.Count; pointIndex++)
+                    result.Add(localRoutes[routeIndex].Path[pointIndex]);
+            return result;
         }
 
         private void TryCreateBiomeLandmark(RunView view, Vector2 origin, bool useServerWorld, string biomeId,
@@ -2680,17 +3208,21 @@ namespace KeyboardWanderer.Demo
             decoration.transform.localScale = Vector3.one * scale;
         }
 
-        private Sprite DecorationSpriteForBiome(string biomeId)
+        private Sprite DecorationSpriteForBiome(string biomeId, int variantHash)
         {
+            Sprite[] variants;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
-                case "river_wetland": return _wetlandPlantSprite;
-                case "arid_desert": return _desertPalmSprite;
-                case "frost_highland": return _frostTreeSprite;
-                case "subterranean_cavern": return _cavernCrystalSprite;
-                case "ancient_ruins": return _ruinTreeSprite;
-                default: return _forestTreeSprite;
+                case "root_system": variants = _cavernDecorationSprites; break;
+                case "river_wetland": variants = _wetlandDecorationSprites; break;
+                case "arid_desert": variants = _desertDecorationSprites; break;
+                case "frost_highland": variants = _frostDecorationSprites; break;
+                case "subterranean_cavern": variants = _cavernDecorationSprites; break;
+                case "ancient_ruins": variants = _ruinDecorationSprites; break;
+                default: variants = _forestDecorationSprites; break;
             }
+            if (variants == null || variants.Length == 0) return _forestTreeSprite;
+            return variants[variantHash % variants.Length];
         }
 
         private Sprite LandmarkSpriteForBiome(string biomeId)
@@ -2710,12 +3242,17 @@ namespace KeyboardWanderer.Demo
         {
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
+                case "root_system": return tileKind == TileKind.Ruin || tileKind == TileKind.Wall || tileKind == TileKind.DarkGrass;
                 case "river_wetland": return tileKind == TileKind.Water || tileKind == TileKind.DarkGrass;
-                case "arid_desert": return tileKind == TileKind.Hazard || tileKind == TileKind.Wall;
-                case "frost_highland": return tileKind == TileKind.Wall || tileKind == TileKind.Hazard;
-                case "subterranean_cavern": return tileKind == TileKind.Wall || tileKind == TileKind.Ruin;
+                case "arid_desert": return tileKind == TileKind.Dirt || tileKind == TileKind.Hazard ||
+                                            tileKind == TileKind.Wall || tileKind == TileKind.Ruin;
+                case "frost_highland": return tileKind == TileKind.Floor || tileKind == TileKind.Wall ||
+                                             tileKind == TileKind.Hazard;
+                case "subterranean_cavern": return tileKind == TileKind.DarkGrass || tileKind == TileKind.Wall ||
+                                                   tileKind == TileKind.Ruin;
                 case "ancient_ruins": return tileKind == TileKind.Ruin || tileKind == TileKind.Wall;
-                default: return tileKind == TileKind.Wall || tileKind == TileKind.DarkGrass;
+                default: return tileKind == TileKind.Grass || tileKind == TileKind.Wall ||
+                                tileKind == TileKind.DarkGrass;
             }
         }
 
@@ -2723,13 +3260,14 @@ namespace KeyboardWanderer.Demo
         {
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
-                case "temperate_forest_field": return 18;
-                case "river_wetland": return 12;
-                case "arid_desert": return 8;
-                case "frost_highland": return 10;
-                case "subterranean_cavern": return 14;
-                case "ancient_ruins": return 11;
-                default: return 8;
+                case "root_system": return 52;
+                case "temperate_forest_field": return 64;
+                case "river_wetland": return 48;
+                case "arid_desert": return 44;
+                case "frost_highland": return 50;
+                case "subterranean_cavern": return 56;
+                case "ancient_ruins": return 48;
+                default: return 44;
             }
         }
 
@@ -2737,6 +3275,7 @@ namespace KeyboardWanderer.Demo
         {
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
+                case "root_system": return Hex("b667d8"); // 어둠 속 크리스탈 발광
                 case "river_wetland": return Hex("b6e1cf");
                 case "arid_desert": return Hex("f0c879");
                 case "frost_highland": return Hex("e8f6ff");
@@ -3642,6 +4181,7 @@ namespace KeyboardWanderer.Demo
             string id = BiomeIdAt(view, position);
             switch (id)
             {
+                case "root_system": return "루트 시스템 · 코어";
                 case "temperate_forest_field": return "온대 숲·들판";
                 case "river_wetland": return "강·습지";
                 case "arid_desert": return "건조 사막";

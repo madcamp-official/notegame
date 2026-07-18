@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderVersion: 3
+  BuilderVersion: 4
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -65,6 +65,9 @@ MonoBehaviour:
   VillagerWalkSheet: {fileID: 2800000, guid: 0a610727db16c4b10ac87cef66cca3cb, type: 3}
   PlayerFrameSize: 32
   CreatureFrameSize: 16
+  NeopjukiAtlas: {fileID: 2800000, guid: b4c6db23d0944df6a9c302e0b9d7f168, type: 3}
+  NeopjukiCellWidth: 192
+  NeopjukiCellHeight: 208
   PlayerIdle: {fileID: -7385789195546760866, guid: fd0dc91ff18f746dea9f1192a6d94a41, type: 3}
   WardenIdle: {fileID: -1176183960, guid: 07bb692ab5687420da17d27e29989325, type: 3}
   SlimeIdle: {fileID: 4518187702968751635, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}

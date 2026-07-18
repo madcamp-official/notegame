@@ -18,6 +18,7 @@ namespace KeyboardWanderer.Demo
         private readonly Dictionary<string, Button> _buttons = new Dictionary<string, Button>(StringComparer.Ordinal);
         private readonly Dictionary<string, Slider> _sliders = new Dictionary<string, Slider>(StringComparer.Ordinal);
         private readonly Dictionary<string, Toggle> _toggles = new Dictionary<string, Toggle>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Image> _images = new Dictionary<string, Image>(StringComparer.Ordinal);
         private readonly Dictionary<string, GameObject> _objects = new Dictionary<string, GameObject>(StringComparer.Ordinal);
         private bool _bound;
 
@@ -95,6 +96,12 @@ namespace KeyboardWanderer.Demo
             button.colors = colors;
         }
 
+        public void SetImageSprite(string controlName, Sprite sprite)
+        {
+            if (_images.TryGetValue(controlName, out Image image) && image.sprite != sprite)
+                image.sprite = sprite;
+        }
+
         public void SetObjectActive(string controlName, bool active)
         {
             if (_objects.TryGetValue(controlName, out GameObject target) && target.activeSelf != active)
@@ -144,12 +151,14 @@ namespace KeyboardWanderer.Demo
             _buttons.Clear();
             _sliders.Clear();
             _toggles.Clear();
+            _images.Clear();
             _objects.Clear();
             foreach (Transform item in GetComponentsInChildren<Transform>(true)) _objects[item.gameObject.name] = item.gameObject;
             foreach (Text text in GetComponentsInChildren<Text>(true)) _texts[text.gameObject.name] = text;
             foreach (Button button in GetComponentsInChildren<Button>(true)) _buttons[button.gameObject.name] = button;
             foreach (Slider slider in GetComponentsInChildren<Slider>(true)) _sliders[slider.gameObject.name] = slider;
             foreach (Toggle toggle in GetComponentsInChildren<Toggle>(true)) _toggles[toggle.gameObject.name] = toggle;
+            foreach (Image image in GetComponentsInChildren<Image>(true)) _images[image.gameObject.name] = image;
         }
 
         private void BindButton(string controlName, UnityEngine.Events.UnityAction action)

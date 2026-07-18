@@ -36,6 +36,11 @@ namespace KeyboardWanderer.Demo
         public int PlayerFrameSize = 32;
         public int CreatureFrameSize = 16;
 
+        [Header("Neopjuki player")]
+        public Texture2D NeopjukiAtlas;
+        public int NeopjukiCellWidth = 192;
+        public int NeopjukiCellHeight = 208;
+
         [Header("Actors and props")]
         public Sprite PlayerIdle;
         public Sprite WardenIdle;

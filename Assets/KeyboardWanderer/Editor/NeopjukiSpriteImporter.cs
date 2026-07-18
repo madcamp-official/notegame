@@ -8,12 +8,12 @@ namespace KeyboardWanderer.Editor
 {
     public static class NeopjukiSpriteImporter
     {
-        private const string ImporterVersion = "NeopjukiSpriteImporter:v1";
+        private const string ImporterVersion = "NeopjukiSpriteImporter:v4";
         private const string AtlasPath =
             "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
         private const int CellWidth = 192;
         private const int CellHeight = 208;
-        private const int AtlasHeight = 1664;
+        private const int AtlasHeight = 3328;
 
         private static readonly (string Name, int Row, int StartColumn, int Count)[] StandardRows =
         {
@@ -25,7 +25,15 @@ namespace KeyboardWanderer.Editor
             ("jumping", 4, 0, 5),
             ("failed", 5, 0, 8),
             ("waiting", 6, 0, 6),
-            ("review", 7, 0, 6)
+            ("review", 7, 0, 6),
+            ("keyboard-attack", 8, 0, 8),
+            ("keyboard-magic", 9, 0, 8),
+            ("keyboard-debug", 10, 0, 8),
+            ("keyboard-attack-left", 11, 0, 8),
+            ("keyboard-attack-up", 12, 0, 8),
+            ("keyboard-attack-down", 13, 0, 8),
+            ("walking-up", 14, 0, 8),
+            ("walking-down", 15, 0, 8)
         };
 
         [InitializeOnLoadMethod]
@@ -51,6 +59,7 @@ namespace KeyboardWanderer.Editor
             importer.textureType = TextureImporterType.Sprite;
             importer.spriteImportMode = SpriteImportMode.Multiple;
             importer.spritePixelsPerUnit = CellWidth;
+            importer.maxTextureSize = 4096;
             importer.mipmapEnabled = false;
             importer.alphaIsTransparency = true;
             importer.filterMode = FilterMode.Point;
