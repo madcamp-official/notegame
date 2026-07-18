@@ -1,11 +1,12 @@
 # Neopjuki animated sprite asset
 
-`NeopjukiCodexAtlas.png` is a transparent 8 × 11 sprite atlas. Every cell is
-192 × 208 pixels, and the complete atlas is 1536 × 2288 pixels.
+`NeopjukiUnityAtlas.png` is a transparent 8 × 8 sprite atlas. Every cell is
+192 × 208 pixels, and the complete atlas is 1536 × 1664 pixels.
 
-In Unity, run **Keyboard Wanderer > Import Neopjuki Pet Atlas** once. The editor
-tool configures point filtering, disables compression and mipmaps, and creates
-named sprite rectangles for every used animation frame.
+Unity imports and slices the atlas automatically after script compilation. The
+editor tool configures point filtering, disables compression and mipmaps, and
+creates named sprite rectangles for every used animation frame. To reimport it
+manually, run **Keyboard Wanderer > Import Neopjuki Pet Atlas**.
 
 Animation rows:
 
@@ -18,10 +19,8 @@ Animation rows:
 | 4 | Jump | 5 |
 | 5 | Failed | 8 |
 | 6 | Waiting | 6 |
-| 7 | Active task | 6 |
-| 8 | Review | 6 |
-| 9 | Look 000°–157.5° | 8 |
-| 10 | Look 180°–337.5° | 8 |
+| 7 | Review | 6 |
 
 The atlas uses bottom-centered pivots and 192 pixels per Unity unit. The
-preview image is documentation only and should not be used at runtime.
+preview image is documentation only and should not be used at runtime. The
+Codex-only active-task and look-direction rows are intentionally omitted.

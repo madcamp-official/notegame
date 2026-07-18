@@ -8,11 +8,12 @@ namespace KeyboardWanderer.Editor
 {
     public static class NeopjukiSpriteImporter
     {
+        private const string ImporterVersion = "NeopjukiSpriteImporter:v1";
         private const string AtlasPath =
-            "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiCodexAtlas.png";
+            "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
         private const int CellWidth = 192;
         private const int CellHeight = 208;
-        private const int AtlasHeight = 2288;
+        private const int AtlasHeight = 1664;
 
         private static readonly (string Name, int Row, int StartColumn, int Count)[] StandardRows =
         {
@@ -24,15 +25,21 @@ namespace KeyboardWanderer.Editor
             ("jumping", 4, 0, 5),
             ("failed", 5, 0, 8),
             ("waiting", 6, 0, 6),
-            ("running", 7, 0, 6),
-            ("review", 8, 0, 6)
+            ("review", 7, 0, 6)
         };
 
-        private static readonly string[] LookDirections =
+        [InitializeOnLoadMethod]
+        private static void QueueAutomaticImport()
         {
-            "000", "022.5", "045", "067.5", "090", "112.5", "135", "157.5",
-            "180", "202.5", "225", "247.5", "270", "292.5", "315", "337.5"
-        };
+            EditorApplication.delayCall += ImportIfNeeded;
+        }
+
+        private static void ImportIfNeeded()
+        {
+            var importer = AssetImporter.GetAtPath(AtlasPath) as TextureImporter;
+            if (importer != null && importer.userData != ImporterVersion)
+                Import();
+        }
 
         [MenuItem("Keyboard Wanderer/Import Neopjuki Pet Atlas")]
         public static void Import()
@@ -70,14 +77,6 @@ namespace KeyboardWanderer.Editor
                 }
             }
 
-            for (int index = 0; index < LookDirections.Length; index++)
-            {
-                int row = 9 + index / 8;
-                int column = index % 8;
-                string spriteName = "look_" + LookDirections[index].Replace(".", "_");
-                rects.Add(CreateRect(spriteName, row, column, existingIds));
-            }
-
             provider.SetSpriteRects(rects.ToArray());
             ISpriteNameFileIdDataProvider nameProvider =
                 provider.GetDataProvider<ISpriteNameFileIdDataProvider>();
@@ -85,6 +84,7 @@ namespace KeyboardWanderer.Editor
                 rects.Select(rect => new SpriteNameFileIdPair(rect.name, rect.spriteID))
                     .ToList());
             provider.Apply();
+            importer.userData = ImporterVersion;
             importer.SaveAndReimport();
 
             Selection.activeObject = AssetDatabase.LoadAssetAtPath<Texture2D>(AtlasPath);
