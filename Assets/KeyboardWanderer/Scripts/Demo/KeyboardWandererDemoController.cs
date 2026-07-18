@@ -5,20 +5,12 @@ using KeyboardWanderer.Core;
 using KeyboardWanderer.Gameplay;
 using KeyboardWanderer.Networking;
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.InputSystem;
 using UnityEngine.Tilemaps;
 
 namespace KeyboardWanderer.Demo
 {
     public sealed class KeyboardWandererDemoController : MonoBehaviour
     {
-        private const float LogicalWidth = 1440f;
-        private const float LogicalHeight = 900f;
-        private const float TopHeight = 60f;
-        private const float BottomHeight = 220f;
-        private const float LeftWidth = 260f;
-        private const float RightWidth = 390f;
         private const float TileSize = 1f;
         private const int TerrainSortingOrder = -1000;
         private const string MusicVolumeKey = "keyboard-wanderer.music-volume";
@@ -47,22 +39,19 @@ namespace KeyboardWanderer.Demo
             public Sprite[] AttackFrames;
             public Vector3 TargetPosition;
             public readonly Queue<Vector3> MovementPath = new Queue<Vector3>();
+            public Vector2 Facing = Vector2.down;
+            public Vector3 WanderTargetOffset;
+            public float WanderPhase;
+            public float NextWanderDecisionAt;
+            public int WanderStep;
+            public bool IsWandering;
             public Color BaseColor;
             public float DesiredSize;
             public bool IsPlayer;
             public bool IsHostile;
         }
 
-        private static readonly Color Ink = Hex("160f0a");
-        private static readonly Color Panel = Hex("281a11");
-        private static readonly Color PanelRaised = Hex("352419");
         private static readonly Color Gold = Hex("d3a64b");
-        private static readonly Color GoldDim = Hex("7c5d2b");
-        private static readonly Color Parchment = Hex("f0dfb6");
-        private static readonly Color Muted = Hex("ad9878");
-        private static readonly Color Leaf = Hex("65a850");
-        private static readonly Color Ruby = Hex("c84c43");
-        private static readonly Color FocusBlue = Hex("57a9bd");
 
         private readonly Dictionary<Guid, EntityVisual> _entityVisuals = new Dictionary<Guid, EntityVisual>();
         private readonly List<Sprite> _runtimeSprites = new List<Sprite>();
@@ -75,13 +64,18 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private NinjaAdventureAssetManifest authoredAssetManifest;
         [SerializeField] private KeyboardWandererWorldView authoredWorld;
         [SerializeField] private Camera authoredCamera;
+        [SerializeField] private KeyboardWandererCameraController authoredCameraController;
         [SerializeField] private AudioSource authoredMusicSource;
         [SerializeField] private AudioSource authoredSfxSource;
+        [SerializeField] private KeyboardWandererAudioController authoredAudioController;
+        [SerializeField] private KeyboardWandererInputController authoredInputController;
 
         private LocalTurnService _service;
         private NinjaAdventureAssetManifest _assets;
         private GmNarrativeClient _narrativeClient;
         private GameApiClient _gameApi;
+        private SceneSequencePlayer _sceneSequencePlayer;
+        private Coroutine _scenePlaybackCoroutine;
         private GameApiClient.CampaignSnapshot _serverCampaign;
         private GameApiClient.RunSnapshot _serverRun;
         private ScreenMode _screenMode = ScreenMode.Title;
@@ -90,6 +84,7 @@ namespace KeyboardWanderer.Demo
         private GridCoord? _selectedCoord;
         private Guid? _selectedTarget;
         private Guid? _selectedSecondaryTarget;
+        private bool _copySourceCaptured;
         private Guid? _lastRestorableTarget;
         private GridCoord? _lastRestorableCoord;
         private string _lastRestorableName;
@@ -121,40 +116,55 @@ namespace KeyboardWanderer.Demo
         private bool _reopenDialogueAfterWalk;
         private int _runGeneration;
         private long _worldSeed;
-        private Vector2 _logScroll;
-        private Vector2 _narrativeScroll;
         private int _poiCursor = -1;
         private GridCoord? _cameraInspectCoord;
         private float _cameraInspectUntil;
         private string _poiLabel = "POI 탐색";
         private string _movementSelectionFeedback = string.Empty;
 
-        private Camera _camera;
+        private KeyboardWandererCameraController _cameraController;
         private KeyboardWandererSceneUI _sceneUi;
-        private Vector3 _cameraVelocity;
         private GameObject _worldRoot;
         private SpriteRenderer _selectionRenderer;
-        private AudioSource _musicSource;
-        private AudioSource _sfxSource;
-        private AudioClip _currentMusic;
+        private KeyboardWandererAudioController _audioController;
+        private KeyboardWandererInputController _inputController;
         private float _musicVolume = 0.65f;
         private float _sfxVolume = 0.8f;
         private float _nextAnimationAt;
         private int _animationFrame;
         private float _playerActionUntil;
-        private int _lastScreenWidth;
-        private int _lastScreenHeight;
         private Font _koreanFont;
 
         private float PlayerWalkSpeed => authoringSettings != null ? authoringSettings.PlayerWalkSpeed : 4.2f;
-        private Transform WorldContentRoot => authoredWorld != null && _worldRoot == authoredWorld.gameObject
-            ? authoredWorld.DynamicObjects
-            : _worldRoot != null ? _worldRoot.transform : transform;
+        private Transform WorldContentRoot => authoredWorld != null ? authoredWorld.RuntimeEntities : null;
+        private Transform WorldLandmarkRoot => authoredWorld != null ? authoredWorld.RuntimeLandmarks : null;
+        private Transform WorldEffectsRoot => authoredWorld != null ? authoredWorld.RuntimeEffects : null;
 
         private Sprite _grassSprite;
         private Sprite _dirtSprite;
         private Sprite _darkGrassSprite;
         private Sprite _wallSprite;
+        private Sprite _waterSprite;
+        private Sprite _snowSprite;
+        private Sprite _cavernFloorSprite;
+        private Sprite _ruinFloorSprite;
+        private Sprite _forestTreeSprite;
+        private Sprite _forestHouseSprite;
+        private Sprite _wetlandPlantSprite;
+        private Sprite _wetlandLandmarkSprite;
+        private Sprite _desertPalmSprite;
+        private Sprite _desertLandmarkSprite;
+        private Sprite _frostTreeSprite;
+        private Sprite _frostLandmarkSprite;
+        private Sprite _cavernCrystalSprite;
+        private Sprite _ruinTreeSprite;
+        private Sprite _ruinLandmarkSprite;
+        private Sprite[] _forestDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _wetlandDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _desertDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _frostDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _cavernDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _ruinDecorationSprites = Array.Empty<Sprite>();
         private Sprite _playerSprite;
         private Sprite _wardenSprite;
         private Sprite _villagerSprite;
@@ -166,50 +176,33 @@ namespace KeyboardWanderer.Demo
         private Sprite _whiteSprite;
         private Sprite[] _playerIdleFrames = Array.Empty<Sprite>();
         private Sprite[] _playerWalkFrames = Array.Empty<Sprite>();
+        private Sprite[] _playerWalkLeftFrames = Array.Empty<Sprite>();
+        private Sprite[] _playerWalkUpFrames = Array.Empty<Sprite>();
+        private Sprite[] _playerWalkDownFrames = Array.Empty<Sprite>();
         private Sprite[] _playerAttackFrames = Array.Empty<Sprite>();
+        private Sprite[] _playerAttackLeftFrames = Array.Empty<Sprite>();
+        private Sprite[] _playerAttackUpFrames = Array.Empty<Sprite>();
+        private Sprite[] _playerAttackDownFrames = Array.Empty<Sprite>();
         private Sprite[] _slimeFrames = Array.Empty<Sprite>();
         private Sprite[] _villagerFrames = Array.Empty<Sprite>();
-
-        private Texture2D _inkTexture;
-        private Texture2D _panelTexture;
-        private Texture2D _raisedTexture;
-        private Texture2D _buttonTexture;
-        private Texture2D _buttonHoverTexture;
-        private Texture2D _buttonPressedTexture;
-        private Texture2D _selectedTexture;
-        private Texture2D _disabledTexture;
-        private Texture2D _fieldTexture;
-        private Texture2D _whiteTexture;
-
-        private bool _stylesReady;
-        private GUIStyle _titleStyle;
-        private GUIStyle _subtitleStyle;
-        private GUIStyle _headerStyle;
-        private GUIStyle _labelStyle;
-        private GUIStyle _smallStyle;
-        private GUIStyle _mutedStyle;
-        private GUIStyle _centerStyle;
-        private GUIStyle _previewPremiseStyle;
-        private GUIStyle _buttonStyle;
-        private GUIStyle _selectedButtonStyle;
-        private GUIStyle _dangerButtonStyle;
-        private GUIStyle _textAreaStyle;
-        private GUIStyle _numberStyle;
+        private Texture2D _minimapTexture;
+        private Sprite _minimapSprite;
+        private string _minimapSignature = string.Empty;
 
         private void Awake()
         {
             _sceneUi = GetComponentInChildren<KeyboardWandererSceneUI>(true);
+            _sceneSequencePlayer = GetComponent<SceneSequencePlayer>();
             LoadSettings();
-            CreateUiTextures();
             LoadNinjaAdventureAssets();
             ConfigureCamera();
             ConfigureAudio();
+            ConfigureInput();
             EnsureRuntimeClients();
             ShowTitle();
             if (_sceneUi != null)
             {
                 _sceneUi.Bind(this);
-                _sceneUi.ApplyFont(_koreanFont != null ? _koreanFont : (_assets != null ? _assets.PixelFont : null));
                 UpdateAuthoredUi();
             }
         }
@@ -219,15 +212,21 @@ namespace KeyboardWanderer.Demo
             NinjaAdventureAssetManifest manifest,
             KeyboardWandererWorldView world,
             Camera sceneCamera,
+            KeyboardWandererCameraController cameraController,
             AudioSource music,
-            AudioSource sfx)
+            AudioSource sfx,
+            KeyboardWandererAudioController audioController,
+            KeyboardWandererInputController inputController)
         {
             authoringSettings = settings;
             authoredAssetManifest = manifest;
             authoredWorld = world;
             authoredCamera = sceneCamera;
+            authoredCameraController = cameraController;
             authoredMusicSource = music;
             authoredSfxSource = sfx;
+            authoredAudioController = audioController;
+            authoredInputController = inputController;
         }
 
         private void OnEnable()
@@ -247,9 +246,8 @@ namespace KeyboardWanderer.Demo
 
         private void OnDestroy()
         {
+            _sceneSequencePlayer?.Cancel();
             StopAllCoroutines();
-            if (_worldRoot != null && (authoredWorld == null || _worldRoot != authoredWorld.gameObject))
-                Destroy(_worldRoot);
             for (int i = 0; i < _runtimeSprites.Count; i++)
                 if (_runtimeSprites[i] != null)
                     Destroy(_runtimeSprites[i]);
@@ -272,41 +270,6 @@ namespace KeyboardWanderer.Demo
 
             UpdateAnimatedVisuals();
             UpdateCameraFollow();
-            HandleKeyboard();
-            HandleMapClick();
-        }
-
-        private void OnGUI()
-        {
-            if (_sceneUi != null && _sceneUi.IsReady)
-                return;
-
-            Matrix4x4 previousMatrix = GUI.matrix;
-            Color previousColor = GUI.color;
-            bool previousEnabled = GUI.enabled;
-            GUI.matrix = Matrix4x4.Scale(new Vector3(Screen.width / LogicalWidth, Screen.height / LogicalHeight, 1f));
-            if (_koreanFont != null)
-                GUI.skin.font = _koreanFont;
-            else if (_assets != null && _assets.PixelFont != null)
-                GUI.skin.font = _assets.PixelFont;
-            EnsureStyles();
-
-            switch (_screenMode)
-            {
-                case ScreenMode.Title:
-                    DrawTitleScreen();
-                    break;
-                case ScreenMode.Settings:
-                    DrawSettingsScreen();
-                    break;
-                default:
-                    DrawGameHud();
-                    break;
-            }
-
-            GUI.enabled = previousEnabled;
-            GUI.color = previousColor;
-            GUI.matrix = previousMatrix;
         }
 
         private void UpdateAuthoredUi()
@@ -315,27 +278,30 @@ namespace KeyboardWanderer.Demo
                 return;
 
             bool ended = _screenMode == ScreenMode.Playing && _service != null && !RunIsPlaying(_service.CurrentView);
-            _sceneUi.Show(_screenMode.ToString(), _showPause, ended);
-            _sceneUi.SetSlider("Music Slider", _musicVolume);
-            _sceneUi.SetSlider("Sfx Slider", _sfxVolume);
-            _sceneUi.SetToggle("GM Toggle", _gmEnabled);
+            _sceneUi.Show(_screenMode == ScreenMode.Title, _screenMode == ScreenMode.Settings,
+                _screenMode == ScreenMode.Playing, _showPause, ended);
+            _sceneUi.SetMusicVolume(_musicVolume);
+            _sceneUi.SetSfxVolume(_sfxVolume);
+            _sceneUi.SetGmEnabled(_gmEnabled);
+            _sceneUi.SetTitleCharacter(_playerSprite);
 
             int nextCounter = PlayerPrefs.GetInt("keyboard-wanderer.run-counter", 0) + 1;
             long nextSeed = 20260717L + nextCounter;
             CampaignBlueprint preview = CampaignCatalog.Create(nextSeed);
-            _sceneUi.SetText("Title Heading", CampaignCatalog.CampaignTitle);
-            _sceneUi.SetText("Title Subtitle", "코드리아 × 관리자 키보드 × 선택 회수");
-            _sceneUi.SetText("Title Seed", "NEXT SEED  " + nextSeed);
-            _sceneUi.SetText("Title Premise", preview.Title + "\n\n" + preview.Premise);
-            _sceneUi.SetText("Title Status", _serverStatus + " · Ninja Adventure CC0");
-            _sceneUi.SetButtonState("New Run Button", !_serverPending);
-            _sceneUi.SetButtonState("Continue Button", !_serverPending &&
+            _sceneUi.SetText(KeyboardWandererUiText.TitleHeading, CampaignCatalog.CampaignTitle);
+            _sceneUi.SetText(KeyboardWandererUiText.TitleSubtitle, "코드리아 × 관리자 키보드 × 선택 회수");
+            _sceneUi.SetText(KeyboardWandererUiText.TitleSeed, "NEXT SEED  " + nextSeed);
+            _sceneUi.SetText(KeyboardWandererUiText.TitlePremise, preview.Title + "\n\n" + preview.Premise);
+            _sceneUi.SetText(KeyboardWandererUiText.TitleStatus, _serverStatus + " · Ninja Adventure CC0");
+            _sceneUi.SetButtonState(KeyboardWandererUiButton.NewRun, !_serverPending);
+            _sceneUi.SetButtonState(KeyboardWandererUiButton.Continue, !_serverPending &&
                 (LocalRunSaveService.HasSave || !string.IsNullOrWhiteSpace(PlayerPrefs.GetString(ServerRunIdKey, string.Empty))));
 
             if (_service == null)
                 return;
 
             RunView view = _service.CurrentView;
+            UpdateMinimap(view);
             string narrative = _lastOutcome == "READY" || _lastOutcome == "RESTORED"
                 ? CampaignPremise(view)
                 : ShortNarrative(_lastNarrative);
@@ -350,36 +316,59 @@ namespace KeyboardWanderer.Demo
                 else
                     _authoredDialogueDismissed = false;
             }
-            _sceneUi.SetObjectActive("Story Panel", !_authoredDialogueDismissed);
+            _sceneUi.SetStoryVisible(!_authoredDialogueDismissed);
             _authoredDialoguePage = Mathf.Clamp(_authoredDialoguePage, 0, Mathf.Max(0, dialoguePages.Length - 1));
-            bool showingNarration = _authoredDialoguePage == 0;
-            _sceneUi.SetText("Scene Location", CurrentAreaName(view) + " · " + CurrentBiomeLabel(view));
-            _sceneUi.SetText("Scene Title", StoryBeat(view));
-            _sceneUi.SetText("Dialogue Speaker", showingNarration ? "이야기" : "코드리아 주민");
-            _sceneUi.SetText("Story Text", dialoguePages[_authoredDialoguePage]);
+            bool showingResult = HasActionResultPage() && _authoredDialoguePage == 0;
+            bool showingNarration = !showingResult && _authoredDialoguePage == 0;
+            _sceneUi.SetText(KeyboardWandererUiText.SceneLocation, CurrentAreaName(view) + " · " + CurrentBiomeLabel(view));
+            _sceneUi.SetText(KeyboardWandererUiText.SceneTitle, StoryBeat(view));
+            _sceneUi.SetText(KeyboardWandererUiText.DialogueSpeaker,
+                showingResult ? "행동 결과" : showingNarration ? "이야기" : "코드리아 주민");
+            _sceneUi.SetText(KeyboardWandererUiText.Story, dialoguePages[_authoredDialoguePage]);
             bool hasNextDialogue = _authoredDialoguePage < dialoguePages.Length - 1;
-            _sceneUi.SetText("Next Dialogue Label", hasNextDialogue ? "다음 ▶" : "대화 끝");
-            _sceneUi.SetButtonState("Next Dialogue Button", true);
-            _sceneUi.SetText("Action Hint", _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : NarrativeSelectionHint());
+            _sceneUi.SetText(KeyboardWandererUiText.NextDialogueLabel, hasNextDialogue ? "다음 ▶" : "대화 끝");
+            _sceneUi.SetButtonState(KeyboardWandererUiButton.NextDialogue, true);
+            _sceneUi.SetText(KeyboardWandererUiText.ActionHint,
+                _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : NarrativeSelectionHint());
 
-            SetAbilityButton("Move Button", AbilityKind.Move);
-            SetAbilityButton("Copy Skill Button", AbilityKind.Copy);
-            SetAbilityButton("Delete Skill Button", AbilityKind.Delete);
-            SetAbilityButton("Connect Skill Button", AbilityKind.Connect);
-            SetAbilityButton("Restore Skill Button", AbilityKind.Restore);
-            SetAbilityButton("Undo Skill Button", AbilityKind.Undo);
-            _sceneUi.SetText("Confirm Action Label", "실행");
-            _sceneUi.SetButtonState("Confirm Action Button",
+            SetAbilityButton(KeyboardWandererUiButton.Move, AbilityKind.Move);
+            SetAbilityButton(KeyboardWandererUiButton.Copy, AbilityKind.Copy);
+            SetAbilityButton(KeyboardWandererUiButton.Delete, AbilityKind.Delete);
+            SetAbilityButton(KeyboardWandererUiButton.Connect, AbilityKind.Connect);
+            SetAbilityButton(KeyboardWandererUiButton.Restore, AbilityKind.Restore);
+            SetAbilityButton(KeyboardWandererUiButton.Undo, AbilityKind.Undo);
+            SetAbilityButton(KeyboardWandererUiButton.Search, AbilityKind.Search);
+            SetAbilityButton(KeyboardWandererUiButton.SelectAll, AbilityKind.SelectAll);
+            _sceneUi.SetText(KeyboardWandererUiText.CopySkillLabel, _copySourceCaptured ? "Ctrl V" : "Ctrl C");
+            _sceneUi.SetText(KeyboardWandererUiText.DeleteSkillLabel, "Delete");
+            _sceneUi.SetText(KeyboardWandererUiText.UndoSkillLabel, "Ctrl Z");
+            _sceneUi.SetCopyPasteMode(_copySourceCaptured);
+            _sceneUi.SetOutcomeEmote(_lastOutcome);
+            _sceneUi.SetText(KeyboardWandererUiText.ConfirmActionLabel,
+                _ability == AbilityKind.Interact ? "상호작용" : "실행");
+            _sceneUi.SetButtonState(KeyboardWandererUiButton.ConfirmAction,
                 RunIsPlaying(view) && !_showPause && !_serverPending && !_playerWalking && CanSubmitCurrentSelection());
-            _sceneUi.SetText("Ending Heading", "코드리아의 결말");
-            _sceneUi.SetText("Ending Text", EndingTitle(EndingCode(view)) + "\n\n" + EndingDescription(EndingCode(view)) +
+            _sceneUi.SetText(KeyboardWandererUiText.EndingHeading, "코드리아의 결말");
+            _sceneUi.SetText(KeyboardWandererUiText.EndingText, EndingTitle(EndingCode(view)) + "\n\n" + EndingDescription(EndingCode(view)) +
                 "\n\n당신의 선택이 코드리아에 남긴 결말입니다.");
         }
 
         public void UiStartNewRun() => StartNewRun();
         public void UiContinueRun() => ContinueRun();
         public void UiCyclePoi(int direction) => CyclePoi(direction);
-        public void UiSetAbility(string abilityName) => SetAbility(AbilityByName(abilityName));
+        public void UiSetAbility(AbilityKind ability)
+        {
+            if (ability == AbilityKind.Copy && _ability == AbilityKind.Copy && _copySourceCaptured &&
+                _selectedCoord.HasValue && CanSubmitCurrentSelection())
+            {
+                Submit();
+                return;
+            }
+            SetAbility(ability);
+            if ((ability == AbilityKind.Search || ability == AbilityKind.SelectAll || ability == AbilityKind.Undo) &&
+                IsSkillEnabledForCurrentTarget(ability))
+                Submit();
+        }
         public void UiSubmit() => Submit();
         public void UiAdvanceDialogue()
         {
@@ -392,37 +381,68 @@ namespace KeyboardWanderer.Demo
             else
             {
                 _authoredDialogueDismissed = true;
-                _sceneUi?.SetObjectActive("Story Panel", false);
+                _sceneUi?.SetStoryVisible(false);
             }
             PlaySfx(AssetClip("UiAcceptSound"));
         }
         public void UiResume() => _showPause = false;
         public void UiShowTitle() => ShowTitle();
 
-        private void SetAbilityButton(string buttonName, AbilityKind ability)
+        private void SetAbilityButton(KeyboardWandererUiButton button, AbilityKind ability)
         {
-            _sceneUi.SetButtonState(buttonName, !_playerWalking && IsSkillEnabledForCurrentTarget(ability), _ability == ability);
+            _sceneUi.SetButtonState(button,
+                !_playerWalking && IsSkillEnabledForCurrentTarget(ability), _ability == ability);
         }
 
         private string[] BuildDialoguePages(string narrative)
         {
             var pages = new List<string>();
-            if (!string.IsNullOrWhiteSpace(narrative)) pages.Add(narrative.Trim());
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            if (HasActionResultPage())
+            {
+                string result = (_ability == AbilityKind.Interact ? "INTERACT" : _ability.ToString().ToUpperInvariant()) +
+                                " · " + _lastOutcome;
+                if (_lastD20 > 0)
+                    result += " · D20 " + _lastD20 + " " + Signed(_lastModifier) + " vs " + _lastDifficulty;
+                if (!string.IsNullOrWhiteSpace(_lastAttempt)) result += "\n" + _lastAttempt.Trim();
+                if (!string.IsNullOrWhiteSpace(_lastStateChanges)) result += "\n변화 · " + _lastStateChanges.Trim();
+                if (!string.IsNullOrWhiteSpace(_lastExplanation)) result += "\n" + _lastExplanation.Trim();
+                pages.Add(result);
+                seen.Add(result);
+            }
+            if (!string.IsNullOrWhiteSpace(narrative) && seen.Add(narrative.Trim()))
+                pages.Add(narrative.Trim());
             for (int i = 0; i < _lastDialogue.Length; i++)
-                if (!string.IsNullOrWhiteSpace(_lastDialogue[i])) pages.Add(_lastDialogue[i].Trim());
+                if (!string.IsNullOrWhiteSpace(_lastDialogue[i]) && seen.Add(_lastDialogue[i].Trim()))
+                    pages.Add(_lastDialogue[i].Trim());
             if (pages.Count == 0) pages.Add("코드리아의 다음 이야기가 시작되기를 기다리고 있습니다.");
             return pages.ToArray();
         }
 
+        private bool HasActionResultPage()
+        {
+            return !string.IsNullOrWhiteSpace(_lastOutcome) &&
+                   !string.Equals(_lastOutcome, "READY", StringComparison.OrdinalIgnoreCase) &&
+                   !string.Equals(_lastOutcome, "RESTORED", StringComparison.OrdinalIgnoreCase);
+        }
+
         private string NarrativeSelectionHint()
         {
+            if (!string.IsNullOrWhiteSpace(_movementSelectionFeedback))
+                return _movementSelectionFeedback;
             switch (_ability)
             {
-                case AbilityKind.Move: return string.IsNullOrWhiteSpace(_movementSelectionFeedback)
-                    ? "이동할 타일을 고른 뒤 실행을 누르세요. 캐릭터는 길을 따라 걷습니다."
-                    : _movementSelectionFeedback;
+                case AbilityKind.Move: return "이동할 타일을 고른 뒤 실행을 누르세요. 캐릭터는 길을 따라 걷습니다.";
                 case AbilityKind.Connect: return "이어 주고 싶은 두 대상을 지도에서 차례로 고르세요.";
+                case AbilityKind.Delete: return "삭제할 적 또는 오브젝트의 모습을 직접 클릭한 뒤 실행을 누르세요.";
+                case AbilityKind.Restore: return "복구 가능한 대상이 생기면 대상이 자동 선택됩니다.";
+                case AbilityKind.Interact: return "가까운 대상과 상호작용하려면 실행을 누르세요.";
                 case AbilityKind.Undo: return "직전 선택을 되돌립니다.";
+                case AbilityKind.Search: return "Ctrl F로 주변 6칸의 단서와 약점을 검색합니다.";
+                case AbilityKind.SelectAll: return "Ctrl A로 주변 4칸에 관리자 영역을 전개합니다.";
+                case AbilityKind.Copy: return _copySourceCaptured
+                    ? "Ctrl V 상태입니다. 복제본을 놓을 빈 타일을 고른 뒤 실행하세요."
+                    : "Ctrl C 상태입니다. 복제할 대상을 먼저 고르세요.";
                 default: return "이 선택을 적용할 대상을 지도에서 고르세요.";
             }
         }
@@ -443,8 +463,8 @@ namespace KeyboardWanderer.Demo
         public void UiCloseSettings()
         {
             _screenMode = _settingsReturn;
-            if (_screenMode == ScreenMode.Playing && _camera != null)
-                _camera.enabled = true;
+            if (_screenMode == ScreenMode.Playing)
+                _cameraController?.SetEnabled(true);
         }
 
         public void UiDeleteSave()
@@ -474,362 +494,14 @@ namespace KeyboardWanderer.Demo
             SaveSettings();
         }
 
-        private void DrawTitleScreen()
-        {
-            DrawRect(new Rect(0f, 0f, LogicalWidth, LogicalHeight), new Color(0.035f, 0.027f, 0.02f, 1f));
-            for (int i = 0; i < 8; i++)
-            {
-                float inset = 24f + i * 9f;
-                DrawBorder(new Rect(inset, inset, LogicalWidth - inset * 2f, LogicalHeight - inset * 2f),
-                    i % 2 == 0 ? new Color(GoldDim.r, GoldDim.g, GoldDim.b, 0.24f) : new Color(1f, 1f, 1f, 0.025f), 1f);
-            }
-
-            int nextCounter = PlayerPrefs.GetInt("keyboard-wanderer.run-counter", 0) + 1;
-            long nextSeed = 20260717L + nextCounter;
-            CampaignBlueprint preview = CampaignCatalog.Create(nextSeed);
-            string previewTitle = preview.Title;
-            string previewPremise = preview.Premise;
-
-            var panel = new Rect(385f, 54f, 670f, 790f);
-            DrawWoodPanel(panel, true);
-            GUI.Label(new Rect(420f, 82f, 600f, 64f), CampaignCatalog.CampaignTitle, _titleStyle);
-            GUI.Label(new Rect(420f, 140f, 600f, 30f), "코드리아 × 관리자 키보드 × 선택 회수", _subtitleStyle);
-            DrawOrnament(new Rect(465f, 184f, 510f, 2f));
-
-            DrawSprite(_playerSprite, new Rect(604f, 198f, 196f, 196f), Color.white);
-            DrawSprite(_d20Sprite, new Rect(758f, 326f, 58f, 58f), new Color(1f, 0.86f, 0.45f, 0.95f));
-            GUI.Label(new Rect(438f, 395f, 564f, 24f), "NEXT SEED  " + nextSeed, _mutedStyle);
-            GUI.Label(new Rect(430f, 425f, 580f, 36f), previewTitle, _headerStyle);
-            GUI.Label(new Rect(430f, 463f, 580f, 64f), previewPremise, _previewPremiseStyle);
-            GUI.Label(new Rect(450f, 529f, 540f, 42f),
-                "160×160 맵은 런 시작 시 한 번만 확정됩니다.\n안전 탐색은 턴을 쓰지 않고, 사건 행동만 D20과 의미 있는 턴을 씁니다.", _mutedStyle);
-
-            GUI.enabled = !_serverPending;
-            if (GUI.Button(new Rect(528f, 591f, 384f, 56f), _serverPending ? "월드 생성 중…" : "새 Seed 런", _selectedButtonStyle))
-                StartNewRun();
-            GUI.enabled = true;
-
-            GUI.enabled = !_serverPending && (LocalRunSaveService.HasSave || !string.IsNullOrWhiteSpace(PlayerPrefs.GetString(ServerRunIdKey, string.Empty)));
-            if (GUI.Button(new Rect(528f, 660f, 384f, 50f), "권위 상태에서 이어하기", _buttonStyle))
-                ContinueRun();
-            GUI.enabled = true;
-
-            if (GUI.Button(new Rect(528f, 723f, 384f, 44f), "설정", _buttonStyle))
-            {
-                _settingsReturn = ScreenMode.Title;
-                _screenMode = ScreenMode.Settings;
-            }
-
-            GUI.Label(new Rect(430f, 780f, 580f, 22f), _serverStatus + " · Ninja Adventure CC0", _mutedStyle);
-            GUI.Label(new Rect(430f, 810f, 580f, 20f), "1 Move · 2 Copy · 3 Delete · 4 Connect · 5 Restore · 6 Undo", _smallStyle);
-        }
-
-        private void DrawSettingsScreen()
-        {
-            DrawRect(new Rect(0f, 0f, LogicalWidth, LogicalHeight), new Color(0.035f, 0.027f, 0.02f, 1f));
-            var panel = new Rect(440f, 150f, 560f, 600f);
-            DrawWoodPanel(panel, true);
-            GUI.Label(new Rect(480f, 188f, 480f, 50f), "설정", _titleStyle);
-            DrawOrnament(new Rect(510f, 248f, 420f, 2f));
-
-            GUI.Label(new Rect(510f, 292f, 250f, 30f), "음악 볼륨", _headerStyle);
-            float music = GUI.HorizontalSlider(new Rect(510f, 330f, 420f, 22f), _musicVolume, 0f, 1f);
-            GUI.Label(new Rect(860f, 288f, 70f, 30f), Mathf.RoundToInt(music * 100f) + "%", _smallStyle);
-
-            GUI.Label(new Rect(510f, 382f, 250f, 30f), "효과음 볼륨", _headerStyle);
-            float sfx = GUI.HorizontalSlider(new Rect(510f, 420f, 420f, 22f), _sfxVolume, 0f, 1f);
-            GUI.Label(new Rect(860f, 378f, 70f, 30f), Mathf.RoundToInt(sfx * 100f) + "%", _smallStyle);
-
-            bool gmEnabled = GUI.Toggle(new Rect(510f, 478f, 420f, 36f), _gmEnabled,
-                "  생성형 장면·대사 패널 표시", _buttonStyle);
-            GUI.Label(new Rect(520f, 520f, 400f, 58f),
-                "Gemini는 서술·대사·기억만 제안합니다.\nD20과 상태 변경은 항상 서버 규칙 엔진이 확정합니다.", _mutedStyle);
-
-            if (!Mathf.Approximately(music, _musicVolume) || !Mathf.Approximately(sfx, _sfxVolume) || gmEnabled != _gmEnabled)
-            {
-                _musicVolume = music;
-                _sfxVolume = sfx;
-                _gmEnabled = gmEnabled;
-                ApplyAudioVolumes();
-                SaveSettings();
-            }
-
-            if (GUI.Button(new Rect(510f, 625f, 200f, 50f), "돌아가기", _selectedButtonStyle))
-            {
-                _screenMode = _settingsReturn;
-                if (_screenMode == ScreenMode.Playing && _camera != null)
-                    _camera.enabled = true;
-            }
-
-            if ((LocalRunSaveService.HasSave || !string.IsNullOrWhiteSpace(PlayerPrefs.GetString(ServerRunIdKey, string.Empty))) &&
-                GUI.Button(new Rect(730f, 625f, 200f, 50f), "이어하기 기록 삭제", _dangerButtonStyle))
-            {
-                LocalRunSaveService.Delete();
-                PlayerPrefs.DeleteKey(ServerRunIdKey);
-                PlayerPrefs.Save();
-            }
-        }
-
-        private void DrawGameHud()
-        {
-            if (_service == null)
-                return;
-
-            RunView view = _service.CurrentView;
-            DrawTopBar(view);
-            DrawLeftPanel(view);
-            DrawRightPanel(view);
-            DrawBottomBar(view);
-
-            if (_showPause)
-                DrawPauseOverlay();
-            else if (!RunIsPlaying(view))
-                DrawEndSummary(view);
-        }
-
-        private void DrawTopBar(RunView view)
-        {
-            var rect = new Rect(0f, 0f, LogicalWidth, TopHeight);
-            DrawWoodPanel(rect, false);
-            GUI.Label(new Rect(18f, 8f, 382f, 25f), CampaignTitle(view), _headerStyle);
-            GUI.Label(new Rect(18f, 34f, 382f, 18f), _serverOnline ? "SERVER 160×160 AUTHORITATIVE" : "OFFLINE 160×160 RULE FALLBACK", _mutedStyle);
-            string area = CurrentAreaName(view);
-            GUI.Label(new Rect(400f, 7f, 570f, 25f), "◆  " + area + "  ◆", _centerStyle);
-            GUI.Label(new Rect(400f, 33f, 570f, 20f), CurrentBiomeLabel(view) + " · " + CampaignPhaseLabel(view), _mutedStyle);
-            GUI.Label(new Rect(978f, 7f, 444f, 22f),
-                "캠페인 턴 " + CurrentTurn(view) + "/" + TurnLimit(view) + "  ·  관리자 권한 " + AdminAccessLevel(view) + "/3", _smallStyle);
-            GUI.Label(new Rect(978f, 32f, 444f, 22f), MetricsLine(view), _mutedStyle);
-        }
-
-        private void DrawLeftPanel(RunView view)
-        {
-            var rect = new Rect(0f, TopHeight, LeftWidth, LogicalHeight - TopHeight - BottomHeight);
-            DrawWoodPanel(rect, false);
-            GUI.Label(new Rect(18f, 74f, 224f, 28f), "런 컨텍스트", _headerStyle);
-            DrawBorder(new Rect(18f, 108f, 96f, 96f), GoldDim, 2f);
-            DrawRect(new Rect(22f, 112f, 88f, 88f), new Color(0.08f, 0.12f, 0.08f, 0.9f));
-            DrawSprite(_playerSprite, new Rect(24f, 114f, 84f, 84f), Color.white);
-            GUI.Label(new Rect(122f, 113f, 122f, 28f), PlayerDisplayName(view), _smallStyle);
-            GUI.Label(new Rect(122f, 143f, 122f, 22f), CampaignPhaseLabel(view), _mutedStyle);
-            GUI.Label(new Rect(122f, 170f, 122f, 22f), "Seed " + view.WorldSeed, _mutedStyle);
-
-            int health = Health(view);
-            int maxHealth = MaxHealth(view);
-            int focus = Focus(view);
-            int maxFocus = MaxFocus(view);
-            DrawMeter(new Rect(18f, 217f, 224f, 23f), health, maxHealth, Ruby, "HP");
-            DrawMeter(new Rect(18f, 247f, 224f, 23f), focus, maxFocus, FocusBlue, "FOCUS");
-            GUI.Label(new Rect(18f, 272f, 224f, 18f), "권한 " + AdminAccessLevel(view) + "/3 · 안전 이동 " + TravelCount(view), _mutedStyle);
-
-            GUI.Label(new Rect(18f, 294f, 224f, 24f), "메인 목표 · 1", _headerStyle);
-            DrawRect(new Rect(16f, 323f, 228f, 86f), new Color(0.04f, 0.03f, 0.02f, 0.74f));
-            DrawBorder(new Rect(16f, 323f, 228f, 86f), GoldDim, 1f);
-            GUI.Label(new Rect(26f, 331f, 208f, 70f), StoryBeat(view) + "\n" + StoryBeatObjective(view), _smallStyle);
-
-            GUI.Label(new Rect(18f, 421f, 224f, 24f), "보조 목표 · 최대 2", _headerStyle);
-            GUI.Label(new Rect(20f, 450f, 220f, 64f), SecondaryObjectiveText(view), _mutedStyle);
-            GUI.Label(new Rect(18f, 520f, 224f, 24f), "권한 / 부채 / 선택 회수", _headerStyle);
-            GUI.Label(new Rect(20f, 549f, 220f, 68f), ProgressLedgerText(view), _smallStyle);
-            GUI.Label(new Rect(18f, 618f, 224f, 32f), FinaleGateLabel(view), _mutedStyle);
-            if (GUI.Button(new Rect(18f, 653f, 104f, 24f), "◀ POI", _buttonStyle)) CyclePoi(-1);
-            if (GUI.Button(new Rect(138f, 653f, 104f, 24f), "POI ▶", _buttonStyle)) CyclePoi(1);
-        }
-
-        private void DrawRightPanel(RunView view)
-        {
-            float x = LogicalWidth - RightWidth;
-            var rect = new Rect(x, TopHeight, RightWidth, LogicalHeight - TopHeight - BottomHeight);
-            DrawWoodPanel(rect, false);
-
-            GUI.Label(new Rect(x + 18f, 74f, RightWidth - 36f, 28f), "1 · 판정", _headerStyle);
-            var diceRect = new Rect(x + 16f, 104f, RightWidth - 32f, 116f);
-            DrawRect(diceRect, new Color(0.11f, 0.07f, 0.035f, 0.94f));
-            DrawBorder(diceRect, Gold, 2f);
-            DrawSprite(_d20Sprite, new Rect(diceRect.x + 12f, diceRect.y + 16f, 76f, 76f), Color.white);
-            GUI.Label(new Rect(diceRect.x + 96f, diceRect.y + 10f, 132f, 32f), _lastD20 > 0 ? "D20  " + _lastD20 : "D20  --", _numberStyle);
-            GUI.Label(new Rect(diceRect.x + 232f, diceRect.y + 13f, 120f, 25f), _lastOutcome, _smallStyle);
-            GUI.Label(new Rect(diceRect.x + 96f, diceRect.y + 46f, 258f, 22f),
-                "수정 " + Signed(_lastModifier) + "  ·  난이도 " + DisplayNumber(_lastDifficulty), _smallStyle);
-            GUI.Label(new Rect(diceRect.x + 96f, diceRect.y + 70f, 258f, 22f),
-                "총점 " + DisplayNumber(_lastMechanicalScore) + "  ·  문맥 " + _lastActionContext, _smallStyle);
-            GUI.Label(new Rect(diceRect.x + 10f, diceRect.y + 94f, diceRect.width - 20f, 17f),
-                _serverPending || _gmPending ? "권위 판정과 짧은 서사를 검증하는 중…" : _serverStatus, _mutedStyle);
-
-            GUI.Label(new Rect(x + 18f, 230f, RightWidth - 36f, 26f), "2 · 상태 변화", _headerStyle);
-            var attemptRect = new Rect(x + 16f, 258f, RightWidth - 32f, 112f);
-            DrawRect(attemptRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
-            DrawBorder(attemptRect, GoldDim, 1f);
-            GUI.Label(new Rect(attemptRect.x + 10f, attemptRect.y + 7f, attemptRect.width - 20f, 42f), _lastStateChanges, _smallStyle);
-            GUI.Label(new Rect(attemptRect.x + 10f, attemptRect.y + 50f, attemptRect.width - 20f, 55f), _lastExplanation, _mutedStyle);
-
-            GUI.Label(new Rect(x + 18f, 380f, RightWidth - 36f, 26f), "3 · 짧은 서사 · 2–4문장", _headerStyle);
-            var narrationRect = new Rect(x + 16f, 408f, RightWidth - 32f, 116f);
-            DrawRect(narrationRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
-            DrawBorder(narrationRect, GoldDim, 1f);
-            DrawScrollableText(ShortNarrative(NarrativeWithDialogue()), new Rect(narrationRect.x + 8f, narrationRect.y + 8f,
-                narrationRect.width - 16f, narrationRect.height - 16f), ref _narrativeScroll);
-
-            GUI.Label(new Rect(x + 18f, 534f, RightWidth - 36f, 26f), "기억 · 권한 / 부채 / 선택 회수", _headerStyle);
-            var memoryRect = new Rect(x + 16f, 562f, RightWidth - 32f, 101f);
-            DrawRect(memoryRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
-            DrawBorder(memoryRect, GoldDim, 1f);
-            DrawMemory(view, new Rect(memoryRect.x + 8f, memoryRect.y + 7f, memoryRect.width - 16f, memoryRect.height - 14f));
-        }
-
-        private void DrawBottomBar(RunView view)
-        {
-            var rect = new Rect(0f, LogicalHeight - BottomHeight, LogicalWidth, BottomHeight);
-            DrawWoodPanel(rect, false);
-            GUI.Label(new Rect(18f, 690f, 570f, 25f), "MOVE + 관리자 키보드 5 스킬", _headerStyle);
-
-            string[] names = { "Move", "Copy", "Delete", "Connect", "Restore", "Undo" };
-            string[] korean = { "이동", "복제", "삭제", "연결", "복원", "되돌림" };
-            string[] keys = { "1", "2", "3", "4", "5", "6" };
-            for (int i = 0; i < names.Length; i++)
-            {
-                var buttonRect = new Rect(18f + i * 96f, 720f, 88f, 90f);
-                DrawAbilityButton(buttonRect, names[i], korean[i], keys[i]);
-            }
-
-            GUI.Label(new Rect(18f, 823f, 570f, 20f), "추천 행동 · 2–3", _mutedStyle);
-            AbilityKind[] recommendations = RecommendedActions(view);
-            for (int i = 0; i < recommendations.Length && i < 3; i++)
-            {
-                AbilityKind recommended = recommendations[i];
-                if (GUI.Button(new Rect(18f + i * 182f, 846f, 172f, 34f),
-                        ContextPreview(recommended, view) + " · " + recommended,
-                        _ability == recommended ? _selectedButtonStyle : _buttonStyle))
-                    SetAbility(recommended);
-            }
-
-            GUI.Label(new Rect(620f, 690f, 590f, 25f), "실행 전 확인", _headerStyle);
-            var previewRect = new Rect(620f, 720f, 590f, 145f);
-            DrawRect(previewRect, new Color(0.04f, 0.03f, 0.02f, 0.76f));
-            DrawBorder(previewRect, GoldDim, 1f);
-            GUI.Label(new Rect(636f, 734f, 558f, 120f), ExecutionPreview(view), _smallStyle);
-
-            GUI.enabled = RunIsPlaying(view) && !_showPause && !_serverPending && CanSubmitCurrentSelection();
-            if (GUI.Button(new Rect(1226f, 720f, 196f, 145f), SubmissionButtonLabel(view), _selectedButtonStyle))
-                Submit();
-            GUI.enabled = true;
-            GUI.Label(new Rect(620f, 869f, 802f, 18f), SelectionHint(view), _mutedStyle);
-        }
-
         private bool CanSubmitCurrentSelection()
         {
             if (_ability == AbilityKind.Move) return _selectedCoord.HasValue;
-            if (_ability == AbilityKind.Undo) return true;
+            if (_ability == AbilityKind.Undo || _ability == AbilityKind.Search || _ability == AbilityKind.SelectAll)
+                return IsSkillEnabledForCurrentTarget(_ability);
             if (_ability == AbilityKind.Connect)
                 return _selectedTarget.HasValue && _selectedSecondaryTarget.HasValue;
             return _selectedTarget.HasValue && IsSkillEnabledForCurrentTarget(_ability);
-        }
-
-        private void DrawPauseOverlay()
-        {
-            DrawRect(new Rect(0f, 0f, LogicalWidth, LogicalHeight), new Color(0f, 0f, 0f, 0.68f));
-            var panel = new Rect(510f, 250f, 420f, 400f);
-            DrawWoodPanel(panel, true);
-            GUI.Label(new Rect(550f, 290f, 340f, 50f), "일시 정지", _titleStyle);
-            if (GUI.Button(new Rect(580f, 380f, 280f, 52f), "계속하기", _selectedButtonStyle))
-                _showPause = false;
-            if (GUI.Button(new Rect(580f, 450f, 280f, 48f), "설정", _buttonStyle))
-            {
-                _showPause = false;
-                _settingsReturn = ScreenMode.Playing;
-                _screenMode = ScreenMode.Settings;
-            }
-            if (GUI.Button(new Rect(580f, 516f, 280f, 48f), "타이틀로", _buttonStyle))
-                ShowTitle();
-            GUI.Label(new Rect(550f, 592f, 340f, 24f), "진행 상황은 매 턴 자동 저장됩니다.", _mutedStyle);
-        }
-
-        private void DrawEndSummary(RunView view)
-        {
-            DrawRect(new Rect(0f, 0f, LogicalWidth, LogicalHeight), new Color(0f, 0f, 0f, 0.72f));
-            var panel = new Rect(435f, 145f, 570f, 610f);
-            DrawWoodPanel(panel, true);
-            GUI.Label(new Rect(475f, 185f, 490f, 52f), "코드리아의 결말", _titleStyle);
-            DrawSprite(_d20Sprite, new Rect(640f, 255f, 160f, 160f), Color.white);
-            string endingCode = EndingCode(view);
-            GUI.Label(new Rect(485f, 425f, 470f, 42f), EndingTitle(endingCode), _headerStyle);
-            GUI.Label(new Rect(505f, 475f, 430f, 62f), EndingDescription(endingCode), _centerStyle);
-            GUI.Label(new Rect(505f, 555f, 430f, 28f),
-                "턴 " + CurrentTurn(view) + " · 확정 사실 " + CanonicalFactCount(view) + " · 열린 훅 " + OpenLoopCount(view), _smallStyle);
-            if (GUI.Button(new Rect(505f, 625f, 200f, 54f), "새 여정", _selectedButtonStyle))
-                StartNewRun();
-            if (GUI.Button(new Rect(735f, 625f, 200f, 54f), "타이틀", _buttonStyle))
-                ShowTitle();
-        }
-
-        private void DrawLog(RunView view, Rect viewport)
-        {
-            var lines = new List<string>(view.GmLog);
-            for (int i = 0; i < _sessionLog.Count; i++)
-                if (!lines.Contains(_sessionLog[i]))
-                    lines.Add(_sessionLog[i]);
-            if (lines.Count == 0)
-                lines.Add(_lastNarrative);
-
-            float width = viewport.width - 18f;
-            float height = 8f;
-            for (int i = 0; i < lines.Count; i++)
-                height += _smallStyle.CalcHeight(new GUIContent("• " + lines[i]), width) + 10f;
-            var content = new Rect(0f, 0f, width, Mathf.Max(height, viewport.height));
-            _logScroll = GUI.BeginScrollView(viewport, _logScroll, content, false, true);
-            float y = 4f;
-            for (int i = 0; i < lines.Count; i++)
-            {
-                string line = "• " + lines[i];
-                float lineHeight = _smallStyle.CalcHeight(new GUIContent(line), width);
-                GUI.Label(new Rect(2f, y, width, lineHeight), line, _smallStyle);
-                y += lineHeight + 10f;
-            }
-            GUI.EndScrollView();
-        }
-
-        private void DrawScrollableText(string text, Rect viewport, ref Vector2 scroll)
-        {
-            string safe = string.IsNullOrWhiteSpace(text) ? "아직 확정된 장면 서술이 없습니다." : text.Trim();
-            float width = viewport.width - 18f;
-            float height = Mathf.Max(viewport.height, _smallStyle.CalcHeight(new GUIContent(safe), width) + 8f);
-            scroll = GUI.BeginScrollView(viewport, scroll, new Rect(0f, 0f, width, height), false, true);
-            GUI.Label(new Rect(2f, 2f, width, height - 4f), safe, _smallStyle);
-            GUI.EndScrollView();
-        }
-
-        private void DrawMemory(RunView view, Rect viewport)
-        {
-            List<string> lines = MemoryLines(view);
-            if (lines.Count == 0)
-                lines.Add("아직 확정된 세계 기억이 없습니다.");
-            float width = viewport.width - 18f;
-            float height = 5f;
-            for (int i = 0; i < lines.Count; i++)
-                height += _smallStyle.CalcHeight(new GUIContent(lines[i]), width) + 7f;
-            _logScroll = GUI.BeginScrollView(viewport, _logScroll,
-                new Rect(0f, 0f, width, Mathf.Max(height, viewport.height)), false, true);
-            float y = 3f;
-            for (int i = 0; i < lines.Count; i++)
-            {
-                float lineHeight = _smallStyle.CalcHeight(new GUIContent(lines[i]), width);
-                GUI.Label(new Rect(2f, y, width, lineHeight), lines[i], _smallStyle);
-                y += lineHeight + 7f;
-            }
-            GUI.EndScrollView();
-        }
-
-        private void DrawAbilityButton(Rect rect, string abilityName, string label, string key)
-        {
-            AbilityKind value = AbilityByName(abilityName);
-            bool selected = _ability.ToString() == abilityName;
-            bool enabled = IsSkillEnabledForCurrentTarget(value);
-            GUI.enabled = enabled;
-            if (GUI.Button(rect, GUIContent.none, selected ? _selectedButtonStyle : _buttonStyle))
-                SetAbility(value);
-            GUI.enabled = true;
-            DrawSprite(AbilityIcon(abilityName), new Rect(rect.x + 28f, rect.y + 8f, 34f, 34f), selected ? Color.white : new Color(0.9f, 0.84f, 0.67f, 1f));
-            GUI.Label(new Rect(rect.x + 4f, rect.y + 47f, rect.width - 8f, 19f), label, _centerStyle);
-            GUI.Label(new Rect(rect.x + 4f, rect.y + 67f, rect.width - 8f, 15f), enabled ? key : "사용 불가", _mutedStyle);
         }
 
         private bool IsSkillEnabledForCurrentTarget(AbilityKind skill)
@@ -838,9 +510,10 @@ namespace KeyboardWanderer.Demo
             if (skill == AbilityKind.Move) return true;
             RunView view = _service.CurrentView;
             int focus = _serverOnline && _serverRun != null ? _serverRun.focus : view.Focus;
-            int focusCost = skill == AbilityKind.Copy || skill == AbilityKind.Delete ? 1
+            int focusCost = skill == AbilityKind.Copy || skill == AbilityKind.Delete || skill == AbilityKind.Search ? 1
                 : skill == AbilityKind.Connect || skill == AbilityKind.Restore ? 2
-                : skill == AbilityKind.Undo ? 3 : int.MaxValue;
+                : skill == AbilityKind.Undo || skill == AbilityKind.SelectAll ? 3
+                : skill == AbilityKind.Interact ? 0 : int.MaxValue;
             if (focus < focusCost) return false;
             if (skill == AbilityKind.Undo)
             {
@@ -863,72 +536,79 @@ namespace KeyboardWanderer.Demo
                 if (skill == AbilityKind.Restore)
                     return _lastRestorableTarget == target.EntityId ||
                            target.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal);
+                if (skill == AbilityKind.Interact)
+                {
+                    if ((target.Kind != EntityKind.Prop && target.Kind != EntityKind.Npc) || target.IsHostile)
+                        return false;
+                    return TryGetPlayerPosition(view, out GridCoord playerPosition) &&
+                           playerPosition.ManhattanDistance(target.Position) <= 2;
+                }
             }
             return true;
         }
 
-        private void DrawMeter(Rect rect, int value, int max, Color color, string label)
+        private void ConfigureInput()
         {
-            max = Mathf.Max(1, max);
-            float normalized = Mathf.Clamp01(value / (float)max);
-            DrawRect(rect, new Color(0.035f, 0.025f, 0.018f, 1f));
-            DrawRect(new Rect(rect.x + 2f, rect.y + 2f, (rect.width - 4f) * normalized, rect.height - 4f), color);
-            DrawBorder(rect, GoldDim, 1f);
-            GUI.Label(rect, label + "  " + Mathf.Max(0, value) + " / " + max, _centerStyle);
+            _inputController = authoredInputController;
+            if (_inputController == null)
+                return;
+            _inputController.PauseRequested += HandlePauseRequested;
+            _inputController.AbilityRequested += HandleAbilityRequested;
+            _inputController.PasteRequested += HandlePasteRequested;
+            _inputController.PoiCycleRequested += HandlePoiCycleRequested;
+            _inputController.SubmitRequested += HandleSubmitRequested;
+            _inputController.WorldClickRequested += HandleMapClick;
         }
 
-        private void DrawHearts(Rect rect, int health, int maxHealth)
+        private bool CanHandleGameplayInput()
         {
-            int count = 5;
-            float segment = maxHealth / (float)count;
-            for (int i = 0; i < count; i++)
-            {
-                bool filled = health > segment * i;
-                var heartRect = new Rect(rect.x + i * 36f, rect.y, 28f, 28f);
-                DrawSprite(_assets != null ? _assets.HeartIcon : null, heartRect,
-                    filled ? Color.white : new Color(0.25f, 0.22f, 0.2f, 0.85f));
-            }
+            return _screenMode == ScreenMode.Playing && _service != null && !_showPause &&
+                   RunIsPlaying(_service.CurrentView) && !_serverPending && !_playerWalking;
         }
 
-        private void HandleKeyboard()
+        private void HandlePauseRequested()
         {
-            Keyboard keyboard = Keyboard.current;
-            if (keyboard == null)
+            if (_screenMode != ScreenMode.Playing || _service == null)
                 return;
-
-            if (keyboard.escapeKey.wasPressedThisFrame)
-            {
-                _showPause = !_showPause;
-                PlaySfx(_showPause ? AssetClip("UiCancelSound") : AssetClip("UiAcceptSound"));
-                return;
-            }
-            if (_showPause || !RunIsPlaying(_service.CurrentView) || _serverPending || _playerWalking)
-                return;
-
-            if (keyboard.digit1Key.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame) SetAbility(AbilityKind.Move);
-            if (keyboard.digit2Key.wasPressedThisFrame || keyboard.eKey.wasPressedThisFrame) SetAbility(AbilityKind.Copy);
-            if (keyboard.digit3Key.wasPressedThisFrame || keyboard.rKey.wasPressedThisFrame) SetAbility(AbilityKind.Delete);
-            if (keyboard.digit4Key.wasPressedThisFrame || keyboard.cKey.wasPressedThisFrame) SetAbility(AbilityKind.Connect);
-            if (keyboard.digit5Key.wasPressedThisFrame || keyboard.qKey.wasPressedThisFrame) SetAbility(AbilityKind.Restore);
-            if (keyboard.digit6Key.wasPressedThisFrame || keyboard.zKey.wasPressedThisFrame) SetAbility(AbilityKind.Undo);
-            if (keyboard.leftBracketKey.wasPressedThisFrame) CyclePoi(-1);
-            if (keyboard.rightBracketKey.wasPressedThisFrame) CyclePoi(1);
-            if (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame) Submit();
+            _showPause = !_showPause;
+            PlaySfx(_showPause ? AssetClip("UiCancelSound") : AssetClip("UiAcceptSound"));
         }
 
-        private void HandleMapClick()
+        private void HandleAbilityRequested(AbilityKind ability)
         {
-            Mouse mouse = Mouse.current;
-            if (_showPause || _playerWalking || mouse == null || !mouse.leftButton.wasPressedThisFrame || _camera == null)
+            if (!CanHandleGameplayInput())
+                return;
+            SetAbility(ability);
+            if ((ability == AbilityKind.Search || ability == AbilityKind.SelectAll || ability == AbilityKind.Undo) &&
+                IsSkillEnabledForCurrentTarget(ability))
+                Submit();
+        }
+
+        private void HandlePasteRequested()
+        {
+            if (CanHandleGameplayInput() && _ability == AbilityKind.Copy && _copySourceCaptured &&
+                _selectedCoord.HasValue)
+                Submit();
+        }
+
+        private void HandlePoiCycleRequested(int direction)
+        {
+            if (CanHandleGameplayInput()) CyclePoi(direction);
+        }
+
+        private void HandleSubmitRequested()
+        {
+            if (CanHandleGameplayInput()) Submit();
+        }
+
+        private void HandleMapClick(Vector2 mousePosition)
+        {
+            if (!CanHandleGameplayInput() || _cameraController == null || !_cameraController.IsReady)
+                return;
+            if (!_cameraController.ContainsScreenPoint(mousePosition))
                 return;
 
-            Vector2 mousePosition = mouse.position.ReadValue();
-            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
-                return;
-            if (!_camera.pixelRect.Contains(mousePosition))
-                return;
-
-            Vector3 world = _camera.ScreenToWorldPoint(new Vector3(mousePosition.x, mousePosition.y, 0f));
+            Vector3 world = _cameraController.ScreenToWorld(mousePosition);
             RunView view = _service.CurrentView;
             Vector2 origin = MapOrigin(view);
             var coord = new GridCoord(
@@ -940,10 +620,27 @@ namespace KeyboardWanderer.Demo
             _cameraInspectCoord = null;
             _cameraInspectUntil = 0f;
 
-            Guid? clickedEntity = _serverOnline ? FindServerTarget(coord, _ability == AbilityKind.Restore) : FindTarget(view, coord);
+            Guid? clickedEntity = FindVisualTargetAt(world);
+            if (!clickedEntity.HasValue)
+                clickedEntity = _serverOnline ? FindServerTarget(coord, _ability == AbilityKind.Restore) : FindTarget(view, coord);
+            if (clickedEntity.HasValue && TryGetEntityPosition(view, clickedEntity.Value, out GridCoord entityCoord))
+                coord = entityCoord;
             string abilityName = _ability.ToString();
             if (abilityName == "Move")
             {
+                if (clickedEntity.HasValue && IsInteractableTarget(view, clickedEntity.Value))
+                {
+                    _ability = AbilityKind.Interact;
+                    _selectedTarget = clickedEntity;
+                    _selectedSecondaryTarget = null;
+                    _selectedCoord = coord;
+                    _movementSelectionFeedback = IsSkillEnabledForCurrentTarget(AbilityKind.Interact)
+                        ? DisplayEntityName(view, clickedEntity.Value) + " 상호작용 준비 완료"
+                        : "상호작용하려면 대상의 2칸 이내로 이동하세요.";
+                    UpdateSelectionVisual(view);
+                    PlaySfx(AssetClip("UiMoveSound"));
+                    return;
+                }
                 if (!CanSelectMovementDestination(view, coord))
                 {
                     _movementSelectionFeedback = "그곳까지 이어지는 통행 가능한 경로가 없습니다.";
@@ -958,9 +655,20 @@ namespace KeyboardWanderer.Demo
             else if (abilityName == "Copy")
             {
                 if (clickedEntity.HasValue)
+                {
                     _selectedTarget = clickedEntity;
+                    _selectedCoord = null;
+                    _copySourceCaptured = true;
+                    _movementSelectionFeedback = "복사 원본 선택 · " + DisplayEntityName(view, clickedEntity.Value) +
+                                                 " · 이제 빈 타일을 클릭하세요.";
+                }
                 else
+                {
                     _selectedCoord = coord;
+                    _movementSelectionFeedback = _copySourceCaptured
+                        ? "붙여넣을 타일 선택 완료 · 우측 아래 실행 버튼을 누르세요."
+                        : "먼저 복사할 적 또는 오브젝트를 클릭하세요.";
+                }
             }
             else if (abilityName == "Connect")
             {
@@ -975,6 +683,9 @@ namespace KeyboardWanderer.Demo
                     {
                         _selectedSecondaryTarget = clickedEntity;
                     }
+                    _movementSelectionFeedback = _selectedSecondaryTarget.HasValue
+                        ? "연결 대상 2개 선택 완료 · 실행 버튼을 누르세요."
+                        : "첫 연결 대상 · " + DisplayEntityName(view, clickedEntity.Value) + " · 두 번째 대상을 고르세요.";
                 }
                 _selectedCoord = coord;
             }
@@ -983,6 +694,9 @@ namespace KeyboardWanderer.Demo
                 _selectedCoord = coord;
                 _selectedTarget = clickedEntity;
                 _selectedSecondaryTarget = null;
+                _movementSelectionFeedback = clickedEntity.HasValue
+                    ? DisplayEntityName(view, clickedEntity.Value) + " 선택 완료 · 우측 아래 실행 버튼을 누르세요."
+                    : "선택 가능한 적 또는 오브젝트의 모습을 직접 클릭하세요.";
             }
 
             UpdateSelectionVisual(view);
@@ -1041,7 +755,8 @@ namespace KeyboardWanderer.Demo
 
         private void Submit()
         {
-            if (_service == null || _showPause || _serverPending || _playerWalking)
+            if (_service == null || _showPause || _serverPending || _playerWalking ||
+                (_sceneSequencePlayer != null && _sceneSequencePlayer.IsPlaying))
                 return;
             RunView view = _service.CurrentView;
             if (!RunIsPlaying(view))
@@ -1068,7 +783,7 @@ namespace KeyboardWanderer.Demo
             GridCoord? destination = abilityName == "Move" || abilityName == "Copy" || abilityName == "Connect"
                 ? _selectedCoord
                 : null;
-            Guid? target = abilityName == "Move" || abilityName == "Undo" ? null : _selectedTarget;
+            Guid? target = abilityName == "Move" || abilityName == "Undo" || abilityName == "Search" || abilityName == "SelectAll" ? null : _selectedTarget;
             Guid? secondary = abilityName == "Connect" ? _selectedSecondaryTarget : null;
             TurnRequest request = _ability == AbilityKind.Move && destination.HasValue
                 ? TurnRequest.Move(Guid.NewGuid().ToString("N"), view.Version, destination.Value)
@@ -1171,7 +886,7 @@ namespace KeyboardWanderer.Demo
                 ? new GameApiClient.PositionSnapshot { x = destinationCoord.Value.X, y = destinationCoord.Value.Y }
                 : null;
             var targetIds = new List<string>();
-            if (_ability != AbilityKind.Undo && _selectedTarget.HasValue)
+            if (_ability != AbilityKind.Undo && _ability != AbilityKind.Search && _ability != AbilityKind.SelectAll && _selectedTarget.HasValue)
                 targetIds.Add(_selectedTarget.Value.ToString());
             if (_ability == AbilityKind.Connect && _selectedSecondaryTarget.HasValue)
                 targetIds.Add(_selectedSecondaryTarget.Value.ToString());
@@ -1228,6 +943,7 @@ namespace KeyboardWanderer.Demo
                             ApplyServerTurnPresentation(recoveredTurn.Value);
                             _serverStatus = "타임아웃 후 커밋된 턴 복구 완료";
                             SyncServerEntityVisuals(_serverRun);
+                            QueueServerSceneSequence(recoveredTurn.Value.sceneSequence);
                         }
                     }
                 }
@@ -1241,6 +957,7 @@ namespace KeyboardWanderer.Demo
             SyncRestorableCandidateFromServer();
             ApplyServerTurnPresentation(committed.Turn);
             SyncServerEntityVisuals(_serverRun);
+            QueueServerSceneSequence(committed.Turn.sceneSequence);
             UpdateSelectionVisual(_service.CurrentView);
             PlayerPrefs.SetString(ServerRunIdKey, _serverRun.id);
             PlayerPrefs.Save();
@@ -1329,18 +1046,23 @@ namespace KeyboardWanderer.Demo
                 ? "서버 /travel이 위치와 탐색 시간만 갱신했습니다. D20과 의미 있는 캠페인 턴은 소비하지 않았습니다."
                 : "서버 이동 결과를 다시 동기화했습니다. 캠페인 턴 또는 레이아웃 불변식 표시를 확인하세요.";
             string actorName = PlayerDisplayName(_service.CurrentView);
-            _lastNarrative = encounterOpened
-                ? actorName + "는(은) 안전 구간 끝에서 " + EncounterReasonLabel(_encounterReason) + " 사건과 마주쳤다. 이제 배치·전투·조사·협상 중 하나로 해결해야 한다."
-                : actorName + "는(은) 이미 생성된 월드 안에서 안전 경로를 따라 이동했다. 사건이 시작되기 전까지 세계 지형은 바뀌지 않는다.";
-            _lastStateChanges = encounterOpened
-                ? "위치: 안전 지점까지 이동 · 사건 활성화 · 캠페인 턴 유지"
-                : "위치와 이동 시간만 변경 · 캠페인 턴 유지 · D20 없음";
-            _lastDialogue = Array.Empty<string>();
+            _lastNarrative = _gmEnabled && !string.IsNullOrWhiteSpace(navigation?.narrative?.body)
+                ? navigation.narrative.body
+                : encounterOpened
+                    ? actorName + "는(은) 안전 구간 끝에서 " + EncounterReasonLabel(_encounterReason) + " 사건과 마주쳤다. 이제 배치·전투·조사·협상 중 하나로 해결해야 한다."
+                    : actorName + "는(은) 이미 생성된 월드 안에서 안전 경로를 따라 이동했다. 사건이 시작되기 전까지 세계 지형은 바뀌지 않는다.";
+            _lastStateChanges = navigation?.events != null && navigation.events.Length > 0
+                ? StateChangeSummary(navigation.events)
+                : encounterOpened
+                    ? "위치: 안전 지점까지 이동 · 사건 활성화 · 캠페인 턴 유지"
+                    : "위치와 이동 시간만 변경 · 캠페인 턴 유지 · D20 없음";
+            _lastDialogue = _gmEnabled ? navigation?.narrative?.dialogue ?? Array.Empty<string>() : Array.Empty<string>();
             SyncRestorableCandidateFromServer();
             TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPositionAfter);
             List<GridCoord> visualPath = NavigationVisualPath(navigation, playerPositionBefore, playerPositionAfter);
             BeginPlayerPathAnimation(visualPath, _service.CurrentView);
             SyncServerEntityVisuals(_serverRun);
+            QueueServerSceneSequence(navigation?.sceneSequence);
             _selectedCoord = encounterOpened ? _encounterStagingCoord : null;
             _selectedTarget = null;
             _selectedSecondaryTarget = null;
@@ -1560,8 +1282,7 @@ namespace KeyboardWanderer.Demo
             else
                 SyncEntityVisuals(_service.CurrentView);
             _screenMode = ScreenMode.Playing;
-            if (_camera != null)
-                _camera.enabled = true;
+            _cameraController?.SetEnabled(true);
             SnapCameraToPlayer();
             SetMusic(_assets != null ? _assets.VillageMusic ?? _assets.AdventureMusic : null);
             if (!_serverOnline)
@@ -1573,8 +1294,7 @@ namespace KeyboardWanderer.Demo
             _screenMode = ScreenMode.Title;
             _showPause = false;
             _gmPending = false;
-            if (_camera != null)
-                _camera.enabled = true;
+            _cameraController?.SetEnabled(true);
             SetMusic(_assets != null ? _assets.AdventureMusic ?? _assets.VillageMusic : null);
         }
 
@@ -1586,8 +1306,11 @@ namespace KeyboardWanderer.Demo
 
         private void BuildWorld(RunView view)
         {
-            if (_worldRoot != null && (authoredWorld == null || _worldRoot != authoredWorld.gameObject))
-                Destroy(_worldRoot);
+            if (authoredWorld == null || authoredWorld.TerrainTilemap == null ||
+                authoredWorld.SelectionCursor == null || authoredWorld.RuntimeEntities == null ||
+                authoredWorld.RuntimeLandmarks == null || authoredWorld.RuntimeEffects == null)
+                throw new InvalidOperationException(
+                    "Keyboard Wanderer requires a fully configured authored world. Run the project converter or repair the scene references.");
             for (int i = 0; i < _runtimeTiles.Count; i++)
                 if (_runtimeTiles[i] != null)
                     Destroy(_runtimeTiles[i]);
@@ -1602,32 +1325,16 @@ namespace KeyboardWanderer.Demo
 
             // One Tilemap renders the immutable 160x160 terrain. Online, the server snapshot is the
             // sole geometry authority; the local map remains only an offline continuity fallback.
-            Tilemap tilemap;
-            if (authoredWorld != null && authoredWorld.TerrainTilemap != null)
-            {
-                _worldRoot = authoredWorld.gameObject;
-                _worldRoot.name = "Authored World · " + ShortHash(layoutHash);
-                authoredWorld.ResetRuntimeContent();
-                tilemap = authoredWorld.TerrainTilemap;
-                tilemap.transform.position = new Vector3(origin.x, origin.y, 0f);
-                _selectionRenderer = authoredWorld.SelectionCursor;
-            }
-            else
-            {
-                _worldRoot = new GameObject("Persistent World · " + ShortHash(layoutHash));
-                _worldRoot.transform.SetParent(transform, false);
-                _worldRoot.AddComponent<Grid>();
-                var terrainObject = new GameObject("Immutable Terrain Tilemap");
-                terrainObject.transform.SetParent(_worldRoot.transform, false);
-                terrainObject.transform.position = new Vector3(origin.x, origin.y, 0f);
-                tilemap = terrainObject.AddComponent<Tilemap>();
-                var tilemapRenderer = terrainObject.AddComponent<TilemapRenderer>();
-                tilemapRenderer.sortingOrder = TerrainSortingOrder;
-            }
+            _worldRoot = authoredWorld.gameObject;
+            _worldRoot.name = "Authored World · " + ShortHash(layoutHash);
+            authoredWorld.ResetRuntimeContent();
+            Tilemap tilemap = authoredWorld.TerrainTilemap;
+            tilemap.transform.position = new Vector3(origin.x, origin.y, 0f);
+            _selectionRenderer = authoredWorld.SelectionCursor;
             TilemapRenderer activeTilemapRenderer = tilemap.GetComponent<TilemapRenderer>();
             if (activeTilemapRenderer != null)
                 activeTilemapRenderer.sortingOrder = TerrainSortingOrder;
-            var tilePalette = new Dictionary<TileKind, Tile>();
+            var tilePalette = new Dictionary<string, Tile>(StringComparer.Ordinal);
 
             for (int y = 0; y < worldHeight; y++)
             {
@@ -1637,16 +1344,17 @@ namespace KeyboardWanderer.Demo
                     TileKind tileKind = useServerWorld
                         ? TileKindForServer(serverWorld, serverWorld.tileCodes[y * serverWorld.width + x])
                         : view.Region.GetTile(coord).Kind;
-                    TileAppearance(tileKind, coord, out Sprite sprite, out Color tint);
-                    tint = ApplyBiomePalette(tint, BiomeIdAt(view, coord));
-                    if (!tilePalette.TryGetValue(tileKind, out Tile visualTile))
+                    string biomeId = BiomeIdAt(view, coord);
+                    TileAppearance(tileKind, biomeId, coord, out Sprite sprite, out Color tint);
+                    string paletteKey = biomeId + ":" + tileKind;
+                    if (!tilePalette.TryGetValue(paletteKey, out Tile visualTile))
                     {
                         visualTile = ScriptableObject.CreateInstance<Tile>();
-                        visualTile.name = "Runtime " + tileKind + " Tile";
+                        visualTile.name = "Runtime " + biomeId + " " + tileKind + " Tile";
                         visualTile.sprite = sprite;
                         visualTile.color = Color.white;
                         visualTile.flags = TileFlags.None;
-                        tilePalette.Add(tileKind, visualTile);
+                        tilePalette.Add(paletteKey, visualTile);
                         _runtimeTiles.Add(visualTile);
                     }
                     var cell = new Vector3Int(x, y, 0);
@@ -1656,14 +1364,9 @@ namespace KeyboardWanderer.Demo
                 }
             }
 
+            CreateBiomeDecorations(view, origin, useServerWorld, worldWidth, worldHeight);
             CreateCampaignLandmarkMarkers(view, origin, useServerWorld);
 
-            if (_selectionRenderer == null)
-            {
-                var selection = new GameObject("Selection Cursor");
-                selection.transform.SetParent(WorldContentRoot, false);
-                _selectionRenderer = selection.AddComponent<SpriteRenderer>();
-            }
             _selectionRenderer.sprite = _grassSprite;
             _selectionRenderer.color = new Color(1f, 0.85f, 0.35f, 0.42f);
             _selectionRenderer.sortingOrder = 900;
@@ -1753,6 +1456,7 @@ namespace KeyboardWanderer.Demo
                     };
                     visual.Animator = ConfigureEntityAnimator(renderer,
                         AnimatorForAsset(entity.assetId, entity.kind, isPlayer));
+                    InitializeAmbientWander(visual, id);
                     if (!string.IsNullOrWhiteSpace(rootComponent))
                         visual.RootComponentLabel = CreateRootComponentLabel(rootComponent, entity.name, visual.BaseColor, authoredView);
                     renderer.color = visual.BaseColor;
@@ -1772,6 +1476,8 @@ namespace KeyboardWanderer.Demo
                 }
                 if (visual.RootComponentLabel != null)
                     visual.RootComponentLabel.transform.position = visual.TargetPosition + new Vector3(0f, -0.72f, -0.2f);
+                if (entity.state != null && !entity.state.disabled && visual.Root != null && !visual.Root.activeSelf)
+                    visual.Root.SetActive(true);
                 UpdateServerHealthVisual(visual, entity);
             }
 
@@ -1832,6 +1538,7 @@ namespace KeyboardWanderer.Demo
             };
             visual.Animator = ConfigureEntityAnimator(renderer,
                 AnimatorForAsset(entity.AssetId, entity.Kind.ToString(), isPlayer));
+            InitializeAmbientWander(visual, entity.EntityId);
             renderer.color = visual.BaseColor;
 
             if (visual.IsHostile)
@@ -1846,22 +1553,19 @@ namespace KeyboardWanderer.Demo
             out SpriteRenderer renderer)
         {
             KeyboardWandererEntityView prefab = authoringSettings != null ? authoringSettings.EntityVisualPrefab : null;
-            if (prefab != null)
-            {
-                authoredView = Instantiate(prefab, WorldContentRoot);
-                authoredView.name = objectName;
-                authoredView.Prepare(_whiteSprite, hostile);
-                renderer = authoredView.ActorRenderer;
-                if (renderer != null)
-                    return authoredView.gameObject;
-                Destroy(authoredView.gameObject);
-            }
+            if (prefab == null)
+                throw new InvalidOperationException("Authoring Settings must reference an Entity Visual prefab.");
 
-            authoredView = null;
-            var root = new GameObject(objectName);
-            root.transform.SetParent(WorldContentRoot, false);
-            renderer = root.AddComponent<SpriteRenderer>();
-            return root;
+            authoredView = Instantiate(prefab, WorldContentRoot);
+            authoredView.name = objectName;
+            authoredView.Prepare(_whiteSprite, hostile);
+            renderer = authoredView.ActorRenderer;
+            if (renderer == null)
+            {
+                Destroy(authoredView.gameObject);
+                throw new InvalidOperationException("Entity Visual prefab must reference its Actor SpriteRenderer.");
+            }
+            return authoredView.gameObject;
         }
 
         private float VisualSize(bool isPlayer, bool hostile)
@@ -1875,35 +1579,13 @@ namespace KeyboardWanderer.Demo
 
         private void ConfigureHealthBars(EntityVisual visual, string displayName)
         {
-            if (visual.AuthoredView != null && visual.AuthoredView.HealthBack != null && visual.AuthoredView.HealthFill != null)
-            {
-                visual.HealthBack = visual.AuthoredView.HealthBack;
-                visual.HealthFill = visual.AuthoredView.HealthFill;
-                visual.HealthBack.name = displayName + " HP bg";
-                visual.HealthFill.name = displayName + " HP";
-                SpriteRenderer back = visual.HealthBack.GetComponent<SpriteRenderer>();
-                SpriteRenderer fill = visual.HealthFill.GetComponent<SpriteRenderer>();
-                back.color = new Color(0.08f, 0.035f, 0.025f, 0.95f);
-                back.sortingOrder = 510;
-                fill.color = Ruby;
-                fill.sortingOrder = 511;
-                return;
-            }
+            if (visual.AuthoredView == null || visual.AuthoredView.HealthBack == null || visual.AuthoredView.HealthFill == null)
+                throw new InvalidOperationException("Entity Visual prefab must contain authored Health Back and Health Fill renderers.");
 
-            visual.HealthBack = CreateHealthBarObject(displayName + " HP bg",
-                new Color(0.08f, 0.035f, 0.025f, 0.95f), 510);
-            visual.HealthFill = CreateHealthBarObject(displayName + " HP", Ruby, 511);
-        }
-
-        private GameObject CreateHealthBarObject(string name, Color color, int order)
-        {
-            var bar = new GameObject(name);
-            bar.transform.SetParent(WorldContentRoot, false);
-            var renderer = bar.AddComponent<SpriteRenderer>();
-            renderer.sprite = _whiteSprite;
-            renderer.color = color;
-            renderer.sortingOrder = order;
-            return bar;
+            visual.HealthBack = visual.AuthoredView.HealthBack;
+            visual.HealthFill = visual.AuthoredView.HealthFill;
+            visual.HealthBack.name = displayName + " HP bg";
+            visual.HealthFill.name = displayName + " HP";
         }
 
         private static void DestroyEntityVisual(EntityVisual visual)
@@ -1954,14 +1636,22 @@ namespace KeyboardWanderer.Demo
                 if (visual.Root == null)
                     continue;
                 bool walkingThisFrame = visual.IsPlayer && _playerWalking;
+                bool usesAnimator = visual.Animator != null && visual.Animator.runtimeAnimatorController != null;
                 if (walkingThisFrame)
                 {
                     Vector3 before = visual.Root.transform.position;
+                    Vector3 remaining = visual.TargetPosition - before;
+                    if (Mathf.Abs(remaining.x) > Mathf.Abs(remaining.y))
+                        visual.Facing = new Vector2(Mathf.Sign(remaining.x), 0f);
+                    else if (Mathf.Abs(remaining.y) > 0.0001f)
+                        visual.Facing = new Vector2(0f, Mathf.Sign(remaining.y));
                     visual.Root.transform.position = Vector3.MoveTowards(before, visual.TargetPosition,
                         PlayerWalkSpeed * Time.unscaledDeltaTime);
                     float horizontal = visual.Root.transform.position.x - before.x;
-                    if (Mathf.Abs(horizontal) > 0.0001f)
+                    if (!usesAnimator && Mathf.Abs(horizontal) > 0.0001f)
                         visual.Renderer.flipX = horizontal < 0f;
+                    else if (usesAnimator)
+                        visual.Renderer.flipX = false;
                     if (Vector3.SqrMagnitude(visual.Root.transform.position - visual.TargetPosition) < 0.0004f)
                     {
                         visual.Root.transform.position = visual.TargetPosition;
@@ -1971,21 +1661,35 @@ namespace KeyboardWanderer.Demo
                             CompletePlayerPathAnimation();
                     }
                 }
+                else if (usesAnimator && !visual.IsPlayer)
+                {
+                    UpdateAmbientWander(visual);
+                }
                 else
                 {
                     visual.Root.transform.position = Vector3.Lerp(visual.Root.transform.position, visual.TargetPosition, smoothing);
                 }
-                Sprite[] frames = walkingThisFrame && visual.WalkFrames.Length > 0
-                    ? visual.WalkFrames
-                    : visual.IsPlayer && Time.unscaledTime < _playerActionUntil && visual.AttackFrames.Length > 0
-                        ? visual.AttackFrames
+                bool playerAction = visual.IsPlayer && Time.unscaledTime < _playerActionUntil;
+                Sprite[] frames = visual.IsPlayer && walkingThisFrame
+                    ? DirectionalPlayerFrames(visual.Facing, false, visual.WalkFrames)
+                    : playerAction
+                        ? DirectionalPlayerFrames(visual.Facing, true, visual.AttackFrames)
                         : visual.IdleFrames;
-                bool usesAnimator = visual.Animator != null && visual.Animator.runtimeAnimatorController != null;
+                if (visual.IsPlayer && _assets != null && _assets.NeopjukiAtlas != null)
+                    visual.Renderer.flipX = false;
                 if (usesAnimator && visual.IsPlayer)
                 {
+                    visual.Animator.SetFloat("MoveX", visual.Facing.x);
+                    visual.Animator.SetFloat("MoveY", visual.Facing.y);
                     visual.Animator.SetBool("IsMoving", walkingThisFrame);
                     visual.Animator.SetBool("IsAttacking",
                         !walkingThisFrame && Time.unscaledTime < _playerActionUntil);
+                }
+                else if (usesAnimator)
+                {
+                    SetAnimatorFloat(visual.Animator, "MoveX", visual.Facing.x);
+                    SetAnimatorFloat(visual.Animator, "MoveY", visual.Facing.y);
+                    SetAnimatorFloat(visual.Animator, "MoveSpeed", visual.IsWandering ? 1f : 0f);
                 }
                 else if (!usesAnimator && frames.Length > 0)
                 {
@@ -2001,7 +1705,14 @@ namespace KeyboardWanderer.Demo
                 bool selected = (_selectedTarget.HasValue && pair.Key == _selectedTarget.Value) ||
                                 (_selectedSecondaryTarget.HasValue && pair.Key == _selectedSecondaryTarget.Value);
                 float pulse = 0.78f + Mathf.Sin(Time.unscaledTime * 7f) * 0.18f;
-                visual.Renderer.color = selected ? Color.Lerp(visual.BaseColor, new Color(1f, 0.82f, 0.25f), pulse) : visual.BaseColor;
+                Color selectionColor = _ability == AbilityKind.Delete
+                    ? new Color(1f, 0.16f, 0.12f, 1f)
+                    : _ability == AbilityKind.Restore
+                        ? new Color(0.2f, 0.95f, 1f, 1f)
+                        : new Color(1f, 0.82f, 0.25f, 1f);
+                visual.Renderer.color = selected
+                    ? Color.Lerp(visual.BaseColor, selectionColor, pulse)
+                    : visual.BaseColor;
                 if (visual.HealthBack != null)
                 {
                     Vector3 position = visual.Root.transform.position + new Vector3(0f, 0.66f, -0.1f);
@@ -2012,6 +1723,20 @@ namespace KeyboardWanderer.Demo
                 if (visual.RootComponentLabel != null)
                     visual.RootComponentLabel.transform.position = visual.Root.transform.position + new Vector3(0f, -0.72f, -0.2f);
             }
+        }
+
+        private Sprite[] DirectionalPlayerFrames(Vector2 facing, bool attacking, Sprite[] fallback)
+        {
+            Sprite[] selected;
+            if (facing.y > 0.5f)
+                selected = attacking ? _playerAttackUpFrames : _playerWalkUpFrames;
+            else if (facing.y < -0.5f)
+                selected = attacking ? _playerAttackDownFrames : _playerWalkDownFrames;
+            else if (facing.x < -0.5f)
+                selected = attacking ? _playerAttackLeftFrames : _playerWalkLeftFrames;
+            else
+                selected = attacking ? _playerAttackFrames : _playerWalkFrames;
+            return selected != null && selected.Length > 0 ? selected : fallback ?? Array.Empty<Sprite>();
         }
 
         private void BeginPlayerPathAnimation(IReadOnlyList<GridCoord> path, RunView view)
@@ -2028,9 +1753,200 @@ namespace KeyboardWanderer.Demo
             _playerWalking = true;
             _reopenDialogueAfterWalk = true;
             _authoredDialogueDismissed = true;
-            _sceneUi?.SetObjectActive("Story Panel", false);
+            _sceneUi?.SetStoryVisible(false);
             _cameraInspectCoord = null;
             _cameraInspectUntil = 0f;
+        }
+
+        private void QueueServerSceneSequence(GameApiClient.SceneActionSnapshot[] sequence)
+        {
+            if (_sceneSequencePlayer == null || sequence == null || sequence.Length == 0)
+                return;
+            if (_scenePlaybackCoroutine != null)
+            {
+                _sceneSequencePlayer.Cancel();
+                StopCoroutine(_scenePlaybackCoroutine);
+            }
+            _scenePlaybackCoroutine = StartCoroutine(PlayServerSceneSequence(sequence));
+        }
+
+        private IEnumerator PlayServerSceneSequence(GameApiClient.SceneActionSnapshot[] sequence)
+        {
+            while (_playerWalking)
+                yield return null;
+            yield return _sceneSequencePlayer.Play(sequence, PlayServerSceneAction);
+            _scenePlaybackCoroutine = null;
+        }
+
+        private IEnumerator PlayServerSceneAction(GameApiClient.SceneActionSnapshot action)
+        {
+            string type = (action.type ?? string.Empty).ToUpperInvariant();
+            FocusServerSceneAction(action);
+            if (type == "MOVE" || type == "FLEE")
+            {
+                yield return PlayServerActorMove(action);
+                yield break;
+            }
+            if (type == "ATTACK")
+            {
+                yield return PlayServerActorAttack(action);
+                yield break;
+            }
+            if (type == "DAMAGE" || type == "DEFEATED")
+            {
+                yield return PlayServerActorReaction(action, type == "DEFEATED");
+                yield break;
+            }
+
+            string actorName = ServerEntityName(action.actorId, type == "DIALOGUE" ? "NPC" : "세계");
+            string message = !string.IsNullOrWhiteSpace(action.text) ? action.text : action.line;
+            if (type == "DIALOGUE")
+            {
+                if (!string.IsNullOrWhiteSpace(action.line))
+                {
+                    var dialogue = new List<string>(_lastDialogue ?? Array.Empty<string>());
+                    if (dialogue.Count < 8 && !dialogue.Contains(action.line))
+                        dialogue.Add(action.line);
+                    _lastDialogue = dialogue.ToArray();
+                    AddLog(actorName + " · “" + action.line.Trim() + "”");
+                    _authoredDialogueDismissed = false;
+                    _sceneUi?.SetStoryVisible(true);
+                }
+                yield return new WaitForSecondsRealtime(0.7f);
+                yield break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(message))
+                AddLog("후속 장면 · " + message);
+            if (type == "LOOT")
+                PlaySfx(AssetClip("UiAcceptSound"));
+            else if (type == "ENCOUNTER")
+                PlaySfx(AssetClip("UiCancelSound"));
+            yield return new WaitForSecondsRealtime(type == "ENCOUNTER" ? 0.6f : 0.35f);
+        }
+
+        private void FocusServerSceneAction(GameApiClient.SceneActionSnapshot action)
+        {
+            if (_serverRun?.entities == null || action == null)
+                return;
+            string focusId = !string.IsNullOrWhiteSpace(action.actorId) ? action.actorId : action.targetId;
+            for (int i = 0; i < _serverRun.entities.Length; i++)
+            {
+                GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                if (entity?.position == null || !string.Equals(entity.id, focusId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                _cameraInspectCoord = new GridCoord(entity.position.x, entity.position.y);
+                _cameraInspectUntil = Time.unscaledTime + 1.2f;
+                return;
+            }
+        }
+
+        private IEnumerator PlayServerActorMove(GameApiClient.SceneActionSnapshot action)
+        {
+            if (!Guid.TryParse(action.actorId, out Guid actorId) ||
+                !_entityVisuals.TryGetValue(actorId, out EntityVisual visual) || visual.Root == null ||
+                action.from == null || action.to == null || _service == null)
+            {
+                if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
+                yield return new WaitForSecondsRealtime(0.2f);
+                yield break;
+            }
+
+            Vector2 origin = MapOrigin(_service.CurrentView);
+            Vector3 from = WorldPosition(origin, new GridCoord(action.from.x, action.from.y));
+            Vector3 to = WorldPosition(origin, new GridCoord(action.to.x, action.to.y));
+            visual.Root.transform.position = from;
+            visual.TargetPosition = to;
+            visual.MovementPath.Clear();
+            visual.IsWandering = false;
+            Vector3 direction = to - from;
+            if (Mathf.Abs(direction.x) > Mathf.Abs(direction.y))
+                visual.Facing = new Vector2(Mathf.Sign(direction.x), 0f);
+            else if (Mathf.Abs(direction.y) > 0.0001f)
+                visual.Facing = new Vector2(0f, Mathf.Sign(direction.y));
+            SetAnimatorFloat(visual.Animator, "MoveX", visual.Facing.x);
+            SetAnimatorFloat(visual.Animator, "MoveY", visual.Facing.y);
+            SetAnimatorFloat(visual.Animator, "MoveSpeed", 1f);
+
+            float deadline = Time.unscaledTime + 0.55f;
+            while (visual.Root != null && Vector3.SqrMagnitude(visual.Root.transform.position - to) > 0.0004f &&
+                   Time.unscaledTime < deadline)
+            {
+                visual.Root.transform.position = Vector3.MoveTowards(visual.Root.transform.position, to,
+                    PlayerWalkSpeed * Time.unscaledDeltaTime);
+                yield return null;
+            }
+            if (visual.Root != null)
+                visual.Root.transform.position = to;
+            SetAnimatorFloat(visual.Animator, "MoveSpeed", 0f);
+            if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
+        }
+
+        private IEnumerator PlayServerActorAttack(GameApiClient.SceneActionSnapshot action)
+        {
+            if (!Guid.TryParse(action.actorId, out Guid actorId) ||
+                !_entityVisuals.TryGetValue(actorId, out EntityVisual visual) || visual.Root == null)
+            {
+                if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
+                yield return new WaitForSecondsRealtime(0.25f);
+                yield break;
+            }
+
+            Vector3 origin = visual.TargetPosition;
+            Vector3 lunge = Vector3.zero;
+            if (Guid.TryParse(action.targetId, out Guid targetId) &&
+                _entityVisuals.TryGetValue(targetId, out EntityVisual target) && target.Root != null)
+            {
+                Vector3 direction = (target.Root.transform.position - origin).normalized;
+                lunge = direction * 0.22f;
+                if (Mathf.Abs(direction.x) > Mathf.Abs(direction.y))
+                    visual.Facing = new Vector2(Mathf.Sign(direction.x), 0f);
+                else if (Mathf.Abs(direction.y) > 0.0001f)
+                    visual.Facing = new Vector2(0f, Mathf.Sign(direction.y));
+            }
+            if (visual.IsPlayer)
+                _playerActionUntil = Time.unscaledTime + 0.38f;
+            PlaySfx(AssetClip(action.hit ? "SlashSound" : "UiCancelSound"));
+            float started = Time.unscaledTime;
+            const float duration = 0.34f;
+            while (visual.Root != null && Time.unscaledTime - started < duration)
+            {
+                float progress = (Time.unscaledTime - started) / duration;
+                visual.Root.transform.position = origin + lunge * Mathf.Sin(progress * Mathf.PI);
+                yield return null;
+            }
+            if (visual.Root != null)
+                visual.Root.transform.position = origin;
+            if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
+        }
+
+        private IEnumerator PlayServerActorReaction(GameApiClient.SceneActionSnapshot action, bool defeated)
+        {
+            if (!Guid.TryParse(action.actorId, out Guid actorId) ||
+                !_entityVisuals.TryGetValue(actorId, out EntityVisual visual) || visual.Root == null)
+            {
+                if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
+                yield return new WaitForSecondsRealtime(0.2f);
+                yield break;
+            }
+
+            Vector3 baseScale = visual.Root.transform.localScale;
+            float started = Time.unscaledTime;
+            const float duration = 0.3f;
+            while (visual.Root != null && Time.unscaledTime - started < duration)
+            {
+                float progress = (Time.unscaledTime - started) / duration;
+                float pulse = 1f - Mathf.Sin(progress * Mathf.PI) * (defeated ? 0.45f : 0.16f);
+                visual.Root.transform.localScale = baseScale * pulse;
+                yield return null;
+            }
+            if (visual.Root != null)
+            {
+                visual.Root.transform.localScale = baseScale;
+                if (defeated) visual.Root.SetActive(false);
+            }
+            if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
+            if (!defeated) PlaySfx(AssetClip("HitSound"));
         }
 
         private void CompletePlayerPathAnimation()
@@ -2040,7 +1956,68 @@ namespace KeyboardWanderer.Demo
             {
                 _reopenDialogueAfterWalk = false;
                 _authoredDialogueDismissed = false;
-                _sceneUi?.SetObjectActive("Story Panel", true);
+                _sceneUi?.SetStoryVisible(true);
+            }
+        }
+
+        private static void InitializeAmbientWander(EntityVisual visual, Guid entityId)
+        {
+            if (visual == null || visual.IsPlayer || visual.Animator == null ||
+                !HasAnimatorParameter(visual.Animator, "MoveSpeed"))
+                return;
+
+            byte[] bytes = entityId.ToByteArray();
+            uint seed = (uint)(bytes[0] | bytes[1] << 8 | bytes[2] << 16 | bytes[3] << 24);
+            visual.WanderPhase = (seed & 0xffff) / 65535f;
+            visual.NextWanderDecisionAt = Time.unscaledTime + 0.6f + visual.WanderPhase * 1.4f;
+            visual.Facing = Vector2.down;
+            visual.Animator.SetFloat("MoveX", 0f);
+            visual.Animator.SetFloat("MoveY", -1f);
+            visual.Animator.SetFloat("MoveSpeed", 0f);
+        }
+
+        private static void UpdateAmbientWander(EntityVisual visual)
+        {
+            float now = Time.unscaledTime;
+            if (now >= visual.NextWanderDecisionAt)
+            {
+                visual.WanderStep++;
+                float sequence = Mathf.Repeat(visual.WanderPhase + visual.WanderStep * 0.618034f, 1f);
+                if (visual.WanderStep % 3 == 0)
+                {
+                    visual.WanderTargetOffset = visual.Root.transform.position - visual.TargetPosition;
+                    visual.WanderTargetOffset.z = 0f;
+                    visual.IsWandering = false;
+                    visual.NextWanderDecisionAt = now + 0.8f + sequence * 1.2f;
+                }
+                else
+                {
+                    float angle = sequence * Mathf.PI * 2f;
+                    float radius = 0.14f + Mathf.Repeat(sequence * 2.37f, 1f) * 0.16f;
+                    visual.WanderTargetOffset = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * radius;
+                    Vector3 direction = visual.TargetPosition + visual.WanderTargetOffset - visual.Root.transform.position;
+                    if (Mathf.Abs(direction.x) > Mathf.Abs(direction.y))
+                        visual.Facing = new Vector2(Mathf.Sign(direction.x), 0f);
+                    else if (Mathf.Abs(direction.y) > 0.0001f)
+                        visual.Facing = new Vector2(0f, Mathf.Sign(direction.y));
+                    visual.IsWandering = true;
+                    visual.NextWanderDecisionAt = now + 1.1f + sequence * 0.8f;
+                }
+            }
+
+            if (!visual.IsWandering)
+                return;
+
+            Vector3 destination = visual.TargetPosition + visual.WanderTargetOffset;
+            visual.Root.transform.position = Vector3.MoveTowards(
+                visual.Root.transform.position,
+                destination,
+                0.42f * Time.unscaledDeltaTime);
+            if (Vector3.SqrMagnitude(visual.Root.transform.position - destination) < 0.0004f)
+            {
+                visual.Root.transform.position = destination;
+                visual.IsWandering = false;
+                visual.NextWanderDecisionAt = Mathf.Min(visual.NextWanderDecisionAt, now + 0.75f);
             }
         }
 
@@ -2202,44 +2179,30 @@ namespace KeyboardWanderer.Demo
             if (_selectedCoord.HasValue)
             {
                 _selectionRenderer.transform.position = WorldPosition(MapOrigin(view), _selectedCoord.Value);
-                _selectionRenderer.color = _ability == AbilityKind.Restore
-                    ? new Color(0.35f, 0.92f, 1f, 0.5f)
-                    : new Color(1f, 0.85f, 0.35f, 0.42f);
+                _selectionRenderer.color = _ability == AbilityKind.Delete
+                    ? new Color(1f, 0.12f, 0.08f, 0.76f)
+                    : _ability == AbilityKind.Restore
+                        ? new Color(0.2f, 0.95f, 1f, 0.68f)
+                        : new Color(1f, 0.85f, 0.25f, 0.62f);
+                ScaleSprite(_selectionRenderer.transform, _selectionRenderer.sprite, 1.2f);
             }
         }
 
         private void ConfigureCamera()
         {
-            _camera = authoredCamera != null ? authoredCamera : Camera.main;
-            if (_camera == null)
-            {
-                var cameraObject = new GameObject("Main Camera");
-                cameraObject.tag = "MainCamera";
-                _camera = cameraObject.AddComponent<Camera>();
-            }
-            _camera.orthographic = true;
-            _camera.orthographicSize = authoringSettings != null ? authoringSettings.CameraOrthographicSize : 8.25f;
-            _camera.backgroundColor = authoringSettings != null
-                ? authoringSettings.CameraBackground
-                : new Color(0.025f, 0.033f, 0.02f, 1f);
-            _camera.clearFlags = CameraClearFlags.SolidColor;
-            _camera.transform.position = new Vector3(0f, 0f, -10f);
-            if (_camera.GetComponent<AudioListener>() == null && FindAnyObjectByType<AudioListener>() == null)
-                _camera.gameObject.AddComponent<AudioListener>();
+            _cameraController = authoredCameraController;
             UpdateCameraViewport(true);
         }
 
         private void UpdateCameraViewport(bool force = false)
         {
-            if (_camera == null || (!force && _lastScreenWidth == Screen.width && _lastScreenHeight == Screen.height))
-                return;
-            _lastScreenWidth = Screen.width;
-            _lastScreenHeight = Screen.height;
-            _camera.rect = new Rect(0f, 0f, 1f, 1f);
+            _cameraController?.UpdateViewport(force);
         }
 
         private void UpdateCameraFollow()
         {
+            if (_cameraController == null || !_cameraController.IsReady || _service == null)
+                return;
             RunView view = _service.CurrentView;
             if (!TryGetPlayerPosition(view, out GridCoord playerPosition))
                 return;
@@ -2250,59 +2213,36 @@ namespace KeyboardWanderer.Demo
             Vector3 desired = _playerWalking && !_cameraInspectCoord.HasValue && TryGetPlayerVisual(view, out EntityVisual playerVisual)
                 ? playerVisual.Root.transform.position
                 : WorldPosition(MapOrigin(view), cameraTarget);
-            float halfHeight = _camera.orthographicSize;
-            float aspect = _camera.pixelHeight > 0 ? _camera.pixelWidth / (float)_camera.pixelHeight : 1.3f;
-            float halfWidth = halfHeight * aspect;
             Vector2 origin = MapOrigin(view);
             int worldWidth = ActiveWorldWidth(view);
             int worldHeight = ActiveWorldHeight(view);
-            float minX = origin.x + Mathf.Min(halfWidth, worldWidth * 0.5f);
-            float maxX = origin.x + worldWidth - Mathf.Min(halfWidth, worldWidth * 0.5f);
-            float minY = origin.y + Mathf.Min(halfHeight, worldHeight * 0.5f);
-            float maxY = origin.y + worldHeight - Mathf.Min(halfHeight, worldHeight * 0.5f);
-            desired.x = Mathf.Clamp(desired.x, minX, maxX);
-            desired.y = Mathf.Clamp(desired.y, minY, maxY);
-            desired.z = -10f;
-            _camera.transform.position = Vector3.SmoothDamp(_camera.transform.position, desired, ref _cameraVelocity, 0.16f,
-                Mathf.Infinity, Time.unscaledDeltaTime);
+            _cameraController.Follow(desired, origin, worldWidth, worldHeight, Time.unscaledDeltaTime);
         }
 
         private void SnapCameraToPlayer()
         {
-            if (_service == null || _camera == null)
+            if (_service == null || _cameraController == null || !_cameraController.IsReady)
                 return;
             if (!TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPosition))
                 return;
             Vector3 position = WorldPosition(MapOrigin(_service.CurrentView), playerPosition);
-            _camera.transform.position = new Vector3(position.x, position.y, -10f);
-            _cameraVelocity = Vector3.zero;
+            _cameraController.Snap(position);
         }
 
         private void ConfigureAudio()
         {
-            _musicSource = authoredMusicSource != null ? authoredMusicSource : gameObject.AddComponent<AudioSource>();
-            _musicSource.loop = true;
-            _musicSource.playOnAwake = false;
-            _sfxSource = authoredSfxSource != null ? authoredSfxSource : gameObject.AddComponent<AudioSource>();
-            _sfxSource.loop = false;
-            _sfxSource.playOnAwake = false;
+            _audioController = authoredAudioController;
             ApplyAudioVolumes();
         }
 
         private void SetMusic(AudioClip clip)
         {
-            if (_musicSource == null || clip == null || _currentMusic == clip)
-                return;
-            _currentMusic = clip;
-            _musicSource.Stop();
-            _musicSource.clip = clip;
-            _musicSource.Play();
+            _audioController?.SetMusic(clip);
         }
 
         private void PlaySfx(AudioClip clip)
         {
-            if (_sfxSource != null && clip != null && _sfxVolume > 0.001f)
-                _sfxSource.PlayOneShot(clip, _sfxVolume);
+            _audioController?.PlaySfx(clip);
         }
 
         private AudioClip AssetClip(string fieldName)
@@ -2350,6 +2290,88 @@ namespace KeyboardWanderer.Demo
                 _assets != null ? _assets.OutdoorDarkGrassRect : new Rect(16f, 112f, 16f, 16f), "Field Dark Grass", Hex("315f38"));
             _wallSprite = CreateAtlasSprite(_assets != null ? _assets.InteriorFloorAtlas : null,
                 _assets != null ? _assets.WallRect : new Rect(176f, 96f, 16f, 16f), "Ruin Wall", Hex("35453a"));
+            _waterSprite = CreateAtlasSprite(_assets != null ? _assets.WaterAtlas : null,
+                new Rect(176f, 240f, 16f, 16f), "Wetland Water", Hex("36758b"));
+            _snowSprite = CreateAtlasSprite(_assets != null ? _assets.OutdoorFieldAtlas : null,
+                new Rect(16f, 16f, 16f, 16f), "Frost Snow", Hex("d9edf3"));
+            _ruinFloorSprite = CreateAtlasSprite(_assets != null ? _assets.OutdoorFieldAtlas : null,
+                new Rect(16f, 64f, 16f, 16f), "Ruins Ground", Hex("a68a82"));
+            _cavernFloorSprite = CreateAtlasSprite(_assets != null ? _assets.DungeonAtlas : null,
+                new Rect(80f, 16f, 16f, 16f), "Cavern Floor", Hex("4c425d"));
+
+            _forestTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(0f, 304f, 32f, 32f), "Forest Tree", Hex("568b42"), new Vector2(0.5f, 0.08f));
+            _forestHouseSprite = CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
+                new Rect(0f, 304f, 64f, 64f), "Forest House", Hex("a7653f"), new Vector2(0.5f, 0.05f));
+            _wetlandPlantSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(96f, 144f, 32f, 32f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
+            _wetlandLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.WatermillAtlas : null,
+                new Rect(0f, 0f, 34f, 36f), "Wetland Watermill", Hex("9a6b43"), new Vector2(0.5f, 0.08f));
+            _desertPalmSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
+                new Rect(112f, 72f, 48f, 48f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
+            _desertLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
+                new Rect(256f, 96f, 64f, 96f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
+            _frostTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(128f, 304f, 32f, 32f), "Frost Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f));
+            _frostLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
+                new Rect(0f, 144f, 96f, 80f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
+            _cavernCrystalSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(0f, 112f, 32f, 32f), "Cavern Crystal", Hex("a978c4"), new Vector2(0.5f, 0.08f));
+            _ruinTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(64f, 304f, 32f, 32f), "Ruins Dead Tree", Hex("75624f"), new Vector2(0.5f, 0.08f));
+            _ruinLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
+                new Rect(176f, 0f, 80f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
+
+            _forestDecorationSprites = new[]
+            {
+                _forestTreeSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(32f, 304f, 32f, 32f),
+                    "Forest Pine", Hex("477a3d"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(96f, 304f, 32f, 32f),
+                    "Forest Shrub", Hex("6a9a46"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(96f, 208f, 32f, 32f),
+                    "Forest Plants", Hex("6f9e4c"), new Vector2(0.5f, 0.08f))
+            };
+            _wetlandDecorationSprites = new[]
+            {
+                _wetlandPlantSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(128f, 208f, 32f, 32f),
+                    "Wetland Plants", Hex("4f8f68"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(160f, 208f, 32f, 32f),
+                    "Wetland Flowers", Hex("6fa87b"), new Vector2(0.5f, 0.08f))
+            };
+            _desertDecorationSprites = new[]
+            {
+                _desertPalmSprite,
+                CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null, new Rect(160f, 72f, 48f, 48f),
+                    "Desert Palm Cluster", Hex("7f9a4d"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null, new Rect(208f, 72f, 48f, 48f),
+                    "Desert Oasis Plant", Hex("8ca454"), new Vector2(0.5f, 0.08f))
+            };
+            _frostDecorationSprites = new[]
+            {
+                _frostTreeSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(160f, 304f, 32f, 32f),
+                    "Frost Snow Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(192f, 304f, 32f, 32f),
+                    "Frost Bush", Hex("d4e7ed"), new Vector2(0.5f, 0.08f))
+            };
+            _cavernDecorationSprites = new[]
+            {
+                _cavernCrystalSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(32f, 112f, 32f, 32f),
+                    "Cavern Crystal Cluster", Hex("9670b8"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(64f, 112f, 32f, 32f),
+                    "Cavern Ore", Hex("8062a0"), new Vector2(0.5f, 0.08f))
+            };
+            _ruinDecorationSprites = new[]
+            {
+                _ruinTreeSprite,
+                CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null, new Rect(0f, 112f, 32f, 32f),
+                    "Ruin Rubble", Hex("8b7757"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null, new Rect(32f, 112f, 32f, 32f),
+                    "Ruin Overgrowth", Hex("788152"), new Vector2(0.5f, 0.08f))
+            };
 
             if (_assets != null)
             {
@@ -2363,6 +2385,21 @@ namespace KeyboardWanderer.Demo
                     _slimeFrames = CreateSheetFrames(_assets.SlimeSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Slime");
                 if (_assets.VillagerAnimatorController == null)
                     _villagerFrames = CreateSheetFrames(_assets.VillagerWalkSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Villager");
+
+                if (_assets.NeopjukiAtlas != null)
+                {
+                    int cellWidth = Mathf.Max(1, _assets.NeopjukiCellWidth);
+                    int cellHeight = Mathf.Max(1, _assets.NeopjukiCellHeight);
+                    _playerIdleFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 0, 6, "Neopjuki Idle");
+                    _playerWalkFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 1, 8, "Neopjuki Right");
+                    _playerWalkLeftFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 2, 8, "Neopjuki Left");
+                    _playerAttackFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 8, 8, "Neopjuki Attack Right");
+                    _playerAttackLeftFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 11, 8, "Neopjuki Attack Left");
+                    _playerAttackUpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 12, 8, "Neopjuki Attack Up");
+                    _playerAttackDownFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 13, 8, "Neopjuki Attack Down");
+                    _playerWalkUpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 14, 8, "Neopjuki Walk Up");
+                    _playerWalkDownFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 15, 8, "Neopjuki Walk Down");
+                }
             }
 
             _playerSprite = FirstOrSource(_playerIdleFrames, _assets != null ? _assets.PlayerIdle : null, "Player", Hex("6a9d45"));
@@ -2376,12 +2413,14 @@ namespace KeyboardWanderer.Demo
             _whiteSprite = CreateSolidSprite(Color.white, "White Pixel");
         }
 
-        private Sprite CreateAtlasSprite(Texture2D texture, Rect requestedRect, string spriteName, Color fallbackColor)
+        private Sprite CreateAtlasSprite(Texture2D texture, Rect requestedRect, string spriteName, Color fallbackColor,
+            Vector2? requestedPivot = null)
         {
             if (texture == null || texture.width <= 0 || texture.height <= 0)
                 return CreateSolidSprite(fallbackColor, spriteName + " Fallback");
             Rect rect = SafeRect(texture, requestedRect);
-            Sprite sprite = Sprite.Create(texture, rect, new Vector2(0.5f, 0.5f), 16f, 0, SpriteMeshType.FullRect);
+            Sprite sprite = Sprite.Create(texture, rect, requestedPivot ?? new Vector2(0.5f, 0.5f), 16f, 0,
+                SpriteMeshType.FullRect);
             sprite.name = spriteName;
             _runtimeSprites.Add(sprite);
             return sprite;
@@ -2398,6 +2437,41 @@ namespace KeyboardWanderer.Demo
             {
                 frames[i] = Sprite.Create(texture, new Rect(i * frameSize, y, frameSize, frameSize),
                     new Vector2(0.5f, 0.42f), frameSize, 0, SpriteMeshType.FullRect);
+                frames[i].name = prefix + " " + i;
+                _runtimeSprites.Add(frames[i]);
+            }
+            return frames;
+        }
+
+        private Sprite[] CreateNeopjukiFrames(
+            Texture2D texture,
+            int cellWidth,
+            int cellHeight,
+            int rowFromTop,
+            int frameCount,
+            string prefix)
+        {
+            if (texture == null || cellWidth <= 0 || cellHeight <= 0 ||
+                texture.width < cellWidth || texture.height < cellHeight)
+                return Array.Empty<Sprite>();
+
+            int columns = texture.width / cellWidth;
+            int rows = texture.height / cellHeight;
+            if (rowFromTop < 0 || rowFromTop >= rows)
+                return Array.Empty<Sprite>();
+
+            int count = Mathf.Min(frameCount, columns);
+            int y = texture.height - (rowFromTop + 1) * cellHeight;
+            var frames = new Sprite[count];
+            for (int i = 0; i < count; i++)
+            {
+                frames[i] = Sprite.Create(
+                    texture,
+                    new Rect(i * cellWidth, y, cellWidth, cellHeight),
+                    new Vector2(0.5f, 0f),
+                    cellWidth,
+                    0,
+                    SpriteMeshType.FullRect);
                 frames[i].name = prefix + " " + i;
                 _runtimeSprites.Add(frames[i]);
             }
@@ -2430,8 +2504,9 @@ namespace KeyboardWanderer.Demo
             return new Rect(Mathf.Clamp(rect.x, 0f, texture.width - width), Mathf.Clamp(rect.y, 0f, texture.height - height), width, height);
         }
 
-        private void TileAppearance(TileKind kind, GridCoord coord, out Sprite sprite, out Color tint)
+        private void TileAppearance(TileKind kind, string biomeId, GridCoord coord, out Sprite sprite, out Color tint)
         {
+            sprite = GroundSpriteForBiome(biomeId);
             switch (kind)
             {
                 case TileKind.Dirt:
@@ -2439,7 +2514,7 @@ namespace KeyboardWanderer.Demo
                     tint = new Color(0.95f, 0.9f, 0.78f, 1f);
                     break;
                 case TileKind.Water:
-                    sprite = _grassSprite;
+                    sprite = _waterSprite;
                     tint = new Color(0.27f, 0.66f, 0.78f, 1f);
                     break;
                 case TileKind.Bridge:
@@ -2451,7 +2526,8 @@ namespace KeyboardWanderer.Demo
                     tint = new Color(0.72f, 0.9f, 0.72f, 1f);
                     break;
                 case TileKind.Ruin:
-                    sprite = _darkGrassSprite;
+                    sprite = string.Equals(biomeId, "ancient_ruins", StringComparison.OrdinalIgnoreCase)
+                        ? _ruinFloorSprite : _darkGrassSprite;
                     tint = new Color(0.7f, 0.72f, 0.64f, 1f);
                     break;
                 case TileKind.Wall:
@@ -2463,12 +2539,146 @@ namespace KeyboardWanderer.Demo
                     tint = new Color(0.9f, 0.42f, 0.32f, 1f);
                     break;
                 default:
-                    sprite = _grassSprite;
                     tint = Color.white;
                     break;
             }
+            tint = ApplyBiomePalette(tint, biomeId);
             float variation = (((coord.X * 31 + coord.Y * 17) & 3) - 1.5f) * 0.025f;
             tint = new Color(Mathf.Clamp01(tint.r + variation), Mathf.Clamp01(tint.g + variation), Mathf.Clamp01(tint.b + variation), tint.a);
+        }
+
+        private Sprite GroundSpriteForBiome(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "root_system": return _cavernFloorSprite;
+                case "river_wetland": return _darkGrassSprite;
+                case "arid_desert": return _dirtSprite;
+                case "frost_highland": return _snowSprite;
+                case "subterranean_cavern": return _cavernFloorSprite;
+                case "ancient_ruins": return _ruinFloorSprite;
+                default: return _grassSprite;
+            }
+        }
+
+        private void UpdateMinimap(RunView view)
+        {
+            if (_sceneUi == null || view == null || !TryGetPlayerPosition(view, out GridCoord player))
+                return;
+            GameApiClient.WorldSnapshot serverWorld = _serverOnline ? _serverRun?.world : null;
+            bool useServerWorld = serverWorld != null && serverWorld.HasCompleteLayout;
+            int width = useServerWorld ? serverWorld.width : view.Region.Width;
+            int height = useServerWorld ? serverWorld.height : view.Region.Height;
+            string layoutHash = useServerWorld ? serverWorld.layoutHash : view.Region.LayoutHash;
+            string signature = layoutHash + ":" + player.X + ":" + player.Y + ":" +
+                               (_selectedCoord.HasValue ? _selectedCoord.Value.ToString() : "none");
+            if (!string.Equals(_minimapSignature, signature, StringComparison.Ordinal))
+            {
+                _minimapSignature = signature;
+                const int size = 80;
+                if (_minimapTexture == null)
+                {
+                    _minimapTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+                    {
+                        name = "Runtime World Minimap",
+                        filterMode = FilterMode.Point,
+                        wrapMode = TextureWrapMode.Clamp
+                    };
+                    _runtimeTextures.Add(_minimapTexture);
+                    _minimapSprite = Sprite.Create(_minimapTexture, new Rect(0f, 0f, size, size),
+                        new Vector2(0.5f, 0.5f), size, 0, SpriteMeshType.FullRect);
+                    _minimapSprite.name = "Runtime World Minimap";
+                    _runtimeSprites.Add(_minimapSprite);
+                }
+
+                for (int py = 0; py < size; py++)
+                {
+                    int worldY = Mathf.Clamp(py * height / size, 0, height - 1);
+                    for (int px = 0; px < size; px++)
+                    {
+                        int worldX = Mathf.Clamp(px * width / size, 0, width - 1);
+                        var coord = new GridCoord(worldX, worldY);
+                        if (!useServerWorld && OutsideLocalWorldDisc(coord, width, height))
+                        {
+                            _minimapTexture.SetPixel(px, py, Color.clear);
+                            continue;
+                        }
+                        TileKind kind = WorldTileKind(view, coord, useServerWorld);
+                        _minimapTexture.SetPixel(px, py, MinimapTileColor(BiomeIdAt(view, coord), kind));
+                    }
+                }
+
+                if (_serverOnline && _serverRun?.world?.points != null)
+                {
+                    for (int i = 0; i < _serverRun.world.points.Length; i++)
+                    {
+                        GameApiClient.PointSnapshot point = _serverRun.world.points[i];
+                        if (point != null) PaintMinimapMarker(point.x, point.y, width, height, new Color(1f, 0.55f, 0.18f), 1);
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < view.Region.Areas.Count; i++)
+                    {
+                        GridCoord center = view.Region.Areas[i].Center;
+                        PaintMinimapMarker(center.X, center.Y, width, height, new Color(1f, 0.55f, 0.18f), 1);
+                    }
+                }
+                if (_selectedCoord.HasValue)
+                    PaintMinimapMarker(_selectedCoord.Value.X, _selectedCoord.Value.Y, width, height,
+                        new Color(1f, 0.86f, 0.2f), 2);
+                PaintMinimapMarker(player.X, player.Y, width, height, new Color(0.2f, 0.95f, 1f), 2);
+                _minimapTexture.Apply(false, false);
+            }
+
+            string status = "턴 " + CurrentTurn(view) + " · 나 " + player;
+            if (_selectedCoord.HasValue) status += " · 목표 " + _selectedCoord.Value;
+            _sceneUi.SetMinimap(_minimapSprite, status);
+        }
+
+        private void PaintMinimapMarker(int worldX, int worldY, int width, int height, Color color, int radius)
+        {
+            if (_minimapTexture == null) return;
+            int px = Mathf.Clamp(worldX * _minimapTexture.width / Mathf.Max(1, width), 0, _minimapTexture.width - 1);
+            int py = Mathf.Clamp(worldY * _minimapTexture.height / Mathf.Max(1, height), 0, _minimapTexture.height - 1);
+            for (int y = -radius; y <= radius; y++)
+                for (int x = -radius; x <= radius; x++)
+                    if (px + x >= 0 && py + y >= 0 && px + x < _minimapTexture.width && py + y < _minimapTexture.height)
+                        _minimapTexture.SetPixel(px + x, py + y, color);
+        }
+
+        private static bool OutsideLocalWorldDisc(GridCoord coord, int width, int height)
+        {
+            double cx = (width - 1) / 2.0;
+            double cy = (height - 1) / 2.0;
+            double dx = coord.X - cx;
+            double dy = coord.Y - cy;
+            double radius = Math.Min(width, height) / 2.0 - 1.0;
+            return dx * dx + dy * dy > radius * radius;
+        }
+
+        private static Color MinimapTileColor(string biomeId, TileKind kind)
+        {
+            Color biome;
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "root_system": biome = Hex("49234f"); break;
+                case "river_wetland": biome = Hex("397d83"); break;
+                case "arid_desert": biome = Hex("c28a42"); break;
+                case "frost_highland": biome = Hex("a9d1df"); break;
+                case "subterranean_cavern": biome = Hex("57406f"); break;
+                case "ancient_ruins": biome = Hex("877053"); break;
+                default: biome = Hex("477b43"); break;
+            }
+            switch (kind)
+            {
+                case TileKind.Wall: return Color.Lerp(biome, Color.black, 0.72f);
+                case TileKind.Water: return Hex("2f7595");
+                case TileKind.Bridge: return Hex("b77a3c");
+                case TileKind.Dirt: return Color.Lerp(biome, Hex("c28a4b"), 0.6f);
+                case TileKind.Hazard: return Hex("bd493f");
+                default: return biome;
+            }
         }
 
         private string BiomeIdAt(RunView view, GridCoord coord)
@@ -2492,11 +2702,41 @@ namespace KeyboardWanderer.Demo
                     }
                 }
             }
-            return view.Region.AreaAt(coord)?.Biome ?? string.Empty;
+            return SectorBiomeId(coord, view.Region.Width, view.Region.Height);
+        }
+
+        private static readonly string[] SectorBiomeOrder =
+        {
+            "temperate_forest_field", "river_wetland", "arid_desert",
+            "frost_highland", "subterranean_cavern", "ancient_ruins"
+        };
+
+        private static string SectorBiomeId(GridCoord coord, int width, int height)
+        {
+            double cx = (width - 1) / 2.0;
+            double cy = (height - 1) / 2.0;
+            double dx = coord.X - cx;
+            double dy = coord.Y - cy;
+            double centralRadius = Math.Min(width, height) * 0.12;
+            if (dx * dx + dy * dy <= centralRadius * centralRadius)
+                return "root_system";
+
+            double angle = Math.Atan2(dy, dx) + Math.PI;
+            int sector = (int)(angle / (2.0 * Math.PI) * SectorBiomeOrder.Length);
+            return SectorBiomeOrder[Mathf.Clamp(sector, 0, SectorBiomeOrder.Length - 1)];
         }
 
         private static Color ApplyBiomePalette(Color tileTint, string biomeId)
         {
+            if (string.Equals(biomeId, "root_system", StringComparison.OrdinalIgnoreCase))
+            {
+                Color core = Hex("2a1830");
+                return new Color(
+                    Mathf.Clamp01(tileTint.r * 0.22f + core.r + 0.06f),
+                    Mathf.Clamp01(tileTint.g * 0.18f + core.g),
+                    Mathf.Clamp01(tileTint.b * 0.26f + core.b + 0.04f),
+                    tileTint.a);
+            }
             Color biome;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
@@ -2508,10 +2748,253 @@ namespace KeyboardWanderer.Demo
                 default: biome = Hex("6ca85d"); break;
             }
             return new Color(
-                Mathf.Clamp01(tileTint.r * 0.48f + biome.r * 0.62f),
-                Mathf.Clamp01(tileTint.g * 0.48f + biome.g * 0.62f),
-                Mathf.Clamp01(tileTint.b * 0.48f + biome.b * 0.62f),
+                Mathf.Clamp01(tileTint.r * 0.34f + biome.r * 0.72f),
+                Mathf.Clamp01(tileTint.g * 0.34f + biome.g * 0.72f),
+                Mathf.Clamp01(tileTint.b * 0.34f + biome.b * 0.72f),
                 tileTint.a);
+        }
+
+        private void CreateBiomeDecorations(RunView view, Vector2 origin, bool useServerWorld, int width, int height)
+        {
+            string layoutHash = useServerWorld ? _serverRun?.world?.layoutHash : view.Region.LayoutHash;
+            HashSet<GridCoord> routeTiles = BuildRouteTileSet(view, useServerWorld);
+            for (int y = 2; y < height - 2; y += 2)
+            {
+                for (int x = 2; x < width - 2; x += 2)
+                {
+                    var coord = new GridCoord(x, y);
+                    string biomeId = BiomeIdAt(view, coord);
+                    TileKind tileKind = WorldTileKind(view, coord, useServerWorld);
+                    if (routeTiles.Contains(coord) || !SupportsDecorationTerrain(biomeId, tileKind) ||
+                        IsNearWorldPoint(view, coord, useServerWorld, 4) ||
+                        StableVisualHash(layoutHash, x, y, 17) % 100 >= DecorationDensity(biomeId))
+                        continue;
+                    float scale = 0.62f + (StableVisualHash(layoutHash, x, y, 31) % 44) / 100f;
+                    CreateDecoration("Scenery", DecorationSpriteForBiome(
+                            biomeId, StableVisualHash(layoutHash, x, y, 47)), coord, origin,
+                        DecorationTint(biomeId), scale);
+                }
+            }
+
+            if (useServerWorld && _serverRun?.world?.areas != null)
+            {
+                GameApiClient.AreaSnapshot[] areas = _serverRun.world.areas;
+                for (int i = 0; i < areas.Length; i++)
+                {
+                    GameApiClient.AreaSnapshot area = areas[i];
+                    if (area?.bounds == null) continue;
+                    var center = area.anchor != null
+                        ? new GridCoord(area.anchor.x, area.anchor.y)
+                        : new GridCoord(area.bounds.x + area.bounds.width / 2,
+                            area.bounds.y + area.bounds.height / 2);
+                    TryCreateBiomeLandmark(view, origin, true, area.biomeId, center, width, height, layoutHash, i);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < view.Region.Areas.Count; i++)
+                {
+                    WorldArea area = view.Region.Areas[i];
+                    TryCreateBiomeLandmark(view, origin, false, area.Biome, area.Center, width, height, layoutHash, i);
+                }
+            }
+        }
+
+        private HashSet<GridCoord> BuildRouteTileSet(RunView view, bool useServerWorld)
+        {
+            var result = new HashSet<GridCoord>();
+            if (useServerWorld && _serverRun?.world?.routes != null)
+            {
+                GameApiClient.WorldRouteSnapshot[] routes = _serverRun.world.routes;
+                for (int routeIndex = 0; routeIndex < routes.Length; routeIndex++)
+                {
+                    GameApiClient.PositionSnapshot[] path = routes[routeIndex]?.path;
+                    if (path == null) continue;
+                    for (int pointIndex = 0; pointIndex < path.Length; pointIndex++)
+                        if (path[pointIndex] != null)
+                            result.Add(new GridCoord(path[pointIndex].x, path[pointIndex].y));
+                }
+                return result;
+            }
+
+            IReadOnlyList<WorldRoute> localRoutes = view.Region.Routes;
+            for (int routeIndex = 0; routeIndex < localRoutes.Count; routeIndex++)
+                for (int pointIndex = 0; pointIndex < localRoutes[routeIndex].Path.Count; pointIndex++)
+                    result.Add(localRoutes[routeIndex].Path[pointIndex]);
+            return result;
+        }
+
+        private void TryCreateBiomeLandmark(RunView view, Vector2 origin, bool useServerWorld, string biomeId,
+            GridCoord center, int width, int height, string layoutHash, int index)
+        {
+            int direction = StableVisualHash(layoutHash, center.X, center.Y, index + 101) % 4;
+            GridCoord[] offsets =
+            {
+                new GridCoord(6, 5), new GridCoord(-6, 5), new GridCoord(6, -5), new GridCoord(-6, -5)
+            };
+            GridCoord offset = offsets[direction];
+            var candidate = new GridCoord(center.X + offset.X, center.Y + offset.Y);
+            if (!TryFindDecorationTile(view, useServerWorld, biomeId, candidate, width, height, out GridCoord coord))
+                return;
+            CreateDecoration("Biome landmark", LandmarkSpriteForBiome(biomeId), coord, origin, Color.white,
+                string.Equals(biomeId, "subterranean_cavern", StringComparison.OrdinalIgnoreCase) ? 1.4f : 0.92f);
+        }
+
+        private bool TryFindDecorationTile(RunView view, bool useServerWorld, string biomeId, GridCoord origin,
+            int width, int height, out GridCoord result)
+        {
+            for (int radius = 0; radius <= 7; radius++)
+            {
+                for (int y = -radius; y <= radius; y++)
+                {
+                    for (int x = -radius; x <= radius; x++)
+                    {
+                        if (Math.Abs(x) != radius && Math.Abs(y) != radius) continue;
+                        var coord = new GridCoord(origin.X + x, origin.Y + y);
+                        if (coord.X < 2 || coord.Y < 2 || coord.X >= width - 2 || coord.Y >= height - 2 ||
+                            !string.Equals(BiomeIdAt(view, coord), biomeId, StringComparison.OrdinalIgnoreCase) ||
+                            !SupportsDecorationTerrain(biomeId, WorldTileKind(view, coord, useServerWorld)) ||
+                            IsNearWorldPoint(view, coord, useServerWorld, 4))
+                            continue;
+                        result = coord;
+                        return true;
+                    }
+                }
+            }
+            result = origin;
+            return false;
+        }
+
+        private TileKind WorldTileKind(RunView view, GridCoord coord, bool useServerWorld)
+        {
+            if (useServerWorld && _serverRun?.world != null)
+            {
+                GameApiClient.WorldSnapshot world = _serverRun.world;
+                return TileKindForServer(world, world.tileCodes[coord.Y * world.width + coord.X]);
+            }
+            return view.Region.GetTile(coord).Kind;
+        }
+
+        private bool IsNearWorldPoint(RunView view, GridCoord coord, bool useServerWorld, int clearance)
+        {
+            if (useServerWorld && _serverRun?.world?.points != null)
+            {
+                GameApiClient.PointSnapshot[] points = _serverRun.world.points;
+                for (int i = 0; i < points.Length; i++)
+                    if (points[i] != null && Math.Abs(coord.X - points[i].x) +
+                        Math.Abs(coord.Y - points[i].y) <= clearance)
+                        return true;
+                return false;
+            }
+            for (int i = 0; i < view.Region.Areas.Count; i++)
+                if (coord.ManhattanDistance(view.Region.Areas[i].Center) <= clearance)
+                    return true;
+            return false;
+        }
+
+        private void CreateDecoration(string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint,
+            float scale)
+        {
+            if (sprite == null || WorldLandmarkRoot == null) return;
+            var decoration = new GameObject(prefix + " · " + sprite.name);
+            decoration.transform.SetParent(WorldLandmarkRoot, false);
+            decoration.transform.position = WorldPosition(origin, coord) + new Vector3(0f, 0.18f, -0.03f);
+            var renderer = decoration.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.color = tint;
+            renderer.sortingOrder = 20;
+            decoration.transform.localScale = Vector3.one * scale;
+        }
+
+        private Sprite DecorationSpriteForBiome(string biomeId, int variantHash)
+        {
+            Sprite[] variants;
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "root_system": variants = _cavernDecorationSprites; break;
+                case "river_wetland": variants = _wetlandDecorationSprites; break;
+                case "arid_desert": variants = _desertDecorationSprites; break;
+                case "frost_highland": variants = _frostDecorationSprites; break;
+                case "subterranean_cavern": variants = _cavernDecorationSprites; break;
+                case "ancient_ruins": variants = _ruinDecorationSprites; break;
+                default: variants = _forestDecorationSprites; break;
+            }
+            if (variants == null || variants.Length == 0) return _forestTreeSprite;
+            return variants[variantHash % variants.Length];
+        }
+
+        private Sprite LandmarkSpriteForBiome(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "river_wetland": return _wetlandLandmarkSprite;
+                case "arid_desert": return _desertLandmarkSprite;
+                case "frost_highland": return _frostLandmarkSprite;
+                case "subterranean_cavern": return _cavernCrystalSprite;
+                case "ancient_ruins": return _ruinLandmarkSprite;
+                default: return _forestHouseSprite;
+            }
+        }
+
+        private static bool SupportsDecorationTerrain(string biomeId, TileKind tileKind)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "root_system": return tileKind == TileKind.Ruin || tileKind == TileKind.Wall || tileKind == TileKind.DarkGrass;
+                case "river_wetland": return tileKind == TileKind.Water || tileKind == TileKind.DarkGrass;
+                case "arid_desert": return tileKind == TileKind.Dirt || tileKind == TileKind.Hazard ||
+                                            tileKind == TileKind.Wall || tileKind == TileKind.Ruin;
+                case "frost_highland": return tileKind == TileKind.Floor || tileKind == TileKind.Wall ||
+                                             tileKind == TileKind.Hazard;
+                case "subterranean_cavern": return tileKind == TileKind.DarkGrass || tileKind == TileKind.Wall ||
+                                                   tileKind == TileKind.Ruin;
+                case "ancient_ruins": return tileKind == TileKind.Ruin || tileKind == TileKind.Wall;
+                default: return tileKind == TileKind.Grass || tileKind == TileKind.Wall ||
+                                tileKind == TileKind.DarkGrass;
+            }
+        }
+
+        private static int DecorationDensity(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "root_system": return 52;
+                case "temperate_forest_field": return 64;
+                case "river_wetland": return 48;
+                case "arid_desert": return 44;
+                case "frost_highland": return 50;
+                case "subterranean_cavern": return 56;
+                case "ancient_ruins": return 48;
+                default: return 44;
+            }
+        }
+
+        private static Color DecorationTint(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "root_system": return Hex("b667d8");
+                case "river_wetland": return Hex("b6e1cf");
+                case "arid_desert": return Hex("f0c879");
+                case "frost_highland": return Hex("e8f6ff");
+                case "subterranean_cavern": return Hex("cf9fea");
+                case "ancient_ruins": return Hex("c6ae82");
+                default: return Color.white;
+            }
+        }
+
+        private static int StableVisualHash(string layoutHash, int x, int y, int salt)
+        {
+            unchecked
+            {
+                int value = 17;
+                string text = layoutHash ?? string.Empty;
+                for (int i = 0; i < text.Length; i++) value = value * 31 + text[i];
+                value = value * 31 + x;
+                value = value * 31 + y;
+                value = value * 31 + salt;
+                return value == int.MinValue ? int.MaxValue : Math.Abs(value);
+            }
         }
 
         private void CreateCampaignLandmarkMarkers(RunView view, Vector2 origin, bool useServerWorld)
@@ -2548,16 +3031,14 @@ namespace KeyboardWanderer.Demo
         private void CreateLandmarkMarker(string label, string campaignRole, GridCoord coord, Vector2 origin, bool root)
         {
             GameObject prefab = authoringSettings != null ? authoringSettings.LandmarkPrefab : null;
-            GameObject marker = prefab != null
-                ? Instantiate(prefab, WorldContentRoot)
-                : new GameObject("Landmark");
-            marker.name = "Landmark · " + (label ?? campaignRole ?? "POI");
             if (prefab == null)
-                marker.transform.SetParent(WorldContentRoot, false);
+                throw new InvalidOperationException("Authoring Settings must reference a Landmark prefab.");
+            GameObject marker = Instantiate(prefab, WorldLandmarkRoot);
+            marker.name = "Landmark · " + (label ?? campaignRole ?? "POI");
             marker.transform.position = WorldPosition(origin, coord) + new Vector3(0f, 0.1f, -0.05f);
             SpriteRenderer renderer = marker.GetComponent<SpriteRenderer>();
             if (renderer == null)
-                renderer = marker.AddComponent<SpriteRenderer>();
+                throw new InvalidOperationException("Landmark prefab must contain a SpriteRenderer on its root.");
             renderer.sprite = root ? _d20Sprite : (_bookSprite != null ? _bookSprite : _whiteSprite);
             renderer.color = CampaignRoleColor(campaignRole);
             renderer.sortingOrder = 80;
@@ -2600,6 +3081,10 @@ namespace KeyboardWanderer.Demo
             string id = (assetId ?? string.Empty).ToLowerInvariant();
             string entityKind = (kind ?? string.Empty).ToLowerInvariant();
             if (isPlayer || id.Contains("player")) return _playerSprite;
+            ActorAnimationEntry actorAnimation = ActorAnimationForAsset(assetId, kind);
+            if (actorAnimation?.DefaultSprite != null &&
+                (entityKind.Contains("npc") || entityKind.Contains("enemy") || id.StartsWith("boss.")))
+                return actorAnimation.DefaultSprite;
             if (id == "artifact.keyboard" || id.Contains("rune-book") || id.Contains("hidden-truth")) return _bookSprite;
             if (id.Contains("admin-access") || id.Contains("altar") || id.Contains("sign")) return _d20Sprite;
             if (id.StartsWith("finale."))
@@ -2654,30 +3139,14 @@ namespace KeyboardWanderer.Demo
             Color tint,
             KeyboardWandererEntityView authoredView = null)
         {
-            GameObject label;
-            TextMesh text;
-            if (authoredView != null && authoredView.FinaleLabelText != null)
-            {
-                label = authoredView.FinaleLabel;
-                text = authoredView.FinaleLabelText;
-                label.SetActive(true);
-            }
-            else
-            {
-                label = new GameObject("Finale label");
-                label.transform.SetParent(WorldContentRoot, false);
-                text = label.AddComponent<TextMesh>();
-            }
+            if (authoredView == null || authoredView.FinaleLabelText == null)
+                throw new InvalidOperationException("Entity Visual prefab must contain an authored Finale Label TextMesh.");
+            GameObject label = authoredView.FinaleLabel;
+            TextMesh text = authoredView.FinaleLabelText;
+            label.SetActive(true);
             label.name = "Finale label · " + component;
             text.text = RootComponentLabel(component, displayName);
-            text.anchor = TextAnchor.MiddleCenter;
-            text.alignment = TextAlignment.Center;
-            text.fontSize = 34;
-            text.characterSize = 0.075f;
-            text.fontStyle = FontStyle.Bold;
             text.color = Color.Lerp(tint, Color.white, 0.28f);
-            MeshRenderer renderer = label.GetComponent<MeshRenderer>();
-            if (renderer != null) renderer.sortingOrder = 525;
             return label;
         }
 
@@ -2735,6 +3204,7 @@ namespace KeyboardWanderer.Demo
             string id = (assetId ?? string.Empty).ToLowerInvariant();
             string entityKind = (kind ?? string.Empty).ToLowerInvariant();
             if (isPlayer || id.Contains("player")) return _playerIdleFrames;
+            if (ActorAnimationForAsset(assetId, kind)?.AnimatorController != null) return Array.Empty<Sprite>();
             if (id.Contains("slime") || entityKind.Contains("enemy")) return _slimeFrames;
             if (entityKind.Contains("npc") || id.Contains("villager") || id.Contains("merchant") || id.Contains("healer")) return _villagerFrames;
             return Array.Empty<Sprite>();
@@ -2747,12 +3217,85 @@ namespace KeyboardWanderer.Demo
             string id = (assetId ?? string.Empty).ToLowerInvariant();
             string entityKind = (kind ?? string.Empty).ToLowerInvariant();
             if (isPlayer || id.Contains("player"))
-                return _assets.PlayerAnimatorController;
+                return _assets.NeopjukiAtlas != null ? null : _assets.PlayerAnimatorController;
+            ActorAnimationEntry actorAnimation = ActorAnimationForAsset(assetId, kind);
+            if (actorAnimation?.AnimatorController != null)
+                return actorAnimation.AnimatorController;
             if (id.Contains("slime") || entityKind.Contains("enemy"))
                 return _assets.SlimeAnimatorController;
             if (entityKind.Contains("npc") || id.Contains("villager") || id.Contains("merchant") || id.Contains("healer"))
                 return _assets.VillagerAnimatorController;
             return null;
+        }
+
+        private ActorAnimationEntry ActorAnimationForAsset(string assetId, string kind)
+        {
+            if (_assets == null)
+                return null;
+
+            string id = (assetId ?? string.Empty).ToLowerInvariant();
+            ActorAnimationEntry exact = FindActorAnimation(_assets.NpcAnimations, id) ??
+                                        FindActorAnimation(_assets.MonsterAnimations, id) ??
+                                        FindActorAnimation(_assets.BossAnimations, id);
+            if (exact != null)
+                return exact;
+
+            if (id.Contains("warden") || id.Contains("samurai"))
+                return FindActorAnimation(_assets.NpcAnimations, "npc.samurai.v1");
+            if (id.Contains("traveler") || id.Contains("old-man"))
+                return FindActorAnimation(_assets.NpcAnimations, "npc.old-man.v1");
+
+            string entityKind = (kind ?? string.Empty).ToLowerInvariant();
+            ActorAnimationEntry[] catalog = id.StartsWith("boss.")
+                ? _assets.BossAnimations
+                : entityKind.Contains("enemy") ? _assets.MonsterAnimations
+                : entityKind.Contains("npc") ? _assets.NpcAnimations
+                : null;
+            if (catalog == null || catalog.Length == 0)
+                return null;
+            return catalog[StableCatalogIndex(id, catalog.Length)];
+        }
+
+        private static ActorAnimationEntry FindActorAnimation(ActorAnimationEntry[] catalog, string assetId)
+        {
+            if (catalog == null)
+                return null;
+            for (int i = 0; i < catalog.Length; i++)
+            {
+                ActorAnimationEntry entry = catalog[i];
+                if (entry != null && string.Equals(entry.AssetId, assetId, StringComparison.OrdinalIgnoreCase))
+                    return entry;
+            }
+            return null;
+        }
+
+        private static int StableCatalogIndex(string value, int count)
+        {
+            uint hash = 2166136261;
+            for (int i = 0; i < value.Length; i++)
+            {
+                hash ^= value[i];
+                hash *= 16777619;
+            }
+            return (int)(hash % (uint)count);
+        }
+
+        private static bool HasAnimatorParameter(Animator animator, string parameterName)
+        {
+            if (animator == null)
+                return false;
+            AnimatorControllerParameter[] parameters = animator.parameters;
+            for (int i = 0; i < parameters.Length; i++)
+                if (parameters[i].type == AnimatorControllerParameterType.Float &&
+                    string.Equals(parameters[i].name, parameterName, StringComparison.Ordinal))
+                    return true;
+            return false;
+        }
+
+        private static void SetAnimatorFloat(Animator animator, string parameterName, float value)
+        {
+            if (HasAnimatorParameter(animator, parameterName))
+                animator.SetFloat(parameterName, value);
         }
 
         private static Animator ConfigureEntityAnimator(
@@ -2763,19 +3306,16 @@ namespace KeyboardWanderer.Demo
                 return null;
             Animator animator = renderer.GetComponent<Animator>();
             if (animator == null)
-                animator = renderer.gameObject.AddComponent<Animator>();
+                throw new InvalidOperationException(
+                    "The authored entity prefab Actor Renderer must include an Animator component.");
             animator.runtimeAnimatorController = controller;
             animator.Rebind();
-            animator.Play("Idle", 0, 0f);
             animator.Update(0f);
             return animator;
         }
 
         private static Color TintForKind(string kind)
         {
-            string value = (kind ?? string.Empty).ToLowerInvariant();
-            if (value.Contains("enemy")) return new Color(1f, 0.78f, 0.72f, 1f);
-            if (value.Contains("npc")) return new Color(1f, 0.95f, 0.8f, 1f);
             return Color.white;
         }
 
@@ -2784,9 +3324,11 @@ namespace KeyboardWanderer.Demo
             if (_ability.Equals(ability))
                 return;
             _ability = ability;
+            _copySourceCaptured = false;
             _selectedTarget = null;
             _selectedSecondaryTarget = null;
             _selectedCoord = null;
+            _movementSelectionFeedback = string.Empty;
             if (ability == AbilityKind.Restore && _lastRestorableTarget.HasValue)
             {
                 _selectedTarget = _lastRestorableTarget;
@@ -2809,6 +3351,9 @@ namespace KeyboardWanderer.Demo
                 case "Restore": return _assets.HeartIcon;
                 case "Undo": return _assets.CopyIcon;
                 case "Connect": return _assets.CopyIcon;
+                case "Interact": return _assets.InteractIcon;
+                case "Search": return _assets.D20;
+                case "SelectAll": return _assets.D20;
                 default: return _assets.D20;
             }
         }
@@ -2883,6 +3428,7 @@ namespace KeyboardWanderer.Demo
                 target += " + " + DisplayEntityName(view, _selectedSecondaryTarget.Value);
             bool consumes = _ability != AbilityKind.Move;
             string risk = _ability == AbilityKind.Move ? "경로상 사건 활성화 가능"
+                : _ability == AbilityKind.Interact ? "낮음 · 대상 확인"
                 : _ability == AbilityKind.Delete || _ability == AbilityKind.Undo ? "높음 · 기술 부채 발생 가능"
                 : _ability == AbilityKind.Connect ? "중간 · 관계/배치 결과"
                 : "중간 · D20 결과 적용";
@@ -2895,6 +3441,16 @@ namespace KeyboardWanderer.Demo
         {
             if (ability == AbilityKind.Move) return "안전 이동";
             if (ability == AbilityKind.Copy) return "조사";
+            if (ability == AbilityKind.Interact)
+            {
+                if (_selectedTarget.HasValue)
+                {
+                    for (int i = 0; i < view.Entities.Count; i++)
+                        if (view.Entities[i].EntityId == _selectedTarget.Value && view.Entities[i].Kind == EntityKind.Npc)
+                            return "협상";
+                }
+                return "조사";
+            }
             if (ability == AbilityKind.Delete) return "전투/배치";
             if (ability == AbilityKind.Connect)
             {
@@ -2986,6 +3542,13 @@ namespace KeyboardWanderer.Demo
                 if (!_selectedSecondaryTarget.HasValue) return "두 번째 연결 개체를 선택하세요.";
                 return "연결 대상 2개 선택 완료";
             }
+            if (ability == "Interact")
+            {
+                if (!_selectedTarget.HasValue) return "책, 상자 또는 NPC를 선택하세요.";
+                return IsSkillEnabledForCurrentTarget(AbilityKind.Interact)
+                    ? DisplayEntityName(view, _selectedTarget.Value) + " · 상호작용 가능"
+                    : "대상이 너무 멉니다. 2칸 이내로 이동하세요.";
+            }
             if (ability == "Restore")
             {
                 if (_selectedTarget.HasValue)
@@ -3017,10 +3580,7 @@ namespace KeyboardWanderer.Demo
 
         private void ApplyAudioVolumes()
         {
-            if (_musicSource != null)
-                _musicSource.volume = _musicVolume * 0.45f;
-            if (_sfxSource != null)
-                _sfxSource.volume = _sfxVolume;
+            _audioController?.SetVolumes(_musicVolume, _sfxVolume);
         }
 
         private void AddLog(string message)
@@ -3030,21 +3590,6 @@ namespace KeyboardWanderer.Demo
             _sessionLog.Add(message.Trim());
             if (_sessionLog.Count > 18)
                 _sessionLog.RemoveAt(0);
-            _logScroll.y = float.MaxValue;
-        }
-
-        private void CreateUiTextures()
-        {
-            _inkTexture = MakeTexture(Ink, "Ink");
-            _panelTexture = MakeTexture(Panel, "Wood Panel");
-            _raisedTexture = MakeTexture(PanelRaised, "Raised Panel");
-            _buttonTexture = MakeTexture(Hex("3b291b"), "Button");
-            _buttonHoverTexture = MakeTexture(Hex("503821"), "Button Hover");
-            _buttonPressedTexture = MakeTexture(Hex("21160e"), "Button Pressed");
-            _selectedTexture = MakeTexture(Hex("69471f"), "Selected Button");
-            _disabledTexture = MakeTexture(Hex("211b16"), "Disabled Button");
-            _fieldTexture = MakeTexture(Hex("110c09"), "Intent Field");
-            _whiteTexture = MakeTexture(Color.white, "White");
         }
 
         private Texture2D MakeTexture(Color color, string textureName)
@@ -3057,102 +3602,6 @@ namespace KeyboardWanderer.Demo
             texture.filterMode = FilterMode.Point;
             _runtimeTextures.Add(texture);
             return texture;
-        }
-
-        private void EnsureStyles()
-        {
-            if (_stylesReady)
-                return;
-            Font font = _koreanFont != null ? _koreanFont : (_assets != null ? _assets.PixelFont : GUI.skin.font);
-            _labelStyle = new GUIStyle(GUI.skin.label) { font = font, fontSize = 18, wordWrap = true, normal = { textColor = Parchment } };
-            _titleStyle = new GUIStyle(_labelStyle) { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Gold } };
-            _subtitleStyle = new GUIStyle(_labelStyle) { fontSize = 18, alignment = TextAnchor.MiddleCenter, normal = { textColor = Muted } };
-            _headerStyle = new GUIStyle(_labelStyle) { fontSize = 20, fontStyle = FontStyle.Bold, normal = { textColor = Gold } };
-            _smallStyle = new GUIStyle(_labelStyle) { fontSize = 15, normal = { textColor = Parchment } };
-            _mutedStyle = new GUIStyle(_smallStyle) { alignment = TextAnchor.MiddleCenter, normal = { textColor = Muted } };
-            _centerStyle = new GUIStyle(_labelStyle) { fontSize = 16, alignment = TextAnchor.MiddleCenter, normal = { textColor = Parchment } };
-            _previewPremiseStyle = new GUIStyle(_centerStyle) { fontSize = 13 };
-            _numberStyle = new GUIStyle(_headerStyle) { fontSize = 27, alignment = TextAnchor.MiddleLeft, normal = { textColor = Parchment } };
-
-            _buttonStyle = new GUIStyle(GUI.skin.button)
-            {
-                font = font,
-                fontSize = 17,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                padding = new RectOffset(12, 12, 8, 8),
-                normal = { background = _buttonTexture, textColor = Parchment },
-                hover = { background = _buttonHoverTexture, textColor = Color.white },
-                active = { background = _buttonPressedTexture, textColor = Gold },
-                focused = { background = _buttonHoverTexture, textColor = Color.white },
-                onNormal = { background = _selectedTexture, textColor = Color.white },
-                onHover = { background = _selectedTexture, textColor = Color.white }
-            };
-            _selectedButtonStyle = new GUIStyle(_buttonStyle)
-            {
-                normal = { background = _selectedTexture, textColor = Color.white },
-                hover = { background = _buttonHoverTexture, textColor = Color.white }
-            };
-            _dangerButtonStyle = new GUIStyle(_buttonStyle)
-            {
-                normal = { background = _buttonPressedTexture, textColor = new Color(1f, 0.65f, 0.56f) }
-            };
-            _textAreaStyle = new GUIStyle(GUI.skin.textArea)
-            {
-                font = font,
-                fontSize = 16,
-                wordWrap = true,
-                padding = new RectOffset(13, 13, 10, 10),
-                normal = { background = _fieldTexture, textColor = Parchment },
-                focused = { background = _fieldTexture, textColor = Color.white }
-            };
-            _stylesReady = true;
-        }
-
-        private void DrawWoodPanel(Rect rect, bool raised)
-        {
-            if (_assets != null && _assets.WoodBackground != null)
-                DrawSprite(_assets.WoodBackground, rect, new Color(0.48f, 0.34f, 0.2f, 0.22f));
-            DrawRect(rect, new Color(raised ? PanelRaised.r : Panel.r, raised ? PanelRaised.g : Panel.g,
-                raised ? PanelRaised.b : Panel.b, 0.92f));
-            DrawBorder(rect, GoldDim, 2f);
-            DrawBorder(new Rect(rect.x + 5f, rect.y + 5f, rect.width - 10f, rect.height - 10f),
-                new Color(GoldDim.r, GoldDim.g, GoldDim.b, 0.45f), 1f);
-        }
-
-        private void DrawOrnament(Rect rect)
-        {
-            DrawRect(rect, GoldDim);
-            DrawRect(new Rect(rect.x + rect.width * 0.44f, rect.y - 3f, rect.width * 0.12f, 8f), Gold);
-        }
-
-        private void DrawRect(Rect rect, Color color)
-        {
-            Color old = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(rect, _whiteTexture != null ? _whiteTexture : Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
-            GUI.color = old;
-        }
-
-        private void DrawBorder(Rect rect, Color color, float thickness)
-        {
-            DrawRect(new Rect(rect.x, rect.y, rect.width, thickness), color);
-            DrawRect(new Rect(rect.x, rect.yMax - thickness, rect.width, thickness), color);
-            DrawRect(new Rect(rect.x, rect.y, thickness, rect.height), color);
-            DrawRect(new Rect(rect.xMax - thickness, rect.y, thickness, rect.height), color);
-        }
-
-        private static void DrawSprite(Sprite sprite, Rect rect, Color tint)
-        {
-            if (sprite == null || sprite.texture == null)
-                return;
-            Rect source = sprite.textureRect;
-            var uv = new Rect(source.x / sprite.texture.width, source.y / sprite.texture.height,
-                source.width / sprite.texture.width, source.height / sprite.texture.height);
-            Color old = GUI.color;
-            GUI.color = tint;
-            GUI.DrawTextureWithTexCoords(rect, sprite.texture, uv, true);
-            GUI.color = old;
         }
 
         private static void ScaleSprite(Transform target, Sprite sprite, float desiredSize)
@@ -3206,6 +3655,77 @@ namespace KeyboardWanderer.Demo
                 fallback = entity.EntityId;
             }
             return fallback;
+        }
+
+        private Guid? FindVisualTargetAt(Vector3 worldPosition)
+        {
+            Guid? fallback = null;
+            foreach (KeyValuePair<Guid, EntityVisual> pair in _entityVisuals)
+            {
+                EntityVisual visual = pair.Value;
+                if (visual == null || visual.IsPlayer || visual.Renderer == null || !visual.Renderer.enabled)
+                    continue;
+                Bounds bounds = visual.Renderer.bounds;
+                float padding = Mathf.Max(0.22f, Mathf.Min(bounds.size.x, bounds.size.y) * 0.12f);
+                bool contains = worldPosition.x >= bounds.min.x - padding && worldPosition.x <= bounds.max.x + padding &&
+                                worldPosition.y >= bounds.min.y - padding && worldPosition.y <= bounds.max.y + padding;
+                if (!contains)
+                    continue;
+                if (visual.IsHostile)
+                    return pair.Key;
+                fallback = pair.Key;
+            }
+            return fallback;
+        }
+
+        private bool TryGetEntityPosition(RunView view, Guid id, out GridCoord position)
+        {
+            if (_serverOnline && _serverRun?.entities != null)
+            {
+                string key = id.ToString();
+                for (int i = 0; i < _serverRun.entities.Length; i++)
+                {
+                    GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                    if (entity?.position != null && string.Equals(entity.id, key, StringComparison.OrdinalIgnoreCase))
+                    {
+                        position = new GridCoord(entity.position.x, entity.position.y);
+                        return true;
+                    }
+                }
+            }
+            for (int i = 0; i < view.Entities.Count; i++)
+            {
+                EntityView entity = view.Entities[i];
+                if (entity.EntityId != id) continue;
+                position = entity.Position;
+                return true;
+            }
+            position = default;
+            return false;
+        }
+
+        private bool IsInteractableTarget(RunView view, Guid id)
+        {
+            if (_serverOnline && _serverRun?.entities != null)
+            {
+                string key = id.ToString();
+                for (int i = 0; i < _serverRun.entities.Length; i++)
+                {
+                    GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                    if (entity == null || !string.Equals(entity.id, key, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    return string.Equals(entity.kind, "prop", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(entity.kind, "npc", StringComparison.OrdinalIgnoreCase);
+                }
+                return false;
+            }
+            for (int i = 0; i < view.Entities.Count; i++)
+            {
+                EntityView entity = view.Entities[i];
+                if (entity.EntityId == id)
+                    return (entity.Kind == EntityKind.Prop || entity.Kind == EntityKind.Npc) && !entity.IsHostile;
+            }
+            return false;
         }
 
         private static string EntityName(RunView view, Guid id)
@@ -3433,6 +3953,7 @@ namespace KeyboardWanderer.Demo
                 case "frost_highland": return "설원 고지";
                 case "subterranean_cavern": return "지하 동굴";
                 case "ancient_ruins": return "고대 유적";
+                case "root_system": return "루트 시스템 · 코어";
                 default: return string.IsNullOrWhiteSpace(id) ? "바이옴 미확인" : id;
             }
         }
@@ -3459,6 +3980,8 @@ namespace KeyboardWanderer.Demo
         {
             if (_ability == AbilityKind.Move)
                 return "MOVE 실행\n\nD20 없음\n턴 유지";
+            if (_ability == AbilityKind.Interact)
+                return "상호작용\n\n서버 D20\n+ 캠페인 턴";
             return "USE_SKILL 실행\n\n서버 D20\n+ 캠페인 턴";
         }
         private int MaxFocus(RunView view) => _serverOnline && _serverRun != null
@@ -3918,6 +4441,9 @@ namespace KeyboardWanderer.Demo
                 case AbilityKind.Connect: return "connect";
                 case AbilityKind.Restore: return "restore";
                 case AbilityKind.Undo: return "undo";
+                case AbilityKind.Interact: return "interact";
+                case AbilityKind.Search: return "search";
+                case AbilityKind.SelectAll: return "select_all";
                 default: return "move";
             }
         }
@@ -4021,6 +4547,9 @@ namespace KeyboardWanderer.Demo
                 case "Connect": return AbilityKind.Connect;
                 case "Restore": return AbilityKind.Restore;
                 case "Undo": return AbilityKind.Undo;
+                case "Interact": return AbilityKind.Interact;
+                case "Search": return AbilityKind.Search;
+                case "SelectAll": return AbilityKind.SelectAll;
                 default: return AbilityKind.Move;
             }
         }
@@ -4029,7 +4558,7 @@ namespace KeyboardWanderer.Demo
         {
             if (!ColorUtility.TryParseHtmlString("#" + rgb, out Color color))
                 return Color.white;
-            // This project renders in Linear color space; convert authored hex colors before IMGUI tinting.
+            // This project renders in Linear color space; convert authored fallback sprite colors.
             return color.linear;
         }
     }

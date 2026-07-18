@@ -12,6 +12,8 @@ namespace KeyboardWanderer.Editor
     public static class KeyboardWandererSceneUIBuilder
     {
         private const string UiPrefabPath = "Assets/KeyboardWanderer/Prefabs/UI/AuthoredUI.prefab";
+        private const string DefaultFontPath =
+            "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf";
         private static readonly Color Ink = Hex("160f0a");
         private static readonly Color Panel = Hex("281a11");
         private static readonly Color Raised = Hex("352419");
@@ -28,7 +30,7 @@ namespace KeyboardWanderer.Editor
             if (controller == null)
                 throw new UnityException("Open SampleScene and add Codria Game before building its UI.");
 
-            _font = AssetDatabase.LoadAssetAtPath<Font>("Assets/NinjaAdventure/Ui/Font/NormalFont.ttf");
+            _font = LoadDefaultFont();
             _assets = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(
                 "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset");
             Transform oldUi = controller.transform.Find("Authored UI");
@@ -51,6 +53,7 @@ namespace KeyboardWanderer.Editor
             BuildSettings(canvasObject.transform);
             BuildPause(canvasObject.transform);
             BuildEnding(canvasObject.transform);
+            canvasObject.GetComponent<KeyboardWandererSceneUI>().AutoWire();
 
             EnsureFolder("Assets/KeyboardWanderer/Prefabs");
             EnsureFolder("Assets/KeyboardWanderer/Prefabs/UI");
@@ -62,11 +65,137 @@ namespace KeyboardWanderer.Editor
             if (!prefabSaved)
                 throw new UnityException("Failed to save the authored UI prefab.");
 
-            GameObject eventSystem = NewObject("EventSystem", null, typeof(EventSystem), typeof(InputSystemUIInputModule));
-            Undo.RegisterCreatedObjectUndo(eventSystem, "Create Codria EventSystem");
+            EnsureEventSystem();
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             EditorSceneManager.SaveOpenScenes();
             Selection.activeGameObject = canvasObject;
+        }
+
+        public static void EnsureExistingOrBuild()
+        {
+            KeyboardWandererDemoController controller =
+                Object.FindAnyObjectByType<KeyboardWandererDemoController>(FindObjectsInactive.Include);
+            if (controller == null)
+                throw new UnityException("Open SampleScene before synchronizing its authored UI.");
+
+            KeyboardWandererSceneUI sceneUi =
+                controller.GetComponentInChildren<KeyboardWandererSceneUI>(true);
+            if (sceneUi == null)
+            {
+                Build();
+                return;
+            }
+
+            sceneUi.AutoWire();
+            EditorUtility.SetDirty(sceneUi);
+            PrefabUtility.RecordPrefabInstancePropertyModifications(sceneUi);
+            EnsureEventSystem();
+            EditorSceneManager.MarkSceneDirty(controller.gameObject.scene);
+            EditorSceneManager.SaveOpenScenes();
+        }
+
+        [MenuItem("Keyboard Wanderer/Apply Scene UI Overrides to AuthoredUI Prefab")]
+        public static void ApplySceneUiOverridesToPrefab()
+        {
+            KeyboardWandererDemoController controller =
+                Object.FindAnyObjectByType<KeyboardWandererDemoController>(FindObjectsInactive.Include);
+            KeyboardWandererSceneUI sceneUi = controller != null
+                ? controller.GetComponentInChildren<KeyboardWandererSceneUI>(true)
+                : null;
+            if (sceneUi == null)
+                throw new UnityException("The open scene does not contain Authored UI.");
+            if (!PrefabUtility.IsPartOfPrefabInstance(sceneUi.gameObject))
+                throw new UnityException("Authored UI must be a prefab instance before its overrides can be applied.");
+
+            sceneUi.AutoWire();
+            EditorUtility.SetDirty(sceneUi);
+            PrefabUtility.RecordPrefabInstancePropertyModifications(sceneUi);
+            GameObject instanceRoot = PrefabUtility.GetOutermostPrefabInstanceRoot(sceneUi.gameObject);
+            PrefabUtility.ApplyPrefabInstance(instanceRoot, InteractionMode.AutomatedAction);
+            EditorSceneManager.MarkSceneDirty(controller.gameObject.scene);
+            EditorSceneManager.SaveOpenScenes();
+            AssetDatabase.SaveAssets();
+            Debug.Log("Applied the current scene Authored UI overrides to AuthoredUI.prefab.", sceneUi);
+        }
+
+        public static void ApplySampleSceneUiOverridesToPrefab()
+        {
+            EditorSceneManager.OpenScene("Assets/Scenes/SampleScene.unity", OpenSceneMode.Single);
+            ApplySceneUiOverridesToPrefab();
+        }
+
+        [MenuItem("Keyboard Wanderer/Apply Default Font to Authored UI")]
+        public static void ApplyDefaultFontToAuthoredUi()
+        {
+            Font font = LoadDefaultFont();
+            GameObject prefabRoot = PrefabUtility.LoadPrefabContents(UiPrefabPath);
+            try
+            {
+                Text[] texts = prefabRoot.GetComponentsInChildren<Text>(true);
+                for (int i = 0; i < texts.Length; i++)
+                {
+                    texts[i].font = font;
+                    EditorUtility.SetDirty(texts[i]);
+                }
+                PrefabUtility.SaveAsPrefabAsset(prefabRoot, UiPrefabPath);
+                Debug.Log("Applied " + font.name + " to " + texts.Length + " authored UI text components.");
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefabRoot);
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+
+        [MenuItem("Keyboard Wanderer/Regenerate Default Game HUD Layout")]
+        public static void ApplyEditableGameHudLayout()
+        {
+            _font = LoadDefaultFont();
+            _assets = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(
+                "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset");
+
+            GameObject prefabRoot = PrefabUtility.LoadPrefabContents(UiPrefabPath);
+            try
+            {
+                Transform oldHud = prefabRoot.transform.Find("Game HUD");
+                if (oldHud != null) Object.DestroyImmediate(oldHud.gameObject);
+                BuildGameHud(prefabRoot.transform);
+
+                KeyboardWandererSceneUI sceneUi = prefabRoot.GetComponent<KeyboardWandererSceneUI>();
+                sceneUi.AutoWire();
+                EditorUtility.SetDirty(sceneUi);
+                PrefabUtility.SaveAsPrefabAsset(prefabRoot, UiPrefabPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefabRoot);
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            EditorSceneManager.MarkAllScenesDirty();
+            EditorSceneManager.SaveOpenScenes();
+            Debug.Log("Applied editable edge-HUD layout without rebuilding the title screen.");
+        }
+
+        private static void EnsureEventSystem()
+        {
+            EventSystem eventSystem = Object.FindAnyObjectByType<EventSystem>(FindObjectsInactive.Include);
+            if (eventSystem != null)
+                return;
+            GameObject eventObject = NewObject(
+                "EventSystem", null, typeof(EventSystem), typeof(InputSystemUIInputModule));
+            Undo.RegisterCreatedObjectUndo(eventObject, "Create Codria EventSystem");
+        }
+
+        private static Font LoadDefaultFont()
+        {
+            Font font = AssetDatabase.LoadAssetAtPath<Font>(DefaultFontPath);
+            if (font == null)
+                throw new UnityException("Default authored UI font is missing: " + DefaultFontPath);
+            return font;
         }
 
         private static void BuildTitle(Transform canvas)
@@ -76,7 +205,7 @@ namespace KeyboardWanderer.Editor
             RectTransform card = PanelRect(root, "Title Card", new Vector2(0.267f, 0.06f), new Vector2(0.733f, 0.94f),
                 Vector2.zero, Vector2.zero, new Color(0.31f, 0.23f, 0.16f, 0.98f));
             AddOutline(card.gameObject, Gold, 2f);
-            TextRect(card, "Title Heading", new Vector2(0.06f, 0.86f), new Vector2(0.94f, 0.96f), "넙죽이와 붕괴한 코드 왕국", 30, Gold, TextAnchor.MiddleCenter);
+            TextRect(card, "Title Heading", new Vector2(0.06f, 0.86f), new Vector2(0.94f, 0.96f), "NINJA ADVENTURE", 30, Gold, TextAnchor.MiddleCenter);
             TextRect(card, "Title Subtitle", new Vector2(0.08f, 0.80f), new Vector2(0.92f, 0.86f), "코드리아 × 관리자 키보드 × 선택 회수", 16, Muted, TextAnchor.MiddleCenter);
             ImageRect(card, "Title Character", new Vector2(0.37f, 0.59f), new Vector2(0.63f, 0.79f), _assets != null ? _assets.PlayerIdle : null, Color.white);
             ImageRect(card, "Title D20", new Vector2(0.60f, 0.57f), new Vector2(0.69f, 0.66f), _assets != null ? _assets.D20 : null, new Color(1f, 0.88f, 0.58f, 1f));
@@ -95,42 +224,103 @@ namespace KeyboardWanderer.Editor
                 Vector2.zero, Vector2.zero, new Color(1f, 1f, 1f, 0.005f));
             viewport.GetComponent<Image>().raycastTarget = false;
 
-            RectTransform header = PanelRect(root, "Story Header", new Vector2(0f, 0.93f), Vector2.one,
-                Vector2.zero, Vector2.zero, new Color(0.07f, 0.045f, 0.025f, 0.88f));
-            TextRect(header, "Scene Location", new Vector2(0.035f, 0.12f), new Vector2(0.36f, 0.88f), "현재 장소", 14, Muted, TextAnchor.MiddleLeft);
-            TextRect(header, "Scene Title", new Vector2(0.36f, 0.08f), new Vector2(0.64f, 0.92f), "현재 장면", 20, Parchment, TextAnchor.MiddleCenter);
+            RectTransform header = PanelRect(root, "Story Header", new Vector2(0.018f, 0.82f), new Vector2(0.265f, 0.975f),
+                Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.94f));
+            ApplyPanelSprite(header, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
+            RectTransform hudPortrait = PanelRect(header, "HUD Portrait Frame", new Vector2(0.035f, 0.15f), new Vector2(0.285f, 0.88f),
+                Vector2.zero, Vector2.zero, new Color(0.10f, 0.08f, 0.065f, 1f));
+            ImageRect(hudPortrait, "HUD Portrait", new Vector2(0.12f, 0.12f), new Vector2(0.88f, 0.88f),
+                _assets != null ? _assets.PlayerIdle : null, Color.white);
+            TextRect(header, "Scene Location", new Vector2(0.33f, 0.55f), new Vector2(0.94f, 0.84f), "현재 장소", 16, Gold, TextAnchor.MiddleLeft);
+            TextRect(header, "Scene Title", new Vector2(0.33f, 0.20f), new Vector2(0.94f, 0.55f), "현재 장면", 20, Parchment, TextAnchor.MiddleLeft);
 
-            RectTransform actions = PanelRect(root, "Action Bar", new Vector2(0.16f, 0.305f), new Vector2(0.84f, 0.375f),
+            RectTransform objective = PanelRect(root, "Objective Panel", new Vector2(0.018f, 0.635f), new Vector2(0.265f, 0.795f),
+                Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.92f));
+            ApplyPanelSprite(objective, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
+            TextRect(objective, "Objective Heading", new Vector2(0.10f, 0.62f), new Vector2(0.90f, 0.82f), "◆ 현재 목표", 13, Gold, TextAnchor.MiddleLeft);
+            RectTransform objectiveText = TextRect(objective, "Objective Text", new Vector2(0.10f, 0.20f), new Vector2(0.90f, 0.60f),
+                "관리자 키보드로 길을 탐색하세요.", 14, Parchment, TextAnchor.MiddleLeft);
+            EnableBestFit(objectiveText, 10, 14);
+
+            RectTransform actions = PanelRect(root, "Action Bar", new Vector2(0.865f, 0.16f), new Vector2(0.982f, 0.88f),
                 Vector2.zero, Vector2.zero, new Color(0.055f, 0.036f, 0.022f, 0.94f));
             AddOutline(actions.gameObject, new Color(Gold.r, Gold.g, Gold.b, 0.42f), 1f);
-            ButtonRect(actions, "Move Button", "이동 모드", new Vector2(0.015f, 0.16f), new Vector2(0.125f, 0.84f), Gold, Ink, "Move Label");
-            ButtonRect(actions, "Copy Skill Button", "복제", new Vector2(0.14f, 0.16f), new Vector2(0.25f, 0.84f), Raised, Parchment, "Copy Skill Label");
-            ButtonRect(actions, "Delete Skill Button", "삭제", new Vector2(0.265f, 0.16f), new Vector2(0.375f, 0.84f), Raised, Parchment, "Delete Skill Label");
-            ButtonRect(actions, "Connect Skill Button", "연결", new Vector2(0.39f, 0.16f), new Vector2(0.50f, 0.84f), Raised, Parchment, "Connect Skill Label");
-            ButtonRect(actions, "Restore Skill Button", "복원", new Vector2(0.515f, 0.16f), new Vector2(0.625f, 0.84f), Raised, Parchment, "Restore Skill Label");
-            ButtonRect(actions, "Undo Skill Button", "되돌리기", new Vector2(0.64f, 0.16f), new Vector2(0.765f, 0.84f), Raised, Parchment, "Undo Skill Label");
-            ButtonRect(actions, "Confirm Action Button", "실행", new Vector2(0.785f, 0.16f), new Vector2(0.985f, 0.84f), Gold, Ink, "Confirm Action Label");
+            ButtonRect(actions, "Move Button", "MOVE", new Vector2(0.08f, 0.875f), new Vector2(0.92f, 0.975f), Gold, Ink, "Move Label");
+            ButtonRect(actions, "Copy Skill Button", "COPY", new Vector2(0.08f, 0.76f), new Vector2(0.92f, 0.86f), Raised, Parchment, "Copy Skill Label");
+            ButtonRect(actions, "Delete Skill Button", "DELETE", new Vector2(0.08f, 0.645f), new Vector2(0.92f, 0.745f), Raised, Parchment, "Delete Skill Label");
+            ButtonRect(actions, "Connect Skill Button", "CONNECT", new Vector2(0.08f, 0.53f), new Vector2(0.92f, 0.63f), Raised, Parchment, "Connect Skill Label");
+            ButtonRect(actions, "Restore Skill Button", "RESTORE", new Vector2(0.08f, 0.415f), new Vector2(0.92f, 0.515f), Raised, Parchment, "Restore Skill Label");
+            ButtonRect(actions, "Undo Skill Button", "UNDO", new Vector2(0.08f, 0.30f), new Vector2(0.92f, 0.40f), Raised, Parchment, "Undo Skill Label");
+            ButtonRect(actions, "Search Skill Button", "SEARCH", new Vector2(0.08f, 0.185f), new Vector2(0.92f, 0.285f), Raised, Parchment, "Search Skill Label");
+            ButtonRect(actions, "Select All Skill Button", "SELECT ALL", new Vector2(0.08f, 0.07f), new Vector2(0.92f, 0.17f), Raised, Parchment, "Select All Skill Label");
+            if (_assets != null)
+            {
+                AddSkillIcon(actions, "Move Button", _assets.MoveIcon);
+                AddSkillIcon(actions, "Copy Skill Button", _assets.CopyIcon);
+                AddSkillIcon(actions, "Delete Skill Button", _assets.DeleteIcon);
+                AddSkillIcon(actions, "Connect Skill Button", _assets.ConnectIcon);
+                AddSkillIcon(actions, "Restore Skill Button", _assets.RestoreIcon);
+                AddSkillIcon(actions, "Undo Skill Button", _assets.UndoIcon);
+                AddSkillIcon(actions, "Search Skill Button", _assets.SearchIcon);
+                AddSkillIcon(actions, "Select All Skill Button", _assets.SelectAllIcon);
+                AddShortcutKeycaps(actions, "Move Button", _assets.KeyW);
+                AddShortcutKeycaps(actions, "Copy Skill Button", _assets.KeyCtrl, _assets.KeyC);
+                AddShortcutKeycaps(actions, "Delete Skill Button", _assets.KeyDelete);
+                AddShortcutKeycaps(actions, "Connect Skill Button", _assets.KeyCtrl, _assets.KeyK);
+                AddShortcutKeycaps(actions, "Restore Skill Button", _assets.KeyCtrl, _assets.KeyR);
+                AddShortcutKeycaps(actions, "Undo Skill Button", _assets.KeyCtrl, _assets.KeyZ);
+                AddShortcutKeycaps(actions, "Search Skill Button", _assets.KeyCtrl, _assets.KeyF);
+                AddShortcutKeycaps(actions, "Select All Skill Button", _assets.KeyCtrl, _assets.KeyA);
+            }
 
-            RectTransform story = PanelRect(root, "Story Panel", new Vector2(0.115f, 0.035f), new Vector2(0.885f, 0.285f),
+            RectTransform menuHint = PanelRect(root, "Menu Hint", new Vector2(0.89f, 0.91f), new Vector2(0.982f, 0.97f),
+                Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.92f));
+            AddOutline(menuHint.gameObject, new Color(Gold.r, Gold.g, Gold.b, 0.52f), 1f);
+            TextRect(menuHint, "Menu Hint Text", new Vector2(0.08f, 0.08f), new Vector2(0.92f, 0.92f), "ESC  메뉴", 14, Parchment, TextAnchor.MiddleCenter);
+            if (_assets != null) AddShortcutKeycaps(root, "Menu Hint", _assets.KeyEscape);
+
+            ButtonRect(root, "Confirm Action Button", "ENTER  실행", new Vector2(0.875f, 0.085f), new Vector2(0.982f, 0.145f),
+                Gold, Ink, "Confirm Action Label");
+            if (_assets != null)
+            {
+                AddShortcutKeycaps(root, "Confirm Action Button", _assets.KeyEnter);
+                root.Find("Confirm Action Button").GetComponent<Image>().color = Color.clear;
+            }
+
+            RectTransform minimap = PanelRect(root, "Minimap Panel", new Vector2(0.018f, 0.025f), new Vector2(0.22f, 0.285f),
+                Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.92f));
+            ApplyPanelSprite(minimap, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
+            TextRect(minimap, "Minimap Heading", new Vector2(0.12f, 0.72f), new Vector2(0.88f, 0.84f), "WORLD MAP", 12, Parchment, TextAnchor.MiddleLeft);
+            RectTransform minimapPreview = PanelRect(minimap, "Minimap Preview", new Vector2(0.12f, 0.22f), new Vector2(0.88f, 0.70f),
+                Vector2.zero, Vector2.zero, new Color(0.12f, 0.16f, 0.12f, 1f));
+            TextRect(minimapPreview, "Minimap Placeholder", new Vector2(0.08f, 0.08f), new Vector2(0.92f, 0.92f),
+                "MAP\nPLACEHOLDER", 15, Muted, TextAnchor.MiddleCenter);
+            TextRect(minimap, "Minimap Status", new Vector2(0.12f, 0.08f), new Vector2(0.88f, 0.19f), "탐사율 0%", 11, Muted, TextAnchor.MiddleLeft);
+
+            RectTransform story = PanelRect(root, "Story Panel", new Vector2(0.245f, 0.025f), new Vector2(0.82f, 0.19f),
                 Vector2.zero, Vector2.zero, new Color(0.80f, 0.63f, 0.39f, 0.98f));
-            AddOutline(story.gameObject, new Color(0.95f, 0.79f, 0.48f, 1f), 2f);
-            RectTransform portraitFrame = PanelRect(story, "Speaker Portrait Frame", new Vector2(0.025f, 0.18f), new Vector2(0.17f, 0.88f),
-                Vector2.zero, Vector2.zero, new Color(0.33f, 0.20f, 0.14f, 1f));
-            AddOutline(portraitFrame.gameObject, new Color(0.55f, 0.34f, 0.22f, 1f), 2f);
-            ImageRect(portraitFrame, "Speaker Portrait", new Vector2(0.12f, 0.18f), new Vector2(0.88f, 0.88f),
+            ApplyPanelSprite(story, _assets != null ? _assets.DialogueBoxFaceset : null, Image.Type.Simple);
+            RectTransform portraitFrame = PanelRect(story, "Speaker Portrait Frame", new Vector2(0.025f, 0.18f), new Vector2(0.18f, 0.88f),
+                Vector2.zero, Vector2.zero, Color.clear);
+            ImageRect(portraitFrame, "Speaker Portrait", new Vector2(0.20f, 0.20f), new Vector2(0.80f, 0.80f),
                 _assets != null ? _assets.VillagerIdle : null, Color.white);
-            TextRect(story, "Dialogue Speaker", new Vector2(0.02f, 0.025f), new Vector2(0.18f, 0.18f),
-                "코드리아 주민", 15, new Color(0.38f, 0.20f, 0.13f, 1f), TextAnchor.MiddleCenter);
+            ImageRect(story, "Speaker Emote", new Vector2(0.115f, 0.70f), new Vector2(0.175f, 1.02f),
+                _assets != null && _assets.Emotes != null && _assets.Emotes.Length >= 23 ? _assets.Emotes[22] : null,
+                Color.white);
+            RectTransform speakerText = TextRect(story, "Dialogue Speaker", new Vector2(0.025f, 0.08f), new Vector2(0.18f, 0.20f),
+                "코드리아 주민", 11, new Color(0.38f, 0.20f, 0.13f, 1f), TextAnchor.MiddleCenter);
+            EnableBestFit(speakerText, 8, 11);
 
-            RectTransform speech = PanelRect(story, "Speech Bubble", new Vector2(0.19f, 0.12f), new Vector2(0.975f, 0.88f),
-                Vector2.zero, Vector2.zero, new Color(0.94f, 0.82f, 0.61f, 1f));
-            AddOutline(speech.gameObject, new Color(0.58f, 0.37f, 0.23f, 1f), 1f);
-            TextRect(speech, "Story Text", new Vector2(0.035f, 0.17f), new Vector2(0.91f, 0.89f),
-                "이곳에서 벌어진 이야기가 표시됩니다.", 18, new Color(0.35f, 0.20f, 0.13f, 1f), TextAnchor.UpperLeft);
-            ButtonRect(speech, "Next Dialogue Button", "다음 ▶", new Vector2(0.83f, 0.03f), new Vector2(0.975f, 0.18f),
+            RectTransform speech = PanelRect(story, "Speech Bubble", new Vector2(0.19f, 0.10f), new Vector2(0.975f, 0.90f),
+                Vector2.zero, Vector2.zero, Color.clear);
+            RectTransform storyText = TextRect(speech, "Story Text", new Vector2(0.055f, 0.34f), new Vector2(0.95f, 0.76f),
+                "이곳에서 벌어진 이야기가 표시됩니다.", 14, new Color(0.35f, 0.20f, 0.13f, 1f), TextAnchor.UpperLeft);
+            EnableBestFit(storyText, 10, 14);
+            ButtonRect(speech, "Next Dialogue Button", "다음 ▶", new Vector2(0.86f, 0.10f), new Vector2(0.96f, 0.28f),
                 new Color(0.58f, 0.37f, 0.23f, 1f), Parchment, "Next Dialogue Label");
-            TextRect(speech, "Action Hint", new Vector2(0.035f, 0.025f), new Vector2(0.80f, 0.17f),
-                "대화를 읽은 뒤 이동하거나 스킬을 사용할 수 있습니다.", 13, new Color(0.49f, 0.31f, 0.20f, 1f), TextAnchor.MiddleLeft);
+            RectTransform actionHint = TextRect(speech, "Action Hint", new Vector2(0.055f, 0.10f), new Vector2(0.82f, 0.28f),
+                "대화를 읽은 뒤 이동하거나 스킬을 사용할 수 있습니다.", 11, new Color(0.49f, 0.31f, 0.20f, 1f), TextAnchor.MiddleLeft);
+            EnableBestFit(actionHint, 8, 11);
             root.gameObject.SetActive(false);
         }
 
@@ -214,6 +404,71 @@ namespace KeyboardWanderer.Editor
             image.preserveAspect = true;
             image.raycastTarget = false;
             return rect;
+        }
+
+        private static void AddShortcutKeycaps(Transform parent, string buttonName, params Sprite[] sprites)
+        {
+            Transform button = parent.Find(buttonName);
+            if (button == null || sprites == null) return;
+
+            int validCount = 0;
+            float totalWidth = 0f;
+            for (int i = 0; i < sprites.Length; i++)
+            {
+                if (sprites[i] == null) continue;
+                validCount++;
+                totalWidth += Mathf.Max(1f, sprites[i].rect.width);
+            }
+            if (validCount == 0) return;
+
+            Text label = button.GetComponentInChildren<Text>(true);
+            if (label != null) label.color = Color.clear;
+
+            RectTransform keycapRoot = RectObject(button, "Ninja Keycaps", new Vector2(0.08f, 0.14f),
+                new Vector2(0.92f, 0.86f), Vector2.zero, Vector2.zero);
+            int cursor = 0;
+            float cursorWidth = 0f;
+            for (int i = 0; i < sprites.Length; i++)
+            {
+                if (sprites[i] == null) continue;
+                float spriteWidth = Mathf.Max(1f, sprites[i].rect.width);
+                RectTransform key = ImageRect(keycapRoot, "Key " + cursor,
+                    new Vector2(cursorWidth / totalWidth, 0f),
+                    new Vector2((cursorWidth + spriteWidth) / totalWidth, 1f), sprites[i], Color.white);
+                key.offsetMin = new Vector2(1f, 0f);
+                key.offsetMax = new Vector2(-1f, 0f);
+                cursorWidth += spriteWidth;
+                cursor++;
+            }
+        }
+
+        private static void AddSkillIcon(Transform parent, string buttonName, Sprite sprite)
+        {
+            Transform button = parent.Find(buttonName);
+            if (button == null || sprite == null) return;
+            Image image = ImageRect(button, "Ninja UI Icon", new Vector2(0.68f, 0.54f),
+                new Vector2(0.96f, 0.92f), sprite, Color.white).GetComponent<Image>();
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+        }
+
+        private static void ApplyPanelSprite(RectTransform panel, Sprite sprite, Image.Type type)
+        {
+            if (panel == null || sprite == null) return;
+            Image image = panel.GetComponent<Image>();
+            image.sprite = sprite;
+            image.type = type;
+            image.color = Color.white;
+        }
+
+        private static void EnableBestFit(RectTransform rect, int minSize, int maxSize)
+        {
+            if (rect == null) return;
+            Text text = rect.GetComponent<Text>();
+            if (text == null) return;
+            text.resizeTextForBestFit = true;
+            text.resizeTextMinSize = minSize;
+            text.resizeTextMaxSize = maxSize;
         }
 
         private static void SliderRect(Transform parent, string name, Vector2 min, Vector2 max)

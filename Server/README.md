@@ -1,10 +1,10 @@
-# 《넙죽이와 붕괴한 코드 왕국》 authoritative server
+# 《Ninja Adventure》 authoritative server
 
 이 서버는 코드리아 v4 캠페인의 규칙 권위를 소유합니다. LLM은 확정된 판정의 짧은 서사만 제안하며 월드 geometry, 이동, D20, 비용, 관리자 권한, 기술 부채와 결말 ID를 바꾸지 못합니다.
 
 ## 고정 제품 계약
 
-- 게임: `넙죽이와 붕괴한 코드 왕국`
+- 게임: `Ninja Adventure`
 - 세계: `WORLD_CODRIA` / 코드리아
 - 주인공: `PROTAGONIST_NUPJUKYI` / 넙죽이
 - 유물: `ARTIFACT_ADMIN_KEYBOARD` / 관리자 키보드

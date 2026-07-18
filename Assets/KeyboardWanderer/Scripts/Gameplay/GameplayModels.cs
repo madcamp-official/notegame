@@ -13,7 +13,10 @@ namespace KeyboardWanderer.Gameplay
         // Numeric values 4..6 and 9 were legacy public actions. They intentionally remain
         // unassigned so old payloads deserialize to an unknown value and are rejected.
         Restore = 7,
-        Undo = 8
+        Undo = 8,
+        Interact = 10,
+        Search = 11,
+        SelectAll = 12
     }
 
     public enum PlayerInputType
@@ -136,9 +139,9 @@ namespace KeyboardWanderer.Gameplay
         public static TurnRequest UseSkill(string idempotencyKey, long expectedRunVersion, AbilityKind skill,
             Guid? targetEntityId = null, Guid? secondaryTargetEntityId = null, GridCoord? destination = null)
         {
-            if (!IsPublicKeyboardSkill(skill))
+            if (!IsPublicKeyboardSkill(skill) && skill != AbilityKind.Interact)
                 throw new ArgumentException(
-                    "USE_SKILL accepts only COPY, DELETE, CONNECT, RESTORE, or UNDO.", nameof(skill));
+                    "USE_SKILL accepts a keyboard skill or INTERACT.", nameof(skill));
             return new TurnRequest(idempotencyKey, expectedRunVersion, skill, targetEntityId,
                 secondaryTargetEntityId, destination, string.Empty);
         }
@@ -147,7 +150,8 @@ namespace KeyboardWanderer.Gameplay
         {
             return skill == AbilityKind.Copy || skill == AbilityKind.Delete ||
                    skill == AbilityKind.Connect || skill == AbilityKind.Restore ||
-                   skill == AbilityKind.Undo;
+                   skill == AbilityKind.Undo || skill == AbilityKind.Search ||
+                   skill == AbilityKind.SelectAll;
         }
 
         public string Fingerprint()

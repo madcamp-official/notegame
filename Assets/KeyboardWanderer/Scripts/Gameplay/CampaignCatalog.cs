@@ -78,7 +78,7 @@ namespace KeyboardWanderer.Gameplay
     }
 
     /// <summary>
-    /// Fixed product contract for 《넙죽이와 붕괴한 코드 왕국》. A seed may bind content to
+    /// Fixed product contract for 《Ninja Adventure》. A seed may bind content to
     /// existing slots, but cannot replace Codria, Nupjukyi, the Administrator Keyboard, the three
     /// access levels, or the six campaign-region axes.
     /// </summary>
@@ -86,7 +86,7 @@ namespace KeyboardWanderer.Gameplay
     {
         public const string RulesVersion = "codria-campaign.v4";
         public const string CampaignId = "WORLD_CODRIA";
-        public const string CampaignTitle = "넙죽이와 붕괴한 코드 왕국";
+        public const string CampaignTitle = "Ninja Adventure";
         public const string WorldId = "WORLD_CODRIA";
         public const string WorldName = "코드리아";
         public const string ProtagonistId = "PROTAGONIST_NUPJUKYI";
@@ -160,9 +160,7 @@ namespace KeyboardWanderer.Gameplay
             string signature = SeedSignature(worldSeed);
             string[] npcNames = PickDistinct(worldSeed, NpcNamePool, 6, 37);
             AdminAccessBinding[] bindings = CreateAccessBindings(worldSeed);
-            string premise = "현실의 개발자 넙죽이는 붕괴 중인 코드리아에 떨어져 관리자 키보드를 깨운다. " +
-                "여섯 지역 축을 잇는 경로에서 서로 다른 방식으로 관리자 권한 3단계를 획득하고, " +
-                "기술 부채와 과거 선택을 감당하며 루트 시스템의 최종 배치를 결정해야 한다.";
+            string premise = "현생에서 개발자였던 내가 이세계에서 키보드워리어?!";
 
             var beats = new List<CampaignBeatState>
             {

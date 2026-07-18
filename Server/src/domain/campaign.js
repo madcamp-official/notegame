@@ -48,6 +48,35 @@ export const CAMPAIGN_PHASES = Object.freeze([
   Object.freeze({ id: "final_deployment", name: "Final deployment", nameKo: "최종 배치와 결말" })
 ]);
 
+// The nine internal beats remain useful as deterministic progression checkpoints, while
+// these seven macro phases are the immutable story spine exposed to the scene director.
+export const CAMPAIGN_MACRO_PHASES = Object.freeze([
+  Object.freeze({ id: "MACRO_ARRIVAL_AWAKENING", order: 1, nameKo: "코드리아 추락과 관리자 키보드 각성" }),
+  Object.freeze({ id: "MACRO_ADMIN_ACCESS_1", order: 2, nameKo: "관리자 권한 I" }),
+  Object.freeze({ id: "MACRO_ADMIN_ACCESS_2", order: 3, nameKo: "관리자 권한 II" }),
+  Object.freeze({ id: "MACRO_COLLAPSE_TRUTH", order: 4, nameKo: "붕괴 원인의 진실" }),
+  Object.freeze({ id: "MACRO_TECHNICAL_DEBT_RETURN", order: 5, nameKo: "기술 부채와 과거 선택의 역류" }),
+  Object.freeze({ id: "MACRO_ADMIN_ACCESS_3", order: 6, nameKo: "관리자 권한 III" }),
+  Object.freeze({ id: "MACRO_ROOT_DECISION", order: 7, nameKo: "루트 시스템과 최종 결정" })
+]);
+
+const MACRO_PHASE_BY_BEAT = Object.freeze({
+  "beat.codria_crash": "MACRO_ARRIVAL_AWAKENING",
+  "beat.first_region_problem": "MACRO_ARRIVAL_AWAKENING",
+  "beat.admin_access_1": "MACRO_ADMIN_ACCESS_1",
+  "beat.admin_access_2": "MACRO_ADMIN_ACCESS_2",
+  "beat.internal_cause": "MACRO_COLLAPSE_TRUTH",
+  "beat.technical_debt_return": "MACRO_TECHNICAL_DEBT_RETURN",
+  "beat.admin_access_3": "MACRO_ADMIN_ACCESS_3",
+  "beat.root_system_entry": "MACRO_ROOT_DECISION",
+  "beat.final_deployment": "MACRO_ROOT_DECISION"
+});
+
+export function macroPhaseForBeat(beatOrId) {
+  const id = typeof beatOrId === "string" ? beatOrId : beatOrId?.id;
+  return CAMPAIGN_MACRO_PHASES.find((phase) => phase.id === MACRO_PHASE_BY_BEAT[id]) || CAMPAIGN_MACRO_PHASES[0];
+}
+
 const GENERATIVE_ALLOWED_ABILITIES = Object.freeze({
   ARRIVAL_CATALYST: Object.freeze(["connect"]),
   LOCAL_STAKES: Object.freeze(["copy", "restore"]),
@@ -296,6 +325,7 @@ function createBeats(worldSeed, turnLimit, genome, tokens) {
       title: definition.title,
       description: definition.description,
       phaseId: CAMPAIGN_PHASES[index].id,
+      macroPhaseId: macroPhaseForBeat(definition.id).id,
       requiredAbility,
       allowedAbilities: [...definition.abilities],
       requiredCampaignRole: definition.role,
@@ -363,7 +393,7 @@ export function createCampaignBlueprint({ worldSeed, requestedArchetype = null, 
   for (const quest of questSeeds) quest.summary = quest.description;
   const requiredStoryBeats = createBeats(worldSeed, turnLimit, genome, tokens);
   const endingCandidates = createEndingCandidates(worldSeed, genome);
-  const premise = `현실의 개발자 넙죽이가 코드리아에 추락해 관리자 키보드를 각성한다. ${genome.crisis}을 멈추려면 서로 다른 지역과 해결 방식으로 관리자 권한 3단계를 획득하고, 붕괴 원인이 관리자 통제 시스템 안에 있음을 밝혀 루트 시스템에서 ${genome.dilemma}.`;
+  const premise = `${genome.crisis}에 빠진 코드리아를 구하기 위해 넙죽이가 관리자 키보드의 권한을 각성한다.`;
   const tone = ["keyboard_fantasy", genome.palette, pick(worldSeed, "tone", ["tender_mystery", "melancholy_adventure", "hopeful_tension", "strange_folklore"] )];
 
   const blueprint = {
@@ -395,6 +425,7 @@ export function createCampaignBlueprint({ worldSeed, requestedArchetype = null, 
     progressTokenDefinitions: clone(tokens),
     metricDefinitions: [...METRIC_KEYS],
     campaignPhases: clone(CAMPAIGN_PHASES),
+    campaignMacroPhases: clone(CAMPAIGN_MACRO_PHASES),
     canonicalFactTemplates: [
       { id: deterministicUuid(`${worldSeed}:fact:world`), subject: "world", predicate: "identity", value: WORLD_CODRIA, label: WORLD_NAME_KO, type: "canonical" },
       { id: deterministicUuid(`${worldSeed}:fact:player`), subject: "protagonist", predicate: "identity", value: PROTAGONIST_NUPJUKYI, label: PROTAGONIST_NAME_KO, type: "canonical" },
@@ -519,6 +550,7 @@ export function advanceStoryDirector(run, turnNo, events, evidence = {}) {
   if (active.status === "pending") active.status = "active";
   run.currentAct = forcedConvergence ? "final_convergence" : active.phaseId;
   run.campaignPhase = run.currentAct;
+  run.currentMacroPhase = clone(macroPhaseForBeat(active));
   run.currentStoryBeat = { ...clone(active), act: run.currentAct };
   if (turnNo === active.targetTurn && !["completed", "skipped"].includes(active.status)) {
     const loopId = deterministicUuid(`${run.id}:beat-loop:${active.id}`);

@@ -77,8 +77,9 @@ test("health and campaign endpoints expose deterministic previews while each run
   const health = await jsonRequest(baseUrl, "/health", { userId: undefined });
   assert.equal(health.response.status, 200);
   assert.equal(health.payload.authoritativeTurns, true);
+  assert.equal(health.payload.butterflySceneDirector, true);
   assert.equal(health.payload.productContract.world.id, "WORLD_CODRIA");
-  assert.deepEqual(health.payload.productContract.skills, ["COPY", "DELETE", "CONNECT", "RESTORE", "UNDO"]);
+  assert.deepEqual(health.payload.productContract.skills, ["COPY", "DELETE", "CONNECT", "RESTORE", "UNDO", "SEARCH", "SELECT_ALL"]);
 
   const created = await jsonRequest(baseUrl, "/v1/campaigns", {
     method: "POST",
@@ -95,10 +96,11 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.ok(created.payload.campaign.world.routes.length >= 13);
   assert.equal(created.payload.campaign.world.generationReport.status, "valid");
   assert.equal(created.payload.campaign.archetype, "codria-admin-keyboard-roguelike");
-  assert.equal(created.payload.campaign.gameTitle, "넙죽이와 붕괴한 코드 왕국");
+  assert.equal(created.payload.campaign.gameTitle, "Ninja Adventure");
   assert.equal(created.payload.campaign.worldId, "WORLD_CODRIA");
   assert.ok(created.payload.campaign.premise.length > 20);
   assert.equal(created.payload.campaign.requiredStoryBeats.length, 9);
+  assert.equal(created.payload.campaign.campaignMacroPhases.length, 7);
   assert.equal(created.payload.campaign.endingCandidates.length, 5);
   assert.equal("tiles" in created.payload.campaign.world, false);
 
@@ -118,7 +120,8 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.equal(runCreated.payload.run.currentTurn, 0);
   assert.notEqual(runCreated.payload.run.world.layoutHash, created.payload.campaign.world.layoutHash);
   assert.equal(runCreated.payload.run.currentBeat, runCreated.payload.run.currentStoryBeat.title);
-  assert.equal(runCreated.payload.run.campaignTitle, "넙죽이와 붕괴한 코드 왕국");
+  assert.equal(runCreated.payload.run.currentMacroPhase.id, "MACRO_ARRIVAL_AWAKENING");
+  assert.equal(runCreated.payload.run.campaignTitle, "Ninja Adventure");
   assert.notEqual(runCreated.payload.run.campaignContentHash, created.payload.campaign.contentHash);
   assert.equal(runCreated.payload.run.generationPlan.generationMetadata.fallbackUsed, true);
   assert.equal(runCreated.payload.run.canonicalFacts.length, 7);
@@ -127,7 +130,7 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.equal(runCreated.payload.run.health, 12);
   assert.equal(runCreated.payload.run.maxHealth, 12);
   assert.equal(runCreated.payload.run.maxFocus, 10);
-  assert.deepEqual(runCreated.payload.run.abilities, ["copy", "delete", "connect", "restore", "undo"]);
+  assert.deepEqual(runCreated.payload.run.abilities, ["copy", "delete", "connect", "restore", "undo", "search", "select_all"]);
   assert.deepEqual(runCreated.payload.run.inputTypes, ["MOVE", "USE_SKILL"]);
 
   const hidden = await jsonRequest(baseUrl, `/v1/campaigns/${campaignId}`, { userId: OTHER_USER_ID });
@@ -181,12 +184,15 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   assert.ok(Array.isArray(first.payload.turn.stateDelta.events));
   assert.ok(Array.isArray(first.payload.turn.narrative.dialogue));
   assert.ok(Array.isArray(first.payload.turn.narrative.dialogueDetails));
+  assert.ok(Array.isArray(first.payload.turn.sceneSequence));
+  assert.equal(first.payload.turn.sceneDecision.decisionNo, 1);
   assert.equal(first.payload.run.version, 2);
   assert.equal(first.payload.run.currentTurn, 1);
   assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
   assert.equal(first.payload.turn.actionContext, "INVESTIGATION");
   assert.equal(first.payload.run.entities.some((entity) => entity.id === target.id), false);
   assert.equal(first.payload.run.abilityUsageHistory.length, 1);
+  assert.equal(first.payload.run.directorState.decisionNo, 1);
 
   const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, { method: "POST", body: request });
   assert.equal(replay.response.status, 200);
@@ -212,6 +218,49 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   const fetched = await jsonRequest(baseUrl, `/v1/runs/${run.id}/turns/1`);
   assert.equal(fetched.response.status, 200);
   assert.equal(fetched.payload.turn.narrative.model, "fake-narrator");
+});
+
+test("safe travel commits one butterfly-effect scene without consuming a campaign turn", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST",
+    body: { title: "Travel scene", worldSeed: 24680, turnLimit: 30 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const occupied = new Set(run.entities.filter((entity) => entity.id !== player.id && entity.blocking)
+    .map((entity) => `${entity.position.x},${entity.position.y}`));
+  const destination = [
+    { x: player.position.x + 1, y: player.position.y },
+    { x: player.position.x, y: player.position.y + 1 },
+    { x: player.position.x - 1, y: player.position.y },
+    { x: player.position.x, y: player.position.y - 1 }
+  ].find((point) => !occupied.has(`${point.x},${point.y}`) &&
+    point.x >= 0 && point.y >= 0 && point.x < run.world.width && point.y < run.world.height &&
+    !["wall", "water"].includes(run.world.tileLegend[decodeTiles(run.world)[point.y * run.world.width + point.x]]));
+  assert.ok(destination);
+  const request = {
+    inputType: "MOVE",
+    idempotencyKey: "travel-scene-0001",
+    expectedRunVersion: run.version,
+    destination
+  };
+  const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, { method: "POST", body: request });
+  assert.equal(first.response.status, 201);
+  assert.equal(first.payload.navigation.campaignTurnConsumed, false);
+  assert.equal(first.payload.run.currentTurn, 0);
+  assert.equal(first.payload.run.version, 2);
+  assert.equal(first.payload.navigation.sceneDecision.decisionNo, 1);
+  assert.ok(first.payload.navigation.sceneSequence.length >= 1);
+  assert.equal(first.payload.run.directorState.decisionNo, 1);
+  assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
+
+  const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, { method: "POST", body: request });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.payload.fromIdempotencyCache, true);
+  assert.equal(replay.payload.navigation.id, first.payload.navigation.id);
+  assert.equal(replay.payload.run.directorState.decisionNo, 1);
 });
 
 test("abandon and resume require the current run version", async (t) => {

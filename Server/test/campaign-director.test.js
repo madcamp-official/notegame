@@ -65,7 +65,7 @@ test("campaign seeds preserve the nine-beat Codria contract while varying bounde
     roleMappings.add(world.areas.filter((area) => area.campaignRole)
       .map((area) => `${area.campaignRole}:${area.biomeId}`).sort().join("|"));
   }
-  assert.deepEqual([...titles], ["넙죽이와 붕괴한 코드 왕국"]);
+  assert.deepEqual([...titles], ["Ninja Adventure"]);
   assert.ok(premises.size > 1);
   assert.ok(npcSignatures.size > 1);
   assert.ok(questSignatures.size > 1);

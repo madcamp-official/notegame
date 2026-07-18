@@ -8,6 +8,7 @@ using KeyboardWanderer.Gameplay;
 using KeyboardWanderer.Networking;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.Tilemaps;
 using UnityEngine.TestTools;
 
 namespace KeyboardWanderer.Tests.PlayMode
@@ -15,6 +16,7 @@ namespace KeyboardWanderer.Tests.PlayMode
     public sealed class ControllerFlowPlayModeTests
     {
         private GameObject _controllerObject;
+        private KeyboardWandererAuthoringSettings _authoringSettings;
 
         [SetUp]
         public void SetUp()
@@ -27,6 +29,7 @@ namespace KeyboardWanderer.Tests.PlayMode
         {
             LocalRunSaveService.Delete();
             if (_controllerObject != null) UnityEngine.Object.DestroyImmediate(_controllerObject);
+            if (_authoringSettings != null) UnityEngine.Object.DestroyImmediate(_authoringSettings);
         }
 
         [UnityTest]
@@ -37,9 +40,7 @@ namespace KeyboardWanderer.Tests.PlayMode
                 entity.AssetId == CampaignCatalog.AdministratorKeyboardId);
             var service = new LocalTurnService(state, new SequenceD20Source(20));
 
-            _controllerObject = new GameObject("Codria Controller PlayMode Test");
-            KeyboardWandererDemoController controller =
-                _controllerObject.AddComponent<KeyboardWandererDemoController>();
+            KeyboardWandererDemoController controller = CreateAuthoredController("Codria Controller PlayMode Test");
             yield return null;
 
             Invoke(controller, "StartRun", service, false);
@@ -66,9 +67,7 @@ namespace KeyboardWanderer.Tests.PlayMode
         public IEnumerator Controller_OffersTwoOrThreeCanonicalRecommendationsAndAtMostTwoSecondaryObjectives()
         {
             LocalTurnService service = LocalTurnService.CreateDemo(7302);
-            _controllerObject = new GameObject("Codria Low Cognitive UI Test");
-            KeyboardWandererDemoController controller =
-                _controllerObject.AddComponent<KeyboardWandererDemoController>();
+            KeyboardWandererDemoController controller = CreateAuthoredController("Codria Low Cognitive UI Test");
             yield return null;
 
             Invoke(controller, "StartRun", service, false);
@@ -85,13 +84,13 @@ namespace KeyboardWanderer.Tests.PlayMode
         [Test]
         public void RunDto_ParsesCodriaCampaignAndSharedEndingState()
         {
-            const string json = "{\"campaignTitle\":\"넙죽이와 붕괴한 코드 왕국\"," +
+            const string json = "{\"campaignTitle\":\"Ninja Adventure\"," +
                                 "\"premise\":\"코드리아 붕괴 복구\",\"safeTravelCount\":4," +
                                 "\"currentBeat\":\"관리자 통제 시스템 내부 원인 확인\"," +
                                 "\"endingCode\":\"ENDING_PRESERVE_THE_SCARS\"}";
             GameApiClient.RunSnapshot run = JsonUtility.FromJson<GameApiClient.RunSnapshot>(json);
 
-            Assert.That(run.campaignTitle, Is.EqualTo("넙죽이와 붕괴한 코드 왕국"));
+            Assert.That(run.campaignTitle, Is.EqualTo("Ninja Adventure"));
             Assert.That(run.premise, Is.EqualTo("코드리아 붕괴 복구"));
             Assert.That(run.safeTravelCount, Is.EqualTo(4));
             Assert.That(run.currentBeat, Does.Contain("내부 원인"));
@@ -104,6 +103,81 @@ namespace KeyboardWanderer.Tests.PlayMode
                 BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(method, Is.Not.Null, "Missing private method " + name);
             return method.Invoke(target, values);
+        }
+
+        private KeyboardWandererDemoController CreateAuthoredController(string name)
+        {
+            _controllerObject = new GameObject(name);
+            _controllerObject.SetActive(false);
+
+            Transform fixtures = Child(_controllerObject.transform, "Authored Test Fixtures");
+            KeyboardWandererEntityView entityPrefab = BuildEntityFixture(fixtures);
+            GameObject landmarkPrefab = new GameObject("Landmark Fixture", typeof(SpriteRenderer));
+            landmarkPrefab.transform.SetParent(fixtures, false);
+
+            GameObject worldObject = new GameObject("Authored World", typeof(Grid), typeof(KeyboardWandererWorldView));
+            worldObject.transform.SetParent(_controllerObject.transform, false);
+            GameObject terrainObject = new GameObject("Terrain", typeof(Tilemap), typeof(TilemapRenderer));
+            terrainObject.transform.SetParent(worldObject.transform, false);
+            Transform staticRoot = Child(worldObject.transform, "Static Objects");
+            Transform runtimeRoot = Child(worldObject.transform, "Runtime Objects");
+            Transform entities = Child(runtimeRoot, "Entities");
+            Transform landmarks = Child(runtimeRoot, "Landmarks");
+            Transform effects = Child(runtimeRoot, "Effects");
+            GameObject cursorObject = new GameObject("Selection Cursor", typeof(SpriteRenderer));
+            cursorObject.transform.SetParent(worldObject.transform, false);
+            KeyboardWandererWorldView world = worldObject.GetComponent<KeyboardWandererWorldView>();
+            world.Configure(terrainObject.GetComponent<Tilemap>(), staticRoot, entities, landmarks, effects,
+                cursorObject.GetComponent<SpriteRenderer>());
+
+            GameObject cameraObject = new GameObject(
+                "Authored Camera", typeof(Camera), typeof(AudioListener), typeof(KeyboardWandererCameraController));
+            cameraObject.transform.SetParent(_controllerObject.transform, false);
+            KeyboardWandererCameraController cameraController =
+                cameraObject.GetComponent<KeyboardWandererCameraController>();
+            cameraController.Configure(cameraObject.GetComponent<Camera>());
+            GameObject audioObject = new GameObject("Authored Audio", typeof(KeyboardWandererAudioController));
+            audioObject.transform.SetParent(_controllerObject.transform, false);
+            AudioSource music = new GameObject("Music", typeof(AudioSource)).GetComponent<AudioSource>();
+            music.transform.SetParent(audioObject.transform, false);
+            AudioSource sfx = new GameObject("SFX", typeof(AudioSource)).GetComponent<AudioSource>();
+            sfx.transform.SetParent(audioObject.transform, false);
+            KeyboardWandererAudioController audio = audioObject.GetComponent<KeyboardWandererAudioController>();
+            audio.Configure(music, sfx);
+
+            _authoringSettings = ScriptableObject.CreateInstance<KeyboardWandererAuthoringSettings>();
+            _authoringSettings.Configure(null, entityPrefab, landmarkPrefab);
+            KeyboardWandererInputController input = _controllerObject.AddComponent<KeyboardWandererInputController>();
+            KeyboardWandererDemoController controller = _controllerObject.AddComponent<KeyboardWandererDemoController>();
+            controller.ConfigureAuthoredContent(_authoringSettings, null, world, cameraObject.GetComponent<Camera>(),
+                cameraController, music, sfx, audio, input);
+            _controllerObject.SetActive(true);
+            return controller;
+        }
+
+        private static KeyboardWandererEntityView BuildEntityFixture(Transform parent)
+        {
+            GameObject root = new GameObject("Entity Fixture", typeof(KeyboardWandererEntityView));
+            root.transform.SetParent(parent, false);
+            SpriteRenderer actor = new GameObject("Actor", typeof(SpriteRenderer), typeof(Animator))
+                .GetComponent<SpriteRenderer>();
+            actor.transform.SetParent(root.transform, false);
+            SpriteRenderer healthBack = new GameObject("Health Back", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
+            healthBack.transform.SetParent(root.transform, false);
+            SpriteRenderer healthFill = new GameObject("Health Fill", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
+            healthFill.transform.SetParent(root.transform, false);
+            TextMesh label = new GameObject("Finale Label", typeof(TextMesh)).GetComponent<TextMesh>();
+            label.transform.SetParent(root.transform, false);
+            KeyboardWandererEntityView view = root.GetComponent<KeyboardWandererEntityView>();
+            view.Configure(actor, healthBack, healthFill, label);
+            return view;
+        }
+
+        private static Transform Child(Transform parent, string name)
+        {
+            var child = new GameObject(name);
+            child.transform.SetParent(parent, false);
+            return child.transform;
         }
 
         private static void SetField(object target, string name, object value)

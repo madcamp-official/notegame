@@ -111,9 +111,9 @@ namespace KeyboardWanderer.Gameplay
             if ((request.Ability == AbilityKind.Move && request.InputType != PlayerInputType.MOVE) ||
                 (request.Ability != AbilityKind.Move && request.InputType != PlayerInputType.USE_SKILL) ||
                 (request.InputType == PlayerInputType.USE_SKILL &&
-                 !TurnRequest.IsPublicKeyboardSkill(request.Ability)))
+                 !TurnRequest.IsPublicKeyboardSkill(request.Ability) && request.Ability != AbilityKind.Interact))
                 return RulePreparation.Invalid(TurnErrorCode.InvalidRequest,
-                    "Public input is MOVE or USE_SKILL with COPY, DELETE, CONNECT, RESTORE, or UNDO.");
+                    "Public input is MOVE or USE_SKILL with a keyboard skill or INTERACT.");
             if (!state.Spatial.TryGetEntity(state.PlayerEntityId, out EntityState player) ||
                 !player.IsActive || player.Health <= 0)
                 return RulePreparation.Invalid(TurnErrorCode.EntityNotFound, "Player entity is missing or defeated.");
@@ -127,6 +127,9 @@ namespace KeyboardWanderer.Gameplay
                 case AbilityKind.Connect: preparation = PrepareConnect(state, request, player); break;
                 case AbilityKind.Restore: preparation = PrepareRestore(state, request, player); break;
                 case AbilityKind.Undo: preparation = PrepareUndo(state); break;
+                case AbilityKind.Interact: preparation = PrepareInteract(state, request, player); break;
+                case AbilityKind.Search: preparation = PrepareAreaSkill(state, request, player, false); break;
+                case AbilityKind.SelectAll: preparation = PrepareAreaSkill(state, request, player, true); break;
                 default: preparation = RulePreparation.Invalid(TurnErrorCode.InvalidRequest, "Unknown ability."); break;
             }
             // Free text is never rules authority. Skill, targets, location, and scene state alone
@@ -142,8 +145,14 @@ namespace KeyboardWanderer.Gameplay
             switch (request.Ability)
             {
                 case AbilityKind.Copy:
+                case AbilityKind.Search:
+                    return ActionContext.Investigation;
+                case AbilityKind.Interact:
+                    if (TryTarget(state, request.TargetEntityId, out EntityState interactTarget) &&
+                        interactTarget.Kind == EntityKind.Npc) return ActionContext.Negotiation;
                     return ActionContext.Investigation;
                 case AbilityKind.Restore:
+                case AbilityKind.SelectAll:
                 case AbilityKind.Undo: return ActionContext.Deployment;
                 case AbilityKind.Delete:
                     if (TryTarget(state, request.TargetEntityId, out EntityState deleteTarget) &&
@@ -213,6 +222,9 @@ namespace KeyboardWanderer.Gameplay
                     case AbilityKind.Connect: ApplyConnect(state, request, events); break;
                     case AbilityKind.Restore: ApplyRestore(state, preparation, events); break;
                     case AbilityKind.Undo: ApplyUndo(state, preparation.FocusCost, events); break;
+                    case AbilityKind.Interact: ApplyInteract(state, request, events); break;
+                    case AbilityKind.Search: ApplyAreaScan(state, 6, "SEARCH_REVEALED", events); break;
+                    case AbilityKind.SelectAll: ApplyAreaScan(state, 4, "AREA_SELECTED", events); break;
                 }
             }
             else if (request.Ability == AbilityKind.Undo && preparation.FocusCost > 0)
@@ -400,6 +412,52 @@ namespace KeyboardWanderer.Gameplay
                 " without rewinding time, rolls, layout, or story facts", 14, 5, 3);
         }
 
+        private static RulePreparation PrepareAreaSkill(RunState state, TurnRequest request,
+            EntityState player, bool selectAll)
+        {
+            int cost = selectAll ? 3 : 1;
+            if (state.Focus < cost)
+                return RulePreparation.Invalid(TurnErrorCode.InsufficientResource,
+                    (selectAll ? "Ctrl A" : "Ctrl F") + " requires " + cost + " focus.");
+            if (request.TargetEntityId.HasValue || request.SecondaryTargetEntityId.HasValue || request.Destination.HasValue)
+                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
+                    (selectAll ? "Ctrl A" : "Ctrl F") + " does not require a target.");
+            int radius = selectAll ? 4 : 6;
+            return RulePreparation.Valid((selectAll ? "Select administrator area" : "Search nearby entities") +
+                " within " + radius + " tiles of " + player.Position,
+                selectAll ? 14 : 9, selectAll ? 4 : 5, cost);
+        }
+
+        private static void ApplyAreaScan(RunState state, int radius, string eventName, List<string> events)
+        {
+            if (!state.Spatial.TryGetEntity(state.PlayerEntityId, out EntityState player)) return;
+            int count = 0;
+            foreach (EntityState entity in state.Spatial.Entities)
+            {
+                if (!entity.IsActive || entity.EntityId == state.PlayerEntityId ||
+                    player.Position.ManhattanDistance(entity.Position) > radius) continue;
+                events.Add(eventName + ":" + entity.EntityId);
+                count++;
+            }
+            events.Add(eventName + "_COUNT:" + count);
+        }
+
+        private static RulePreparation PrepareInteract(RunState state, TurnRequest request, EntityState player)
+        {
+            if (request.SecondaryTargetEntityId.HasValue || request.Destination.HasValue ||
+                !TryTarget(state, request.TargetEntityId, out EntityState target))
+                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
+                    "Choose one active object or non-hostile NPC to interact with.");
+            if ((target.Kind != EntityKind.Prop && target.Kind != EntityKind.Npc) || target.IsHostile)
+                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
+                    "Only objects and non-hostile NPCs can be interacted with.");
+            if (player.Position.ManhattanDistance(target.Position) > 2)
+                return RulePreparation.Invalid(TurnErrorCode.OutOfRange,
+                    "Interaction target must be within 2 tiles.");
+            return RulePreparation.Valid("Interact with " + target.DisplayName, 8, 3, 0, null,
+                target.EntityId);
+        }
+
         private static void ApplyMove(RunState state, TurnRequest request, List<string> events)
         {
             Guid moverId = request.TargetEntityId.HasValue ? request.TargetEntityId.Value : state.PlayerEntityId;
@@ -483,6 +541,22 @@ namespace KeyboardWanderer.Gameplay
                 throw new InvalidOperationException("Validated restore failed during commit: " + error);
             record.IsConsumed = true;
             events.Add("ENTITY_RESTORED:" + record.Snapshot.EntityId + ":from-turn=" + record.CapturedTurn);
+        }
+
+        private static void ApplyInteract(RunState state, TurnRequest request, List<string> events)
+        {
+            if (!state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState target))
+                throw new InvalidOperationException("Validated interaction target disappeared during commit.");
+            bool firstInteraction = !target.IsOpened;
+            if (firstInteraction && !state.Spatial.TryOpen(target.EntityId, out string error))
+                throw new InvalidOperationException("Validated interaction failed during commit: " + error);
+            events.Add("ENTITY_INTERACTED:" + target.EntityId + ":" + target.DisplayName);
+            if (firstInteraction && target.AssetId.StartsWith("item.crate", StringComparison.Ordinal))
+            {
+                int before = state.Focus;
+                state.Focus = Math.Min(state.MaxFocus, state.Focus + 1);
+                if (state.Focus > before) events.Add("RESOURCE_CHANGED:focus:+1");
+            }
         }
 
         private static void ApplyUndo(RunState state, int focusCost, List<string> events)

@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { assert, AppError } from "../errors.js";
 import { clone, deterministicUuid, fingerprint } from "./serialization.js";
-import { advanceStoryDirector, campaignAct, chooseEnding, resolveFinale } from "./campaign.js";
+import { advanceStoryDirector, campaignAct, chooseEnding, macroPhaseForBeat, resolveFinale } from "./campaign.js";
 import { TILE, areaAt, isWalkable, movementCost, publicWorld, tileAt } from "./world.js";
 import { analyzeIntent, detectIntentActions, realizationAlignment } from "./intent.js";
 import { containsProtectedFactReference } from "./protected-mechanics.js";
+import { applyScenePlan } from "./consequence-resolver.js";
+import { CORE_NPC_CATALOG, monsterForAsset } from "./content-catalog.js";
 import {
   ADMIN_ACCESS_LEVELS,
   ARTIFACT_ADMIN_KEYBOARD,
@@ -21,6 +23,7 @@ import {
 } from "./codria-contract.js";
 
 export const CORE_ABILITIES = Object.freeze(KEYBOARD_SKILLS.map((item) => item.toLowerCase()));
+const ACTION_SKILLS = Object.freeze([...KEYBOARD_SKILLS, "INTERACT"]);
 export const CONTEXT_ACTIONS = CAMPAIGN_ACTION_CONTEXTS;
 export const ABILITIES = CORE_ABILITIES;
 export const RUN_STATUSES = Object.freeze(["active", "abandoned", "completed"]);
@@ -99,8 +102,8 @@ export function normalizeTurnRequest(input) {
   const secondaryTargetEntityId = targetIds[1] || null;
   const destination = input.destination === undefined || input.destination === null ? null : point(input.destination, "destination");
   const skillId = String(input.skillId || "").toUpperCase();
-  assert(KEYBOARD_SKILLS.includes(skillId), 400, "SKILL_INVALID", `skillId must be one of: ${KEYBOARD_SKILLS.join(", ")}. Movement and generic interactions must use travel or a keyboard skill.`);
-  const expectedTargets = skillId === "CONNECT" ? 2 : skillId === "UNDO" ? 0 : 1;
+  assert(ACTION_SKILLS.includes(skillId), 400, "SKILL_INVALID", `skillId must be one of: ${ACTION_SKILLS.join(", ")}.`);
+  const expectedTargets = skillId === "CONNECT" ? 2 : ["UNDO", "SEARCH", "SELECT_ALL"].includes(skillId) ? 0 : 1;
   assert([targetEntityId, secondaryTargetEntityId].filter(Boolean).length === expectedTargets, 400, "TARGET_INVALID", `${skillId} requires exactly ${expectedTargets} selected target(s).`);
   const playerNote = input.playerNote ?? null;
   assert(playerNote === null || (typeof playerNote === "string" && playerNote.trim().length <= 400), 400, "PLAYER_NOTE_INVALID", "playerNote must contain at most 400 characters.");
@@ -153,18 +156,31 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     const role = campaign.npcRoles[index];
     const roleSlots = npcSlots.filter((slot) => slot.campaignRole === role.campaignRole);
     const slot = roleSlots[index % roleSlots.length] || npcSlots[index % npcSlots.length];
-    entities.push(entity(deterministicUuid(`${runId}:npc:${role.id}`), "npc", slot.allowedAssetIds[index % slot.allowedAssetIds.length], role.name || role.displayName || seededName(campaign.worldSeed, index), slot, false, true, false, { hp: 8, maxHp: 8, npcRole: role.role, slotId: slot.id, campaignRole: role.campaignRole, evidenceKey: role.evidenceKey, designatedCampaignEvidence: true }));
+    const coreNpc = CORE_NPC_CATALOG[index % CORE_NPC_CATALOG.length];
+    const npcAssetId = slot.allowedAssetIds.includes(coreNpc.assetId) ? coreNpc.assetId : slot.allowedAssetIds[index % slot.allowedAssetIds.length];
+    entities.push(entity(deterministicUuid(`${runId}:npc:${role.id}`), "npc", npcAssetId, coreNpc.name || role.name || role.displayName || seededName(campaign.worldSeed, index), slot, false, true, false, {
+      hp: 8, maxHp: 8, npcRole: role.role, slotId: slot.id, campaignRole: role.campaignRole,
+      evidenceKey: role.evidenceKey, designatedCampaignEvidence: true, canonicalNpcId: coreNpc.id,
+      roleTags: [...coreNpc.roleTags], factionId: coreNpc.factionId, goal: coreNpc.goal,
+      motivation: coreNpc.motivation, traits: coreNpc.roleTags.includes("COMBATANT") ? ["GUARDIAN"] : []
+    }));
   }
   const bookSlot = propSlots[0];
-  entities.push(entity(deterministicUuid(`${runId}:prop:book`), "prop", "item.rune-book.v1", "여행자의 장부", bookSlot, false, false, true, { slotId: bookSlot.id, temporary: false }));
+  entities.push(entity(deterministicUuid(`${runId}:prop:book`), "prop", "item.rune-book.v1", "여행자의 장부", bookSlot, true, false, true, { slotId: bookSlot.id, temporary: false }));
   const crateSlot = propSlots[1];
-  entities.push(entity(deterministicUuid(`${runId}:prop:crate`), "prop", "item.crate.v1", "임시 보급 상자", crateSlot, false, false, true, { slotId: crateSlot.id, temporary: true }));
+  entities.push(entity(deterministicUuid(`${runId}:prop:crate`), "prop", "item.crate.v1", "임시 보급 상자", crateSlot, true, false, true, { slotId: crateSlot.id, temporary: true }));
   const roadTiles = [];
   for (let y = 0; y < world.height; y += 1) for (let x = 0; x < world.width; x += 1) if (tileAt(world, { x, y }) === TILE.ROAD) roadTiles.push({ x, y });
   const distanceFromRoad = (slot) => roadTiles.reduce((minimum, road) => Math.min(minimum, manhattan(slot, road)), Number.POSITIVE_INFINITY);
   const enemySlot = enemySlots.filter((slot) => !slot.tags.includes("admin_access_candidate")).sort((left, right) => distanceFromRoad(right) - distanceFromRoad(left) || left.id.localeCompare(right.id))[0];
   const enemyNames = ["안개 슬라임", "가시 그림자", "황혼 포식자", "메아리 짐승", "잿빛 도깨비"];
-  entities.push(entity(deterministicUuid(`${runId}:enemy:first`), "enemy", enemySlot.allowedAssetIds[0], enemyNames[Math.abs(Number(campaign.worldSeed || 0)) % enemyNames.length], enemySlot, true, false, false, { hp: 5, maxHp: 5, slotId: enemySlot.id }));
+  const firstEnemyIndex = Math.abs(Number(campaign.worldSeed || 0)) % enemySlot.allowedAssetIds.length;
+  const firstEnemyAssetId = enemySlot.allowedAssetIds[firstEnemyIndex];
+  const firstMonster = monsterForAsset(firstEnemyAssetId);
+  entities.push(entity(deterministicUuid(`${runId}:enemy:first`), "enemy", firstEnemyAssetId, firstMonster?.name || enemyNames[Math.abs(Number(campaign.worldSeed || 0)) % enemyNames.length], enemySlot, true, false, false, {
+    hp: firstMonster?.hp || 5, maxHp: firstMonster?.hp || 5, speed: firstMonster?.speed || 2,
+    slotId: enemySlot.id, traits: [...(firstMonster?.traits || [])]
+  }));
   const evidenceNames = {
     ADMIN_ACCESS_LEVEL_1: "관리자 권한 I 후보", ADMIN_ACCESS_LEVEL_2: "관리자 권한 II 후보", ADMIN_ACCESS_LEVEL_3: "관리자 권한 III 후보", STORY_REVELATION: "관리자 통제 시스템의 내부 기록"
   };
@@ -181,9 +197,14 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     const kind = candidate.actionContext === "COMBAT" ? "enemy" : candidate.actionContext === "NEGOTIATION" ? "npc" : "prop";
     const candidateId = deterministicUuid(`${runId}:admin-access:${candidate.id}`);
     const access = ADMIN_ACCESS_LEVELS.find((item) => item.id === candidate.accessLevelId);
-    entities.push(entity(candidateId, kind, slot.allowedAssetIds[0], `${access.nameKo} · ${candidate.regionAxis}`, slot, kind === "enemy", false, false, {
-      hp: kind === "enemy" ? 6 : undefined,
-      maxHp: kind === "enemy" ? 6 : undefined,
+    const candidateAssetIndex = Math.abs(Number(campaign.worldSeed || 0) + candidate.id.length) % slot.allowedAssetIds.length;
+    const candidateAssetId = slot.allowedAssetIds[candidateAssetIndex];
+    const candidateMonster = kind === "enemy" ? monsterForAsset(candidateAssetId) : null;
+    entities.push(entity(candidateId, kind, candidateAssetId, `${access.nameKo} · ${candidate.regionAxis}`, slot, kind === "enemy", false, false, {
+      hp: kind === "enemy" ? Math.max(6, candidateMonster?.hp || 0) : undefined,
+      maxHp: kind === "enemy" ? Math.max(6, candidateMonster?.hp || 0) : undefined,
+      speed: kind === "enemy" ? candidateMonster?.speed || 2 : undefined,
+      traits: kind === "enemy" ? [...(candidateMonster?.traits || [])] : [],
       slotId: slot.id,
       candidateId: candidate.id,
       adminAccessLevelId: candidate.accessLevelId,
@@ -252,6 +273,8 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     turnLimit: campaign.turnLimit,
     currentAct: firstBeat.phaseId,
     campaignPhase: firstBeat.phaseId,
+    currentMacroPhase: clone(macroPhaseForBeat(firstBeat)),
+    campaignMacroPhases: clone(campaign.campaignMacroPhases || []),
     currentStoryBeat: { ...clone(firstBeat), act: firstBeat.phaseId },
     requiredStoryBeats: clone(campaign.requiredStoryBeats),
     endingWindow: clone(campaign.endingWindow || { normalEligibleStart: Math.max(30, Math.min(38, campaign.turnLimit - 2)), preferredEnd: Math.min(42, campaign.turnLimit), hardLimit: campaign.turnLimit }),
@@ -296,6 +319,20 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     finalPlacement: null,
     npcMemories: [],
     npcRelationships,
+    directorState: {
+      decisionNo: 0,
+      recentSceneTypes: [],
+      eventCooldowns: {},
+      pendingConsequences: [],
+      factionStandings: { AUDITORS: 0, OLD_GUARD: 0, NEUTRAL_BROKERS: 0 },
+      discoveredSecrets: [],
+      runTraits: [],
+      specialSkills: [],
+      generatedCharacters: [],
+      generatedMonsterVariants: entities.filter((item) => item.kind === "enemy").map((item) => ({
+        entityId: item.id, assetId: item.assetId, name: item.name, traits: [...(item.state?.traits || [])]
+      }))
+    },
     activeQuests: [
       { id: deterministicUuid(`${runId}:main-quest`), key: `MAIN.${fingerprint(campaign.templateId || campaign.generatedTitle).slice(0, 12)}`, title: campaign.generatedTitle || campaign.title, summary: campaign.premise, status: "active", questKind: "main", currentStep: firstBeat.id, acceptsNewSteps: true, createdTurn: 0 },
       ...(campaign.questSeeds || []).slice(0, 2).map((quest, index) => ({ id: deterministicUuid(`${runId}:seed-quest:${quest.id || index}`), key: `SEED.${quest.id || index}`, title: quest.title, summary: quest.summary || quest.description, status: "active", questKind: "seeded", currentStep: quest.initialStep || "discover", acceptsNewSteps: true, createdTurn: 0 }))
@@ -317,7 +354,16 @@ function seededName(worldSeed, index) {
 }
 
 function entity(id, kind, assetId, name, position, blocking, protectedEntity, cloneable, state = {}) {
-  return { id, kind, assetId, name, position: { x: position.x, y: position.y }, blocking, protected: protectedEntity, cloneable, active: true, state };
+  const actorState = ["player", "npc", "enemy"].includes(kind) ? {
+    factionId: kind === "enemy" ? "WILD_PROCESS" : kind === "player" ? "PLAYER" : "NEUTRAL_BROKERS",
+    goal: null,
+    motivation: null,
+    traits: [],
+    awareness: [],
+    inventory: [],
+    lastActionTurn: 0
+  } : {};
+  return { id, kind, assetId, name, position: { x: position.x, y: position.y }, blocking, protected: protectedEntity, cloneable, active: true, state: { ...actorState, ...state } };
 }
 
 function samePoint(left, right) { return left.x === right.x && left.y === right.y; }
@@ -325,7 +371,7 @@ function manhattan(left, right) { return Math.abs(left.x - right.x) + Math.abs(l
 function entityById(run, id) { return run.entities.find((candidate) => candidate.id === id && candidate.active) || null; }
 function entityAnyById(run, id) { return run.entities.find((candidate) => candidate.id === id) || null; }
 function isActiveOccupied(run, destination) { return run.entities.some((candidate) => candidate.active && samePoint(candidate.position, destination)); }
-function isBlockingOccupied(run, destination, exceptId = null) { return run.entities.some((candidate) => candidate.active && candidate.blocking && candidate.id !== exceptId && samePoint(candidate.position, destination)); }
+function isBlockingOccupied(run, destination, exceptId = null) { return run.entities.some((candidate) => candidate.active && (candidate.blocking || candidate.kind === "prop") && candidate.id !== exceptId && samePoint(candidate.position, destination)); }
 function key(pointValue) { return `${pointValue.x},${pointValue.y}`; }
 function stateFingerprint(run) {
   const safe = clone(run);
@@ -461,6 +507,28 @@ function finaleGateEligible(run) {
   return rootSystemGate(run).eligible;
 }
 
+function specialSkillPreparation(run, skillId, baseFocusCost) {
+  const specialSkill = (run.directorState?.specialSkills || []).find((skill) =>
+    skill.baseSkill === skillId && Number(skill.charges || 0) > 0) || null;
+  if (!specialSkill) return { focusCost: baseFocusCost, healthCost: 0, modifierBonus: 0, specialSkill: null };
+  const modifiers = new Set(specialSkill.modifierIds || []);
+  const healthInstead = modifiers.has("HEALTH_INSTEAD_OF_FOCUS") && baseFocusCost > 0;
+  return {
+    focusCost: healthInstead ? 0 : Math.max(0, baseFocusCost - (modifiers.has("REDUCED_FOCUS_COST") ? 1 : 0)),
+    healthCost: healthInstead ? 1 : 0,
+    modifierBonus: modifiers.has("FACTION_BONUS") ? 2 : 0,
+    specialSkill
+  };
+}
+
+function assertSpecialSkillCost(run, cost, skillId) {
+  assert(run.focus >= cost.focusCost, 422, "INSUFFICIENT_FOCUS", `${skillId} requires ${cost.focusCost} focus.`);
+  if (cost.healthCost > 0) {
+    const player = entityById(run, run.playerEntityId);
+    assert(Number(player?.state?.hp || 0) > cost.healthCost, 422, "INSUFFICIENT_HEALTH", `${skillId} special modifier requires ${cost.healthCost} health.`);
+  }
+}
+
 export function resolveSafeTravel({ run: originalRun, request, now = new Date().toISOString() }) {
   assert(originalRun.status === "active", 409, "RUN_NOT_ACTIVE", "The run does not accept travel.");
   assert(!originalRun.activeEncounter || originalRun.activeEncounter.status !== "active", 409, "ENCOUNTER_ACTION_REQUIRED", "Resolve the active encounter with one meaningful D20 action before further travel.", { activeEncounter: clone(originalRun.activeEncounter) });
@@ -568,10 +636,18 @@ function prepare(run, request) {
   }
   if (request.ability === "undo") {
     assert(!request.targetEntityId && !request.secondaryTargetEntityId && !request.destination, 422, "TARGET_FORBIDDEN", "Undo only compensates the immediately preceding reversible turn.");
-    assert(run.focus >= 3, 422, "INSUFFICIENT_FOCUS", "Undo requires 3 focus.");
+    const specialCost = specialSkillPreparation(run, "UNDO", 3);
+    assertSpecialSkillCost(run, specialCost, "UNDO");
     const reversible = [...run.reversibleLedger].reverse().find((item) => item.turnNo === run.currentTurn && item.reversible && !item.consumed);
     assert(reversible, 422, "UNDO_NOT_AVAILABLE", "The immediately preceding turn has no reversible mechanical result.");
-    return { difficulty: 15, modifier: 2, focusCost: 3, normalizedAttempt: `Compensate the reversible mechanical effects of turn ${reversible.turnNo}`, reversible };
+    return { difficulty: 15, modifier: 2 + specialCost.modifierBonus, ...specialCost, normalizedAttempt: `Compensate the reversible mechanical effects of turn ${reversible.turnNo}`, reversible };
+  }
+  if (["search", "select_all"].includes(request.ability)) {
+    assert(!request.targetEntityId && !request.secondaryTargetEntityId && !request.destination, 422, "TARGET_FORBIDDEN", `${request.skillId} does not accept a target or destination.`);
+    const focusCost = request.ability === "select_all" ? 3 : 1;
+    assert(run.focus >= focusCost, 422, "INSUFFICIENT_FOCUS", `${request.skillId} requires ${focusCost} focus.`);
+    const radius = request.ability === "select_all" ? 4 : 6;
+    return { difficulty: request.ability === "select_all" ? 14 : 9, modifier: request.ability === "select_all" ? 4 : 5, focusCost, radius, normalizedAttempt: `${request.skillId} scans the authoritative area within ${radius} tiles` };
   }
   const target = request.targetEntityId ? entityAnyById(run, request.targetEntityId) : null;
   assert(target, 422, "ENTITY_NOT_FOUND", "A valid target entity is required.");
@@ -589,12 +665,12 @@ function prepare(run, request) {
       secondary = entityById(run, request.secondaryTargetEntityId);
       assert(secondary && secondary.id !== target.id && manhattan(player.position, secondary.position) <= 5, 422, "SECONDARY_TARGET_REQUIRED", "CONNECT requires a distinct nearby second target.");
     }
-    const focusCost = { COPY: 1, DELETE: 1, CONNECT: 2, RESTORE: 3, UNDO: 3 }[request.skillId];
-    assert(run.focus >= focusCost, 422, "INSUFFICIENT_FOCUS", `${request.skillId} requires ${focusCost} focus.`);
+    const specialCost = specialSkillPreparation(run, request.skillId, { COPY: 1, DELETE: 1, CONNECT: 2, RESTORE: 3, UNDO: 3 }[request.skillId]);
+    assertSpecialSkillCost(run, specialCost, request.skillId);
     return {
       difficulty: { COMBAT: 12, INVESTIGATION: 10, NEGOTIATION: 11, DEPLOYMENT: 13 }[candidate.actionContext],
-      modifier: 3,
-      focusCost,
+      modifier: 3 + specialCost.modifierBonus,
+      ...specialCost,
       target,
       secondary,
       actionContext: candidate.actionContext,
@@ -626,8 +702,8 @@ function prepare(run, request) {
     assert(manhattan(player.position, target.position) <= 2, 422, "OUT_OF_RANGE", "Negotiation target must be within 2 tiles.");
     return { difficulty: 10, modifier: 3, focusCost: 0, target, relationship, normalizedAttempt: `Negotiate one bounded agreement with nearby NPC ${target.name}` };
   }
-  const costs = { copy: 1, delete: 1, connect: 2, restore: 3 };
-  assert(run.focus >= costs[request.ability], 422, "INSUFFICIENT_FOCUS", `${request.ability} requires ${costs[request.ability]} focus.`);
+  const specialCost = specialSkillPreparation(run, request.skillId, { copy: 1, delete: 1, connect: 2, restore: 3 }[request.ability]);
+  assertSpecialSkillCost(run, specialCost, request.skillId);
   if (request.ability === "copy") {
     assert(!request.secondaryTargetEntityId, 422, "TARGET_INVALID", "Copy accepts one source entity.");
     assert(target.active && target.cloneable && !target.protected, 422, "ENTITY_NOT_CLONEABLE", "The selected entity cannot be copied.");
@@ -635,14 +711,14 @@ function prepare(run, request) {
     assert(!isBlockingOccupied(run, request.destination), 422, "DESTINATION_OCCUPIED", "Copy destination is occupied.");
     assert(!samePoint(target.position, request.destination), 422, "DESTINATION_INVALID", "Copy destination must differ from source.");
     assert(manhattan(player.position, target.position) <= 4 && manhattan(player.position, request.destination) <= 4, 422, "OUT_OF_RANGE", "Copy source and destination must be within 4 tiles.");
-    return { difficulty: 11, modifier: 3, focusCost: 1, target, normalizedAttempt: `Copy ${target.name} into the legal tile (${request.destination.x},${request.destination.y})` };
+    return { difficulty: 11, modifier: 3 + specialCost.modifierBonus, ...specialCost, target, normalizedAttempt: `Copy ${target.name} into the legal tile (${request.destination.x},${request.destination.y})` };
   }
   if (request.ability === "delete") {
     assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Delete accepts exactly one entity target.");
     assert(target.active && target.id !== run.playerEntityId && !target.protected, 422, "ENTITY_PROTECTED", "The selected entity cannot be deleted.");
     if (target.state?.finaleComponent) assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all three administrator access levels, the essential clue, and physical Root System entry.");
     assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Delete target must be within 3 tiles.");
-    return { difficulty: 12, modifier: 3, focusCost: 1, target, normalizedAttempt: `Delete the removable entity ${target.name}` };
+    return { difficulty: 12, modifier: 3 + specialCost.modifierBonus, ...specialCost, target, normalizedAttempt: `Delete the removable entity ${target.name}` };
   }
   if (request.ability === "connect") {
     assert(!request.destination, 422, "DESTINATION_INVALID", "Connect joins entities and does not accept a destination tile.");
@@ -656,7 +732,7 @@ function prepare(run, request) {
       const bothPuzzleEntities = (target.state?.finaleComponent || target.id === run.playerEntityId) && (secondary.state?.finaleComponent || secondary.id === run.playerEntityId);
       assert(bothPuzzleEntities && finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale links require puzzle entities, all three administrator access levels, the essential clue, and physical Root System entry.");
     }
-    return { difficulty: 13, modifier: 2, focusCost: 2, target, secondary, normalizedAttempt: `Create a temporary allowed connection between ${target.name} and ${secondary.name}` };
+    return { difficulty: 13, modifier: 2 + specialCost.modifierBonus, ...specialCost, target, secondary, normalizedAttempt: `Create a temporary allowed connection between ${target.name} and ${secondary.name}` };
   }
   assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Restore accepts exactly one entity target.");
   const restoration = [...run.reversibleLedger].reverse().find((item) => !item.consumed && run.currentTurn - item.turnNo <= 8 && item.inverseOps.some((operation) =>
@@ -665,7 +741,7 @@ function prepare(run, request) {
   assert(restoration && (!target.active || restoration.inverseOps.some((operation) => operation.type === "restore_state" && operation.entityId === target.id)), 422, "RESTORE_NOT_AVAILABLE", "The target has no recent reversible damage or removal snapshot.");
   const restoreEntityOperation = restoration.inverseOps.find((operation) => operation.type === "restore_entity" && operation.entity.id === target.id);
   if (restoreEntityOperation) assert(!isActiveOccupied(run, restoreEntityOperation.entity.position), 422, "RESTORE_DESTINATION_OCCUPIED", "Restore destination is occupied by an active entity.");
-  return { difficulty: 14, modifier: 2, focusCost: 3, target, restoration, normalizedAttempt: `Restore permitted recent damage or removal on ${target.name} from the authoritative snapshot recorded on turn ${restoration.turnNo}` };
+  return { difficulty: 14, modifier: 2 + specialCost.modifierBonus, ...specialCost, target, restoration, normalizedAttempt: `Restore permitted recent damage or removal on ${target.name} from the authoritative snapshot recorded on turn ${restoration.turnNo}` };
 }
 
 function classifyActionContext(run, request, preparation) {
@@ -785,7 +861,8 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
     inverseOps.push({ type: "move_entity", entityId: player.id, to: from });
   } else if (request.ability === "copy") {
     const source = entityById(run, request.targetEntityId);
-    const copyEntity = { ...clone(source), id: deterministicUuid(`${run.id}:${turnNo}:${request.idempotencyKey}:copy`), name: `${source.name} Copy`, position: clone(request.destination), protected: false, state: { ...clone(source.state), copiedOnTurn: turnNo, sourceEntityId: source.id } };
+    const temporaryClone = (preparation.specialSkill?.modifierIds || []).includes("TEMPORARY_CLONE");
+    const copyEntity = { ...clone(source), id: deterministicUuid(`${run.id}:${turnNo}:${request.idempotencyKey}:copy`), name: `${source.name} Copy`, position: clone(request.destination), protected: false, state: { ...clone(source.state), copiedOnTurn: turnNo, sourceEntityId: source.id, ...(temporaryClone ? { temporary: true, expiresTurn: Math.min(run.turnLimit, turnNo + 3) } : {}) } };
     run.entities.push(copyEntity);
     events.push({ type: "entity_spawned", entityId: copyEntity.id, assetId: copyEntity.assetId, position: copyEntity.position, sourceEntityId: source.id });
     inverseOps.push({ type: "remove_entity", entityId: copyEntity.id });
@@ -799,6 +876,16 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
     run.connections.push(connection);
     events.push({ type: "connection_created", ...connection });
     inverseOps.push({ type: "remove_connection", connectionId: connection.id });
+    if ((preparation.specialSkill?.modifierIds || []).includes("EXTRA_TARGET")) {
+      const player = entityById(run, run.playerEntityId);
+      const extra = run.entities.find((item) => item.active && ![player.id, preparation.target.id, preparation.secondary.id].includes(item.id) && manhattan(player.position, item.position) <= 5);
+      if (extra) {
+        const extraConnection = { id: deterministicUuid(`${run.id}:${turnNo}:${request.idempotencyKey}:connection:extra`), fromId: preparation.secondary.id, toId: extra.id, relation: "special_extra_link", createdTurn: turnNo, expiresTurn: Math.min(run.turnLimit, turnNo + 3), active: true };
+        run.connections.push(extraConnection);
+        events.push({ type: "connection_created", ...extraConnection, specialSkillId: preparation.specialSkill.id });
+        inverseOps.push({ type: "remove_connection", connectionId: extraConnection.id });
+      }
+    }
   } else if (request.ability === "restore") {
     const restoration = run.reversibleLedger.find((item) => item.turnNo === preparation.restoration.turnNo && !item.consumed);
     assert(restoration, 409, "RESTORE_CONFLICT", "The saved restoration was already consumed.");
@@ -808,6 +895,14 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
     assert(applyInverseOperation(run, inverse, events), 409, "RESTORE_CONFLICT", "The saved restoration no longer fits the authoritative state.");
     restoration.consumed = true;
     events.push({ type: "reversible_reward_spent", ability: "restore", sourceTurn: restoration.turnNo, focusCost: preparation.focusCost });
+    if ((preparation.specialSkill?.modifierIds || []).includes("MEMORY_RESTORE")) {
+      const memory = [...run.npcMemories].reverse().find((item) => item.expired === true);
+      if (memory) {
+        memory.expired = false;
+        memory.restoredTurn = turnNo;
+        events.push({ type: "npc_memory_added", memoryId: memory.id, npcId: memory.npcId, summary: memory.summary, restored: true });
+      }
+    }
   } else if (request.ability === "undo") {
     const reversible = run.reversibleLedger.find((item) => item.turnNo === preparation.reversible.turnNo && !item.consumed);
     assert(reversible, 409, "UNDO_CONFLICT", "The previous result was already consumed.");
@@ -816,6 +911,14 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
     assert(applied > 0, 409, "UNDO_CONFLICT", "The previous result can no longer be compensated safely.");
     reversible.consumed = true;
     events.push({ type: "reversible_reward_spent", ability: "undo", sourceTurn: reversible.turnNo, focusCost: preparation.focusCost });
+  } else if (["search", "select_all"].includes(request.ability)) {
+    const player = entityById(run, run.playerEntityId);
+    const affected = run.entities.filter((item) => item.active && item.id !== player.id && manhattan(item.position, player.position) <= preparation.radius);
+    for (const target of affected) {
+      target.state = { ...(target.state || {}), revealed: true, revealedTurn: turnNo, selectedByArea: request.ability === "select_all" };
+      events.push({ type: request.ability === "select_all" ? "area_target_selected" : "entity_revealed", entityId: target.id, radius: preparation.radius });
+    }
+    events.push({ type: request.ability === "select_all" ? "administrator_area_deployed" : "search_completed", radius: preparation.radius, affectedCount: affected.length });
   } else if (request.ability === "attack") {
     const target = entityById(run, request.targetEntityId);
     const priorHp = target.state.hp;
@@ -826,7 +929,17 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
     events.push({ type: "health_changed", entityId: target.id, delta: -damage, hp: target.state.hp, disabled: target.state.disabled, reversible: true });
     inverseOps.push({ type: "restore_state", entityId: target.id, stateSnapshot: { hp: priorHp, disabled: priorDisabled }, allowedFields: ["hp", "disabled"] });
   } else if (request.ability === "interact") {
-    events.push({ type: "entity_interacted", entityId: preparation.target.id, entityKind: preparation.target.kind, evidence: "authoritative_proximity_confirmed" });
+    const target = entityById(run, preparation.target.id);
+    assert(target, 409, "INTERACTION_CONFLICT", "The interaction target is no longer active.");
+    const firstInteraction = target.state?.interacted !== true;
+    target.state = { ...(target.state || {}), interacted: true, interactionCount: (target.state?.interactionCount || 0) + 1, interactedTurn: turnNo };
+    events.push({ type: "entity_interacted", entityId: target.id, entityKind: target.kind, evidence: "authoritative_proximity_confirmed", firstInteraction });
+    if (firstInteraction && String(target.assetId || "").startsWith("item.crate")) {
+      const priorFocus = run.focus;
+      run.focus = Math.min(run.maxFocus || 10, run.focus + 1);
+      if (run.focus > priorFocus) events.push({ type: "resource_changed", resource: "focus", delta: run.focus - priorFocus, value: run.focus });
+      target.state.opened = true;
+    }
   } else if (request.ability === "negotiate") {
     const relationship = run.npcRelationships.find((item) => item.npcId === preparation.target.id);
     const priorAffinity = relationship.affinity;
@@ -992,6 +1105,12 @@ function applyDirectorOperations(run, narrative, turnNo, budget, events) {
 }
 
 function expireNarrativeState(run, turnNo, events, forceConvergence = false) {
+  for (const entityItem of run.entities) {
+    if (entityItem.active && entityItem.state?.temporary === true && Number.isInteger(entityItem.state?.expiresTurn) && entityItem.state.expiresTurn <= turnNo) {
+      entityItem.active = false;
+      events.push({ type: "entity_removed", entityId: entityItem.id, reason: "temporary_duration_expired" });
+    }
+  }
   for (const connection of run.connections) {
     if (connection.active && Number.isInteger(connection.expiresTurn) && connection.expiresTurn <= turnNo) {
       connection.active = false;
@@ -1099,9 +1218,9 @@ function updateCampaignMetrics(run, request, outcome, actionContext, turnNo, eve
   if (changes.length > 0) events.push({ type: "campaign_metrics_changed", changes });
 }
 
-export function resolveTurn({ run: originalRun, request, d20Source = new DeterministicD20Source(), forcedD20 = null, now = new Date().toISOString(), directorOutput = null }) {
+export function resolveTurn({ run: originalRun, request, d20Source = new DeterministicD20Source(), forcedD20 = null, now = new Date().toISOString(), directorOutput = null, sceneDecision = null }) {
   assert(originalRun.status === "active", 409, "RUN_NOT_ACTIVE", "The run does not accept turns.");
-  assert(request.inputType === "USE_SKILL" && KEYBOARD_SKILLS.includes(request.skillId), 400, "TURN_REQUEST_INVALID", "Only structured USE_SKILL commands consume campaign turns.");
+  assert(request.inputType === "USE_SKILL" && ACTION_SKILLS.includes(request.skillId), 400, "TURN_REQUEST_INVALID", "Only structured USE_SKILL commands consume campaign turns.");
   if (request.resolvesDebtEntryId) {
     assert(["RESTORE", "UNDO"].includes(request.skillId), 422, "TECHNICAL_DEBT_RESOLUTION_INVALID", "Only RESTORE or UNDO can explicitly resolve a technical debt entry.");
     assert(originalRun.technicalDebtEntries.some((item) => item.id === request.resolvesDebtEntryId && item.resolvedAt === null), 422, "TECHNICAL_DEBT_ENTRY_INVALID", "The selected technical debt entry is not unresolved.");
@@ -1132,6 +1251,18 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   if (preparation.focusCost > 0) {
     run.focus -= preparation.focusCost;
     events.push({ type: "resource_changed", resource: "focus", delta: -preparation.focusCost, reason: request.ability });
+  }
+  if (preparation.healthCost > 0) {
+    const player = entityById(run, run.playerEntityId);
+    player.state.hp -= preparation.healthCost;
+    events.push({ type: "health_changed", entityId: player.id, delta: -preparation.healthCost, hp: player.state.hp, reason: "special_skill_cost" });
+  }
+  if (preparation.specialSkill) {
+    const usedSkill = run.directorState.specialSkills.find((skill) => skill.id === preparation.specialSkill.id);
+    assert(usedSkill && usedSkill.charges > 0, 409, "SPECIAL_SKILL_CONFLICT", "The selected special skill has no remaining charge.");
+    usedSkill.charges -= 1;
+    usedSkill.lastUsedTurn = turnNo;
+    events.push({ type: "special_skill_used", entityId: run.playerEntityId, rewardId: usedSkill.id, skillId: request.skillId, charges: usedSkill.charges });
   }
   if (SUCCESS_OUTCOMES.has(outcome)) {
     applyPrimaryEffect(run, request, preparation, turnNo, events);
@@ -1195,6 +1326,13 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     finaleEndingId: run.finalePuzzle?.matchedEndingId || null
   });
   const directorPlan = applyDirectorOperations(run, directorOutput || { proposedOps: [] }, turnNo, budget, events);
+  const sceneResolution = sceneDecision ? applyScenePlan(run, {
+    candidates: sceneDecision.candidates,
+    plan: sceneDecision.plan,
+    decisionType: "ACTION",
+    now
+  }) : null;
+  if (sceneResolution) events.push(...sceneResolution.events);
   const allRequiredBeatsCompleted = run.requiredStoryBeats.every((beat) => beat.status === "completed");
   const explicitFinaleReady = allRequiredBeatsCompleted
     && Boolean(run.selectedEndingId)
@@ -1277,9 +1415,12 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
       abilityUsageHistory: run.abilityUsageHistory.filter((item) => item.turnNo === turnNo),
       adminAccessHistory: run.adminAccessAcquisitionHistory.filter((item) => item.turnNo === turnNo),
       technicalDebtEntries: run.technicalDebtEntries.filter((item) => item.turnNo === turnNo || item.resolvedAt === turnNo),
+      sceneDecision: sceneResolution ? clone(sceneResolution) : null,
       appliedOps: directorPlan.appliedOps,
       rejectedOps: directorPlan.rejectedOps
     },
+    sceneDecision: sceneResolution ? clone(sceneResolution) : null,
+    sceneSequence: sceneResolution ? clone(sceneResolution.sceneSequence) : [],
     narrative,
     createdAt: now
   };
@@ -1322,6 +1463,7 @@ export function directorContext(run, turn) {
     requestType: "TURN_NARRATION",
     campaign: { title: GAME_TITLE, worldId: WORLD_CODRIA, worldName: WORLD_NAME_KO, protagonistId: PROTAGONIST_NUPJUKYI, protagonistName: PROTAGONIST_NAME_KO, artifactId: ARTIFACT_ADMIN_KEYBOARD, premise: run.premise, contentHash: run.campaignContentHash },
     progression: { level: run.progressLevel, tokens: clone(run.progressTokens), tokenDefinitions: clone(run.progressTokenDefinitions), rootSystemGate: rootSystemGate(run) },
+    macroPhase: clone(run.currentMacroPhase || macroPhaseForBeat(run.currentStoryBeat)),
     turnNo: turn.turnNo,
     remainingTurns,
     act: campaignAct(turn.turnNo, run.turnLimit),
@@ -1365,6 +1507,11 @@ export function directorContext(run, turn) {
     adminAccessHistory: clone(run.adminAccessAcquisitionHistory || []),
     technicalDebtEntries: (run.technicalDebtEntries || []).filter((item) => item.resolvedAt === null).slice(-8),
     unresolvedHooks: (run.unresolvedHooks || []).filter((item) => item.status === "open").slice(-8),
+    sceneSequence: (turn.sceneSequence || []).slice(0, 16).map((item) => ({
+      sequence: item.sequence, type: item.type, actorId: item.actorId || null, targetId: item.targetId || null,
+      actionStyle: item.actionStyle || null, hit: item.hit ?? null, damage: item.damage ?? null,
+      rewardId: item.rewardId || null, text: item.text || null
+    })),
     endingFactors: run.status === "completed" ? clone(run.finaleResolution?.endingFactors || null) : null
   };
 }
@@ -1429,6 +1576,8 @@ export function publicRun(run) {
     remainingTurns: Math.max(0, run.turnLimit - run.currentTurn),
     currentAct: run.currentAct,
     campaignPhase: run.campaignPhase,
+    currentMacroPhase: clone(run.currentMacroPhase || macroPhaseForBeat(run.currentStoryBeat)),
+    campaignMacroPhases: clone(run.campaignMacroPhases || []),
     currentBeat: run.currentStoryBeat?.title || "",
     currentStoryBeat: run.currentStoryBeat,
     health: player?.state?.hp ?? 0,
@@ -1468,6 +1617,7 @@ export function publicRun(run) {
     rumors: run.rumors.filter((item) => item.status === "active"),
     npcRelationships: run.npcRelationships.map((item) => ({ ...item, npcName: entityNames.get(item.npcId) || "", score: item.affinity, label: item.stance, reason: "authoritative relationship state" })),
     npcMemories: run.npcMemories.filter((item) => !item.expired).map((item) => ({ ...item, npcName: entityNames.get(item.npcId) || "", memory: item.summary, importance: Math.round(item.importance * 100), turnNo: item.createdTurn })),
+    directorState: clone(run.directorState || {}),
     majorChoices: clone(run.majorChoices || []),
     regionOutcomes: clone(run.regionOutcomes || []),
     abilityUsageHistory: clone(run.abilityUsageHistory || []),
@@ -1515,6 +1665,8 @@ export function publicTurn(turn) {
     consequenceBudget: turn.consequenceBudget,
     stateDelta: publicDelta,
     events: turn.events,
+    sceneDecision: clone(turn.sceneDecision || null),
+    sceneSequence: clone(turn.sceneSequence || []),
     narrative: {
       ...turn.narrative,
       dialogue: dialogueDetails.map((item) => item.line),

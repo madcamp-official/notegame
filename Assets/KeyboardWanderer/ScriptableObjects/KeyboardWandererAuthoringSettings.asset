@@ -16,8 +16,6 @@ MonoBehaviour:
   entityVisualPrefab: {fileID: 723654025824541679, guid: bc3871cc4f5a6439ebb52e83328b87fc, type: 3}
   landmarkPrefab: {fileID: 7071910225199613648, guid: a8e685c5288dd4e35b64ae8fb0712b1b, type: 3}
   playerWalkSpeed: 4.2
-  cameraOrthographicSize: 8.25
-  cameraBackground: {r: 0.025, g: 0.033, b: 0.02, a: 1}
   playerVisualSize: 1.34
   enemyVisualSize: 0.92
   neutralVisualSize: 0.98

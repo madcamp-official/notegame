@@ -1,4 +1,4 @@
-# 넙죽이와 붕괴한 코드 왕국 — Source of Truth v4
+# Ninja Adventure — Source of Truth v4
 
 이 문서는 과거의 일반 생성형 판타지 계약과 UI 레퍼런스가 현재 제품 계약으로 오인되지 않도록 권위를 정리합니다.
 
@@ -14,7 +14,7 @@
 
 ## 변경할 수 없는 제품 사실
 
-- 제품명: `넙죽이와 붕괴한 코드 왕국`
+- 제품명: `Ninja Adventure`
 - 세계: `WORLD_CODRIA` / 코드리아
 - 주인공: `PROTAGONIST_NUPJUKYI` / 넙죽이
 - 유물: `ARTIFACT_ADMIN_KEYBOARD` / 관리자 키보드

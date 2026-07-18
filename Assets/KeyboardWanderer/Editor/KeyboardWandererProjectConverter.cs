@@ -48,18 +48,28 @@ namespace KeyboardWanderer.Editor
                 throw new UnityException("Open SampleScene before converting the project.");
 
             KeyboardWandererWorldView world = EnsureAuthoredWorld(controller.transform);
-            Camera sceneCamera = EnsureSceneCamera();
-            EnsureAuthoredAudio(controller.transform, out AudioSource music, out AudioSource sfx);
-            controller.ConfigureAuthoredContent(settings, manifest, world, sceneCamera, music, sfx);
+            Camera sceneCamera = EnsureSceneCamera(out KeyboardWandererCameraController cameraController);
+            KeyboardWandererAudioController audioController =
+                EnsureAuthoredAudio(controller.transform, out AudioSource music, out AudioSource sfx);
+            KeyboardWandererInputController inputController = controller.GetComponent<KeyboardWandererInputController>();
+            if (inputController == null)
+                inputController = controller.gameObject.AddComponent<KeyboardWandererInputController>();
+            if (controller.GetComponent<SceneSequencePlayer>() == null)
+                controller.gameObject.AddComponent<SceneSequencePlayer>();
+            controller.ConfigureAuthoredContent(
+                settings, manifest, world, sceneCamera, cameraController, music, sfx, audioController,
+                inputController);
             EditorUtility.SetDirty(controller);
 
-            KeyboardWandererSceneUIBuilder.Build();
+            // Preserve scene/prefab UI edits. Rebuild only when no authored UI exists yet.
+            KeyboardWandererSceneUIBuilder.EnsureExistingOrBuild();
             EditorSceneManager.MarkSceneDirty(controller.gameObject.scene);
             if (!EditorSceneManager.SaveScene(controller.gameObject.scene))
                 throw new UnityException("Failed to save the authored scene.");
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+            KeyboardWandererAuthoringValidator.ValidateOrThrow(controller);
             Selection.activeObject = settings;
             Debug.Log("Keyboard Wanderer conversion complete: Scene objects, UI prefab, world prefabs, and authoring settings are now persistent assets.");
         }
@@ -141,9 +151,11 @@ namespace KeyboardWanderer.Editor
                 tilemapRenderer = terrainObject.AddComponent<TilemapRenderer>();
             tilemapRenderer.sortingOrder = -1000;
 
-            Transform dynamicRoot = root.transform.Find("Dynamic Objects");
-            if (dynamicRoot == null)
-                dynamicRoot = Child(root.transform, "Dynamic Objects").transform;
+            Transform staticRoot = EnsureChild(root.transform, "Static Objects");
+            Transform runtimeRoot = EnsureChild(root.transform, "Runtime Objects");
+            Transform entityRoot = EnsureChild(runtimeRoot, "Entities");
+            Transform landmarkRoot = EnsureChild(runtimeRoot, "Landmarks");
+            Transform effectsRoot = EnsureChild(runtimeRoot, "Effects");
 
             Transform selectionTransform = root.transform.Find("Selection Cursor");
             GameObject selectionObject = selectionTransform != null
@@ -155,13 +167,13 @@ namespace KeyboardWanderer.Editor
             selection.sortingOrder = 900;
             selection.enabled = false;
 
-            view.Configure(tilemap, dynamicRoot, selection);
+            view.Configure(tilemap, staticRoot, entityRoot, landmarkRoot, effectsRoot, selection);
             root.SetActive(false);
             EditorUtility.SetDirty(view);
             return view;
         }
 
-        private static Camera EnsureSceneCamera()
+        private static Camera EnsureSceneCamera(out KeyboardWandererCameraController cameraController)
         {
             Camera camera = Camera.main ?? Object.FindAnyObjectByType<Camera>();
             if (camera == null)
@@ -174,17 +186,31 @@ namespace KeyboardWanderer.Editor
             camera.orthographic = true;
             if (camera.GetComponent<AudioListener>() == null)
                 camera.gameObject.AddComponent<AudioListener>();
+            cameraController = camera.GetComponent<KeyboardWandererCameraController>();
+            if (cameraController == null)
+                cameraController = camera.gameObject.AddComponent<KeyboardWandererCameraController>();
+            cameraController.Configure(camera);
+            EditorUtility.SetDirty(cameraController);
             EditorUtility.SetDirty(camera);
             return camera;
         }
 
-        private static void EnsureAuthoredAudio(Transform controller, out AudioSource music, out AudioSource sfx)
+        private static KeyboardWandererAudioController EnsureAuthoredAudio(
+            Transform controller,
+            out AudioSource music,
+            out AudioSource sfx)
         {
             Transform audioRoot = controller.Find("Authored Audio");
             if (audioRoot == null)
                 audioRoot = Child(controller, "Authored Audio").transform;
             music = EnsureAudioSource(audioRoot, "Music", true);
             sfx = EnsureAudioSource(audioRoot, "SFX", false);
+            KeyboardWandererAudioController audio = audioRoot.GetComponent<KeyboardWandererAudioController>();
+            if (audio == null)
+                audio = audioRoot.gameObject.AddComponent<KeyboardWandererAudioController>();
+            audio.Configure(music, sfx);
+            EditorUtility.SetDirty(audio);
+            return audio;
         }
 
         private static AudioSource EnsureAudioSource(Transform parent, string name, bool loop)
@@ -204,6 +230,12 @@ namespace KeyboardWanderer.Editor
             var child = new GameObject(name);
             child.transform.SetParent(parent, false);
             return child;
+        }
+
+        private static Transform EnsureChild(Transform parent, string name)
+        {
+            Transform existing = parent.Find(name);
+            return existing != null ? existing : Child(parent, name).transform;
         }
 
         private static void EnsureFolder(string path)

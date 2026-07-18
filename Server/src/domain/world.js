@@ -866,10 +866,18 @@ function findFinaleClusterCenter({ area, areaMap, tiles, width, height, connecte
 
 function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width, height, entry, repairs }) {
   const assets = {
-    npc: ["npc.villager.green.v1", "npc.traveler.green.v1", "npc.warden.green.v1"],
+    npc: [
+      "npc.villager.green.v1", "npc.villager2.v1", "npc.villager3.v1", "npc.villager4.v1",
+      "npc.villager5.v1", "npc.villager6.v1", "npc.old-man.v1", "npc.noble.v1",
+      "npc.princess.v1", "npc.samurai.v1"
+    ],
     prop: ["item.crate.v1", "item.rune-book.v1", "prop.lantern.v1"],
     quest: ["prop.sign.v1", "prop.altar.v1"],
-    enemy: ["enemy.slime.green.v1", "enemy.slime.blue.v1"],
+    enemy: [
+      "enemy.slime.blue.v1", "enemy.slime.green.v1", "enemy.mushroom.v1", "enemy.blue-bat.v1",
+      "enemy.bear.v1", "enemy.cyclope.v1", "enemy.dragon.v1", "enemy.kappa-green.v1",
+      "enemy.snake.v1", "enemy.spider-red.v1"
+    ],
     loot: ["item.focus-shard.v1", "item.field-ration.v1"]
   };
   const finaleArea = areas.find((item) => item.campaignRole === FINALE_ROLE);

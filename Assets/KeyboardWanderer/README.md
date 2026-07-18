@@ -1,4 +1,4 @@
-# 넙죽이와 붕괴한 코드 왕국 — Unity 클라이언트 v4
+# Ninja Adventure — Unity 클라이언트 v4
 
 코드리아(`WORLD_CODRIA`)의 붕괴 원인을 추적하고 관리자 키보드(`ARTIFACT_ADMIN_KEYBOARD`)의 세 접근 권한을 되찾는 픽셀 어드벤처입니다. 주인공은 넙죽이(`PROTAGONIST_NUPJUKYI`)이며, 현재 화면 표현만 NinjaAdventure의 `NinjaGreen` 에셋을 임시 사용합니다.
 
@@ -49,7 +49,9 @@ Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 열고 Play Mode를 
 | 입력 | 선택 | 턴 규칙 |
 | --- | --- | --- |
 | `MOVE` | 검증 가능한 목적지 | 안전 이동은 D20·캠페인 턴을 소비하지 않으며 위험 이동은 조우만 활성화할 수 있음 |
-| `USE_SKILL` | `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO` | 전투·조사·협상·배치 맥락에서 의미 있는 결과를 확정하며 정확히 한 턴 소비 |
+| `USE_SKILL` | `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`, `SEARCH`, `SELECT_ALL` | 전투·조사·협상·배치 맥락에서 의미 있는 결과를 확정하며 정확히 한 턴 소비 |
+
+화면 스킬명은 단축키를 우선합니다. `Delete`만 키 이름을 그대로 쓰며, 복제는 `Ctrl C`로 원본을 캡처하면 `Ctrl V` 상태로 전환되고 빈 배치 타일을 고른 뒤 실행됩니다. `Ctrl Z`는 Undo, `Ctrl F`는 주변 6칸 검색, `Ctrl A`는 주변 4칸 관리자 영역 전개입니다.
 
 Attack, Interact, Negotiate, Rest는 공개 기술이나 별도 입력이 아닙니다. 서버는 선택한 기술과 대상을 `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT` 중 하나로 분류합니다. `playerNote`는 선택 사항이며, 자연어 없이도 합법적인 턴이 완성되어야 합니다.
 
@@ -58,7 +60,7 @@ Attack, Interact, Negotiate, Rest는 공개 기술이나 별도 입력이 아닙
 - 중앙: 봉인 월드 카메라와 선택 경로
 - 상단: 장소, 물리 바이옴, 9비트 진행, 의미 턴, 관리자 권한 `0/3`, 핵심 지표
 - 우측: 주 목표 1개, 보조 목표 최대 2개, 추천 행동 2–3개, 판정 결과와 상태 변화
-- 하단: MOVE와 다섯 기술, 대상/목적지, 선택적 메모, 확정 버튼
+- 하단: MOVE와 관리자 키보드 단축키, 대상/목적지, 선택적 메모, 확정 버튼
 - 사용할 수 없는 기술은 숨기지 않고 비활성화하며 이유를 제공합니다.
 - 확정 전 대상, 기술, 턴 소비 여부와 위험을 보여 줍니다.
 - 결과는 `판정 → 상태 변화 → 2–4문장 서술` 순서로 표시합니다.

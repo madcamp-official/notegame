@@ -1,8 +1,8 @@
-# 넙죽이와 붕괴한 코드 왕국 — 제품 계약 v4
+# Ninja Adventure — 제품 계약 v4
 
 ## 1. 제품 정의
 
-`넙죽이와 붕괴한 코드 왕국`은 코드리아(`WORLD_CODRIA`)의 시스템 붕괴를 조사하는 맵 중심 픽셀 어드벤처입니다. 넙죽이(`PROTAGONIST_NUPJUKYI`)는 관리자 키보드(`ARTIFACT_ADMIN_KEYBOARD`)를 깨우고, 세 단계 관리자 권한을 복구해 루트 시스템에 진입한 뒤 최종 배포와 결말을 선택합니다.
+`Ninja Adventure`은 코드리아(`WORLD_CODRIA`)의 시스템 붕괴를 조사하는 맵 중심 픽셀 어드벤처입니다. 넙죽이(`PROTAGONIST_NUPJUKYI`)는 관리자 키보드(`ARTIFACT_ADMIN_KEYBOARD`)를 깨우고, 세 단계 관리자 권한을 복구해 루트 시스템에 진입한 뒤 최종 배포와 결말을 선택합니다.
 
 현재 NinjaAdventure의 `NinjaGreen`을 주인공 스프라이트로 임시 사용합니다. 이는 넙죽이의 표현 에셋일 뿐 제품명, 캐릭터 정체성이나 설정을 대신하지 않습니다.
 

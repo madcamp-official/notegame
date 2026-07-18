@@ -14,7 +14,7 @@ namespace KeyboardWanderer.Core
     /// </summary>
     public static class DeterministicRegionGenerator
     {
-        public const string CurrentVersion = "codria-local-world.v9";
+        public const string CurrentVersion = "codria-local-world.v10";
         public const string ProgressionVersion = "codria-access-progression.v4";
         public const int DefaultWidth = 160;
         public const int DefaultHeight = 160;
@@ -94,7 +94,7 @@ namespace KeyboardWanderer.Core
             Shuffle(biomeOrder, random);
             List<RoutePlan> routePlans = CreateRoutePlans(roleArea[5], width, height, random);
             List<WorldArea> areas = CreateAreas(width, height, biomes, biomeOrder, roleByArea,
-                routePlans, random);
+                routePlans, random, roleArea[5]);
             List<WorldRoute> routes = CreateRoutes(worldSeed, width, height, areas, routePlans,
                 roleArea[5], random);
             ProgressionGraph progression = CreateProgressionGraph(areas, roleArea, progressionModes);
@@ -102,8 +102,15 @@ namespace KeyboardWanderer.Core
             // 4. Rasterize broad clustered terrain, then carve the validated logical routes over it.
             BaseTile[] tiles = CreateClusteredTerrain(width, height, biomes, biomeOrder,
                 unchecked((uint)regionSeed));
+            // 원반(disc) 월드: 원 밖을 void 처리해 원형 실루엣을 만든다. 아래 CarveRoute/CarveClearing이
+            // 마스크 이후 실행되어 길·구역 클리어링이 걷는 길을 다시 뚫으므로 연결성·도달성 검증은 유지된다.
+            ApplyDiscMask(tiles, width, height, areas);
             for (int i = 0; i < routes.Count; i++) CarveRoute(tiles, width, height, routes[i]);
-            for (int i = 0; i < areas.Count; i++) CarveClearing(tiles, width, height, areas[i].Center, 4);
+            for (int i = 0; i < areas.Count; i++)
+            {
+                if (i == roleArea[5]) CarveCircle(tiles, width, height, areas[i].Center, 14); // 중심 최종 스테이지: 원형
+                else CarveCircle(tiles, width, height, areas[i].Center, 3);
+            }
 
             WorldArea startArea = areas[roleArea[0]];
             WorldArea rootArea = areas[roleArea[5]];
@@ -236,26 +243,49 @@ namespace KeyboardWanderer.Core
                    Math.Abs(left / AreaColumns - right / AreaColumns);
         }
 
-        private static GridCoord AreaCenter(int index, int width, int height)
+        // 방사형(wheel) 배치: 루트 시스템(최종 스테이지)을 원 중심에, 나머지 11개 구역을 고리에 둔다.
+        // 이렇게 하면 route 거리(엣지 후보)가 방사형이 되어 바큇살·고리 도로가 자연스럽게 생긴다.
+        private const double RingRadiusFactor = 0.34; // 맵 최소변 대비 고리 반지름 비율(≈54/160)
+
+        private static int RingSlotFor(int index, int rootIndex)
         {
-            int column = index % AreaColumns;
-            int row = index / AreaColumns;
-            int minX = column * width / AreaColumns;
-            int maxX = (column + 1) * width / AreaColumns - 1;
-            int minY = row * height / AreaRows;
-            int maxY = (row + 1) * height / AreaRows - 1;
-            return new GridCoord((minX + maxX) / 2, (minY + maxY) / 2);
+            int slot = 0;
+            for (int i = 0; i < index; i++) if (i != rootIndex) slot++;
+            return slot;
         }
 
-        private static List<EdgeCandidate> CreateEdgeCandidates(int width, int height, StableRandom random)
+        private static GridCoord AreaCenter(int index, int rootIndex, int width, int height)
+        {
+            double cx = (width - 1) / 2.0;
+            double cy = (height - 1) / 2.0;
+            if (index == rootIndex)
+                return new GridCoord((int)Math.Round(cx), (int)Math.Round(cy));
+            int ringCount = RequiredAreaCount - 1;
+            double ringRadius = Math.Min(width, height) * RingRadiusFactor;
+            double angle = RingSlotFor(index, rootIndex) * (2.0 * Math.PI / ringCount);
+            int x = (int)Math.Round(cx + ringRadius * Math.Cos(angle));
+            int y = (int)Math.Round(cy + ringRadius * Math.Sin(angle));
+            return new GridCoord(x, y);
+        }
+
+        private static void AreaBounds(int index, int rootIndex, int width, int height,
+            out GridCoord min, out GridCoord max)
+        {
+            GridCoord center = AreaCenter(index, rootIndex, width, height);
+            int half = index == rootIndex ? 15 : 12;
+            min = new GridCoord(Math.Max(1, center.X - half), Math.Max(1, center.Y - half));
+            max = new GridCoord(Math.Min(width - 2, center.X + half), Math.Min(height - 2, center.Y + half));
+        }
+
+        private static List<EdgeCandidate> CreateEdgeCandidates(int rootIndex, int width, int height, StableRandom random)
         {
             var values = new List<EdgeCandidate>();
             for (int left = 0; left < RequiredAreaCount; left++)
             {
-                GridCoord leftCenter = AreaCenter(left, width, height);
+                GridCoord leftCenter = AreaCenter(left, rootIndex, width, height);
                 for (int right = left + 1; right < RequiredAreaCount; right++)
                 {
-                    GridCoord rightCenter = AreaCenter(right, width, height);
+                    GridCoord rightCenter = AreaCenter(right, rootIndex, width, height);
                     int dx = leftCenter.X - rightCenter.X;
                     int dy = leftCenter.Y - rightCenter.Y;
                     values.Add(new EdgeCandidate
@@ -282,7 +312,7 @@ namespace KeyboardWanderer.Core
         private static List<RoutePlan> CreateRoutePlans(int rootAreaIndex, int width, int height,
             StableRandom random)
         {
-            List<EdgeCandidate> candidates = CreateEdgeCandidates(width, height, random);
+            List<EdgeCandidate> candidates = CreateEdgeCandidates(rootAreaIndex, width, height, random);
             var selected = new List<RoutePlan>();
             var selectedKeys = new HashSet<string>();
             var disjoint = new DisjointSet(RequiredAreaCount);
@@ -305,13 +335,14 @@ namespace KeyboardWanderer.Core
             AddRoutePlan(selected, selectedKeys, rootCandidates[0], false, "major");
             AddRoutePlan(selected, selectedKeys, rootCandidates[1], true, "minor");
 
+            // 고리(circumferential) 오솔길을 넉넉히 추가해 바이옴 조각들을 서로 잇는다.
             int loopsAdded = 0;
-            for (int i = 0; i < candidates.Count && loopsAdded < 2; i++)
+            for (int i = 0; i < candidates.Count && loopsAdded < 9; i++)
             {
                 EdgeCandidate edge = candidates[i];
                 if (edge.Left == rootAreaIndex || edge.Right == rootAreaIndex) continue;
                 if (!AddRoutePlan(selected, selectedKeys, edge, true,
-                        loopsAdded == 0 ? "minor" : "secret")) continue;
+                        loopsAdded < 4 ? "minor" : "secret")) continue;
                 loopsAdded++;
             }
             if (loopsAdded < 2)
@@ -336,7 +367,7 @@ namespace KeyboardWanderer.Core
 
         private static List<WorldArea> CreateAreas(int width, int height,
             List<BiomeDescriptor> biomes, int[] biomeOrder, Dictionary<int, string> roleByArea,
-            List<RoutePlan> routePlans, StableRandom random)
+            List<RoutePlan> routePlans, StableRandom random, int rootIndex)
         {
             var neighbors = new List<int>[RequiredAreaCount];
             for (int i = 0; i < neighbors.Length; i++) neighbors[i] = new List<int>();
@@ -350,12 +381,7 @@ namespace KeyboardWanderer.Core
             var areas = new List<WorldArea>(RequiredAreaCount);
             for (int index = 0; index < RequiredAreaCount; index++)
             {
-                int column = index % AreaColumns;
-                int row = index / AreaColumns;
-                int minX = column * width / AreaColumns;
-                int maxX = (column + 1) * width / AreaColumns - 1;
-                int minY = row * height / AreaRows;
-                int maxY = (row + 1) * height / AreaRows - 1;
+                AreaBounds(index, rootIndex, width, height, out GridCoord areaMin, out GridCoord areaMax);
                 string role = roleByArea.TryGetValue(index, out string selectedRole)
                     ? selectedRole
                     : string.Empty;
@@ -366,8 +392,8 @@ namespace KeyboardWanderer.Core
                     neighborIds.Add(AreaId(neighbors[index][i]));
                 string landmark = LandmarkFor(role, biome.Id, index);
                 areas.Add(new WorldArea(areaId, DisplayNameFor(role, biome.DisplayName, index), biome.Id,
-                    DescriptionFor(role, biome.DisplayName), new GridCoord(minX, minY),
-                    new GridCoord(maxX, maxY), landmark, role, neighborIds, 1 + random.Next(3),
+                    DescriptionFor(role, biome.DisplayName), areaMin,
+                    areaMax, landmark, role, neighborIds, 1 + random.Next(3),
                     TagsFor(role, landmark), role == CampaignCatalog.FinalConvergenceRole ? 3 : 0));
             }
             return areas;
@@ -386,11 +412,12 @@ namespace KeyboardWanderer.Core
                 WorldArea from = areas[plan.Left];
                 WorldArea to = areas[plan.Right];
                 bool gated = from.RequiredAdminAccess == 3 || to.RequiredAdminAccess == 3;
-                int routeWidth = plan.Kind == "secret" ? 1 : plan.Kind == "minor" ? 3 :
-                    (random.Next(2) == 0 ? 3 : 5);
+                // 지도 전체의 길을 한 타일 오솔길로 통일한다. 중요도는 Kind로만 표현하고,
+                // 폭으로 넓은 덩어리를 만들지 않아 여러 갈래가 지형 사이로 스며들게 한다.
+                const int routeWidth = 1;
                 List<GridCoord> path = gated
                     ? CreateBentPath(from.Center, to.Center, width, height, random)
-                    : CreatePathAvoidingArea(from.Center, to.Center, width, height, rootArea,
+                    : CreateOrganicPath(from.Center, to.Center, width, height, rootArea,
                         routeWidth / 2, random);
                 routes.Add(new WorldRoute(
                     "route-" + (i + 1).ToString("00") + "-" + ShortStableId(worldSeed,
@@ -443,6 +470,45 @@ namespace KeyboardWanderer.Core
             for (int index = goalIndex; index >= 0; index = parent[index])
                 path.Add(new GridCoord(index % width, index / width));
             path.Reverse();
+            return path;
+        }
+
+        // 위에서 본 지도처럼 자연스러운 곡선 길: from→to 를 여러 웨이포인트로 나누고
+        // 각 웨이포인트를 진행 방향의 수직으로 흔들어(중간에서 가장 크게) 유기적으로 굽힌 뒤,
+        // 웨이포인트 사이를 짧은 BFS 구간으로 이어 붙인다(4방향 유지 → 도달성 보장).
+        private static List<GridCoord> CreateOrganicPath(GridCoord from, GridCoord to, int width,
+            int height, WorldArea blockedArea, int footprintRadius, StableRandom random)
+        {
+            double dx = to.X - from.X;
+            double dy = to.Y - from.Y;
+            double len = Math.Sqrt(dx * dx + dy * dy);
+            int segments = Math.Max(2, (int)(len / 12.0));
+            double px = len > 0.001 ? -dy / len : 0.0;
+            double py = len > 0.001 ? dx / len : 0.0;
+
+            var waypoints = new List<GridCoord> { from };
+            for (int s = 1; s < segments; s++)
+            {
+                double t = s / (double)segments;
+                double baseX = from.X + dx * t;
+                double baseY = from.Y + dy * t;
+                double wobble = Math.Sin(t * Math.PI); // 양끝 0, 중앙 1
+                double amp = ((random.Next(201) - 100) / 100.0) * len * 0.22 * wobble;
+                int wx = Clamp((int)Math.Round(baseX + px * amp), 2, width - 3);
+                int wy = Clamp((int)Math.Round(baseY + py * amp), 2, height - 3);
+                var wp = new GridCoord(wx, wy);
+                if (RouteCenterIsAllowed(wp, width, height, blockedArea, footprintRadius))
+                    waypoints.Add(wp);
+            }
+            waypoints.Add(to);
+
+            var path = new List<GridCoord>();
+            for (int i = 0; i + 1 < waypoints.Count; i++)
+            {
+                List<GridCoord> segment = CreatePathAvoidingArea(waypoints[i], waypoints[i + 1],
+                    width, height, blockedArea, footprintRadius, random);
+                for (int k = i == 0 ? 0 : 1; k < segment.Count; k++) path.Add(segment[k]);
+            }
             return path;
         }
 
@@ -588,14 +654,33 @@ namespace KeyboardWanderer.Core
                 for (int x = 0; x < width; x++)
                 {
                     bool border = x == 0 || y == 0 || x == width - 1 || y == height - 1;
+                    // 원반을 6개 각도 섹터로 나눠 파이 슬라이스 바이옴으로 지형을 칠한다.
                     TileKind kind = border
                         ? TileKind.Wall
-                        : TerrainKindFor(biomes[biomeOrder[AreaIndexFor(x, y, width, height)]],
+                        : TerrainKindFor(biomes[SectorBiomeIndex(x, y, width, height)],
                             seed, x, y);
                     tiles[y * width + x] = new BaseTile(kind, MovementCostFor(kind));
                 }
             }
             return tiles;
+        }
+
+        // 원반 중심 기준 각도를 6등분해 파이 슬라이스 바이옴 인덱스를 돌려준다.
+        // 컨트롤러 렌더(BiomeIdAt)도 동일한 공식을 써야 지형과 장식이 일치한다.
+        private static int SectorBiomeIndex(int x, int y, int width, int height)
+        {
+            double cx = (width - 1) / 2.0;
+            double cy = (height - 1) / 2.0;
+            double dx = x - cx;
+            double dy = y - cy;
+            double centralRadius = Math.Min(width, height) * 0.12; // 중심 최종 스테이지 존
+            if (dx * dx + dy * dy <= centralRadius * centralRadius)
+                return RequiredBiomeCount - 1; // 고대 폐허 = 루트 시스템 코어 룩
+            double angle = Math.Atan2(dy, dx) + Math.PI; // 0..2π
+            int sector = (int)(angle / (2.0 * Math.PI) * RequiredBiomeCount);
+            if (sector < 0) sector = 0;
+            if (sector >= RequiredBiomeCount) sector = RequiredBiomeCount - 1;
+            return sector;
         }
 
         private static TileKind TerrainKindFor(BiomeDescriptor biome, uint seed, int x, int y)
@@ -696,10 +781,58 @@ namespace KeyboardWanderer.Core
                         Carve(tiles, width, x, y);
         }
 
+        // 원형 클리어링: 중심 최종 스테이지(루트 시스템)를 원 모양으로 판다.
+        private static void CarveCircle(BaseTile[] tiles, int width, int height, GridCoord center, int radius)
+        {
+            int radiusSq = radius * radius;
+            for (int y = center.Y - radius; y <= center.Y + radius; y++)
+                for (int x = center.X - radius; x <= center.X + radius; x++)
+                {
+                    int dx = x - center.X;
+                    int dy = y - center.Y;
+                    if (dx * dx + dy * dy > radiusSq) continue;
+                    if (x > 0 && y > 0 && x < width - 1 && y < height - 1)
+                        Carve(tiles, width, x, y);
+                }
+        }
+
         private static void Carve(BaseTile[] tiles, int width, int x, int y)
         {
             int index = y * width + x;
             tiles[index] = new BaseTile(tiles[index].Kind == TileKind.Water ? TileKind.Bridge : TileKind.Dirt, 1);
+        }
+
+        // 원반(disc) 월드: 세계 중심에서 반지름 밖 타일을 void(Wall)로 만들어 원형 실루엣을 만든다.
+        // 구역 중심 주변 코어는 보호해 슬롯 배치 후보를 남기고, 이 마스크는 CarveRoute/CarveClearing보다
+        // 먼저 적용되므로 이후 길·클리어링이 원 밖까지 걷는 길을 다시 뚫어 연결성·도달성 검증을 유지한다.
+        private static void ApplyDiscMask(BaseTile[] tiles, int width, int height, List<WorldArea> areas)
+        {
+            double cx = (width - 1) / 2.0;
+            double cy = (height - 1) / 2.0;
+            double radius = Math.Min(width, height) / 2.0 - 1.0;
+            double radiusSq = radius * radius;
+            const int coreProtect = 6;
+            int coreProtectSq = coreProtect * coreProtect;
+            for (int y = 1; y < height - 1; y++)
+            {
+                for (int x = 1; x < width - 1; x++)
+                {
+                    double dx = x - cx;
+                    double dy = y - cy;
+                    if (dx * dx + dy * dy <= radiusSq) continue;
+                    bool nearCore = false;
+                    for (int i = 0; i < areas.Count; i++)
+                    {
+                        GridCoord center = areas[i].Center;
+                        int ax = x - center.X;
+                        int ay = y - center.Y;
+                        if (ax * ax + ay * ay <= coreProtectSq) { nearCore = true; break; }
+                    }
+                    if (nearCore) continue;
+                    int index = y * width + x;
+                    tiles[index] = new BaseTile(TileKind.Wall, MovementCostFor(TileKind.Wall));
+                }
+            }
         }
 
         private static HashSet<GridCoord> FloodFill(BaseTile[] tiles, int width, int height, GridCoord start,
@@ -887,8 +1020,8 @@ namespace KeyboardWanderer.Core
             {
                 WorldRoute route = routes[i];
                 if (route.IsLoop) loopCount++;
-                if (route.Kind == "major" && route.Width < 3)
-                    throw new InvalidOperationException("Major roads must be at least three tiles wide.");
+                if (route.Width != 1)
+                    throw new InvalidOperationException("Disc-world routes must remain one-tile paths.");
                 if (route.Path.Count == 0)
                     throw new InvalidOperationException("Routes must include a raster path.");
                 bool incidentToRoot = route.Connects(rootArea.Id);
@@ -911,7 +1044,7 @@ namespace KeyboardWanderer.Core
                 if (areas[i].Id != rootArea.Id && !reachableBeforeRoot.Contains(areas[i].Center))
                     throw new InvalidOperationException("Pre-finale area requires traversal through the finale: " + areas[i].Id);
             }
-            if (start.ManhattanDistance(exit) < Math.Min(width, height) / 2)
+            if (start.ManhattanDistance(exit) < Math.Min(width, height) / 4)
                 throw new InvalidOperationException("ROOT_SYSTEM is too close to Nupjukyi's arrival area.");
 
             var slotCoordinates = new HashSet<GridCoord>();

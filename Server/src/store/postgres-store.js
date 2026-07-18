@@ -271,6 +271,13 @@ export class PostgresStore {
       const activePlacement = await synchronizeActiveArea(client, committed.run);
       await updateRunRow(client, committed.run);
       await client.query(`update ${SCHEMA}.entity_positions set area_id = $4, x = $5, y = $6, revision = revision + 1, updated_at = $7 where entity_id = $1 and owner_id = $2 and run_id = $3 and removed_at is null`, [committed.run.playerEntityId, ownerId, runId, activePlacement.placement.areaId, activePlacement.placement.localPosition.x, activePlacement.placement.localPosition.y, committed.run.updatedAt]);
+      if (committed.navigation.events?.length > 0) {
+        await synchronizeEntityState(client, committed.run, {
+          turnNo: committed.run.currentTurn,
+          request: {},
+          events: committed.navigation.events
+        });
+      }
       const requestedDestination = committed.navigation.requestedDestination || committed.navigation.to;
       const requestedPlacement = databasePlacementForGlobalPosition(
         committed.run, activePlacement.areaRows, requestedDestination
@@ -281,7 +288,11 @@ export class PostgresStore {
         enteredRegionAxis: areaAt(committed.run.world, committed.navigation.to).regionAxis,
         encounterOpened: Boolean(committed.navigation.encounterOpened),
         layoutHash: committed.run.world.layoutHash,
-        rulesAuthority: "server"
+        rulesAuthority: "server",
+        sceneDecision: committed.navigation.sceneDecision || null,
+        sceneSequence: committed.navigation.sceneSequence || [],
+        events: committed.navigation.events || [],
+        narrative: committed.navigation.narrative || null
       };
       await client.query(
         `insert into ${SCHEMA}.safe_travels
@@ -1056,7 +1067,7 @@ async function writeDeepSnapshot(client, run, { generationPlanId = null, snapsho
      on conflict (owner_id, campaign_id, slot_no) do update
        set title = excluded.title, updated_at = excluded.updated_at
      returning id`,
-    [run.ownerId, run.campaignId, `${run.campaignTitle || "넙죽이와 붕괴한 코드 왕국"} · 자동 저장`, run.updatedAt || run.createdAt]
+    [run.ownerId, run.campaignId, `${run.campaignTitle || "Ninja Adventure"} · 자동 저장`, run.updatedAt || run.createdAt]
   );
   let lastTurnRecordId = null;
   let lastEventId = null;
@@ -1254,6 +1265,10 @@ async function synchronizeEntityState(client, run, turn) {
         sourceEntityId: event.type === "entity_spawned" ? turn.request.targetEntityId : null,
         ...databasePlacementForGlobalPosition(run, areaRows, gameEntity.position)
       });
+      if (gameEntity.kind === "npc") {
+        const relationship = run.npcRelationships.find((item) => item.npcId === gameEntity.id);
+        if (relationship) await upsertRelationshipProjection(client, run, relationship, run.updatedAt);
+      }
       if (event.type === "entity_bound_to_slot") await bindRuntimeEntityToSlot(client, run, turn, event, gameEntity);
     } else if (event.type === "entity_removed") {
       await client.query(
@@ -1296,7 +1311,7 @@ async function synchronizeEntityState(client, run, turn) {
           where entity_id = $1 and owner_id = $2 and run_id = $3 and status = 'released'`,
         [event.entityId, run.ownerId, run.id, turn.turnNo, run.updatedAt]
       );
-    } else if (event.type === "entity_state_restored" || event.type === "health_changed") {
+    } else if (["entity_state_restored", "health_changed", "entity_defeated", "entity_fled", "entity_defended", "clue_revealed"].includes(event.type)) {
       const gameEntity = run.entities.find((candidate) => candidate.id === event.entityId);
       await client.query(
         `update ${SCHEMA}.entities set state_json = $4::jsonb, updated_at = $5 where id = $1 and owner_id = $2 and run_id = $3`,
@@ -1306,6 +1321,15 @@ async function synchronizeEntityState(client, run, turn) {
         await client.query(
           `update ${SCHEMA}.actors set hp = $4, updated_at = $5 where entity_id = $1 and owner_id = $2 and run_id = $3`,
           [event.entityId, run.ownerId, run.id, gameEntity.state.hp, run.updatedAt]
+        );
+      }
+    } else if (event.type === "prop_looted") {
+      for (const entityId of [event.entityId, event.actorId]) {
+        const gameEntity = run.entities.find((candidate) => candidate.id === entityId);
+        if (!gameEntity) continue;
+        await client.query(
+          `update ${SCHEMA}.entities set state_json = $4::jsonb, updated_at = $5 where id = $1 and owner_id = $2 and run_id = $3`,
+          [entityId, run.ownerId, run.id, JSON.stringify({ blocking: gameEntity.blocking, ...gameEntity.state }), run.updatedAt]
         );
       }
     }
@@ -1752,6 +1776,10 @@ function rowToNavigation(row) {
     reachedPoiIds: row.reached_poi_ids,
     encounterOpened: row.encounter_opened,
     encounter: row.encounter_json,
+    sceneDecision: row.turn_context?.sceneDecision || null,
+    sceneSequence: row.turn_context?.sceneSequence || [],
+    events: row.turn_context?.events || [],
+    narrative: row.turn_context?.narrative || null,
     campaignTurnConsumed: row.campaign_turn_consumed,
     campaignTurnBefore: Number(row.campaign_turn_before),
     campaignTurnAfter: Number(row.campaign_turn_after),
