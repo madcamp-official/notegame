@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace KeyboardWanderer.Demo
 {
@@ -8,7 +7,9 @@ namespace KeyboardWanderer.Demo
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreateDemo()
         {
-            if (SceneManager.GetActiveScene().name != "SampleScene" || Object.FindAnyObjectByType<KeyboardWandererDemoController>() != null)
+            // The normal setup is authored directly in the scene so it is visible
+            // in the Hierarchy. Keep this as a fallback for test or recovery scenes.
+            if (Object.FindAnyObjectByType<KeyboardWandererDemoController>() != null)
                 return;
 
             var gameObject = new GameObject("Codria Game");

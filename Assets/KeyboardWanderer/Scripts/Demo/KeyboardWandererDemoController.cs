@@ -110,6 +110,7 @@ namespace KeyboardWanderer.Demo
         private string _poiLabel = "POI 탐색";
 
         private Camera _camera;
+        private KeyboardWandererSceneUI _sceneUi;
         private Vector3 _cameraVelocity;
         private GameObject _worldRoot;
         private SpriteRenderer _selectionRenderer;
@@ -171,6 +172,7 @@ namespace KeyboardWanderer.Demo
 
         private void Awake()
         {
+            _sceneUi = GetComponentInChildren<KeyboardWandererSceneUI>(true);
             LoadSettings();
             CreateUiTextures();
             LoadNinjaAdventureAssets();
@@ -178,6 +180,12 @@ namespace KeyboardWanderer.Demo
             ConfigureAudio();
             EnsureRuntimeClients();
             ShowTitle();
+            if (_sceneUi != null)
+            {
+                _sceneUi.Bind(this);
+                _sceneUi.ApplyFont(_koreanFont != null ? _koreanFont : (_assets != null ? _assets.PixelFont : null));
+                UpdateAuthoredUi();
+            }
         }
 
         private void OnEnable()
@@ -216,6 +224,7 @@ namespace KeyboardWanderer.Demo
         private void Update()
         {
             UpdateCameraViewport();
+            UpdateAuthoredUi();
             if (_screenMode != ScreenMode.Playing || _service == null)
                 return;
 
@@ -227,6 +236,9 @@ namespace KeyboardWanderer.Demo
 
         private void OnGUI()
         {
+            if (_sceneUi != null && _sceneUi.IsReady)
+                return;
+
             Matrix4x4 previousMatrix = GUI.matrix;
             Color previousColor = GUI.color;
             bool previousEnabled = GUI.enabled;
@@ -253,6 +265,118 @@ namespace KeyboardWanderer.Demo
             GUI.enabled = previousEnabled;
             GUI.color = previousColor;
             GUI.matrix = previousMatrix;
+        }
+
+        private void UpdateAuthoredUi()
+        {
+            if (_sceneUi == null || !_sceneUi.IsReady)
+                return;
+
+            bool ended = _screenMode == ScreenMode.Playing && _service != null && !RunIsPlaying(_service.CurrentView);
+            _sceneUi.Show(_screenMode.ToString(), _showPause, ended);
+            _sceneUi.SetSlider("Music Slider", _musicVolume);
+            _sceneUi.SetSlider("Sfx Slider", _sfxVolume);
+            _sceneUi.SetToggle("GM Toggle", _gmEnabled);
+
+            int nextCounter = PlayerPrefs.GetInt("keyboard-wanderer.run-counter", 0) + 1;
+            long nextSeed = 20260717L + nextCounter;
+            CampaignBlueprint preview = CampaignCatalog.Create(nextSeed);
+            _sceneUi.SetText("Title Heading", CampaignCatalog.CampaignTitle);
+            _sceneUi.SetText("Title Subtitle", "코드리아 × 관리자 키보드 × 선택 회수");
+            _sceneUi.SetText("Title Seed", "NEXT SEED  " + nextSeed);
+            _sceneUi.SetText("Title Premise", preview.Title + "\n\n" + preview.Premise);
+            _sceneUi.SetText("Title Status", _serverStatus + " · Ninja Adventure CC0");
+            _sceneUi.SetButtonState("New Run Button", !_serverPending);
+            _sceneUi.SetButtonState("Continue Button", !_serverPending &&
+                (LocalRunSaveService.HasSave || !string.IsNullOrWhiteSpace(PlayerPrefs.GetString(ServerRunIdKey, string.Empty))));
+
+            if (_service == null)
+                return;
+
+            RunView view = _service.CurrentView;
+            _sceneUi.SetText("Campaign Text", CampaignTitle(view) + "\n" +
+                (_serverOnline ? "SERVER 160×160 AUTHORITATIVE" : "OFFLINE 160×160 RULE FALLBACK"));
+            _sceneUi.SetText("Area Text", "◆  " + CurrentAreaName(view) + "  ◆\n" + CurrentBiomeLabel(view) + " · " + CampaignPhaseLabel(view));
+            _sceneUi.SetText("Metrics Text", "캠페인 턴 " + CurrentTurn(view) + "/" + TurnLimit(view) + "  ·  관리자 권한 " +
+                AdminAccessLevel(view) + "/3\n" + MetricsLine(view));
+            _sceneUi.SetText("Context Text", "런 컨텍스트\n\n" + PlayerDisplayName(view) + " · " + CampaignPhaseLabel(view) +
+                "\nSeed " + view.WorldSeed + "\n\nHP  " + Health(view) + " / " + MaxHealth(view) +
+                "\nFOCUS  " + Focus(view) + " / " + MaxFocus(view) + "\n\n메인 목표\n" + StoryBeat(view) +
+                "\n" + StoryBeatObjective(view) + "\n\n보조 목표\n" + SecondaryObjectiveText(view) +
+                "\n\n권한 / 부채 / 선택 회수\n" + ProgressLedgerText(view) + "\n" + FinaleGateLabel(view));
+            _sceneUi.SetText("Resolution Text", "1 · 판정\n\n" + (_lastD20 > 0 ? "D20  " + _lastD20 : "D20  --") +
+                "  ·  " + _lastOutcome + "\n수정 " + Signed(_lastModifier) + " · 난이도 " + DisplayNumber(_lastDifficulty) +
+                "\n총점 " + DisplayNumber(_lastMechanicalScore) + " · 문맥 " + _lastActionContext + "\n\n2 · 상태 변화\n" +
+                _lastStateChanges + "\n" + _lastExplanation + "\n\n3 · 짧은 서사\n" + ShortNarrative(NarrativeWithDialogue()) +
+                "\n\n기억\n" + string.Join("\n", MemoryLines(view)));
+            _sceneUi.SetText("Execution Text", "실행 전 확인\n\n" + ExecutionPreview(view) + "\n\n" + SelectionHint(view));
+            _sceneUi.SetText("Submit Label", SubmissionButtonLabel(view));
+            _sceneUi.SetText("Ending Heading", "코드리아의 결말");
+            _sceneUi.SetText("Ending Text", EndingTitle(EndingCode(view)) + "\n\n" + EndingDescription(EndingCode(view)) +
+                "\n\n턴 " + CurrentTurn(view) + " · 확정 사실 " + CanonicalFactCount(view) + " · 열린 훅 " + OpenLoopCount(view));
+
+            string[] abilityNames = { "Move", "Copy", "Delete", "Connect", "Restore", "Undo" };
+            for (int i = 0; i < abilityNames.Length; i++)
+            {
+                AbilityKind ability = AbilityByName(abilityNames[i]);
+                _sceneUi.SetButtonState("Ability " + abilityNames[i], IsSkillEnabledForCurrentTarget(ability), _ability == ability);
+            }
+            _sceneUi.SetButtonState("Submit Button", RunIsPlaying(view) && !_showPause && !_serverPending && CanSubmitCurrentSelection());
+        }
+
+        public void UiStartNewRun() => StartNewRun();
+        public void UiContinueRun() => ContinueRun();
+        public void UiCyclePoi(int direction) => CyclePoi(direction);
+        public void UiSetAbility(string abilityName) => SetAbility(AbilityByName(abilityName));
+        public void UiSubmit() => Submit();
+        public void UiResume() => _showPause = false;
+        public void UiShowTitle() => ShowTitle();
+
+        public void UiOpenSettings()
+        {
+            _settingsReturn = _screenMode;
+            _screenMode = ScreenMode.Settings;
+        }
+
+        public void UiOpenSettingsFromPause()
+        {
+            _showPause = false;
+            _settingsReturn = ScreenMode.Playing;
+            _screenMode = ScreenMode.Settings;
+        }
+
+        public void UiCloseSettings()
+        {
+            _screenMode = _settingsReturn;
+            if (_screenMode == ScreenMode.Playing && _camera != null)
+                _camera.enabled = true;
+        }
+
+        public void UiDeleteSave()
+        {
+            LocalRunSaveService.Delete();
+            PlayerPrefs.DeleteKey(ServerRunIdKey);
+            PlayerPrefs.Save();
+        }
+
+        public void UiSetMusicVolume(float value)
+        {
+            _musicVolume = value;
+            ApplyAudioVolumes();
+            SaveSettings();
+        }
+
+        public void UiSetSfxVolume(float value)
+        {
+            _sfxVolume = value;
+            ApplyAudioVolumes();
+            SaveSettings();
+        }
+
+        public void UiSetGmEnabled(bool value)
+        {
+            _gmEnabled = value;
+            SaveSettings();
         }
 
         private void DrawTitleScreen()
