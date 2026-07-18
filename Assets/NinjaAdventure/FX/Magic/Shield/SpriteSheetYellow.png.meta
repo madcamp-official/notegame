@@ -128,12 +128,12 @@ TextureImporter:
       name: SpriteSheetYellow_0
       rect:
         serializedVersion: 2
-        x: 47
-        y: 1
-        width: 50
-        height: 19
+        x: 0
+        y: 0
+        width: 24
+        height: 26
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -150,12 +150,12 @@ TextureImporter:
       name: SpriteSheetYellow_1
       rect:
         serializedVersion: 2
-        x: 96
-        y: 14
+        x: 24
+        y: 0
         width: 24
-        height: 12
+        height: 26
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -172,12 +172,12 @@ TextureImporter:
       name: SpriteSheetYellow_2
       rect:
         serializedVersion: 2
-        x: 122
-        y: 18
-        width: 20
-        height: 8
+        x: 48
+        y: 0
+        width: 24
+        height: 26
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -194,12 +194,12 @@ TextureImporter:
       name: SpriteSheetYellow_3
       rect:
         serializedVersion: 2
-        x: 2
+        x: 72
         y: 0
-        width: 20
-        height: 6
+        width: 24
+        height: 26
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -216,12 +216,12 @@ TextureImporter:
       name: SpriteSheetYellow_4
       rect:
         serializedVersion: 2
-        x: 24
+        x: 96
         y: 0
         width: 24
-        height: 11
+        height: 26
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -234,11 +234,33 @@ TextureImporter:
       indices: 
       edges: []
       weights: []
+    - serializedVersion: 2
+      name: SpriteSheetYellow_5
+      rect:
+        serializedVersion: 2
+        x: 120
+        y: 0
+        width: 24
+        height: 26
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6e1b0543b8de04e388634d81fe1f1ce3
+      internalID: -1576304198
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
     outline: []
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: ff09eaf04060641b888e8aad7029e82d
     internalID: 0
     vertices: []
     indices: 
@@ -246,13 +268,16 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     spriteCustomMetadata:
-      entries: []
+      entries:
+      - key: SpriteEditor.SliceSettings
+        value: '{"sliceOnImport":false,"gridCellCount":{"x":6.0,"y":1.0},"gridSpriteSize":{"x":24.0,"y":26.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.5,"y":0.5},"pivotPixels":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":0,"pivotUnitMode":0,"slicingType":2,"keepEmptyRects":false,"isAlternate":false}'
     nameFileIdTable:
       SpriteSheetYellow_0: -7569467759455415565
       SpriteSheetYellow_1: -8405730163904862052
       SpriteSheetYellow_2: -6479268224968325970
       SpriteSheetYellow_3: -8195507327390888568
       SpriteSheetYellow_4: 6762354676276882611
+      SpriteSheetYellow_5: -1576304198
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

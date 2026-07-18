@@ -20,6 +20,7 @@ namespace KeyboardWanderer.Demo
         private const float LeftWidth = 260f;
         private const float RightWidth = 390f;
         private const float TileSize = 1f;
+        private const int TerrainSortingOrder = -1000;
         private const string MusicVolumeKey = "keyboard-wanderer.music-volume";
         private const string SfxVolumeKey = "keyboard-wanderer.sfx-volume";
         private const string GmEnabledKey = "keyboard-wanderer.gm-enabled";
@@ -37,6 +38,7 @@ namespace KeyboardWanderer.Demo
             public KeyboardWandererEntityView AuthoredView;
             public GameObject Root;
             public SpriteRenderer Renderer;
+            public Animator Animator;
             public GameObject HealthBack;
             public GameObject HealthFill;
             public GameObject RootComponentLabel;
@@ -1620,8 +1622,11 @@ namespace KeyboardWanderer.Demo
                 terrainObject.transform.position = new Vector3(origin.x, origin.y, 0f);
                 tilemap = terrainObject.AddComponent<Tilemap>();
                 var tilemapRenderer = terrainObject.AddComponent<TilemapRenderer>();
-                tilemapRenderer.sortingOrder = 0;
+                tilemapRenderer.sortingOrder = TerrainSortingOrder;
             }
+            TilemapRenderer activeTilemapRenderer = tilemap.GetComponent<TilemapRenderer>();
+            if (activeTilemapRenderer != null)
+                activeTilemapRenderer.sortingOrder = TerrainSortingOrder;
             var tilePalette = new Dictionary<TileKind, Tile>();
 
             for (int y = 0; y < worldHeight; y++)
@@ -1746,6 +1751,8 @@ namespace KeyboardWanderer.Demo
                         IsPlayer = isPlayer,
                         IsHostile = hostile
                     };
+                    visual.Animator = ConfigureEntityAnimator(renderer,
+                        AnimatorForAsset(entity.assetId, entity.kind, isPlayer));
                     if (!string.IsNullOrWhiteSpace(rootComponent))
                         visual.RootComponentLabel = CreateRootComponentLabel(rootComponent, entity.name, visual.BaseColor, authoredView);
                     renderer.color = visual.BaseColor;
@@ -1823,6 +1830,8 @@ namespace KeyboardWanderer.Demo
                 IsPlayer = isPlayer,
                 IsHostile = entity.IsHostile
             };
+            visual.Animator = ConfigureEntityAnimator(renderer,
+                AnimatorForAsset(entity.AssetId, entity.Kind.ToString(), isPlayer));
             renderer.color = visual.BaseColor;
 
             if (visual.IsHostile)
@@ -1971,7 +1980,14 @@ namespace KeyboardWanderer.Demo
                     : visual.IsPlayer && Time.unscaledTime < _playerActionUntil && visual.AttackFrames.Length > 0
                         ? visual.AttackFrames
                         : visual.IdleFrames;
-                if (frames.Length > 0)
+                bool usesAnimator = visual.Animator != null && visual.Animator.runtimeAnimatorController != null;
+                if (usesAnimator && visual.IsPlayer)
+                {
+                    visual.Animator.SetBool("IsMoving", walkingThisFrame);
+                    visual.Animator.SetBool("IsAttacking",
+                        !walkingThisFrame && Time.unscaledTime < _playerActionUntil);
+                }
+                else if (!usesAnimator && frames.Length > 0)
                 {
                     Sprite frame = frames[_animationFrame % frames.Length];
                     if (visual.Renderer.sprite != frame)
@@ -2337,11 +2353,16 @@ namespace KeyboardWanderer.Demo
 
             if (_assets != null)
             {
-                _playerIdleFrames = CreateSheetFrames(_assets.PlayerIdleSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Idle");
-                _playerWalkFrames = CreateSheetFrames(_assets.PlayerWalkSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Walk");
-                _playerAttackFrames = CreateSheetFrames(_assets.PlayerAttackSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Attack");
-                _slimeFrames = CreateSheetFrames(_assets.SlimeSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Slime");
-                _villagerFrames = CreateSheetFrames(_assets.VillagerWalkSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Villager");
+                if (_assets.PlayerAnimatorController == null)
+                {
+                    _playerIdleFrames = CreateSheetFrames(_assets.PlayerIdleSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Idle");
+                    _playerWalkFrames = CreateSheetFrames(_assets.PlayerWalkSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Walk");
+                    _playerAttackFrames = CreateSheetFrames(_assets.PlayerAttackSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Attack");
+                }
+                if (_assets.SlimeAnimatorController == null)
+                    _slimeFrames = CreateSheetFrames(_assets.SlimeSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Slime");
+                if (_assets.VillagerAnimatorController == null)
+                    _villagerFrames = CreateSheetFrames(_assets.VillagerWalkSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Villager");
             }
 
             _playerSprite = FirstOrSource(_playerIdleFrames, _assets != null ? _assets.PlayerIdle : null, "Player", Hex("6a9d45"));
@@ -2717,6 +2738,37 @@ namespace KeyboardWanderer.Demo
             if (id.Contains("slime") || entityKind.Contains("enemy")) return _slimeFrames;
             if (entityKind.Contains("npc") || id.Contains("villager") || id.Contains("merchant") || id.Contains("healer")) return _villagerFrames;
             return Array.Empty<Sprite>();
+        }
+
+        private RuntimeAnimatorController AnimatorForAsset(string assetId, string kind, bool isPlayer)
+        {
+            if (_assets == null)
+                return null;
+            string id = (assetId ?? string.Empty).ToLowerInvariant();
+            string entityKind = (kind ?? string.Empty).ToLowerInvariant();
+            if (isPlayer || id.Contains("player"))
+                return _assets.PlayerAnimatorController;
+            if (id.Contains("slime") || entityKind.Contains("enemy"))
+                return _assets.SlimeAnimatorController;
+            if (entityKind.Contains("npc") || id.Contains("villager") || id.Contains("merchant") || id.Contains("healer"))
+                return _assets.VillagerAnimatorController;
+            return null;
+        }
+
+        private static Animator ConfigureEntityAnimator(
+            SpriteRenderer renderer,
+            RuntimeAnimatorController controller)
+        {
+            if (renderer == null || controller == null)
+                return null;
+            Animator animator = renderer.GetComponent<Animator>();
+            if (animator == null)
+                animator = renderer.gameObject.AddComponent<Animator>();
+            animator.runtimeAnimatorController = controller;
+            animator.Rebind();
+            animator.Play("Idle", 0, 0f);
+            animator.Update(0f);
+            return animator;
         }
 
         private static Color TintForKind(string kind)

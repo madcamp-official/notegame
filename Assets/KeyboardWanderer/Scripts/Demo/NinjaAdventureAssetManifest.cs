@@ -42,6 +42,11 @@ namespace KeyboardWanderer.Demo
         public Sprite TreasureChest;
         public Sprite D20;
 
+        [Header("Generated animator controllers")]
+        public RuntimeAnimatorController PlayerAnimatorController;
+        public RuntimeAnimatorController SlimeAnimatorController;
+        public RuntimeAnimatorController VillagerAnimatorController;
+
         [Header("Interface")]
         public Sprite WoodPanel;
         public Sprite WoodBackground;

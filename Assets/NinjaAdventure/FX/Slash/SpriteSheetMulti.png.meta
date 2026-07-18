@@ -168,11 +168,11 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 9
-        width: 20
-        height: 21
+        y: 0
+        width: 45
+        height: 30
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -189,12 +189,12 @@ TextureImporter:
       name: SpriteSheetMulti_1
       rect:
         serializedVersion: 2
-        x: 32
-        y: 20
-        width: 9
-        height: 9
+        x: 45
+        y: 0
+        width: 45
+        height: 30
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -211,12 +211,12 @@ TextureImporter:
       name: SpriteSheetMulti_2
       rect:
         serializedVersion: 2
-        x: 44
-        y: 10
-        width: 21
-        height: 20
+        x: 90
+        y: 0
+        width: 45
+        height: 30
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -233,12 +233,12 @@ TextureImporter:
       name: SpriteSheetMulti_3
       rect:
         serializedVersion: 2
-        x: 70
-        y: 1
-        width: 21
-        height: 21
+        x: 135
+        y: 0
+        width: 45
+        height: 30
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -255,12 +255,12 @@ TextureImporter:
       name: SpriteSheetMulti_4
       rect:
         serializedVersion: 2
-        x: 77
-        y: 21
-        width: 9
-        height: 9
+        x: 180
+        y: 0
+        width: 45
+        height: 30
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -277,12 +277,12 @@ TextureImporter:
       name: SpriteSheetMulti_5
       rect:
         serializedVersion: 2
-        x: 89
-        y: 9
-        width: 21
-        height: 21
+        x: 225
+        y: 0
+        width: 45
+        height: 30
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -295,275 +295,11 @@ TextureImporter:
       indices: 
       edges: []
       weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_6
-      rect:
-        serializedVersion: 2
-        x: 115
-        y: 0
-        width: 21
-        height: 21
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 9577b18d67b1b1c00800000000000000
-      internalID: 872321150072092505
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_7
-      rect:
-        serializedVersion: 2
-        x: 122
-        y: 21
-        width: 9
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 8ce18d5039856ec50800000000000000
-      internalID: 6694135284614307528
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_8
-      rect:
-        serializedVersion: 2
-        x: 134
-        y: 9
-        width: 20
-        height: 21
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: bbc959192a2066680800000000000000
-      internalID: -8762313127752262469
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_9
-      rect:
-        serializedVersion: 2
-        x: 167
-        y: 21
-        width: 9
-        height: 6
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 99329143cf077d580800000000000000
-      internalID: -8802442718164212839
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_10
-      rect:
-        serializedVersion: 2
-        x: 179
-        y: 9
-        width: 13
-        height: 19
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 1121047bf777934c0800000000000000
-      internalID: -4307280178184187375
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_11
-      rect:
-        serializedVersion: 2
-        x: 103
-        y: 1
-        width: 9
-        height: 9
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 40fe37a66d71910b0800000000000000
-      internalID: -5757544438940045564
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_12
-      rect:
-        serializedVersion: 2
-        x: 148
-        y: 0
-        width: 9
-        height: 9
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 4b86846e8a6220ce0800000000000000
-      internalID: -1440546423945271116
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_13
-      rect:
-        serializedVersion: 2
-        x: 160
-        y: 0
-        width: 21
-        height: 20
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 642cbe0d001488430800000000000000
-      internalID: 3785346958565818950
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_14
-      rect:
-        serializedVersion: 2
-        x: 193
-        y: 0
-        width: 9
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: db77ec54688f15a50800000000000000
-      internalID: 6508256192107542461
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_15
-      rect:
-        serializedVersion: 2
-        x: 206
-        y: 0
-        width: 20
-        height: 20
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 80de65c71970e2ff0800000000000000
-      internalID: -59101423671513848
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_16
-      rect:
-        serializedVersion: 2
-        x: 238
-        y: 0
-        width: 9
-        height: 6
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 42facc026e32c13c0800000000000000
-      internalID: -4387592465665970396
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: SpriteSheetMulti_17
-      rect:
-        serializedVersion: 2
-        x: 258
-        y: 0
-        width: 12
-        height: 18
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 037bed3abc466cb80800000000000000
-      internalID: -8374895631258437840
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
     outline: []
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: acca86597c109487aaa2009501a2be49
     internalID: 0
     vertices: []
     indices: 
@@ -571,26 +307,16 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     spriteCustomMetadata:
-      entries: []
+      entries:
+      - key: SpriteEditor.SliceSettings
+        value: '{"sliceOnImport":false,"gridCellCount":{"x":6.0,"y":1.0},"gridSpriteSize":{"x":45.0,"y":30.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.5,"y":0.5},"pivotPixels":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":0,"pivotUnitMode":0,"slicingType":2,"keepEmptyRects":false,"isAlternate":false}'
     nameFileIdTable:
       SpriteSheetMulti_0: 2884809204111679970
       SpriteSheetMulti_1: -6598227015652004968
-      SpriteSheetMulti_10: -4307280178184187375
-      SpriteSheetMulti_11: -5757544438940045564
-      SpriteSheetMulti_12: -1440546423945271116
-      SpriteSheetMulti_13: 3785346958565818950
-      SpriteSheetMulti_14: 6508256192107542461
-      SpriteSheetMulti_15: -59101423671513848
-      SpriteSheetMulti_16: -4387592465665970396
-      SpriteSheetMulti_17: -8374895631258437840
       SpriteSheetMulti_2: 3916697467088172670
       SpriteSheetMulti_3: -5671397758424530152
       SpriteSheetMulti_4: -7637070946769002957
       SpriteSheetMulti_5: 4368598614201617516
-      SpriteSheetMulti_6: 872321150072092505
-      SpriteSheetMulti_7: 6694135284614307528
-      SpriteSheetMulti_8: -8762313127752262469
-      SpriteSheetMulti_9: -8802442718164212839
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

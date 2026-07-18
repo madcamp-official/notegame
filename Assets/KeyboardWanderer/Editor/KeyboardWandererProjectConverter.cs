@@ -71,6 +71,7 @@ namespace KeyboardWanderer.Editor
 
             GameObject actorObject = Child(root.transform, "Actor");
             SpriteRenderer actor = actorObject.AddComponent<SpriteRenderer>();
+            actorObject.AddComponent<Animator>();
 
             GameObject healthBackObject = Child(root.transform, "Health Back");
             SpriteRenderer healthBack = healthBackObject.AddComponent<SpriteRenderer>();
@@ -138,7 +139,7 @@ namespace KeyboardWanderer.Editor
             TilemapRenderer tilemapRenderer = terrainObject.GetComponent<TilemapRenderer>();
             if (tilemapRenderer == null)
                 tilemapRenderer = terrainObject.AddComponent<TilemapRenderer>();
-            tilemapRenderer.sortingOrder = 0;
+            tilemapRenderer.sortingOrder = -1000;
 
             Transform dynamicRoot = root.transform.Find("Dynamic Objects");
             if (dynamicRoot == null)
