@@ -260,59 +260,69 @@ namespace KeyboardWanderer.Tests
         }
 
         [Test]
-        public void SaveRoundTrip_PreservesSeededRolesTokensMetricsAndImmutableMap()
+        public void SaveResume_PreservesV4LedgersAndImmutableLayout()
         {
-            LocalTurnService service = StateAtBeatNear(45, 1, "slot-milestone-1", out EntityView token,
-                new SequenceD20Source(20));
-            service.Submit(new TurnRequest("save-token", service.CurrentView.Version, AbilityKind.Interact,
-                token.EntityId, null, "첫 핵심 표식과 지역의 이해관계를 확정한다"));
+            RunState state = LocalTurnService.CreateDemo(83).CreateSnapshot();
+            state.AdminAccess = 2;
+            state.Inventory.Add(CampaignCatalog.AdminAccessLevelIds[0]);
+            state.Inventory.Add(CampaignCatalog.AdminAccessLevelIds[1]);
+            state.MajorChoices.Add("T1|REGION_BUG_FOREST|INVESTIGATION|COPY|SUCCESS");
+            state.RegionOutcomes.Add("REGION_BUG_FOREST|INVESTIGATION|SUCCESS|T1");
+            state.TechnicalDebtEntries.Add(new TechnicalDebtEntry("debt-1", 1, AbilityKind.Copy,
+                "COPY", "ARTIFACT_ADMIN_KEYBOARD", false, 3, "DUPLICATED_STATE_DRIFT"));
+            var service = new LocalTurnService(state, new SequenceD20Source(20));
 
             string json = LocalRunSaveService.Serialize(service);
-            LocalTurnService loaded = LocalRunSaveService.Deserialize(json);
-            RunView restored = loaded.CurrentView;
+            RunView restored = LocalRunSaveService.Deserialize(json).CurrentView;
 
             Assert.That(restored.Region.LayoutHash, Is.EqualTo(service.CurrentView.Region.LayoutHash));
-            Assert.That(restored.CampaignId, Is.EqualTo(service.CurrentView.CampaignId));
-            Assert.That(restored.MilestoneProgress, Is.EqualTo(1));
-            Assert.That(restored.Inventory, Does.Contain("MILESTONE_TOKEN_1"));
-            Assert.That(restored.RequiredBeats.Select(beat => beat.RoleId),
-                Is.EqualTo(CampaignCatalog.RoleIds));
-            Assert.That(restored.RequiredBeats[1].MilestoneTokenId, Is.EqualTo("MILESTONE_TOKEN_1"));
+            Assert.That(restored.AdminAccess, Is.EqualTo(2));
+            Assert.That(restored.MajorChoices, Is.EqualTo(state.MajorChoices));
+            Assert.That(restored.RegionOutcomes, Is.EqualTo(state.RegionOutcomes));
+            Assert.That(restored.TechnicalDebtEntries, Has.Count.EqualTo(1));
+            Assert.That(restored.RequiredBeats, Has.Count.EqualTo(9));
         }
 
-        [TestCase("SAFE_PASSAGE")]
-        [TestCase("SHARED_GUARDIANSHIP")]
-        [TestCase("FREE_WORLD")]
-        [TestCase("MEMORY_REWEAVE")]
-        [TestCase("THREAT_SEAL")]
-        public void GenericFinaleRecipe_SelectsCandidateFromSpatialState(string endingCode)
+        [Test]
+        public void CampaignDirector_ExposesExactlyNineMacroPhases()
         {
-            long seed = FindSeedForEnding(endingCode);
-            RunState state = FinaleReadyState(seed);
-            ConfigureEndingRecipe(state, endingCode);
+            CampaignPhase[] phases = Enumerable.Range(0, 40)
+                .Select(turn => CampaignDirector.Evaluate(turn, 40).Phase).Distinct().ToArray();
 
-            Assert.That(state.EndingCandidates.Select(value => value.Code), Does.Contain(endingCode));
+            Assert.That(phases, Is.EqualTo(new[]
+            {
+                CampaignPhase.ArrivalAndKeyboardAwakening, CampaignPhase.FirstRegionProblem,
+                CampaignPhase.AdminAccessOne, CampaignPhase.AdminAccessTwo,
+                CampaignPhase.InternalFailureTruth, CampaignPhase.TechnicalDebtBackflow,
+                CampaignPhase.AdminAccessThree, CampaignPhase.RootSystemEntry,
+                CampaignPhase.FinalDeployment
+            }));
+            Assert.That(LocalTurnService.CampaignTurnLimit, Is.EqualTo(40));
+            Assert.That(LocalTurnService.MaximumCampaignTurnLimit, Is.EqualTo(50));
+        }
+
+        [TestCase("ENDING_REWEAVE_TOGETHER")]
+        [TestCase("ENDING_OPEN_FRONTIER")]
+        [TestCase("ENDING_KEEP_THE_PROMISE")]
+        [TestCase("ENDING_CUT_THE_CYCLE")]
+        [TestCase("ENDING_PRESERVE_THE_SCARS")]
+        [TestCase("ENDING_WALK_BETWEEN_WORLDS")]
+        public void RuleEngine_SelectsSharedEndingIdsFromAuthoritativeState(string endingCode)
+        {
+            RunState state = FinaleReadyState(90);
+            ConfigureEnding(state, endingCode);
+
             Assert.That(CampaignDirector.SelectEnding(state), Is.EqualTo(endingCode));
         }
 
         [Test]
-        public void IncompleteFinale_FallsBackToLastResort()
+        public void EndingFallsBackWhenRootRequirementsAreIncomplete()
         {
-            RunState state = FinaleReadyState(46);
-            Assert.That(CampaignDirector.SelectEnding(state), Is.EqualTo(CampaignCatalog.FallbackEndingCode));
-        }
+            RunState state = FinaleReadyState(91);
+            state.Inventory.Remove(CampaignCatalog.AdminAccessLevelIds[2]);
 
-        [Test]
-        public void CampaignDirector_ExposesSixPhasesAndFortyTurnDefault()
-        {
-            Assert.That(CampaignDirector.Evaluate(0, 40).Phase, Is.EqualTo(CampaignPhase.Introduction));
-            Assert.That(CampaignDirector.Evaluate(5, 40).Phase, Is.EqualTo(CampaignPhase.Adaptation));
-            Assert.That(CampaignDirector.Evaluate(16, 40).Phase, Is.EqualTo(CampaignPhase.Expansion));
-            Assert.That(CampaignDirector.Evaluate(26, 40).Phase, Is.EqualTo(CampaignPhase.Truth));
-            Assert.That(CampaignDirector.Evaluate(36, 40).Phase, Is.EqualTo(CampaignPhase.Backflow));
-            Assert.That(CampaignDirector.Evaluate(43, 50).Phase, Is.EqualTo(CampaignPhase.Finale));
-            Assert.That(LocalTurnService.CampaignTurnLimit, Is.EqualTo(40));
-            Assert.That(LocalTurnService.MaximumCampaignTurnLimit, Is.EqualTo(50));
+            Assert.That(CampaignDirector.SelectEnding(state),
+                Is.EqualTo(CampaignCatalog.FallbackEndingCode));
         }
 
         [Test]
@@ -339,26 +349,10 @@ namespace KeyboardWanderer.Tests
             Assert.That(world.BiomeIdAt(1, 0), Is.EqualTo("wetland"));
         }
 
-        private static string BlueprintFingerprint(CampaignBlueprint blueprint)
-        {
-            return blueprint.Id + "|" + blueprint.Title + "|" + blueprint.Premise + "|" +
-                   string.Join(";", blueprint.NpcNames) + "|" + string.Join(";", blueprint.QuestSeeds) + "|" +
-                   string.Join(";", blueprint.Endings.Select(value => value.Code));
-        }
-
-        private static string RoleMapping(RegionMap map)
-        {
-            return string.Join("|", map.Areas.Where(area => !string.IsNullOrEmpty(area.CampaignRole))
-                .OrderBy(area => area.CampaignRole)
-                .Select(area => area.CampaignRole + "=" + area.Id + "@" + area.Center));
-        }
-
         private static GridCoord FirstSafeDestination(RunView view)
         {
             for (int distance = 1; distance <= 12; distance++)
-            {
                 for (int y = view.PlayerPosition.Y - distance; y <= view.PlayerPosition.Y + distance; y++)
-                {
                     for (int x = view.PlayerPosition.X - distance; x <= view.PlayerPosition.X + distance; x++)
                     {
                         var candidate = new GridCoord(x, y);
@@ -370,104 +364,124 @@ namespace KeyboardWanderer.Tests
                         if (GridPathfinder.FindPath(view.Region, view.PlayerPosition, candidate).Count > 0)
                             return candidate;
                     }
-                }
-            }
             Assert.Fail("No safe travel destination found.");
             return default;
         }
 
-        private static LocalTurnService StateAtBeatNear(long seed, int beatIndex, string slotId,
-            out EntityView selected, ID20Source rolls)
+        private static long FindSeedForAccessSkill(int bindingIndex, AbilityKind skill)
         {
-            RunState state = LocalTurnService.CreateDemo(seed).CreateSnapshot();
-            for (int index = 0; index < beatIndex; index++) state.RequiredBeats[index].IsCompleted = true;
-            state.CurrentBeatIndex = beatIndex;
-            Assert.That(state.Region.TryGetPlacementSlot(slotId, out PlacementSlot slot), Is.True);
-            EntityState target = state.Spatial.Entities.First(entity => entity.IsActive && entity.Position == slot.Coord);
-            MovePlayerNear(state, target);
-            selected = new EntityView(target);
-            return new LocalTurnService(state, rolls);
+            for (long seed = 0; seed < 500; seed++)
+                if (CampaignCatalog.Create(seed).AdminAccessBindings[bindingIndex].SelectedSkill == skill)
+                    return seed;
+            Assert.Fail("No seed selected the requested administrator access skill.");
+            return 0;
         }
 
         private static void MovePlayerNear(RunState state, EntityState target)
         {
-            GridCoord destination = default;
-            bool found = false;
-            for (int distance = 1; distance <= 2 && !found; distance++)
-            {
-                for (int y = target.Position.Y - distance; y <= target.Position.Y + distance && !found; y++)
-                {
+            for (int distance = 1; distance <= 4; distance++)
+                for (int y = target.Position.Y - distance; y <= target.Position.Y + distance; y++)
                     for (int x = target.Position.X - distance; x <= target.Position.X + distance; x++)
                     {
                         var candidate = new GridCoord(x, y);
                         if (candidate.ManhattanDistance(target.Position) != distance ||
-                            !state.Region.IsWalkable(candidate)) continue;
-                        if (!state.Spatial.IsBlockingOccupied(state.Region.RegionId, candidate, 0,
-                                state.PlayerEntityId))
-                        {
-                            destination = candidate;
-                            found = true;
-                            break;
-                        }
+                            !state.Region.IsWalkable(candidate) ||
+                            state.Spatial.IsBlockingOccupied(state.Region.RegionId, candidate, 0,
+                                state.PlayerEntityId)) continue;
+                        MovePlayerTo(state, candidate);
+                        return;
                     }
-                }
-            }
-            Assert.That(found, Is.True, "fixture needs an empty tile near " + target.DisplayName);
+            Assert.Fail("No empty coordinate near " + target.DisplayName);
+        }
+
+        private static void MovePlayerTo(RunState state, GridCoord destination)
+        {
             MoveResult moved = state.Spatial.TryMove(state.PlayerEntityId, state.Region.RegionId,
                 destination, 0, (regionId, coord) =>
                     regionId == state.Region.RegionId && state.Region.IsWalkable(coord));
-            Assert.That(moved.IsSuccess, Is.True);
+            Assert.That(moved.IsSuccess, Is.True, moved.ErrorCode);
         }
 
-        private static long FindSeedForEnding(string code)
+        private static void FindRootBoundaryPair(RegionMap map, out GridCoord outside, out GridCoord inside)
         {
-            for (long seed = 0; seed < 1000; seed++)
-                if (CampaignCatalog.Create(seed).Endings.Any(candidate => candidate.Code == code)) return seed;
-            Assert.Fail("No deterministic seed selected ending candidate " + code);
-            return 0;
+            WorldArea root = map.Areas.Single(area => area.CampaignRole == CampaignCatalog.RootSystemAxis);
+            for (int y = root.Min.Y; y <= root.Max.Y; y++)
+                for (int x = root.Min.X; x <= root.Max.X; x++)
+                {
+                    var candidate = new GridCoord(x, y);
+                    if (!map.IsWalkable(candidate)) continue;
+                    foreach (GridCoord direction in new[]
+                    {
+                        new GridCoord(1, 0), new GridCoord(-1, 0),
+                        new GridCoord(0, 1), new GridCoord(0, -1)
+                    })
+                    {
+                        var neighbor = new GridCoord(x + direction.X, y + direction.Y);
+                        if (map.Contains(neighbor) && map.IsWalkable(neighbor) && !root.Contains(neighbor))
+                        {
+                            outside = neighbor;
+                            inside = candidate;
+                            return;
+                        }
+                    }
+                }
+            Assert.Fail("No walkable ROOT_SYSTEM boundary pair found.");
+            outside = default;
+            inside = default;
         }
 
         private static RunState FinaleReadyState(long seed)
         {
             RunState state = LocalTurnService.CreateDemo(seed).CreateSnapshot();
-            state.MilestoneProgress = 3;
-            state.WorldStability = 55;
-            state.WorldAutonomy = 55;
-            state.PublicTrust = 55;
+            state.AdminAccess = 3;
+            foreach (string accessId in CampaignCatalog.AdminAccessLevelIds)
+                if (!state.HasItem(accessId)) state.Inventory.Add(accessId);
+            state.AddCanonicalFact("붕괴 원인이 관리자 통제 시스템 내부에 있음을 확정했다.");
+            state.WorldStability = 60;
+            state.WorldAutonomy = 60;
+            state.PublicTrust = 60;
             state.TechnicalDebt = 20;
-            state.CompanionBond = 55;
+            state.CompanionBond = 60;
             for (int i = 0; i < state.RequiredBeats.Count; i++) state.RequiredBeats[i].IsCompleted = true;
             state.CurrentBeatIndex = state.RequiredBeats.Count;
             return state;
         }
 
-        private static void ConfigureEndingRecipe(RunState state, string code)
+        private static void ConfigureEnding(RunState state, string code)
         {
             switch (code)
             {
-                case "SAFE_PASSAGE":
+                case "ENDING_REWEAVE_TOGETHER":
                     RemoveAsset(state, "finale.threat");
                     Link(state, "finale.anchor", "finale.safeguard");
-                    Link(state, "finale.safeguard", "finale.passage");
+                    LinkPlayer(state, "finale.memory");
                     break;
-                case "SHARED_GUARDIANSHIP":
-                    Link(state, "finale.anchor", "finale.safeguard");
-                    Link(state, "finale.safeguard", "finale.witness");
-                    break;
-                case "FREE_WORLD":
-                    LinkPlayer(state, "finale.anchor");
+                case "ENDING_OPEN_FRONTIER":
+                    RemoveAsset(state, "finale.threat");
                     Link(state, "finale.anchor", "finale.freedom");
                     break;
-                case "MEMORY_REWEAVE":
-                    Link(state, "finale.anchor", "finale.memory");
-                    Link(state, "finale.memory", "finale.safeguard");
-                    break;
-                case "THREAT_SEAL":
+                case "ENDING_KEEP_THE_PROMISE":
                     RemoveAsset(state, "finale.threat");
-                    Link(state, "finale.safeguard", "finale.witness");
+                    LinkPlayer(state, "finale.safeguard");
+                    Link(state, "finale.memory", "finale.anchor");
+                    break;
+                case "ENDING_CUT_THE_CYCLE":
+                    RemoveAsset(state, "finale.threat");
+                    RemoveAsset(state, "finale.freedom");
+                    Link(state, "finale.anchor", "finale.passage");
+                    break;
+                case "ENDING_PRESERVE_THE_SCARS":
+                    RemoveAsset(state, "finale.freedom");
+                    Link(state, "finale.memory", "finale.safeguard");
+                    LinkPlayer(state, "finale.witness");
+                    break;
+                case "ENDING_WALK_BETWEEN_WORLDS":
+                    RemoveAsset(state, "finale.threat");
+                    LinkPlayer(state, "finale.passage");
+                    Link(state, "finale.anchor", "finale.safeguard");
                     break;
                 default:
-                    Assert.Fail("Unknown finale recipe " + code);
+                    Assert.Fail("Unknown ending recipe " + code);
                     break;
             }
         }
