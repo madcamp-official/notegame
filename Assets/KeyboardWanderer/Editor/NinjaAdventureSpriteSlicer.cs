@@ -11,16 +11,16 @@ namespace KeyboardWanderer.Editor
 {
     public static class NinjaAdventureSpriteSlicer
     {
-        private const string CharacterRoot = "Assets/NinjaAdventure/Actor/Character";
+        private const string AssetRoot = "Assets/NinjaAdventure";
         private const int CellSize = 16;
 
-        [MenuItem("Keyboard Wanderer/Repair Ninja Adventure Character Sprite Slices")]
-        public static void RepairCharacterSpriteSlices()
+        [MenuItem("Keyboard Wanderer/Repair All Ninja Adventure Sprite Slices")]
+        public static void RepairAllSpriteSlices()
         {
             if (Application.isPlaying)
                 throw new UnityException("Exit Play Mode before repairing sprite imports.");
 
-            string[] paths = AssetDatabase.FindAssets("t:Texture2D", new[] { CharacterRoot })
+            string[] paths = AssetDatabase.FindAssets("t:Texture2D", new[] { AssetRoot })
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Where(path => string.Equals(Path.GetExtension(path), ".png", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(path => path, StringComparer.Ordinal)
@@ -38,7 +38,7 @@ namespace KeyboardWanderer.Editor
                 {
                     string path = paths[i];
                     EditorUtility.DisplayProgressBar(
-                        "Repairing Ninja Adventure sprites",
+                        "Repairing all Ninja Adventure sprites",
                         $"{i + 1}/{paths.Length}  {path}",
                         paths.Length > 0 ? (i + 1f) / paths.Length : 1f);
 
@@ -82,16 +82,29 @@ namespace KeyboardWanderer.Editor
                         }
                     }
 
-                    importer.textureType = TextureImporterType.Sprite;
-                    importer.spriteImportMode = SpriteImportMode.Multiple;
-                    importer.spritePixelsPerUnit = CellSize;
-                    importer.filterMode = FilterMode.Point;
-                    importer.mipmapEnabled = false;
-                    importer.textureCompression = TextureImporterCompression.Uncompressed;
-                    importer.wrapMode = TextureWrapMode.Clamp;
+                    ConfigureImporter(importer);
                     provider.SetSpriteRects(rects.ToArray());
                     provider.Apply();
                     importer.SaveAndReimport();
+
+                    if (GetSpriteRectCount(path, factories) != rects.Count)
+                    {
+                        importer = AssetImporter.GetAtPath(path) as TextureImporter;
+                        importer.spriteImportMode = SpriteImportMode.Single;
+                        importer.SaveAndReimport();
+
+                        importer = AssetImporter.GetAtPath(path) as TextureImporter;
+                        provider = factories.GetSpriteEditorDataProviderFromObject(importer);
+                        provider.InitSpriteEditorDataProvider();
+                        ConfigureImporter(importer);
+                        provider.SetSpriteRects(rects.ToArray());
+                        provider.Apply();
+                        importer.SaveAndReimport();
+
+                        int actualCount = GetSpriteRectCount(path, factories);
+                        if (actualCount != rects.Count)
+                            throw new UnityException($"Failed to slice {path}: expected {rects.Count} frames, found {actualCount}.");
+                    }
 
                     repaired++;
                     frameCount += rects.Count;
@@ -106,6 +119,25 @@ namespace KeyboardWanderer.Editor
             {
                 EditorUtility.ClearProgressBar();
             }
+        }
+
+        private static void ConfigureImporter(TextureImporter importer)
+        {
+            importer.textureType = TextureImporterType.Sprite;
+            importer.spriteImportMode = SpriteImportMode.Multiple;
+            importer.spritePixelsPerUnit = CellSize;
+            importer.filterMode = FilterMode.Point;
+            importer.mipmapEnabled = false;
+            importer.textureCompression = TextureImporterCompression.Uncompressed;
+            importer.wrapMode = TextureWrapMode.Clamp;
+        }
+
+        private static int GetSpriteRectCount(string path, SpriteDataProviderFactories factories)
+        {
+            TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            ISpriteEditorDataProvider provider = factories.GetSpriteEditorDataProviderFromObject(importer);
+            provider.InitSpriteEditorDataProvider();
+            return provider.GetSpriteRects().Length;
         }
     }
 }
