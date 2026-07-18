@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderVersion: 2
+  BuilderVersion: 3
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -36,6 +36,10 @@ MonoBehaviour:
   WaterAtlas: {fileID: 2800000, guid: 5d3abc92281c8446ab98ba9e98ff40d8, type: 3}
   NatureAtlas: {fileID: 2800000, guid: 1e0319a13e264405ab53e4a15015dbd6, type: 3}
   HouseAtlas: {fileID: 2800000, guid: 230d4af9c8c14449d9f36d210deeeb0a, type: 3}
+  DesertAtlas: {fileID: 2800000, guid: 15b3e2811a5eb43f78f788f9c8cd8c3d, type: 3}
+  DungeonAtlas: {fileID: 2800000, guid: 9686237da15824a10b8c5f4305f82407, type: 3}
+  AbandonedVillageAtlas: {fileID: 2800000, guid: aad09769157f74dad910ae064edfc8ae, type: 3}
+  WatermillAtlas: {fileID: 2800000, guid: 8087e4765cde74824b0b19eca23d44d9, type: 3}
   OutdoorDirtRect:
     serializedVersion: 2
     x: 16

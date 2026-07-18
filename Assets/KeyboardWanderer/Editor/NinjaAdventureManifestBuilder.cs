@@ -8,7 +8,7 @@ namespace KeyboardWanderer.Editor
     public static class NinjaAdventureManifestBuilder
     {
         private const string ManifestPath = "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset";
-        private const int CurrentManifestVersion = 2;
+        private const int CurrentManifestVersion = 3;
 
         [InitializeOnLoadMethod]
         private static void ScheduleEnsureManifest()
@@ -40,6 +40,14 @@ namespace KeyboardWanderer.Editor
                 "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetNature.png");
             manifest.HouseAtlas = LoadPixelTexture(
                 "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetHouse.png");
+            manifest.DesertAtlas = LoadPixelTexture(
+                "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetDesert.png");
+            manifest.DungeonAtlas = LoadPixelTexture(
+                "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetDungeon.png");
+            manifest.AbandonedVillageAtlas = LoadPixelTexture(
+                "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetVillageAbandoned.png");
+            manifest.WatermillAtlas = LoadPixelTexture(
+                "Assets/NinjaAdventure/Backgrounds/Animated/WaterMill/Watermill_A_34x36.png");
             manifest.OutdoorDirtRect = new Rect(16, 208, 16, 16);
             manifest.OutdoorGrassRect = new Rect(16, 160, 16, 16);
             manifest.OutdoorDarkGrassRect = new Rect(16, 112, 16, 16);

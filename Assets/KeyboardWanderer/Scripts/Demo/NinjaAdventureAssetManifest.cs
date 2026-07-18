@@ -19,6 +19,10 @@ namespace KeyboardWanderer.Demo
         public Texture2D WaterAtlas;
         public Texture2D NatureAtlas;
         public Texture2D HouseAtlas;
+        public Texture2D DesertAtlas;
+        public Texture2D DungeonAtlas;
+        public Texture2D AbandonedVillageAtlas;
+        public Texture2D WatermillAtlas;
         public Rect OutdoorDirtRect = new Rect(16, 208, 16, 16);
         public Rect OutdoorGrassRect = new Rect(16, 160, 16, 16);
         public Rect OutdoorDarkGrassRect = new Rect(16, 112, 16, 16);

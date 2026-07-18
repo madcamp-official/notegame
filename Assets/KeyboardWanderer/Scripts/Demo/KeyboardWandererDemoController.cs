@@ -153,6 +153,21 @@ namespace KeyboardWanderer.Demo
         private Sprite _dirtSprite;
         private Sprite _darkGrassSprite;
         private Sprite _wallSprite;
+        private Sprite _waterSprite;
+        private Sprite _snowSprite;
+        private Sprite _cavernFloorSprite;
+        private Sprite _ruinFloorSprite;
+        private Sprite _forestTreeSprite;
+        private Sprite _forestHouseSprite;
+        private Sprite _wetlandPlantSprite;
+        private Sprite _wetlandLandmarkSprite;
+        private Sprite _desertPalmSprite;
+        private Sprite _desertLandmarkSprite;
+        private Sprite _frostTreeSprite;
+        private Sprite _frostLandmarkSprite;
+        private Sprite _cavernCrystalSprite;
+        private Sprite _ruinTreeSprite;
+        private Sprite _ruinLandmarkSprite;
         private Sprite _playerSprite;
         private Sprite _wardenSprite;
         private Sprite _villagerSprite;
@@ -1622,7 +1637,7 @@ namespace KeyboardWanderer.Demo
                 var tilemapRenderer = terrainObject.AddComponent<TilemapRenderer>();
                 tilemapRenderer.sortingOrder = 0;
             }
-            var tilePalette = new Dictionary<TileKind, Tile>();
+            var tilePalette = new Dictionary<string, Tile>(StringComparer.Ordinal);
 
             for (int y = 0; y < worldHeight; y++)
             {
@@ -1632,16 +1647,17 @@ namespace KeyboardWanderer.Demo
                     TileKind tileKind = useServerWorld
                         ? TileKindForServer(serverWorld, serverWorld.tileCodes[y * serverWorld.width + x])
                         : view.Region.GetTile(coord).Kind;
-                    TileAppearance(tileKind, coord, out Sprite sprite, out Color tint);
-                    tint = ApplyBiomePalette(tint, BiomeIdAt(view, coord));
-                    if (!tilePalette.TryGetValue(tileKind, out Tile visualTile))
+                    string biomeId = BiomeIdAt(view, coord);
+                    TileAppearance(tileKind, biomeId, coord, out Sprite sprite, out Color tint);
+                    string paletteKey = biomeId + ":" + tileKind;
+                    if (!tilePalette.TryGetValue(paletteKey, out Tile visualTile))
                     {
                         visualTile = ScriptableObject.CreateInstance<Tile>();
-                        visualTile.name = "Runtime " + tileKind + " Tile";
+                        visualTile.name = "Runtime " + biomeId + " " + tileKind + " Tile";
                         visualTile.sprite = sprite;
                         visualTile.color = Color.white;
                         visualTile.flags = TileFlags.None;
-                        tilePalette.Add(tileKind, visualTile);
+                        tilePalette.Add(paletteKey, visualTile);
                         _runtimeTiles.Add(visualTile);
                     }
                     var cell = new Vector3Int(x, y, 0);
@@ -1651,6 +1667,7 @@ namespace KeyboardWanderer.Demo
                 }
             }
 
+            CreateBiomeDecorations(view, origin, useServerWorld, worldWidth, worldHeight);
             CreateCampaignLandmarkMarkers(view, origin, useServerWorld);
 
             if (_selectionRenderer == null)
@@ -2334,6 +2351,37 @@ namespace KeyboardWanderer.Demo
                 _assets != null ? _assets.OutdoorDarkGrassRect : new Rect(16f, 112f, 16f, 16f), "Field Dark Grass", Hex("315f38"));
             _wallSprite = CreateAtlasSprite(_assets != null ? _assets.InteriorFloorAtlas : null,
                 _assets != null ? _assets.WallRect : new Rect(176f, 96f, 16f, 16f), "Ruin Wall", Hex("35453a"));
+            _waterSprite = CreateAtlasSprite(_assets != null ? _assets.WaterAtlas : null,
+                new Rect(176f, 240f, 16f, 16f), "Wetland Water", Hex("36758b"));
+            _snowSprite = CreateAtlasSprite(_assets != null ? _assets.OutdoorFieldAtlas : null,
+                new Rect(16f, 16f, 16f, 16f), "Frost Snow", Hex("d9edf3"));
+            _ruinFloorSprite = CreateAtlasSprite(_assets != null ? _assets.OutdoorFieldAtlas : null,
+                new Rect(16f, 64f, 16f, 16f), "Ruins Ground", Hex("a68a82"));
+            _cavernFloorSprite = CreateAtlasSprite(_assets != null ? _assets.DungeonAtlas : null,
+                new Rect(80f, 16f, 16f, 16f), "Cavern Floor", Hex("4c425d"));
+
+            _forestTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(0f, 304f, 32f, 32f), "Forest Tree", Hex("568b42"), new Vector2(0.5f, 0.08f));
+            _forestHouseSprite = CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
+                new Rect(0f, 304f, 64f, 64f), "Forest House", Hex("a7653f"), new Vector2(0.5f, 0.05f));
+            _wetlandPlantSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(96f, 144f, 32f, 32f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
+            _wetlandLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.WatermillAtlas : null,
+                new Rect(0f, 0f, 34f, 36f), "Wetland Watermill", Hex("9a6b43"), new Vector2(0.5f, 0.08f));
+            _desertPalmSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
+                new Rect(96f, 48f, 48f, 48f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
+            _desertLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
+                new Rect(256f, 96f, 64f, 96f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
+            _frostTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(128f, 304f, 32f, 32f), "Frost Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f));
+            _frostLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
+                new Rect(0f, 144f, 96f, 80f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
+            _cavernCrystalSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(0f, 112f, 32f, 32f), "Cavern Crystal", Hex("a978c4"), new Vector2(0.5f, 0.08f));
+            _ruinTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(64f, 304f, 32f, 32f), "Ruins Dead Tree", Hex("75624f"), new Vector2(0.5f, 0.08f));
+            _ruinLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
+                new Rect(176f, 0f, 80f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
 
             if (_assets != null)
             {
@@ -2355,12 +2403,14 @@ namespace KeyboardWanderer.Demo
             _whiteSprite = CreateSolidSprite(Color.white, "White Pixel");
         }
 
-        private Sprite CreateAtlasSprite(Texture2D texture, Rect requestedRect, string spriteName, Color fallbackColor)
+        private Sprite CreateAtlasSprite(Texture2D texture, Rect requestedRect, string spriteName, Color fallbackColor,
+            Vector2? requestedPivot = null)
         {
             if (texture == null || texture.width <= 0 || texture.height <= 0)
                 return CreateSolidSprite(fallbackColor, spriteName + " Fallback");
             Rect rect = SafeRect(texture, requestedRect);
-            Sprite sprite = Sprite.Create(texture, rect, new Vector2(0.5f, 0.5f), 16f, 0, SpriteMeshType.FullRect);
+            Sprite sprite = Sprite.Create(texture, rect, requestedPivot ?? new Vector2(0.5f, 0.5f), 16f, 0,
+                SpriteMeshType.FullRect);
             sprite.name = spriteName;
             _runtimeSprites.Add(sprite);
             return sprite;
@@ -2409,8 +2459,9 @@ namespace KeyboardWanderer.Demo
             return new Rect(Mathf.Clamp(rect.x, 0f, texture.width - width), Mathf.Clamp(rect.y, 0f, texture.height - height), width, height);
         }
 
-        private void TileAppearance(TileKind kind, GridCoord coord, out Sprite sprite, out Color tint)
+        private void TileAppearance(TileKind kind, string biomeId, GridCoord coord, out Sprite sprite, out Color tint)
         {
+            sprite = GroundSpriteForBiome(biomeId);
             switch (kind)
             {
                 case TileKind.Dirt:
@@ -2418,7 +2469,7 @@ namespace KeyboardWanderer.Demo
                     tint = new Color(0.95f, 0.9f, 0.78f, 1f);
                     break;
                 case TileKind.Water:
-                    sprite = _grassSprite;
+                    sprite = _waterSprite;
                     tint = new Color(0.27f, 0.66f, 0.78f, 1f);
                     break;
                 case TileKind.Bridge:
@@ -2430,7 +2481,8 @@ namespace KeyboardWanderer.Demo
                     tint = new Color(0.72f, 0.9f, 0.72f, 1f);
                     break;
                 case TileKind.Ruin:
-                    sprite = _darkGrassSprite;
+                    sprite = string.Equals(biomeId, "ancient_ruins", StringComparison.OrdinalIgnoreCase)
+                        ? _ruinFloorSprite : _darkGrassSprite;
                     tint = new Color(0.7f, 0.72f, 0.64f, 1f);
                     break;
                 case TileKind.Wall:
@@ -2442,12 +2494,25 @@ namespace KeyboardWanderer.Demo
                     tint = new Color(0.9f, 0.42f, 0.32f, 1f);
                     break;
                 default:
-                    sprite = _grassSprite;
                     tint = Color.white;
                     break;
             }
+            tint = ApplyBiomePalette(tint, biomeId);
             float variation = (((coord.X * 31 + coord.Y * 17) & 3) - 1.5f) * 0.025f;
             tint = new Color(Mathf.Clamp01(tint.r + variation), Mathf.Clamp01(tint.g + variation), Mathf.Clamp01(tint.b + variation), tint.a);
+        }
+
+        private Sprite GroundSpriteForBiome(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "river_wetland": return _darkGrassSprite;
+                case "arid_desert": return _dirtSprite;
+                case "frost_highland": return _snowSprite;
+                case "subterranean_cavern": return _cavernFloorSprite;
+                case "ancient_ruins": return _ruinFloorSprite;
+                default: return _grassSprite;
+            }
         }
 
         private string BiomeIdAt(RunView view, GridCoord coord)
@@ -2487,10 +2552,212 @@ namespace KeyboardWanderer.Demo
                 default: biome = Hex("6ca85d"); break;
             }
             return new Color(
-                Mathf.Clamp01(tileTint.r * 0.48f + biome.r * 0.62f),
-                Mathf.Clamp01(tileTint.g * 0.48f + biome.g * 0.62f),
-                Mathf.Clamp01(tileTint.b * 0.48f + biome.b * 0.62f),
+                Mathf.Clamp01(tileTint.r * 0.34f + biome.r * 0.72f),
+                Mathf.Clamp01(tileTint.g * 0.34f + biome.g * 0.72f),
+                Mathf.Clamp01(tileTint.b * 0.34f + biome.b * 0.72f),
                 tileTint.a);
+        }
+
+        private void CreateBiomeDecorations(RunView view, Vector2 origin, bool useServerWorld, int width, int height)
+        {
+            string layoutHash = useServerWorld ? _serverRun?.world?.layoutHash : view.Region.LayoutHash;
+            for (int y = 2; y < height - 2; y += 3)
+            {
+                for (int x = 2; x < width - 2; x += 3)
+                {
+                    var coord = new GridCoord(x, y);
+                    string biomeId = BiomeIdAt(view, coord);
+                    TileKind tileKind = WorldTileKind(view, coord, useServerWorld);
+                    if (!SupportsDecorationTerrain(biomeId, tileKind) ||
+                        IsNearWorldPoint(view, coord, useServerWorld, 4) ||
+                        StableVisualHash(layoutHash, x, y, 17) % 100 >= DecorationDensity(biomeId))
+                        continue;
+                    CreateDecoration("Scenery", DecorationSpriteForBiome(biomeId), coord, origin,
+                        DecorationTint(biomeId), 0.78f + (StableVisualHash(layoutHash, x, y, 31) % 24) / 100f);
+                }
+            }
+
+            if (useServerWorld && _serverRun?.world?.areas != null)
+            {
+                GameApiClient.AreaSnapshot[] areas = _serverRun.world.areas;
+                for (int i = 0; i < areas.Length; i++)
+                {
+                    GameApiClient.AreaSnapshot area = areas[i];
+                    if (area?.bounds == null) continue;
+                    var center = area.anchor != null
+                        ? new GridCoord(area.anchor.x, area.anchor.y)
+                        : new GridCoord(area.bounds.x + area.bounds.width / 2, area.bounds.y + area.bounds.height / 2);
+                    TryCreateBiomeLandmark(view, origin, true, area.biomeId, center, width, height, layoutHash, i);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < view.Region.Areas.Count; i++)
+                {
+                    WorldArea area = view.Region.Areas[i];
+                    TryCreateBiomeLandmark(view, origin, false, area.Biome, area.Center, width, height, layoutHash, i);
+                }
+            }
+        }
+
+        private void TryCreateBiomeLandmark(RunView view, Vector2 origin, bool useServerWorld, string biomeId,
+            GridCoord center, int width, int height, string layoutHash, int index)
+        {
+            int direction = StableVisualHash(layoutHash, center.X, center.Y, index + 101) % 4;
+            GridCoord[] offsets =
+            {
+                new GridCoord(6, 5), new GridCoord(-6, 5), new GridCoord(6, -5), new GridCoord(-6, -5)
+            };
+            GridCoord offset = offsets[direction];
+            var candidate = new GridCoord(center.X + offset.X, center.Y + offset.Y);
+            if (!TryFindDecorationTile(view, useServerWorld, biomeId, candidate, width, height, out GridCoord coord))
+                return;
+            CreateDecoration("Biome landmark", LandmarkSpriteForBiome(biomeId), coord, origin,
+                Color.white, string.Equals(biomeId, "subterranean_cavern", StringComparison.OrdinalIgnoreCase) ? 1.4f : 0.92f);
+        }
+
+        private bool TryFindDecorationTile(RunView view, bool useServerWorld, string biomeId, GridCoord origin,
+            int width, int height, out GridCoord result)
+        {
+            for (int radius = 0; radius <= 7; radius++)
+            {
+                for (int y = -radius; y <= radius; y++)
+                {
+                    for (int x = -radius; x <= radius; x++)
+                    {
+                        if (Math.Abs(x) != radius && Math.Abs(y) != radius) continue;
+                        var coord = new GridCoord(origin.X + x, origin.Y + y);
+                        if (coord.X < 2 || coord.Y < 2 || coord.X >= width - 2 || coord.Y >= height - 2 ||
+                            !string.Equals(BiomeIdAt(view, coord), biomeId, StringComparison.OrdinalIgnoreCase) ||
+                            !SupportsDecorationTerrain(biomeId, WorldTileKind(view, coord, useServerWorld)) ||
+                            IsNearWorldPoint(view, coord, useServerWorld, 4))
+                            continue;
+                        result = coord;
+                        return true;
+                    }
+                }
+            }
+            result = origin;
+            return false;
+        }
+
+        private TileKind WorldTileKind(RunView view, GridCoord coord, bool useServerWorld)
+        {
+            if (useServerWorld && _serverRun?.world != null)
+            {
+                GameApiClient.WorldSnapshot world = _serverRun.world;
+                return TileKindForServer(world, world.tileCodes[coord.Y * world.width + coord.X]);
+            }
+            return view.Region.GetTile(coord).Kind;
+        }
+
+        private bool IsNearWorldPoint(RunView view, GridCoord coord, bool useServerWorld, int clearance)
+        {
+            if (useServerWorld && _serverRun?.world?.points != null)
+            {
+                GameApiClient.PointSnapshot[] points = _serverRun.world.points;
+                for (int i = 0; i < points.Length; i++)
+                    if (points[i] != null && Math.Abs(coord.X - points[i].x) + Math.Abs(coord.Y - points[i].y) <= clearance)
+                        return true;
+                return false;
+            }
+            for (int i = 0; i < view.Region.Areas.Count; i++)
+                if (coord.ManhattanDistance(view.Region.Areas[i].Center) <= clearance)
+                    return true;
+            return false;
+        }
+
+        private void CreateDecoration(string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint, float scale)
+        {
+            if (sprite == null) return;
+            var decoration = new GameObject(prefix + " · " + sprite.name);
+            decoration.transform.SetParent(WorldContentRoot, false);
+            decoration.transform.position = WorldPosition(origin, coord) + new Vector3(0f, 0.18f, -0.03f);
+            var renderer = decoration.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.color = tint;
+            renderer.sortingOrder = 20;
+            decoration.transform.localScale = Vector3.one * scale;
+        }
+
+        private Sprite DecorationSpriteForBiome(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "river_wetland": return _wetlandPlantSprite;
+                case "arid_desert": return _desertPalmSprite;
+                case "frost_highland": return _frostTreeSprite;
+                case "subterranean_cavern": return _cavernCrystalSprite;
+                case "ancient_ruins": return _ruinTreeSprite;
+                default: return _forestTreeSprite;
+            }
+        }
+
+        private Sprite LandmarkSpriteForBiome(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "river_wetland": return _wetlandLandmarkSprite;
+                case "arid_desert": return _desertLandmarkSprite;
+                case "frost_highland": return _frostLandmarkSprite;
+                case "subterranean_cavern": return _cavernCrystalSprite;
+                case "ancient_ruins": return _ruinLandmarkSprite;
+                default: return _forestHouseSprite;
+            }
+        }
+
+        private static bool SupportsDecorationTerrain(string biomeId, TileKind tileKind)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "river_wetland": return tileKind == TileKind.Water || tileKind == TileKind.DarkGrass;
+                case "arid_desert": return tileKind == TileKind.Hazard || tileKind == TileKind.Wall;
+                case "frost_highland": return tileKind == TileKind.Wall || tileKind == TileKind.Hazard;
+                case "subterranean_cavern": return tileKind == TileKind.Wall || tileKind == TileKind.Ruin;
+                case "ancient_ruins": return tileKind == TileKind.Ruin || tileKind == TileKind.Wall;
+                default: return tileKind == TileKind.Wall || tileKind == TileKind.DarkGrass;
+            }
+        }
+
+        private static int DecorationDensity(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "temperate_forest_field": return 18;
+                case "river_wetland": return 12;
+                case "arid_desert": return 8;
+                case "frost_highland": return 10;
+                case "subterranean_cavern": return 14;
+                case "ancient_ruins": return 11;
+                default: return 8;
+            }
+        }
+
+        private static Color DecorationTint(string biomeId)
+        {
+            switch ((biomeId ?? string.Empty).ToLowerInvariant())
+            {
+                case "river_wetland": return Hex("b6e1cf");
+                case "arid_desert": return Hex("f0c879");
+                case "frost_highland": return Hex("e8f6ff");
+                case "subterranean_cavern": return Hex("cf9fea");
+                case "ancient_ruins": return Hex("c6ae82");
+                default: return Color.white;
+            }
+        }
+
+        private static int StableVisualHash(string layoutHash, int x, int y, int salt)
+        {
+            unchecked
+            {
+                int value = 17;
+                string text = layoutHash ?? string.Empty;
+                for (int i = 0; i < text.Length; i++) value = value * 31 + text[i];
+                value = value * 31 + x;
+                value = value * 31 + y;
+                value = value * 31 + salt;
+                return value == int.MinValue ? int.MaxValue : Math.Abs(value);
+            }
         }
 
         private void CreateCampaignLandmarkMarkers(RunView view, Vector2 origin, bool useServerWorld)
