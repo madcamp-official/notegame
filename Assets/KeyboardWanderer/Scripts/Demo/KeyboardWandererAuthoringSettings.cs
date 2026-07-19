@@ -9,6 +9,7 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private NinjaAdventureAssetManifest assetManifest;
         [SerializeField] private KeyboardWandererEntityView entityVisualPrefab;
         [SerializeField] private GameObject landmarkPrefab;
+        [SerializeField] private KeyboardWandererWorldVisualProfile worldVisualProfile;
 
         [Header("World presentation")]
         [SerializeField, Min(0.1f)] private float playerWalkSpeed = 4.2f;
@@ -21,6 +22,7 @@ namespace KeyboardWanderer.Demo
         public NinjaAdventureAssetManifest AssetManifest => assetManifest;
         public KeyboardWandererEntityView EntityVisualPrefab => entityVisualPrefab;
         public GameObject LandmarkPrefab => landmarkPrefab;
+        public KeyboardWandererWorldVisualProfile WorldVisualProfile => worldVisualProfile;
         public float PlayerWalkSpeed => playerWalkSpeed;
         public float PlayerVisualSize => playerVisualSize;
         public float EnemyVisualSize => enemyVisualSize;
@@ -37,5 +39,7 @@ namespace KeyboardWanderer.Demo
             entityVisualPrefab = entityPrefab;
             landmarkPrefab = authoredLandmarkPrefab;
         }
+
+        public void SetWorldVisualProfile(KeyboardWandererWorldVisualProfile profile) => worldVisualProfile = profile;
     }
 }

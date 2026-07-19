@@ -3,7 +3,8 @@
   "rootNamespace": "KeyboardWanderer.Tests",
   "references": [
     "KeyboardWanderer.Runtime",
-    "KeyboardWanderer.Editor.Validation"
+    "KeyboardWanderer.Editor.Validation",
+    "KeyboardWanderer.Editor"
   ],
   "includePlatforms": [
     "Editor"
