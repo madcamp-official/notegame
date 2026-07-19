@@ -71,6 +71,7 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private KeyboardWandererInputController authoredInputController;
 
         private LocalTurnService _service;
+        private ITurnGateway _turnGateway;
         private NinjaAdventureAssetManifest _assets;
         private GmNarrativeClient _narrativeClient;
         private GameApiClient _gameApi;
@@ -187,11 +188,16 @@ namespace KeyboardWanderer.Demo
         private Sprite[] _villagerFrames = Array.Empty<Sprite>();
         private Texture2D _minimapTexture;
         private Sprite _minimapSprite;
-        private string _minimapSignature = string.Empty;
+        private readonly RunCoordinator _runCoordinator = new RunCoordinator();
+        private readonly MinimapPresenter _minimapPresenter = new MinimapPresenter();
+        private PresentationChange _pendingPresentationChanges = PresentationChange.All;
+        private HudPresenter _hudPresenter;
 
         private void Awake()
         {
+            _runCoordinator.PresentationChanged += HandlePresentationChanged;
             _sceneUi = GetComponentInChildren<KeyboardWandererSceneUI>(true);
+            _hudPresenter = new HudPresenter(_sceneUi);
             _sceneSequencePlayer = GetComponent<SceneSequencePlayer>();
             LoadSettings();
             LoadNinjaAdventureAssets();
@@ -246,6 +252,7 @@ namespace KeyboardWanderer.Demo
 
         private void OnDestroy()
         {
+            _runCoordinator.PresentationChanged -= HandlePresentationChanged;
             _sceneSequencePlayer?.Cancel();
             StopAllCoroutines();
             for (int i = 0; i < _runtimeSprites.Count; i++)
@@ -264,7 +271,7 @@ namespace KeyboardWanderer.Demo
         private void Update()
         {
             UpdateCameraViewport();
-            UpdateAuthoredUi();
+            PublishPresentationState();
             if (_screenMode != ScreenMode.Playing || _service == null)
                 return;
 
@@ -272,17 +279,34 @@ namespace KeyboardWanderer.Demo
             UpdateCameraFollow();
         }
 
+        private void HandlePresentationChanged(RunPresentationState state, PresentationChange changes)
+        {
+            _pendingPresentationChanges |= changes;
+            UpdateAuthoredUi();
+        }
+
+        private void PublishPresentationState(PresentationChange requested = PresentationChange.None)
+        {
+            RunView view = _service?.CurrentView;
+            GridCoord player = view != null ? view.PlayerPosition : default;
+            string layoutHash = view != null ? LayoutHash(view) : string.Empty;
+            var state = new RunPresentationState(view?.Version ?? 0L, view?.CurrentTurn ?? 0, layoutHash,
+                player, _selectedCoord, _selectedTarget, _ability, (int)_screenMode, _authoredDialoguePage,
+                _authoredDialogueSignature, _showPause, _serverPending || _gmPending, _playerWalking);
+            _runCoordinator.Publish(state, requested);
+        }
+
         private void UpdateAuthoredUi()
         {
             if (_sceneUi == null || !_sceneUi.IsReady)
                 return;
 
+            PresentationChange changes = _pendingPresentationChanges;
+            _pendingPresentationChanges = PresentationChange.None;
+
             bool ended = _screenMode == ScreenMode.Playing && _service != null && !RunIsPlaying(_service.CurrentView);
-            _sceneUi.Show(_screenMode == ScreenMode.Title, _screenMode == ScreenMode.Settings,
-                _screenMode == ScreenMode.Playing, _showPause, ended);
-            _sceneUi.SetMusicVolume(_musicVolume);
-            _sceneUi.SetSfxVolume(_sfxVolume);
-            _sceneUi.SetGmEnabled(_gmEnabled);
+            _hudPresenter.PresentScreen(_screenMode == ScreenMode.Title, _screenMode == ScreenMode.Settings,
+                _screenMode == ScreenMode.Playing, _showPause, ended, _musicVolume, _sfxVolume, _gmEnabled);
             _sceneUi.SetTitleCharacter(_playerSprite);
 
             int nextCounter = PlayerPrefs.GetInt("keyboard-wanderer.run-counter", 0) + 1;
@@ -301,7 +325,8 @@ namespace KeyboardWanderer.Demo
                 return;
 
             RunView view = _service.CurrentView;
-            UpdateMinimap(view);
+            if ((changes & PresentationChange.Minimap) != 0)
+                UpdateMinimap(view);
             string narrative = _lastOutcome == "READY" || _lastOutcome == "RESTORED"
                 ? CampaignPremise(view)
                 : ShortNarrative(_lastNarrative);
@@ -384,8 +409,13 @@ namespace KeyboardWanderer.Demo
                 _sceneUi?.SetStoryVisible(false);
             }
             PlaySfx(AssetClip("UiAcceptSound"));
+            PublishPresentationState(PresentationChange.Dialogue);
         }
-        public void UiResume() => _showPause = false;
+        public void UiResume()
+        {
+            _showPause = false;
+            PublishPresentationState(PresentationChange.Screen | PresentationChange.Hud);
+        }
         public void UiShowTitle() => ShowTitle();
 
         private void SetAbilityButton(KeyboardWandererUiButton button, AbilityKind ability)
@@ -451,6 +481,7 @@ namespace KeyboardWanderer.Demo
         {
             _settingsReturn = _screenMode;
             _screenMode = ScreenMode.Settings;
+            PublishPresentationState(PresentationChange.Screen);
         }
 
         public void UiOpenSettingsFromPause()
@@ -458,6 +489,7 @@ namespace KeyboardWanderer.Demo
             _showPause = false;
             _settingsReturn = ScreenMode.Playing;
             _screenMode = ScreenMode.Settings;
+            PublishPresentationState(PresentationChange.Screen);
         }
 
         public void UiCloseSettings()
@@ -465,6 +497,7 @@ namespace KeyboardWanderer.Demo
             _screenMode = _settingsReturn;
             if (_screenMode == ScreenMode.Playing)
                 _cameraController?.SetEnabled(true);
+            PublishPresentationState(PresentationChange.Screen);
         }
 
         public void UiDeleteSave()
@@ -771,10 +804,10 @@ namespace KeyboardWanderer.Demo
                 return;
             }
 
-            SubmitLocalTurn();
+            StartCoroutine(SubmitLocalTurn());
         }
 
-        private void SubmitLocalTurn()
+        private IEnumerator SubmitLocalTurn()
         {
             RunView view = _service.CurrentView;
             TryGetPlayerPosition(view, out GridCoord playerPositionBefore);
@@ -789,7 +822,17 @@ namespace KeyboardWanderer.Demo
                 ? TurnRequest.Move(Guid.NewGuid().ToString("N"), view.Version, destination.Value)
                 : TurnRequest.UseSkill(Guid.NewGuid().ToString("N"), view.Version, _ability, target,
                     secondary, destination);
-            TurnResponse response = _service.Submit(request);
+            TurnGatewayResult gatewayResult = null;
+            yield return _turnGateway.Submit(request, value => gatewayResult = value);
+            TurnResponse response = gatewayResult?.LocalResponse;
+            if (response == null)
+            {
+                _lastOutcome = gatewayResult?.ErrorCode ?? "GATEWAY_ERROR";
+                _lastAttempt = gatewayResult?.ErrorMessage ?? "턴 게이트웨이에서 응답을 받지 못했습니다.";
+                _lastExplanation = "요청이 커밋되지 않아 턴과 저장 상태는 변하지 않았습니다.";
+                PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue);
+                yield break;
+            }
             if (!response.IsSuccess)
             {
                 _lastOutcome = response.ErrorCode.ToString();
@@ -798,7 +841,8 @@ namespace KeyboardWanderer.Demo
                 _lastNarrative = "대상, 목적지, 자원 조건을 다시 확인한 뒤 스킬을 다시 선택하세요.";
                 AddLog("행동 거부 · " + _lastAttempt);
                 PlaySfx(AssetClip("UiCancelSound"));
-                return;
+                PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue);
+                yield break;
             }
 
             _lastD20 = response.D20;
@@ -855,6 +899,7 @@ namespace KeyboardWanderer.Demo
                         {
                             _lastNarrative = result.Narrative;
                             AddLog("GM · " + result.Narrative);
+                            PublishPresentationState(PresentationChange.Dialogue | PresentationChange.Hud);
                         }
                     }));
             }
@@ -869,6 +914,8 @@ namespace KeyboardWanderer.Demo
                 _gmPending = false;
                 PlaySfx(AssetClip("SuccessJingle"));
             }
+            PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue |
+                                     PresentationChange.Minimap | PresentationChange.Selection);
         }
 
         private IEnumerator SubmitServerAction()
@@ -1226,6 +1273,7 @@ namespace KeyboardWanderer.Demo
             _gmPending = false;
             _showPause = false;
             _service = service;
+            _turnGateway = new LocalTurnGateway(service);
             _worldSeed = _service.CurrentView.WorldSeed;
             _sessionLog.Clear();
             _lastRestorableTarget = null;
@@ -2572,9 +2620,8 @@ namespace KeyboardWanderer.Demo
             string layoutHash = useServerWorld ? serverWorld.layoutHash : view.Region.LayoutHash;
             string signature = layoutHash + ":" + player.X + ":" + player.Y + ":" +
                                (_selectedCoord.HasValue ? _selectedCoord.Value.ToString() : "none");
-            if (!string.Equals(_minimapSignature, signature, StringComparison.Ordinal))
+            if (_minimapPresenter.ShouldRedraw(signature))
             {
-                _minimapSignature = signature;
                 const int size = 80;
                 if (_minimapTexture == null)
                 {

@@ -81,6 +81,35 @@ namespace KeyboardWanderer.Tests.PlayMode
                 Is.LessThanOrEqualTo(2));
         }
 
+        [UnityTest]
+        public IEnumerator Controller_DeleteSelection_CommitsDamageAndRefreshesPresentation()
+        {
+            RunState state = LocalTurnService.CreateDemo(7304).CreateSnapshot();
+            EntityState player = state.Spatial.Entities.Single(entity => entity.EntityId == state.PlayerEntityId);
+            GridCoord enemyCoord = FindAvailableNeighbour(state, player.Position);
+            var enemy = new EntityState(Guid.NewGuid(), EntityKind.Enemy, "test.enemy", "테스트 적",
+                true, false, false, true, 4, state.Region.RegionId, enemyCoord);
+            Assert.That(state.Spatial.Register(enemy, out string registrationError), Is.True, registrationError);
+            var service = new LocalTurnService(state, new SequenceD20Source(20));
+            KeyboardWandererDemoController controller = CreateAuthoredController("Codria Delete Interaction Test");
+            yield return null;
+
+            Invoke(controller, "StartRun", service, false);
+            SetField(controller, "_gmEnabled", false);
+            controller.UiSetAbility(AbilityKind.Delete);
+            SetField(controller, "_selectedTarget", (Guid?)enemy.EntityId);
+            controller.UiSubmit();
+            yield return null;
+            yield return null;
+
+            EntityView committed = service.CurrentView.Entities.SingleOrDefault(entity => entity.EntityId == enemy.EntityId);
+            Assert.That(service.CurrentView.CurrentTurn, Is.EqualTo(1));
+            Assert.That(committed == null || committed.Health < committed.MaxHealth, Is.True);
+            RunCoordinator coordinator = (RunCoordinator)GetField(controller, "_runCoordinator");
+            Assert.That(coordinator.State.Turn, Is.EqualTo(1));
+            Assert.That(coordinator.State.SelectedTarget, Is.Null);
+        }
+
         [Test]
         public void RunDto_ParsesCodriaCampaignAndSharedEndingState()
         {
@@ -178,6 +207,28 @@ namespace KeyboardWanderer.Tests.PlayMode
             var child = new GameObject(name);
             child.transform.SetParent(parent, false);
             return child.transform;
+        }
+
+        private static GridCoord FindAvailableNeighbour(RunState state, GridCoord origin)
+        {
+            GridCoord[] candidates =
+            {
+                new GridCoord(origin.X + 1, origin.Y), new GridCoord(origin.X - 1, origin.Y),
+                new GridCoord(origin.X, origin.Y + 1), new GridCoord(origin.X, origin.Y - 1)
+            };
+            foreach (GridCoord candidate in candidates)
+                if (state.Region.Contains(candidate) && state.Region.GetTile(candidate).IsWalkable &&
+                    !state.Spatial.IsBlockingOccupied(state.Region.RegionId, candidate, 0))
+                    return candidate;
+            Assert.Fail("No available adjacent tile for the interaction fixture.");
+            return origin;
+        }
+
+        private static object GetField(object target, string name)
+        {
+            FieldInfo field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, "Missing private field " + name);
+            return field.GetValue(target);
         }
 
         private static void SetField(object target, string name, object value)
