@@ -58,6 +58,9 @@ namespace KeyboardWanderer.Demo
         private readonly List<Texture2D> _runtimeTextures = new List<Texture2D>();
         private readonly List<Tile> _runtimeTiles = new List<Tile>();
         private readonly List<string> _sessionLog = new List<string>();
+        private readonly Stack<KeyboardWandererEntityView> _entityViewPool = new Stack<KeyboardWandererEntityView>();
+        private readonly Stack<SpriteRenderer> _decorationPool = new Stack<SpriteRenderer>();
+        private readonly List<SpriteRenderer> _activeDecorations = new List<SpriteRenderer>();
 
         [Header("Authored content")]
         [SerializeField] private KeyboardWandererAuthoringSettings authoringSettings;
@@ -190,8 +193,10 @@ namespace KeyboardWanderer.Demo
         private Sprite _minimapSprite;
         private readonly RunCoordinator _runCoordinator = new RunCoordinator();
         private readonly MinimapPresenter _minimapPresenter = new MinimapPresenter();
+        private string _renderedLayoutHash = string.Empty;
         private PresentationChange _pendingPresentationChanges = PresentationChange.All;
         private HudPresenter _hudPresenter;
+        private Transform _visualPoolRoot;
 
         private void Awake()
         {
@@ -794,6 +799,17 @@ namespace KeyboardWanderer.Demo
             RunView view = _service.CurrentView;
             if (!RunIsPlaying(view))
                 return;
+            if (!CanSubmitCurrentSelection())
+            {
+                _lastOutcome = "SELECTION REQUIRED";
+                _lastAttempt = NarrativeSelectionHint();
+                _lastExplanation = "목적지 또는 유효한 대상을 선택하기 전에는 턴을 소비하지 않습니다.";
+                _lastNarrative = "먼저 지도에서 이동할 타일이나 스킬을 적용할 대상을 선택하세요.";
+                AddLog("실행 대기 · " + _lastAttempt);
+                PlaySfx(AssetClip("UiCancelSound"));
+                PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue);
+                return;
+            }
 
             if (_serverOnline && _serverRun != null && _gameApi != null)
             {
@@ -1265,6 +1281,8 @@ namespace KeyboardWanderer.Demo
             StopAllCoroutines();
             _gmPending = false;
             _showPause = false;
+            _playerWalking = false;
+            _reopenDialogueAfterWalk = false;
             _service = service;
             _turnGateway = _serverOnline && _serverRun != null
                 ? new ServerTurnGateway(_gameApi, () => _serverRun?.id)
@@ -1354,14 +1372,21 @@ namespace KeyboardWanderer.Demo
                 authoredWorld.RuntimeLandmarks == null || authoredWorld.RuntimeEffects == null)
                 throw new InvalidOperationException(
                     "Keyboard Wanderer requires a fully configured authored world. Run the project converter or repair the scene references.");
-            for (int i = 0; i < _runtimeTiles.Count; i++)
-                if (_runtimeTiles[i] != null)
-                    Destroy(_runtimeTiles[i]);
-            _runtimeTiles.Clear();
-            _entityVisuals.Clear();
             GameApiClient.WorldSnapshot serverWorld = _serverOnline ? _serverRun?.world : null;
             bool useServerWorld = serverWorld != null && serverWorld.HasCompleteLayout;
             string layoutHash = useServerWorld ? serverWorld.layoutHash : view.Region.LayoutHash;
+            bool rebuildStaticWorld = !string.Equals(_renderedLayoutHash, layoutHash, StringComparison.Ordinal);
+            foreach (KeyValuePair<Guid, EntityVisual> pair in _entityVisuals)
+                ReleaseEntityVisual(pair.Value);
+            _entityVisuals.Clear();
+            if (rebuildStaticWorld)
+            {
+                ReleaseActiveDecorations();
+                for (int i = 0; i < _runtimeTiles.Count; i++)
+                    if (_runtimeTiles[i] != null)
+                        Destroy(_runtimeTiles[i]);
+                _runtimeTiles.Clear();
+            }
             Vector2 origin = MapOrigin(view);
             int worldWidth = useServerWorld ? serverWorld.width : view.Region.Width;
             int worldHeight = useServerWorld ? serverWorld.height : view.Region.Height;
@@ -1370,7 +1395,7 @@ namespace KeyboardWanderer.Demo
             // sole geometry authority; the local map remains only an offline continuity fallback.
             _worldRoot = authoredWorld.gameObject;
             _worldRoot.name = "Authored World · " + ShortHash(layoutHash);
-            authoredWorld.ResetRuntimeContent();
+            authoredWorld.ResetRuntimeContent(rebuildStaticWorld);
             Tilemap tilemap = authoredWorld.TerrainTilemap;
             tilemap.transform.position = new Vector3(origin.x, origin.y, 0f);
             _selectionRenderer = authoredWorld.SelectionCursor;
@@ -1379,36 +1404,39 @@ namespace KeyboardWanderer.Demo
                 activeTilemapRenderer.sortingOrder = TerrainSortingOrder;
             var tilePalette = new Dictionary<string, Tile>(StringComparer.Ordinal);
 
-            for (int y = 0; y < worldHeight; y++)
+            if (rebuildStaticWorld)
             {
-                for (int x = 0; x < worldWidth; x++)
+                for (int y = 0; y < worldHeight; y++)
                 {
-                    var coord = new GridCoord(x, y);
-                    TileKind tileKind = useServerWorld
-                        ? TileKindForServer(serverWorld, serverWorld.tileCodes[y * serverWorld.width + x])
-                        : view.Region.GetTile(coord).Kind;
-                    string biomeId = BiomeIdAt(view, coord);
-                    TileAppearance(tileKind, biomeId, coord, out Sprite sprite, out Color tint);
-                    string paletteKey = biomeId + ":" + tileKind;
-                    if (!tilePalette.TryGetValue(paletteKey, out Tile visualTile))
+                    for (int x = 0; x < worldWidth; x++)
                     {
-                        visualTile = ScriptableObject.CreateInstance<Tile>();
-                        visualTile.name = "Runtime " + biomeId + " " + tileKind + " Tile";
-                        visualTile.sprite = sprite;
-                        visualTile.color = Color.white;
-                        visualTile.flags = TileFlags.None;
-                        tilePalette.Add(paletteKey, visualTile);
-                        _runtimeTiles.Add(visualTile);
+                        var coord = new GridCoord(x, y);
+                        TileKind tileKind = useServerWorld
+                            ? TileKindForServer(serverWorld, serverWorld.tileCodes[y * serverWorld.width + x])
+                            : view.Region.GetTile(coord).Kind;
+                        string biomeId = BiomeIdAt(view, coord);
+                        TileAppearance(tileKind, biomeId, coord, out Sprite sprite, out Color tint);
+                        string paletteKey = biomeId + ":" + tileKind;
+                        if (!tilePalette.TryGetValue(paletteKey, out Tile visualTile))
+                        {
+                            visualTile = ScriptableObject.CreateInstance<Tile>();
+                            visualTile.name = "Runtime " + biomeId + " " + tileKind + " Tile";
+                            visualTile.sprite = sprite;
+                            visualTile.color = Color.white;
+                            visualTile.flags = TileFlags.None;
+                            tilePalette.Add(paletteKey, visualTile);
+                            _runtimeTiles.Add(visualTile);
+                        }
+                        var cell = new Vector3Int(x, y, 0);
+                        tilemap.SetTile(cell, visualTile);
+                        tilemap.SetTileFlags(cell, TileFlags.None);
+                        tilemap.SetColor(cell, tint);
                     }
-                    var cell = new Vector3Int(x, y, 0);
-                    tilemap.SetTile(cell, visualTile);
-                    tilemap.SetTileFlags(cell, TileFlags.None);
-                    tilemap.SetColor(cell, tint);
                 }
+                CreateBiomeDecorations(view, origin, useServerWorld, worldWidth, worldHeight);
+                CreateCampaignLandmarkMarkers(view, origin, useServerWorld);
+                _renderedLayoutHash = layoutHash;
             }
-
-            CreateBiomeDecorations(view, origin, useServerWorld, worldWidth, worldHeight);
-            CreateCampaignLandmarkMarkers(view, origin, useServerWorld);
 
             _selectionRenderer.sprite = _grassSprite;
             _selectionRenderer.color = new Color(1f, 0.85f, 0.35f, 0.42f);
@@ -1599,7 +1627,11 @@ namespace KeyboardWanderer.Demo
             if (prefab == null)
                 throw new InvalidOperationException("Authoring Settings must reference an Entity Visual prefab.");
 
-            authoredView = Instantiate(prefab, WorldContentRoot);
+            while (_entityViewPool.Count > 0 && _entityViewPool.Peek() == null)
+                _entityViewPool.Pop();
+            authoredView = _entityViewPool.Count > 0 ? _entityViewPool.Pop() : Instantiate(prefab);
+            authoredView.transform.SetParent(WorldContentRoot, false);
+            authoredView.gameObject.SetActive(true);
             authoredView.name = objectName;
             authoredView.Prepare(_whiteSprite, hostile);
             renderer = authoredView.ActorRenderer;
@@ -1631,15 +1663,40 @@ namespace KeyboardWanderer.Demo
             visual.HealthFill.name = displayName + " HP";
         }
 
-        private static void DestroyEntityVisual(EntityVisual visual)
+        private void DestroyEntityVisual(EntityVisual visual)
+        {
+            ReleaseEntityVisual(visual);
+        }
+
+        private void ReleaseEntityVisual(EntityVisual visual)
         {
             if (visual == null)
                 return;
             DestroyDetachedVisual(visual.HealthBack, visual.Root);
             DestroyDetachedVisual(visual.HealthFill, visual.Root);
             DestroyDetachedVisual(visual.RootComponentLabel, visual.Root);
-            if (visual.Root != null)
+            if (visual.Root == null) return;
+            KeyboardWandererEntityView view = visual.AuthoredView != null
+                ? visual.AuthoredView
+                : visual.Root.GetComponent<KeyboardWandererEntityView>();
+            if (view == null)
+            {
                 Destroy(visual.Root);
+                return;
+            }
+            EnsureVisualPoolRoot();
+            view.gameObject.SetActive(false);
+            view.transform.SetParent(_visualPoolRoot, false);
+            _entityViewPool.Push(view);
+        }
+
+        private void EnsureVisualPoolRoot()
+        {
+            if (_visualPoolRoot != null) return;
+            var root = new GameObject("Runtime Visual Pool");
+            root.transform.SetParent(transform, false);
+            root.SetActive(false);
+            _visualPoolRoot = root.transform;
         }
 
         private static void DestroyDetachedVisual(GameObject item, GameObject root)
@@ -2592,6 +2649,10 @@ namespace KeyboardWanderer.Demo
 
         private Sprite GroundSpriteForBiome(string biomeId)
         {
+            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
+            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored) &&
+                authored.GroundSprite != null)
+                return authored.GroundSprite;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
                 case "root_system": return _cavernFloorSprite;
@@ -2794,8 +2855,16 @@ namespace KeyboardWanderer.Demo
             return SectorBiomeOrder[Mathf.Clamp(sector, 0, SectorBiomeOrder.Length - 1)];
         }
 
-        private static Color ApplyBiomePalette(Color tileTint, string biomeId)
+        private Color ApplyBiomePalette(Color tileTint, string biomeId)
         {
+            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
+            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored))
+            {
+                Color palette = authored.Palette;
+                return new Color(Mathf.Clamp01(tileTint.r * 0.34f + palette.r * 0.72f),
+                    Mathf.Clamp01(tileTint.g * 0.34f + palette.g * 0.72f),
+                    Mathf.Clamp01(tileTint.b * 0.34f + palette.b * 0.72f), tileTint.a);
+            }
             if (string.Equals(biomeId, "root_system", StringComparison.OrdinalIgnoreCase))
             {
                 Color core = Hex("2a1830");
@@ -2838,7 +2907,7 @@ namespace KeyboardWanderer.Demo
                         StableVisualHash(layoutHash, x, y, 17) % 100 >= DecorationDensity(biomeId))
                         continue;
                     float scale = 0.62f + (StableVisualHash(layoutHash, x, y, 31) % 44) / 100f;
-                    CreateDecoration("Scenery", DecorationSpriteForBiome(
+                    CreateDecoration(biomeId, "Scenery", DecorationSpriteForBiome(
                             biomeId, StableVisualHash(layoutHash, x, y, 47)), coord, origin,
                         DecorationTint(biomeId), scale);
                 }
@@ -2904,7 +2973,7 @@ namespace KeyboardWanderer.Demo
             var candidate = new GridCoord(center.X + offset.X, center.Y + offset.Y);
             if (!TryFindDecorationTile(view, useServerWorld, biomeId, candidate, width, height, out GridCoord coord))
                 return;
-            CreateDecoration("Biome landmark", LandmarkSpriteForBiome(biomeId), coord, origin, Color.white,
+            CreateDecoration(biomeId, "Biome landmark", LandmarkSpriteForBiome(biomeId), coord, origin, Color.white,
                 string.Equals(biomeId, "subterranean_cavern", StringComparison.OrdinalIgnoreCase) ? 1.4f : 0.92f);
         }
 
@@ -2960,22 +3029,69 @@ namespace KeyboardWanderer.Demo
             return false;
         }
 
-        private void CreateDecoration(string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint,
+        private void CreateDecoration(string biomeId, string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint,
             float scale)
         {
             if (sprite == null || WorldLandmarkRoot == null) return;
-            var decoration = new GameObject(prefix + " · " + sprite.name);
+            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
+            GameObject authoredPrefab = profile != null && profile.TryGet(biomeId,
+                out KeyboardWandererWorldVisualProfile.BiomeVisual authored) ? authored.DecorationPrefab : null;
+            while (_decorationPool.Count > 0 && _decorationPool.Peek() == null)
+                _decorationPool.Pop();
+            SpriteRenderer renderer;
+            if (authoredPrefab != null)
+            {
+                GameObject instance = Instantiate(authoredPrefab, WorldLandmarkRoot);
+                renderer = instance.GetComponent<SpriteRenderer>();
+                if (renderer == null)
+                {
+                    Destroy(instance);
+                    return;
+                }
+            }
+            else if (_decorationPool.Count > 0)
+            {
+                renderer = _decorationPool.Pop();
+                renderer.gameObject.SetActive(true);
+            }
+            else
+            {
+                renderer = new GameObject().AddComponent<SpriteRenderer>();
+            }
+            GameObject decoration = renderer.gameObject;
+            decoration.name = prefix + " · " + sprite.name;
             decoration.transform.SetParent(WorldLandmarkRoot, false);
             decoration.transform.position = WorldPosition(origin, coord) + new Vector3(0f, 0.18f, -0.03f);
-            var renderer = decoration.AddComponent<SpriteRenderer>();
             renderer.sprite = sprite;
             renderer.color = tint;
             renderer.sortingOrder = 20;
             decoration.transform.localScale = Vector3.one * scale;
+            _activeDecorations.Add(renderer);
+        }
+
+        private void ReleaseActiveDecorations()
+        {
+            EnsureVisualPoolRoot();
+            for (int i = 0; i < _activeDecorations.Count; i++)
+            {
+                SpriteRenderer renderer = _activeDecorations[i];
+                if (renderer == null) continue;
+                renderer.sprite = null;
+                renderer.gameObject.SetActive(false);
+                renderer.transform.SetParent(_visualPoolRoot, false);
+                _decorationPool.Push(renderer);
+            }
+            _activeDecorations.Clear();
         }
 
         private Sprite DecorationSpriteForBiome(string biomeId, int variantHash)
         {
+            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
+            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored))
+            {
+                Sprite authoredSprite = authored.DecorationSprite(variantHash);
+                if (authoredSprite != null) return authoredSprite;
+            }
             Sprite[] variants;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
@@ -2993,6 +3109,10 @@ namespace KeyboardWanderer.Demo
 
         private Sprite LandmarkSpriteForBiome(string biomeId)
         {
+            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
+            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored) &&
+                authored.LandmarkSprite != null)
+                return authored.LandmarkSprite;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
                 case "river_wetland": return _wetlandLandmarkSprite;
@@ -3022,8 +3142,11 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        private static int DecorationDensity(string biomeId)
+        private int DecorationDensity(string biomeId)
         {
+            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
+            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored))
+                return authored.DecorationDensity;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
                 case "root_system": return 52;
@@ -3037,8 +3160,11 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        private static Color DecorationTint(string biomeId)
+        private Color DecorationTint(string biomeId)
         {
+            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
+            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored))
+                return authored.DecorationTint;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
                 case "root_system": return Hex("b667d8");

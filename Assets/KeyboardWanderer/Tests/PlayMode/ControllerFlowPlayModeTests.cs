@@ -110,6 +110,23 @@ namespace KeyboardWanderer.Tests.PlayMode
             Assert.That(coordinator.State.SelectedTarget, Is.Null);
         }
 
+        [UnityTest]
+        public IEnumerator Controller_InvalidSubmitIsRejectedWithoutException_AndNewRunClearsWalking()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(7307);
+            KeyboardWandererDemoController controller = CreateAuthoredController("Codria Invalid Submit Test");
+            yield return null;
+
+            SetField(controller, "_playerWalking", true);
+            Invoke(controller, "StartRun", service, false);
+            Assert.That(GetField(controller, "_playerWalking"), Is.False);
+            long version = service.CurrentView.Version;
+
+            Assert.DoesNotThrow(controller.UiSubmit);
+            Assert.That(service.CurrentView.Version, Is.EqualTo(version));
+            Assert.That(GetField(controller, "_lastOutcome"), Is.EqualTo("SELECTION REQUIRED"));
+        }
+
         [Test]
         public void RunDto_ParsesCodriaCampaignAndSharedEndingState()
         {
