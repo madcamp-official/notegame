@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Linq;
 using System.Reflection;
 using KeyboardWanderer.Demo;
 using KeyboardWanderer.Gameplay;
@@ -87,6 +88,23 @@ namespace KeyboardWanderer.Tests.PlayMode
             Invoke(_controller, "UpdateAuthoredUi");
             Assert.That(story.text, Is.Not.EqualTo(first));
             Assert.That(story.text, Is.EqualTo("첫 번째 이야기"));
+        }
+
+        [UnityTest]
+        public IEnumerator Minimap_RedrawsWhenEnemySelectionChanges()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(7306);
+            Invoke(_controller, "StartRun", service, false);
+            yield return null;
+            MinimapPresenter presenter = (MinimapPresenter)GetField(_controller, "_minimapPresenter");
+            string before = presenter.Signature;
+            EntityView enemy = service.CurrentView.Entities.First(entity => entity.IsHostile);
+
+            SetField(_controller, "_selectedTarget", (System.Guid?)enemy.EntityId);
+            yield return null;
+
+            Assert.That(presenter.Signature, Is.Not.EqualTo(before));
+            Assert.That(presenter.Signature, Does.Contain(enemy.EntityId.ToString("N")));
         }
 
         private static Transform Find(Transform root, string name)

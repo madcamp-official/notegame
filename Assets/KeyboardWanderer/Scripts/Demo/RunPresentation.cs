@@ -107,7 +107,8 @@ namespace KeyboardWanderer.Demo
             if (previous.DialoguePage != next.DialoguePage || previous.DialogueSignature != next.DialogueSignature)
                 changes |= PresentationChange.Dialogue;
             if (previous.LayoutHash != next.LayoutHash || !previous.PlayerPosition.Equals(next.PlayerPosition) ||
-                !Nullable.Equals(previous.SelectedCoord, next.SelectedCoord))
+                !Nullable.Equals(previous.SelectedCoord, next.SelectedCoord) ||
+                !Nullable.Equals(previous.SelectedTarget, next.SelectedTarget))
                 changes |= PresentationChange.Minimap;
             if (!Nullable.Equals(previous.SelectedCoord, next.SelectedCoord) ||
                 !Nullable.Equals(previous.SelectedTarget, next.SelectedTarget) || previous.Ability != next.Ability)

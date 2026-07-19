@@ -2613,8 +2613,10 @@ namespace KeyboardWanderer.Demo
             int width = useServerWorld ? serverWorld.width : view.Region.Width;
             int height = useServerWorld ? serverWorld.height : view.Region.Height;
             string layoutHash = useServerWorld ? serverWorld.layoutHash : view.Region.LayoutHash;
-            string signature = layoutHash + ":" + player.X + ":" + player.Y + ":" +
-                               (_selectedCoord.HasValue ? _selectedCoord.Value.ToString() : "none");
+            long presentationVersion = _serverOnline && _serverRun != null ? _serverRun.version : view.Version;
+            string signature = layoutHash + ":" + presentationVersion + ":" + player.X + ":" + player.Y + ":" +
+                               (_selectedCoord.HasValue ? _selectedCoord.Value.ToString() : "none") + ":" +
+                               (_selectedTarget.HasValue ? _selectedTarget.Value.ToString("N") : "none");
             if (_minimapPresenter.ShouldRedraw(signature))
             {
                 const int size = 80;
@@ -2664,6 +2666,30 @@ namespace KeyboardWanderer.Demo
                     {
                         GridCoord center = view.Region.Areas[i].Center;
                         PaintMinimapMarker(center.X, center.Y, width, height, new Color(1f, 0.55f, 0.18f), 1);
+                    }
+                }
+                if (_serverOnline && _serverRun?.entities != null)
+                {
+                    for (int i = 0; i < _serverRun.entities.Length; i++)
+                    {
+                        GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                        if (entity?.position == null || !string.Equals(entity.kind, "enemy", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        bool selected = _selectedTarget.HasValue && Guid.TryParse(entity.id, out Guid id) &&
+                                        id == _selectedTarget.Value;
+                        PaintMinimapMarker(entity.position.x, entity.position.y, width, height,
+                            selected ? new Color(1f, 0.86f, 0.2f) : new Color(0.92f, 0.18f, 0.2f), selected ? 2 : 1);
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < view.Entities.Count; i++)
+                    {
+                        EntityView entity = view.Entities[i];
+                        if (!entity.IsHostile) continue;
+                        bool selected = _selectedTarget.HasValue && entity.EntityId == _selectedTarget.Value;
+                        PaintMinimapMarker(entity.Position.X, entity.Position.Y, width, height,
+                            selected ? new Color(1f, 0.86f, 0.2f) : new Color(0.92f, 0.18f, 0.2f), selected ? 2 : 1);
                     }
                 }
                 if (_selectedCoord.HasValue)
