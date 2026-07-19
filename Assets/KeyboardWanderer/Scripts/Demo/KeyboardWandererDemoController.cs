@@ -799,6 +799,17 @@ namespace KeyboardWanderer.Demo
             RunView view = _service.CurrentView;
             if (!RunIsPlaying(view))
                 return;
+            if (!CanSubmitCurrentSelection())
+            {
+                _lastOutcome = "SELECTION REQUIRED";
+                _lastAttempt = NarrativeSelectionHint();
+                _lastExplanation = "목적지 또는 유효한 대상을 선택하기 전에는 턴을 소비하지 않습니다.";
+                _lastNarrative = "먼저 지도에서 이동할 타일이나 스킬을 적용할 대상을 선택하세요.";
+                AddLog("실행 대기 · " + _lastAttempt);
+                PlaySfx(AssetClip("UiCancelSound"));
+                PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue);
+                return;
+            }
 
             if (_serverOnline && _serverRun != null && _gameApi != null)
             {
@@ -1270,6 +1281,8 @@ namespace KeyboardWanderer.Demo
             StopAllCoroutines();
             _gmPending = false;
             _showPause = false;
+            _playerWalking = false;
+            _reopenDialogueAfterWalk = false;
             _service = service;
             _turnGateway = _serverOnline && _serverRun != null
                 ? new ServerTurnGateway(_gameApi, () => _serverRun?.id)
