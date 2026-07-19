@@ -2,7 +2,8 @@
   "name": "KeyboardWanderer.Tests.EditMode",
   "rootNamespace": "KeyboardWanderer.Tests",
   "references": [
-    "KeyboardWanderer.Runtime"
+    "KeyboardWanderer.Runtime",
+    "KeyboardWanderer.Editor.Validation"
   ],
   "includePlatforms": [
     "Editor"
