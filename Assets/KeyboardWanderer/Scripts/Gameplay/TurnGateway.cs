@@ -6,21 +6,27 @@ namespace KeyboardWanderer.Gameplay
     public sealed class TurnGatewayResult
     {
         public TurnResponse LocalResponse { get; }
+        public object Payload { get; }
+        public object TransportResponse { get; }
         public string ErrorCode { get; }
         public string ErrorMessage { get; }
-        public bool IsSuccess => LocalResponse != null && LocalResponse.IsSuccess;
+        public bool IsSuccess => (LocalResponse != null && LocalResponse.IsSuccess) || Payload != null;
 
-        private TurnGatewayResult(TurnResponse response, string errorCode, string errorMessage)
+        private TurnGatewayResult(TurnResponse response, object payload, object transportResponse, string errorCode, string errorMessage)
         {
             LocalResponse = response;
+            Payload = payload;
+            TransportResponse = transportResponse;
             ErrorCode = errorCode ?? string.Empty;
             ErrorMessage = errorMessage ?? string.Empty;
         }
 
         public static TurnGatewayResult FromLocal(TurnResponse response) =>
-            new TurnGatewayResult(response, response != null && !response.IsSuccess ? response.ErrorCode.ToString() : null,
+            new TurnGatewayResult(response, null, null, response != null && !response.IsSuccess ? response.ErrorCode.ToString() : null,
                 response?.ErrorMessage);
-        public static TurnGatewayResult Failure(string code, string message) => new TurnGatewayResult(null, code, message);
+        public static TurnGatewayResult FromPayload(object payload) => new TurnGatewayResult(null, payload, null, null, null);
+        public static TurnGatewayResult Failure(string code, string message, object transportResponse = null) =>
+            new TurnGatewayResult(null, null, transportResponse, code, message);
     }
 
     /// <summary>

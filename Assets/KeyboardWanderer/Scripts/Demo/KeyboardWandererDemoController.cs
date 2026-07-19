@@ -925,36 +925,31 @@ namespace KeyboardWanderer.Demo
             _gmPending = true;
             _serverStatus = "권위 턴 커밋 중";
 
-            string skillId = ServerAbilityName(_ability).ToUpperInvariant();
             GridCoord? destinationCoord = _ability == AbilityKind.Copy
                 ? _selectedCoord
                 : null;
-            var destination = destinationCoord.HasValue
-                ? new GameApiClient.PositionSnapshot { x = destinationCoord.Value.X, y = destinationCoord.Value.Y }
-                : null;
-            var targetIds = new List<string>();
-            if (_ability != AbilityKind.Undo && _ability != AbilityKind.Search && _ability != AbilityKind.SelectAll && _selectedTarget.HasValue)
-                targetIds.Add(_selectedTarget.Value.ToString());
-            if (_ability == AbilityKind.Connect && _selectedSecondaryTarget.HasValue)
-                targetIds.Add(_selectedSecondaryTarget.Value.ToString());
             string requestId = "unity-" + Guid.NewGuid().ToString("N");
             GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
             int turnBeforeSubmit = _serverRun.currentTurn;
-            GameApiClient.Result<GameApiClient.CommittedTurn> result = null;
-
-            yield return _gameApi.SubmitAction(_serverRun.id, requestId, _serverRun.version, skillId,
-                targetIds.ToArray(), destination, value => result = value);
+            Guid? target = _ability == AbilityKind.Undo || _ability == AbilityKind.Search ||
+                           _ability == AbilityKind.SelectAll ? null : _selectedTarget;
+            Guid? secondary = _ability == AbilityKind.Connect ? _selectedSecondaryTarget : null;
+            var request = TurnRequest.UseSkill(requestId, _serverRun.version, _ability, target, secondary, destinationCoord);
+            TurnGatewayResult gatewayResult = null;
+            yield return _turnGateway.Submit(request, value => gatewayResult = value);
+            GameApiClient.Result<GameApiClient.CommittedTurn> result =
+                gatewayResult?.TransportResponse as GameApiClient.Result<GameApiClient.CommittedTurn>;
 
             _serverPending = false;
             _gmPending = false;
-            if (result == null || !result.IsSuccess)
+            if (gatewayResult == null || !gatewayResult.IsSuccess)
             {
-                bool encounterRequired = string.Equals(result?.ErrorCode, "TRAVEL_ENCOUNTER_REQUIRED", StringComparison.Ordinal);
+                bool encounterRequired = string.Equals(gatewayResult?.ErrorCode, "TRAVEL_ENCOUNTER_REQUIRED", StringComparison.Ordinal);
                 if (encounterRequired)
                 {
                     _encounterMoveRequired = true;
-                    _encounterReason = FirstNonEmpty(result.ErrorReason, "unsafe_route");
-                    GameApiClient.PositionSnapshot staging = result.StopPosition;
+                    _encounterReason = FirstNonEmpty(result?.ErrorReason, "unsafe_route");
+                    GameApiClient.PositionSnapshot staging = result?.StopPosition;
                     _encounterStagingCoord = staging == null ? (GridCoord?)null : new GridCoord(staging.x, staging.y);
                     _selectedCoord = _encounterStagingCoord;
                     _lastD20 = 0;
@@ -970,14 +965,14 @@ namespace KeyboardWanderer.Demo
                     PlaySfx(AssetClip("UiCancelSound"));
                     yield break;
                 }
-                _lastOutcome = result?.ErrorCode ?? "NETWORK_ERROR";
-                _lastAttempt = result?.ErrorMessage ?? "권위 서버에서 응답을 받지 못했습니다.";
-                _lastExplanation = result?.ErrorCode == "RUN_VERSION_CONFLICT"
+                _lastOutcome = gatewayResult?.ErrorCode ?? "NETWORK_ERROR";
+                _lastAttempt = gatewayResult?.ErrorMessage ?? "권위 서버에서 응답을 받지 못했습니다.";
+                _lastExplanation = gatewayResult?.ErrorCode == "RUN_VERSION_CONFLICT"
                     ? "다른 상태가 먼저 커밋되어 최신 런을 다시 동기화합니다. 선택한 행동은 자동 재실행하지 않습니다."
                     : "서버가 거부한 요청은 턴을 소비하지 않습니다. 로컬에서 임의 판정을 대신하지 않았습니다.";
                 _serverStatus = "턴 거부 · " + _lastOutcome;
                 PlaySfx(AssetClip("UiCancelSound"));
-                if (result == null || result.ErrorCode == "NETWORK_ERROR" || result.ErrorCode == "RUN_VERSION_CONFLICT")
+                if (gatewayResult == null || gatewayResult.ErrorCode == "NETWORK_ERROR" || gatewayResult.ErrorCode == "RUN_VERSION_CONFLICT")
                 {
                     yield return ResyncServerRun();
                     if (_serverRun != null && _serverRun.currentTurn > turnBeforeSubmit)
@@ -997,7 +992,7 @@ namespace KeyboardWanderer.Demo
                 yield break;
             }
 
-            GameApiClient.CommittedTurn committed = result.Value;
+            GameApiClient.CommittedTurn committed = gatewayResult.Payload as GameApiClient.CommittedTurn;
             CaptureRestorableTarget(committed.Turn, runBeforeSubmit);
             _serverRun = committed.Run;
             SyncEncounterStateFromServer();
@@ -1035,29 +1030,27 @@ namespace KeyboardWanderer.Demo
             _serverStatus = "안전 탐색 경로 검증 중";
             GridCoord destinationCoord = _selectedCoord.Value;
             TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPositionBefore);
-            var destination = new GameApiClient.PositionSnapshot { x = destinationCoord.X, y = destinationCoord.Y };
             string requestId = "unity-travel-" + Guid.NewGuid().ToString("N");
             int campaignTurnBefore = _serverRun.currentTurn;
             string layoutHashBefore = _serverRun.world?.layoutHash;
-            GameApiClient.Result<GameApiClient.CommittedNavigation> result = null;
-
-            yield return _gameApi.SubmitTravel(_serverRun.id, requestId, _serverRun.version, destination,
-                value => result = value);
+            TurnGatewayResult gatewayResult = null;
+            yield return _turnGateway.Submit(TurnRequest.Move(requestId, _serverRun.version, destinationCoord),
+                value => gatewayResult = value);
 
             _serverPending = false;
-            if (result == null || !result.IsSuccess)
+            if (gatewayResult == null || !gatewayResult.IsSuccess)
             {
-                _lastOutcome = result?.ErrorCode ?? "NETWORK_ERROR";
-                _lastAttempt = result?.ErrorMessage ?? "안전 탐색 응답을 받지 못했습니다.";
+                _lastOutcome = gatewayResult?.ErrorCode ?? "NETWORK_ERROR";
+                _lastAttempt = gatewayResult?.ErrorMessage ?? "안전 탐색 응답을 받지 못했습니다.";
                 _lastExplanation = "이동이 거부되어 위치·D20·의미 있는 캠페인 턴은 변하지 않았습니다.";
                 _serverStatus = "탐색 이동 거부 · " + _lastOutcome;
                 PlaySfx(AssetClip("UiCancelSound"));
-                if (result == null || result.ErrorCode == "NETWORK_ERROR" || result.ErrorCode == "RUN_VERSION_CONFLICT")
+                if (gatewayResult == null || gatewayResult.ErrorCode == "NETWORK_ERROR" || gatewayResult.ErrorCode == "RUN_VERSION_CONFLICT")
                     yield return ResyncServerRun();
                 yield break;
             }
 
-            GameApiClient.CommittedNavigation committed = result.Value;
+            GameApiClient.CommittedNavigation committed = gatewayResult.Payload as GameApiClient.CommittedNavigation;
             GameApiClient.NavigationSnapshot navigation = committed.Navigation;
             _serverRun = committed.Run;
             bool encounterOpened = (navigation != null && navigation.encounterOpened) ||
@@ -1273,7 +1266,9 @@ namespace KeyboardWanderer.Demo
             _gmPending = false;
             _showPause = false;
             _service = service;
-            _turnGateway = new LocalTurnGateway(service);
+            _turnGateway = _serverOnline && _serverRun != null
+                ? new ServerTurnGateway(_gameApi, () => _serverRun?.id)
+                : new LocalTurnGateway(service);
             _worldSeed = _service.CurrentView.WorldSeed;
             _sessionLog.Clear();
             _lastRestorableTarget = null;
