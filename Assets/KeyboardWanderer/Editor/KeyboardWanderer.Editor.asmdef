@@ -5,7 +5,9 @@
     "KeyboardWanderer.Runtime",
     "Unity.2D.Sprite.Editor",
     "Unity.InputSystem",
-    "Unity.ugui"
+    "Unity.ugui",
+    "Unity.TextMeshPro",
+    "Unity.TextMeshPro.Editor"
   ],
   "includePlatforms": [
     "Editor"

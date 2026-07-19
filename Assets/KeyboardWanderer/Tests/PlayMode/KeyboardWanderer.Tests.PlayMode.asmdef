@@ -2,7 +2,9 @@
   "name": "KeyboardWanderer.Tests.PlayMode",
   "rootNamespace": "KeyboardWanderer.Tests.PlayMode",
   "references": [
-    "KeyboardWanderer.Runtime"
+    "KeyboardWanderer.Runtime",
+    "Unity.ugui",
+    "Unity.TextMeshPro"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
