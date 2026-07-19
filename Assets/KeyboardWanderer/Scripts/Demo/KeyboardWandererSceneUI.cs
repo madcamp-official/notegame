@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using KeyboardWanderer.Gameplay;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -58,7 +59,7 @@ namespace KeyboardWanderer.Demo
         private struct TextBinding
         {
             public KeyboardWandererUiText Id;
-            public Text Target;
+            public TMP_Text Target;
         }
 
         [Serializable]
@@ -66,6 +67,7 @@ namespace KeyboardWanderer.Demo
         {
             public KeyboardWandererUiButton Id;
             public Button Target;
+            public KeyboardWandererButtonStateView StateView;
         }
 
         [Header("Screens")]
@@ -88,20 +90,20 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private Image titleCharacter;
         [SerializeField] private Image copyActionKeycap;
         [SerializeField] private Image outcomeEmote;
+        [SerializeField] private Image minimapMap;
+        [SerializeField] private TMP_Text minimapPlaceholder;
+        [SerializeField] private TMP_Text minimapStatus;
 
-        private readonly Dictionary<KeyboardWandererUiText, Text> _texts =
-            new Dictionary<KeyboardWandererUiText, Text>();
+        private readonly Dictionary<KeyboardWandererUiText, TMP_Text> _texts =
+            new Dictionary<KeyboardWandererUiText, TMP_Text>();
         private readonly Dictionary<KeyboardWandererUiButton, Button> _buttons =
             new Dictionary<KeyboardWandererUiButton, Button>();
-        private readonly Dictionary<KeyboardWandererUiButton, ColorBlock> _authoredButtonColors =
-            new Dictionary<KeyboardWandererUiButton, ColorBlock>();
+        private readonly Dictionary<KeyboardWandererUiButton, KeyboardWandererButtonStateView> _buttonStateViews =
+            new Dictionary<KeyboardWandererUiButton, KeyboardWandererButtonStateView>();
         private readonly Dictionary<KeyboardWandererUiButton, bool> _buttonInteractable =
             new Dictionary<KeyboardWandererUiButton, bool>();
         private readonly Dictionary<KeyboardWandererUiButton, bool> _buttonSelected =
             new Dictionary<KeyboardWandererUiButton, bool>();
-        private Image _minimapMap;
-        private Text _minimapPlaceholder;
-        private Text _minimapStatus;
         private bool _bound;
         private bool _copyPasteMode;
 
@@ -164,7 +166,7 @@ namespace KeyboardWanderer.Demo
 
         public void SetText(KeyboardWandererUiText id, string value)
         {
-            if (_texts.TryGetValue(id, out Text text) && text != null && text.text != value)
+            if (_texts.TryGetValue(id, out TMP_Text text) && text != null && text.text != value)
                 text.text = value ?? string.Empty;
         }
 
@@ -179,90 +181,20 @@ namespace KeyboardWanderer.Demo
             _buttonInteractable[id] = interactable;
             _buttonSelected[id] = selected;
             button.interactable = interactable;
-            ColorBlock colors = _authoredButtonColors.TryGetValue(id, out ColorBlock authored)
-                ? authored
-                : button.colors;
-            colors.fadeDuration = 0.055f;
-            colors.highlightedColor = new Color(1f, 0.84f, 0.42f, 1f);
-            colors.pressedColor = new Color(0.94f, 0.49f, 0.16f, 1f);
-            colors.selectedColor = new Color(1f, 0.75f, 0.25f, 1f);
-            colors.disabledColor = new Color(0.38f, 0.35f, 0.32f, 0.42f);
-            if (selected)
-            {
-                colors.normalColor = new Color(1f, 0.72f, 0.2f, 1f);
-                colors.highlightedColor = new Color(1f, 0.9f, 0.55f, 1f);
-                colors.pressedColor = new Color(0.86f, 0.38f, 0.12f, 1f);
-            }
-            button.colors = colors;
-            button.transform.localScale = selected ? new Vector3(1.065f, 1.065f, 1f) : Vector3.one;
-
-            Graphic target = button.targetGraphic;
-            if (target != null)
-            {
-                Outline outline = target.GetComponent<Outline>();
-                if (outline == null)
-                    outline = target.gameObject.AddComponent<Outline>();
-                outline.effectColor = new Color(1f, 0.78f, 0.22f, 0.95f);
-                outline.effectDistance = new Vector2(2f, -2f);
-                outline.useGraphicAlpha = true;
-                outline.enabled = selected;
-            }
+            if (_buttonStateViews.TryGetValue(id, out KeyboardWandererButtonStateView stateView))
+                stateView.SetSelected(selected);
         }
 
         public void SetMinimap(Sprite sprite, string status)
         {
-            EnsureMinimapControls();
-            if (_minimapMap != null && _minimapMap.sprite != sprite)
-                _minimapMap.sprite = sprite;
-            if (_minimapMap != null)
-                _minimapMap.enabled = sprite != null;
-            if (_minimapPlaceholder != null)
-                _minimapPlaceholder.gameObject.SetActive(sprite == null);
-            if (_minimapStatus != null && _minimapStatus.text != status)
-                _minimapStatus.text = status ?? string.Empty;
-        }
-
-        private void EnsureMinimapControls()
-        {
-            if (_minimapStatus == null)
-                _minimapStatus = FindNamedComponent<Text>("Minimap Status");
-            if (_minimapPlaceholder == null)
-                _minimapPlaceholder = FindNamedComponent<Text>("Minimap Placeholder");
-            if (_minimapMap != null)
-                return;
-            GameObject preview = FindNamedObject("Minimap Preview");
-            if (preview == null)
-                return;
-            Transform existing = preview.transform.Find("Runtime Minimap");
-            if (existing != null)
-                _minimapMap = existing.GetComponent<Image>();
-            if (_minimapMap != null)
-                return;
-            var mapObject = new GameObject("Runtime Minimap", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            RectTransform rect = mapObject.GetComponent<RectTransform>();
-            rect.SetParent(preview.transform, false);
-            rect.anchorMin = new Vector2(0.04f, 0.06f);
-            rect.anchorMax = new Vector2(0.96f, 0.94f);
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-            _minimapMap = mapObject.GetComponent<Image>();
-            _minimapMap.preserveAspect = true;
-            _minimapMap.raycastTarget = false;
-        }
-
-        private GameObject FindNamedObject(string objectName)
-        {
-            Transform[] items = GetComponentsInChildren<Transform>(true);
-            for (int i = 0; i < items.Length; i++)
-                if (string.Equals(items[i].name, objectName, StringComparison.Ordinal))
-                    return items[i].gameObject;
-            return null;
-        }
-
-        private T FindNamedComponent<T>(string objectName) where T : Component
-        {
-            GameObject target = FindNamedObject(objectName);
-            return target != null ? target.GetComponent<T>() : null;
+            if (minimapMap != null && minimapMap.sprite != sprite)
+                minimapMap.sprite = sprite;
+            if (minimapMap != null)
+                minimapMap.enabled = sprite != null;
+            if (minimapPlaceholder != null)
+                minimapPlaceholder.gameObject.SetActive(sprite == null);
+            if (minimapStatus != null && minimapStatus.text != status)
+                minimapStatus.text = status ?? string.Empty;
         }
 
         public void SetStoryVisible(bool visible)
@@ -272,16 +204,6 @@ namespace KeyboardWanderer.Demo
 
         public void SetTitleCharacter(Sprite sprite)
         {
-            if (titleCharacter == null)
-            {
-                Image[] images = GetComponentsInChildren<Image>(true);
-                for (int i = 0; i < images.Length; i++)
-                {
-                    if (!string.Equals(images[i].name, "Title Character", StringComparison.Ordinal)) continue;
-                    titleCharacter = images[i];
-                    break;
-                }
-            }
             if (titleCharacter != null && sprite != null && titleCharacter.sprite != sprite)
                 titleCharacter.sprite = sprite;
         }
@@ -334,7 +256,7 @@ namespace KeyboardWanderer.Demo
         {
             _texts.Clear();
             _buttons.Clear();
-            _authoredButtonColors.Clear();
+            _buttonStateViews.Clear();
             _buttonInteractable.Clear();
             _buttonSelected.Clear();
             for (int i = 0; i < textBindings.Length; i++)
@@ -345,7 +267,8 @@ namespace KeyboardWanderer.Demo
             {
                 if (buttonBindings[i].Target == null) continue;
                 _buttons[buttonBindings[i].Id] = buttonBindings[i].Target;
-                _authoredButtonColors[buttonBindings[i].Id] = buttonBindings[i].Target.colors;
+                if (buttonBindings[i].StateView != null)
+                    _buttonStateViews[buttonBindings[i].Id] = buttonBindings[i].StateView;
             }
         }
 
@@ -369,6 +292,9 @@ namespace KeyboardWanderer.Demo
             gmToggle = FindComponent<Toggle>("GM Toggle");
             titleCharacter = FindComponent<Image>("Title Character");
             outcomeEmote = FindComponent<Image>("Speaker Emote");
+            minimapMap = FindComponent<Image>("Minimap Map");
+            minimapPlaceholder = FindComponent<TMP_Text>("Minimap Placeholder");
+            minimapStatus = FindComponent<TMP_Text>("Minimap Status");
             assetManifest = UnityEditor.AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(
                 "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset");
 
@@ -386,7 +312,7 @@ namespace KeyboardWanderer.Demo
             for (int i = 0; i < ids.Length; i++)
             {
                 var id = (KeyboardWandererUiText)ids.GetValue(i);
-                result[i] = new TextBinding { Id = id, Target = FindComponent<Text>(TextObjectName(id)) };
+                result[i] = new TextBinding { Id = id, Target = FindComponent<TMP_Text>(TextObjectName(id)) };
             }
             return result;
         }
@@ -398,7 +324,13 @@ namespace KeyboardWanderer.Demo
             for (int i = 0; i < ids.Length; i++)
             {
                 var id = (KeyboardWandererUiButton)ids.GetValue(i);
-                result[i] = new ButtonBinding { Id = id, Target = FindComponent<Button>(ButtonObjectName(id)) };
+                Button button = FindComponent<Button>(ButtonObjectName(id));
+                result[i] = new ButtonBinding
+                {
+                    Id = id,
+                    Target = button,
+                    StateView = button != null ? button.GetComponent<KeyboardWandererButtonStateView>() : null
+                };
             }
             return result;
         }

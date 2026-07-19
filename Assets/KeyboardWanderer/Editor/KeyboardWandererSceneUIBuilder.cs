@@ -1,4 +1,5 @@
 using KeyboardWanderer.Demo;
+using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -14,13 +15,15 @@ namespace KeyboardWanderer.Editor
         private const string UiPrefabPath = "Assets/KeyboardWanderer/Prefabs/UI/AuthoredUI.prefab";
         private const string DefaultFontPath =
             "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf";
+        private const string DefaultTmpFontPath =
+            "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular SDF.asset";
         private static readonly Color Ink = Hex("160f0a");
         private static readonly Color Panel = Hex("281a11");
         private static readonly Color Raised = Hex("352419");
         private static readonly Color Gold = Hex("d3a64b");
         private static readonly Color Parchment = Hex("f0dfb6");
         private static readonly Color Muted = Hex("ad9878");
-        private static Font _font;
+        private static TMP_FontAsset _font;
         private static NinjaAdventureAssetManifest _assets;
 
         [MenuItem("Keyboard Wanderer/Rebuild Authored Scene UI")]
@@ -127,11 +130,11 @@ namespace KeyboardWanderer.Editor
         [MenuItem("Keyboard Wanderer/Apply Default Font to Authored UI")]
         public static void ApplyDefaultFontToAuthoredUi()
         {
-            Font font = LoadDefaultFont();
+            TMP_FontAsset font = LoadDefaultFont();
             GameObject prefabRoot = PrefabUtility.LoadPrefabContents(UiPrefabPath);
             try
             {
-                Text[] texts = prefabRoot.GetComponentsInChildren<Text>(true);
+                TMP_Text[] texts = prefabRoot.GetComponentsInChildren<TMP_Text>(true);
                 for (int i = 0; i < texts.Length; i++)
                 {
                     texts[i].font = font;
@@ -190,12 +193,25 @@ namespace KeyboardWanderer.Editor
             Undo.RegisterCreatedObjectUndo(eventObject, "Create Codria EventSystem");
         }
 
-        private static Font LoadDefaultFont()
+        private static TMP_FontAsset LoadDefaultFont()
         {
-            Font font = AssetDatabase.LoadAssetAtPath<Font>(DefaultFontPath);
-            if (font == null)
+            TMP_FontAsset fontAsset = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(DefaultTmpFontPath);
+            if (fontAsset != null)
+                return fontAsset;
+
+            Font sourceFont = AssetDatabase.LoadAssetAtPath<Font>(DefaultFontPath);
+            if (sourceFont == null)
                 throw new UnityException("Default authored UI font is missing: " + DefaultFontPath);
-            return font;
+            fontAsset = TMP_FontAsset.CreateFontAsset(sourceFont);
+            Texture2D atlas = fontAsset.atlasTexture;
+            Material material = fontAsset.material;
+            fontAsset.atlasPopulationMode = AtlasPopulationMode.Dynamic;
+            fontAsset.isMultiAtlasTexturesEnabled = true;
+            AssetDatabase.CreateAsset(fontAsset, DefaultTmpFontPath);
+            AssetDatabase.AddObjectToAsset(atlas, fontAsset);
+            AssetDatabase.AddObjectToAsset(material, fontAsset);
+            AssetDatabase.SaveAssets();
+            return fontAsset;
         }
 
         private static void BuildTitle(Transform canvas)
@@ -293,6 +309,9 @@ namespace KeyboardWanderer.Editor
             TextRect(minimap, "Minimap Heading", new Vector2(0.12f, 0.72f), new Vector2(0.88f, 0.84f), "WORLD MAP", 12, Parchment, TextAnchor.MiddleLeft);
             RectTransform minimapPreview = PanelRect(minimap, "Minimap Preview", new Vector2(0.12f, 0.22f), new Vector2(0.88f, 0.70f),
                 Vector2.zero, Vector2.zero, new Color(0.12f, 0.16f, 0.12f, 1f));
+            Image minimapMap = ImageRect(minimapPreview, "Minimap Map", new Vector2(0.04f, 0.06f),
+                new Vector2(0.96f, 0.94f), null, Color.white).GetComponent<Image>();
+            minimapMap.enabled = false;
             TextRect(minimapPreview, "Minimap Placeholder", new Vector2(0.08f, 0.08f), new Vector2(0.92f, 0.92f),
                 "MAP\nPLACEHOLDER", 15, Muted, TextAnchor.MiddleCenter);
             TextRect(minimap, "Minimap Status", new Vector2(0.12f, 0.08f), new Vector2(0.88f, 0.19f), "탐사율 0%", 11, Muted, TextAnchor.MiddleLeft);
@@ -374,14 +393,14 @@ namespace KeyboardWanderer.Editor
         private static RectTransform TextRect(Transform parent, string name, Vector2 min, Vector2 max, string value, int size, Color color, TextAnchor alignment)
         {
             RectTransform rect = RectObject(parent, name, min, max, Vector2.zero, Vector2.zero);
-            Text text = rect.gameObject.AddComponent<Text>();
+            TextMeshProUGUI text = rect.gameObject.AddComponent<TextMeshProUGUI>();
             text.text = value;
             text.font = _font;
             text.fontSize = size;
             text.color = color;
-            text.alignment = alignment;
-            text.horizontalOverflow = HorizontalWrapMode.Wrap;
-            text.verticalOverflow = VerticalWrapMode.Truncate;
+            text.alignment = TmpAlignment(alignment);
+            text.textWrappingMode = TextWrappingModes.Normal;
+            text.overflowMode = TextOverflowModes.Truncate;
             text.raycastTarget = false;
             return rect;
         }
@@ -391,6 +410,19 @@ namespace KeyboardWanderer.Editor
             RectTransform rect = PanelRect(parent, name, min, max, Vector2.zero, Vector2.zero, background);
             Button button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = rect.GetComponent<Image>();
+            ColorBlock colors = button.colors;
+            colors.fadeDuration = 0.055f;
+            colors.highlightedColor = new Color(1f, 0.84f, 0.42f, 1f);
+            colors.pressedColor = new Color(0.94f, 0.49f, 0.16f, 1f);
+            colors.selectedColor = new Color(1f, 0.75f, 0.25f, 1f);
+            colors.disabledColor = new Color(0.38f, 0.35f, 0.32f, 0.42f);
+            button.colors = colors;
+            Outline selectedOutline = rect.gameObject.AddComponent<Outline>();
+            selectedOutline.effectColor = new Color(1f, 0.78f, 0.22f, 0.95f);
+            selectedOutline.effectDistance = new Vector2(2f, -2f);
+            selectedOutline.useGraphicAlpha = true;
+            KeyboardWandererButtonStateView stateView = rect.gameObject.AddComponent<KeyboardWandererButtonStateView>();
+            stateView.Configure(selectedOutline);
             TextRect(rect, labelName, Vector2.zero, Vector2.one, label, 16, foreground, TextAnchor.MiddleCenter);
             return rect;
         }
@@ -421,7 +453,7 @@ namespace KeyboardWanderer.Editor
             }
             if (validCount == 0) return;
 
-            Text label = button.GetComponentInChildren<Text>(true);
+            TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
             if (label != null) label.color = Color.clear;
 
             RectTransform keycapRoot = RectObject(button, "Ninja Keycaps", new Vector2(0.08f, 0.14f),
@@ -464,11 +496,11 @@ namespace KeyboardWanderer.Editor
         private static void EnableBestFit(RectTransform rect, int minSize, int maxSize)
         {
             if (rect == null) return;
-            Text text = rect.GetComponent<Text>();
+            TMP_Text text = rect.GetComponent<TMP_Text>();
             if (text == null) return;
-            text.resizeTextForBestFit = true;
-            text.resizeTextMinSize = minSize;
-            text.resizeTextMaxSize = maxSize;
+            text.enableAutoSizing = true;
+            text.fontSizeMin = minSize;
+            text.fontSizeMax = maxSize;
         }
 
         private static void SliderRect(Transform parent, string name, Vector2 min, Vector2 max)
@@ -520,6 +552,22 @@ namespace KeyboardWanderer.Editor
             Outline outline = target.AddComponent<Outline>();
             outline.effectColor = color;
             outline.effectDistance = new Vector2(distance, -distance);
+        }
+
+        private static TextAlignmentOptions TmpAlignment(TextAnchor alignment)
+        {
+            switch (alignment)
+            {
+                case TextAnchor.UpperLeft: return TextAlignmentOptions.TopLeft;
+                case TextAnchor.UpperCenter: return TextAlignmentOptions.Top;
+                case TextAnchor.UpperRight: return TextAlignmentOptions.TopRight;
+                case TextAnchor.MiddleLeft: return TextAlignmentOptions.Left;
+                case TextAnchor.MiddleRight: return TextAlignmentOptions.Right;
+                case TextAnchor.LowerLeft: return TextAlignmentOptions.BottomLeft;
+                case TextAnchor.LowerCenter: return TextAlignmentOptions.Bottom;
+                case TextAnchor.LowerRight: return TextAlignmentOptions.BottomRight;
+                default: return TextAlignmentOptions.Center;
+            }
         }
 
         private static Color Hex(string value)

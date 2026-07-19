@@ -3,7 +3,8 @@
   "rootNamespace": "KeyboardWanderer",
   "references": [
     "Unity.InputSystem",
-    "Unity.ugui"
+    "Unity.ugui",
+    "Unity.TextMeshPro"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
