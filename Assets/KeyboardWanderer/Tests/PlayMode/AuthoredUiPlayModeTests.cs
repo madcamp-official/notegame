@@ -1,4 +1,5 @@
 using System.Collections;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using KeyboardWanderer.Demo;
@@ -105,6 +106,61 @@ namespace KeyboardWanderer.Tests.PlayMode
 
             Assert.That(presenter.Signature, Is.Not.EqualTo(before));
             Assert.That(presenter.Signature, Does.Contain(enemy.EntityId.ToString("N")));
+        }
+
+        [UnityTest]
+        public IEnumerator AuthoredHud_CapturesSixteenByNineAndFourByThree()
+        {
+            if (System.Environment.GetEnvironmentVariable("KEYBOARD_WANDERER_CAPTURE_SCREENSHOTS") != "1")
+                Assert.Ignore("Set KEYBOARD_WANDERER_CAPTURE_SCREENSHOTS=1 for graphical screenshot validation.");
+
+            Invoke(_controller, "StartRun", LocalTurnService.CreateDemo(7305), false);
+            yield return null;
+            Camera camera = Object.FindAnyObjectByType<Camera>();
+            Canvas canvas = _sceneUi.GetComponentInParent<Canvas>();
+            Assert.That(camera, Is.Not.Null);
+            Assert.That(canvas, Is.Not.Null);
+            CaptureAtResolution(camera, canvas, 1600, 900, "/tmp/KeyboardWanderer-16x9.png");
+            CaptureAtResolution(camera, canvas, 1024, 768, "/tmp/KeyboardWanderer-4x3.png");
+        }
+
+        private static void CaptureAtResolution(Camera camera, Canvas canvas, int width, int height, string path)
+        {
+            if (File.Exists(path)) File.Delete(path);
+            RenderMode originalMode = canvas.renderMode;
+            Camera originalCanvasCamera = canvas.worldCamera;
+            bool originalOverrideSorting = canvas.overrideSorting;
+            int originalSortingOrder = canvas.sortingOrder;
+            RenderTexture originalTarget = camera.targetTexture;
+            RenderTexture originalActive = RenderTexture.active;
+            var target = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+            var image = new Texture2D(width, height, TextureFormat.RGB24, false);
+            try
+            {
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = camera;
+                canvas.overrideSorting = true;
+                canvas.sortingOrder = 2000;
+                camera.targetTexture = target;
+                camera.Render();
+                RenderTexture.active = target;
+                image.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                image.Apply();
+                File.WriteAllBytes(path, image.EncodeToPNG());
+            }
+            finally
+            {
+                camera.targetTexture = originalTarget;
+                canvas.worldCamera = originalCanvasCamera;
+                canvas.renderMode = originalMode;
+                canvas.overrideSorting = originalOverrideSorting;
+                canvas.sortingOrder = originalSortingOrder;
+                RenderTexture.active = originalActive;
+                Object.DestroyImmediate(image);
+                Object.DestroyImmediate(target);
+            }
+            Assert.That(File.Exists(path), Is.True, "Screenshot was not written: " + path);
+            Assert.That(new FileInfo(path).Length, Is.GreaterThan(1024));
         }
 
         private static Transform Find(Transform root, string name)
