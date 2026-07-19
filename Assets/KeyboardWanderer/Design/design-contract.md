@@ -1,54 +1,46 @@
-# 넙죽이와 붕괴한 코드 왕국 — 레퍼런스 디자인 계약 v4
+# Ninja Adventure — Gameplay HUD Reference Contract v5
 
-## 대상
+## Goal and target
 
-- 산출물: PC-first Unity gameplay screen
-- 제품: 코드리아의 붕괴를 조사하는 넙죽이의 관리자 키보드 어드벤처
-- 핵심 상호작용: 한 번 봉인한 160×160 월드에서 MOVE와 다섯 기술로 상태를 바꾸는 플레이
-- 주인공 표현: 제품 정체성은 넙죽이, 현재 sprite만 NinjaAdventure `NinjaGreen`
+- Target artifact: editable PC-first Unity gameplay HUD
+- Audience: keyboard-driven top-down adventure players
+- Goal: keep the world readable while placing status, objectives, skills, minimap, dialogue and confirmation at stable screen edges.
 
-## 근거와 한계
+## Evidence
 
-| 근거 | 확정하는 것 | 확정하지 않는 것 |
+| Evidence | Confidence | What it establishes |
 | --- | --- | --- |
-| 사용자가 제공한 16:9 이미지 | 큰 맵, 상단 상태, 우측 레일, 하단 명령, 따뜻한 픽셀 재질과 밀도 | 세계관, 캐릭터, 적, 퀘스트, 문구, 아이콘 의미, 정확한 배치 |
-| 사용자 정정과 Notion 제품 문서 | Codria, 넙죽이, 관리자 키보드, 6개 지역 축, 9개 비트, 3개 권한 | 레퍼런스 이미지의 콘텐츠 |
-| NinjaAdventure 에셋 | 현재 구현 가능한 top-down pixel 표현 | 넙죽이의 이름·설정·최종 아트 방향 |
-| 서버·DB 계약 | 봉인 월드, 구조화 입력, 권위 판정, 상태 이력과 결말 경계 | LLM이 규칙을 결정한다는 가정 |
+| User-provided 16:9 gameplay screenshot | provided | edge-mounted HUD, large unobstructed world, left information stack, right skill rail, bottom-left minimap |
+| User instruction to ignore exact copying | provided | composition may be adapted to existing controls and assets |
+| Current Unity hierarchy and controller bindings | observed | existing named controls must remain bindable and editable as normal GameObjects |
+| Minimap has no current gameplay data source | inferred | create an editable placeholder without pretending it is functional navigation |
 
-## 유지·재해석·제외
+## Keep, change, do not copy
 
-| 유지할 인터페이스 감각 | Codria에 맞춘 재해석 | 완전히 제외 |
+| Keep | Change | Do not copy |
 | --- | --- | --- |
-| 중앙의 큰 맵 | 여섯 지역 축과 별도인 여섯 물리 바이옴의 봉인 월드 | 이미지의 마을·조우·오브젝트 배치 |
-| 촘촘한 상단 상태 | 지역/바이옴, 9비트, 턴, 권한 0/3, 단서, 기술 부채 | 이미지의 title·재화·label·icon |
-| 우측 정보 리듬 | 주 목표 1, 보조 최대 2, 추천 2–3, 판정과 상태 변화 | 이미지의 퀘스트와 로그 문구 |
-| 하단 명령 덱 | MOVE, COPY, DELETE, CONNECT, RESTORE, UNDO와 확정 요약 | Attack/Interact/Negotiate/Rest와 이미지의 nav 의미 |
-| 목재·금속 픽셀 재질 | 모든 지역에서 안정적인 관리자 키보드 HUD | literal frame 복사, glass, neon, IDE dashboard |
+| Central world dominance | Fit existing MOVE and eight shortcut controls | Reference character and portraits |
+| Left status/objective rhythm | Use current Codria labels and data | Exact icons, map art and quest text |
+| Right vertical skill rail | Add Search and Select All while preserving legibility | Exact frame shapes and pixel ornament |
+| Bottom-left minimap footprint | Provide a replaceable placeholder | Reference region layout |
+| Short bottom dialogue | Retain current speaker and result Emote flow | Exact coordinates and dimensions |
 
-## 상호작용 계약
+## Final stance
 
-- 안전 MOVE에는 D20·턴 소비가 없고, 위험 이동은 조우 활성화와 실제 행동을 분리합니다.
-- USE_SKILL은 다섯 기술 중 하나와 검증 가능한 대상을 요구합니다.
-- 사용할 수 없는 기술은 이유와 함께 disabled 상태로 남습니다.
-- `playerNote`는 선택 사항이며 확정 가능 여부를 지배하지 않습니다.
-- 확정 전 대상, 기술, 턴 소비 여부와 위험을 보여 줍니다.
-- 결과는 판정, 상태 변화, 2–4문장 서술 순서입니다.
-- 관리자 권한 후보는 단계별 최소 두 개이고 서로 다른 영역·맥락을 사용합니다.
-- 루트 게이트는 권한 3/3과 핵심 단서를 별도 조건으로 표시합니다.
-- 기술 부채는 숫자와 원인 ledger를 함께 제공합니다.
-- Rule Engine의 `endingId`와 Gemini의 에필로그를 시각적으로 구분합니다.
+Use a quiet edge-HUD: compact dark panels with warm borders around an unobstructed central world. Every panel is an authored Unity RectTransform, not a runtime-generated visual override. Runtime code may update content and interaction state but may not replace the designer's anchors, sprites or colors.
 
-## 품질 기준
+## Risks and unknowns
 
-- [ ] 제품명, 세계, 주인공과 유물 식별자가 v4 계약과 일치합니다.
-- [ ] 여섯 지역 축이 물리 바이옴 이름이나 고정 stage 순서로 보이지 않습니다.
-- [ ] 월드는 한 번 생성된 뒤 이동·활성화만 일어나며 `layoutHash`가 유지됩니다.
-- [ ] UI가 정확히 9개 비트와 3개 관리자 권한을 설명합니다.
-- [ ] MOVE와 다섯 기술 외의 공개 action이 없습니다.
-- [ ] 주 목표 1개, 보조 목표 최대 2개, 추천 행동 2–3개 제한을 지킵니다.
-- [ ] disabled 기술, pre-confirm 위험과 결과 위계가 명확합니다.
-- [ ] 선택·지역 결과·NPC 관계·사실·hook·능력 사용·권한 획득·기술 부채가 재개 후 유지됩니다.
-- [ ] Gemini 장애에도 규칙 결과와 결말이 결정적으로 완성됩니다.
-- [ ] `NinjaGreen`은 넙죽이의 임시 시각 에셋으로만 표기됩니다.
-- [ ] 레퍼런스 이미지의 제품 콘텐츠가 남아 있지 않습니다.
+- The minimap is visual scaffolding until a map data source is connected.
+- Very long Korean narration may require a later scroll or paging decision.
+- Narrower than 16:9 resolutions need a separate compact breakpoint.
+
+## Quality gate
+
+- [x] Central world keeps at least 62% unobstructed area.
+- [x] Status and objectives occupy the left edge.
+- [x] Skills form a readable right rail.
+- [x] Dialogue is shorter than 20% of screen height.
+- [x] Every layout element remains editable in Unity Inspector.
+- [x] Reference content and exact artwork are not copied.
+- [x] Runtime theme replacement is disabled by default.

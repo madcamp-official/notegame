@@ -22,6 +22,20 @@ namespace KeyboardWanderer.Gameplay
     /// </summary>
     public sealed class LocalTurnService
     {
+        private static readonly string[] NpcAssetIds =
+        {
+            "npc.villager.green.v1", "npc.villager2.v1", "npc.villager3.v1", "npc.villager4.v1",
+            "npc.villager5.v1", "npc.villager6.v1", "npc.old-man.v1", "npc.noble.v1",
+            "npc.princess.v1", "npc.samurai.v1"
+        };
+
+        private static readonly string[] MonsterAssetIds =
+        {
+            "enemy.slime.blue.v1", "enemy.slime.green.v1", "enemy.mushroom.v1", "enemy.blue-bat.v1",
+            "enemy.bear.v1", "enemy.cyclope.v1", "enemy.dragon.v1", "enemy.kappa-green.v1",
+            "enemy.snake.v1", "enemy.spider-red.v1"
+        };
+
         public const int DemoWorldWidth = 160;
         public const int DemoWorldHeight = 160;
         public const int CampaignTurnLimit = 40;
@@ -458,13 +472,18 @@ namespace KeyboardWanderer.Gameplay
                 for (int character = 0; character < slot.Id.Length; character++) nameKey += slot.Id[character];
                 int number = campaign.NpcNames.Count == 0 ? 0 : nameKey % campaign.NpcNames.Count;
                 string name = campaign.NpcNames.Count == 0 ? "이름 없는 여행자" : campaign.NpcNames[number];
-                return NewEntity(id, EntityKind.Npc, number % 3 == 1 ? "npc.merchant" : "npc.villager.quest", name,
+                return NewEntity(id, EntityKind.Npc, NpcAssetIds[nameKey % NpcAssetIds.Length], name,
                     true, true, false, false, 8, region, slot);
             }
             if (slot.Type == "prop")
                 return NewEntity(id, EntityKind.Prop, "item.crate", "재배치 가능한 여행 상자", true, false, true, false, 2, region, slot);
             if (slot.Type == "enemy")
-                return NewEntity(id, EntityKind.Enemy, "enemy.mushroom", "뒤틀린 야생의 잔재", true, false, false, true, 6, region, slot);
+            {
+                int assetKey = 0;
+                for (int character = 0; character < slot.Id.Length; character++) assetKey += slot.Id[character];
+                return NewEntity(id, EntityKind.Enemy, MonsterAssetIds[assetKey % MonsterAssetIds.Length],
+                    "뒤틀린 야생의 잔재", true, false, false, true, 6, region, slot);
+            }
             return null;
         }
 

@@ -43,6 +43,62 @@ function normalizeSkillRequest({ ability, targetEntityId = null, secondaryTarget
   });
 }
 
+test("Ctrl F search and Ctrl A area deployment reveal bounded nearby entities without targets", () => {
+  const run = runFixture(117);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const nearby = run.entities.find((entity) => entity.id !== player.id && entity.active);
+  nearby.position = { x: player.position.x + 1, y: player.position.y };
+
+  const searched = resolveTurn({
+    run,
+    request: normalizeSkillRequest({ ability: "search", idempotencyKey: "ctrl-f-search-0001", expectedRunVersion: 1 }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.equal(searched.run.entities.find((entity) => entity.id === nearby.id).state.revealed, true);
+  assert.ok(searched.turn.events.some((event) => event.type === "search_completed"));
+
+  const selected = resolveTurn({
+    run: searched.run,
+    request: normalizeSkillRequest({ ability: "select_all", idempotencyKey: "ctrl-a-area-0001", expectedRunVersion: 2 }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.equal(selected.run.entities.find((entity) => entity.id === nearby.id).state.selectedByArea, true);
+  assert.ok(selected.turn.events.some((event) => event.type === "administrator_area_deployed"));
+});
+
+test("books and crates block travel and support bounded nearby interaction", () => {
+  const run = runFixture(91);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const book = run.entities.find((entity) => entity.assetId === "item.rune-book.v1");
+  const crate = run.entities.find((entity) => entity.assetId === "item.crate.v1");
+  assert.equal(book.blocking, true);
+  assert.equal(crate.blocking, true);
+
+  assert.throws(() => resolveSafeTravel({
+    run,
+    request: normalizeTravelRequest({
+      inputType: "MOVE", idempotencyKey: "travel-prop-0001", expectedRunVersion: 1,
+      destination: book.position
+    })
+  }), (error) => error instanceof AppError && error.code === "TRAVEL_PATH_BLOCKED");
+
+  player.position = { x: crate.position.x - 1, y: crate.position.y };
+  run.focus = Math.max(0, run.maxFocus - 1);
+  const interacted = resolveTurn({
+    run,
+    request: normalizeSkillRequest({
+      idempotencyKey: "interact-crate-0001", expectedRunVersion: 1, ability: "interact",
+      targetEntityId: crate.id, intent: "보급 상자를 확인한다"
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+  const committedCrate = interacted.run.entities.find((entity) => entity.id === crate.id);
+  assert.equal(committedCrate.state.opened, true);
+  assert.equal(committedCrate.state.interactionCount, 1);
+  assert.equal(interacted.run.focus, run.focus + 1);
+  assert.ok(interacted.turn.events.some((event) => event.type === "entity_interacted"));
+});
+
 test("copy validates and mutates only the cloned committed state", () => {
   const original = runFixture();
   const initialEntityCount = original.entities.length;

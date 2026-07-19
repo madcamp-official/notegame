@@ -381,6 +381,7 @@ namespace KeyboardWanderer.Networking
             public string premiseKo;
             public string templateId;
             public StoryBeatSnapshot[] requiredStoryBeats;
+            public MacroPhaseSnapshot[] campaignMacroPhases;
             public string[] endingCandidates;
             public EndingCandidateSnapshot[] endingCandidateDetails;
             public WorldSnapshot world;
@@ -403,6 +404,17 @@ namespace KeyboardWanderer.Networking
             public string mood;
             public string slotId;
             public bool temporary;
+            public bool disabled;
+            public bool defeated;
+            public bool fled;
+            public bool boss;
+            public int speed;
+            public string factionId;
+            public string goal;
+            public string motivation;
+            public string canonicalNpcId;
+            public string[] traits;
+            public string[] roleTags;
             public string rootComponent;
             public bool gated;
             public string campaignRole;
@@ -686,6 +698,9 @@ namespace KeyboardWanderer.Networking
             public string campaignPhase;
             public string currentBeat;
             public StoryBeatSnapshot currentStoryBeat;
+            public MacroPhaseSnapshot currentMacroPhase;
+            public MacroPhaseSnapshot[] campaignMacroPhases;
+            public DirectorStateSnapshot directorState;
             public int health;
             public int maxHealth;
             public int focus;
@@ -754,7 +769,11 @@ namespace KeyboardWanderer.Networking
             public string type;
             public string text;
             public string entityId;
+            public string actorId;
+            public string sourceEntityId;
             public string targetEntityId;
+            public string rewardId;
+            public string encounterId;
             public string fact;
             public string endingCode;
             public string resource;
@@ -763,6 +782,94 @@ namespace KeyboardWanderer.Networking
             public PositionSnapshot from;
             public PositionSnapshot to;
             public PositionSnapshot position;
+        }
+
+        [Serializable]
+        public sealed class MacroPhaseSnapshot
+        {
+            public string id;
+            public int order;
+            public string name;
+            public string nameKo;
+            public string purpose;
+        }
+
+        [Serializable]
+        public sealed class DirectorStateSnapshot
+        {
+            public int decisionNo;
+            public string[] recentSceneTypes;
+            public string[] discoveredSecrets;
+            public string[] runTraits;
+            public SpecialSkillSnapshot[] specialSkills;
+            public MonsterVariantSnapshot[] generatedMonsterVariants;
+        }
+
+        [Serializable]
+        public sealed class SpecialSkillSnapshot
+        {
+            public string id;
+            public string templateId;
+            public string baseSkill;
+            public string name;
+            public string[] modifierIds;
+            public int charges;
+            public int maxCharges;
+            public string sourceNpcId;
+            public int acquiredTurn;
+            public int acquiredDecisionNo;
+        }
+
+        [Serializable]
+        public sealed class MonsterVariantSnapshot
+        {
+            public string entityId;
+            public string assetId;
+            public string name;
+            public string[] traits;
+            public bool boss;
+        }
+
+        [Serializable]
+        public sealed class SceneActionSnapshot
+        {
+            public int sequence;
+            public string type;
+            public string actorId;
+            public string targetId;
+            public string speakerId;
+            public string actionStyle;
+            public string rewardId;
+            public string line;
+            public string text;
+            public int roll;
+            public bool hit;
+            public int damage;
+            public int initiative;
+            public int initiativeRoll;
+            public PositionSnapshot from;
+            public PositionSnapshot to;
+        }
+
+        [Serializable]
+        public sealed class RejectedSceneActionSnapshot
+        {
+            public string actionId;
+            public string reason;
+        }
+
+        [Serializable]
+        public sealed class SceneDecisionSnapshot
+        {
+            public int decisionNo;
+            public string decisionType;
+            public string sceneGoal;
+            public SceneActionSnapshot[] sceneSequence;
+            public EventSnapshot[] events;
+            public string[] appliedActionIds;
+            public RejectedSceneActionSnapshot[] rejectedActions;
+            public bool fallbackUsed;
+            public string model;
         }
 
         [Serializable]
@@ -819,6 +926,7 @@ namespace KeyboardWanderer.Networking
             public QuestSnapshot[] quests;
             public ProposedOperationSnapshot[] appliedOps;
             public ProposedOperationSnapshot[] rejectedOps;
+            public SceneDecisionSnapshot sceneDecision;
         }
 
         [Serializable]
@@ -841,6 +949,8 @@ namespace KeyboardWanderer.Networking
             public StateDeltaSnapshot stateDelta;
             public EventSnapshot[] events;
             public NarrativeSnapshot narrative;
+            public SceneDecisionSnapshot sceneDecision;
+            public SceneActionSnapshot[] sceneSequence;
             public string createdAt;
         }
 
@@ -871,6 +981,10 @@ namespace KeyboardWanderer.Networking
             public string createdAt;
             public bool encounterOpened;
             public ActiveEncounterSnapshot encounter;
+            public SceneDecisionSnapshot sceneDecision;
+            public SceneActionSnapshot[] sceneSequence;
+            public EventSnapshot[] events;
+            public NarrativeSnapshot narrative;
             // Compatibility fields for older development-server payloads.
             public string encounterReason;
             public PositionSnapshot stagingPosition;
@@ -1112,10 +1226,11 @@ namespace KeyboardWanderer.Networking
             PositionSnapshot destination,
             Action<Result<CommittedTurn>> completed)
         {
-            if (!IsCanonicalSkillId(skillId))
+            if (!IsCanonicalSkillId(skillId) &&
+                !string.Equals(skillId, "INTERACT", StringComparison.OrdinalIgnoreCase))
             {
                 completed?.Invoke(Result<CommittedTurn>.Failure(0, "INVALID_SKILL",
-                    "USE_SKILL accepts only COPY, DELETE, CONNECT, RESTORE, or UNDO."));
+                    "USE_SKILL accepts a keyboard skill or INTERACT."));
                 yield break;
             }
             string body = BuildActionJson(idempotencyKey, expectedRunVersion, skillId, targetIds, destination);
@@ -1309,7 +1424,9 @@ namespace KeyboardWanderer.Networking
                 case "DELETE":
                 case "CONNECT":
                 case "RESTORE":
-                case "UNDO": return true;
+                case "UNDO":
+                case "SEARCH":
+                case "SELECT_ALL": return true;
                 default: return false;
             }
         }

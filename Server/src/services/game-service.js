@@ -3,6 +3,7 @@ import { assert, AppError } from "../errors.js";
 import { createCampaignBlueprint } from "../domain/campaign.js";
 import { generateWorld, publicWorld } from "../domain/world.js";
 import { DeterministicD20Source, createRunState, directorContext, normalizeTravelRequest, normalizeTurnRequest, publicRun, publicTurn, resolveSafeTravel, resolveTurn, travelFingerprint, turnFingerprint } from "../domain/turn-engine.js";
+import { planDecisionScene, resolveTravelDecision } from "../domain/decision-orchestrator.js";
 import { applyCampaignPlanEnrichment, createCampaignPlanContext, createCampaignPlanFallback, createDeterministicCampaignPreview, validateCampaignPlanOutput } from "../llm/campaign-planning.js";
 import { createFallbackNarration, validateNarrationContext, validateNarrationOutput } from "../llm/narration.js";
 import { PRODUCT_CONTRACT } from "../domain/codria-contract.js";
@@ -32,6 +33,8 @@ export class GameService {
       storage: storage.storage,
       authoritativeTurns: true,
       campaignDirector: true,
+      butterflySceneDirector: true,
+      sceneCandidateAuthority: "server_allowlist",
       generativeCampaignPlanning: true,
       campaignPreviewMode: "deterministic_no_llm",
       runCampaignPlanMode: "one_request_with_at_most_one_retry",
@@ -157,9 +160,33 @@ export class GameService {
     // Preflight mechanics are deterministic and read-only. They define exactly what
     // the proposal engine may see; the same roll is forced into the commit plan.
     const preview = resolveTurn({ run: snapshot, request, d20Source: this.d20Source, now });
-    const context = directorContext(preview.run, preview.turn);
+    const sceneDecision = await planDecisionScene({ narrator: this.narrator, run: preview.run, decisionType: "ACTION", turn: preview.turn, logger: this.logger });
+    // Resolve the selected legal scene on a disposable clone before narration.
+    // The model therefore describes confirmed results and can no longer propose
+    // mechanics after seeing the outcome.
+    const resolvedPreview = resolveTurn({
+      run: snapshot, request, forcedD20: preview.turn.d20, now,
+      directorOutput: { proposedOps: [] }, sceneDecision
+    });
+    const context = directorContext(resolvedPreview.run, resolvedPreview.turn);
+    context.allowedEffects = [];
+    context.consequenceBudget = 0;
     let directorOutput;
-    try {
+    if (request.skillId === "INTERACT") {
+      const target = snapshot.entities.find((item) => item.id === request.targetEntityId);
+      const isCrate = String(target?.assetId || "").startsWith("item.crate");
+      const isBook = String(target?.assetId || "").includes("book");
+      const alreadyInteracted = target?.state?.interacted === true;
+      directorOutput = {
+        summary: `${target?.name || "대상"} 상호작용`,
+        body: isCrate
+          ? (alreadyInteracted ? "이미 확인한 상자다. 안에는 더 이상 가져갈 보급품이 없다." : "상자를 열어 안쪽을 확인했다. 남아 있던 보급품이 집중력을 조금 회복시킨다.")
+          : isBook
+            ? "책장을 넘겨 기록을 확인했다. 이 물건은 이제 조사한 대상으로 남는다."
+            : `${target?.name || "대상"}에게 가까이 다가가 상태와 반응을 확인했다.`,
+        dialogue: [], proposedOps: [], fallbackUsed: false, model: "deterministic-interaction-v1"
+      };
+    } else try {
       const candidate = await this.narrator.narrate(context);
       const validated = validateNarrationOutput({ summary: candidate.summary, body: candidate.body, dialogue: candidate.dialogue, proposedOps: candidate.proposedOps }, context);
       directorOutput = { ...validated, fallbackUsed: candidate.fallbackUsed === true, model: candidate.model || "validated-custom-narrator" };
@@ -167,14 +194,13 @@ export class GameService {
       this.logger?.warn?.({ event: "director_fallback", category: error?.code || "unexpected" });
       directorOutput = createFallbackNarration(context);
     }
-
     const committed = await this.store.commitTurn({
       ownerId,
       runId,
       idempotencyKey: request.idempotencyKey,
       requestFingerprint: requestHash,
       expectedRunVersion: request.expectedRunVersion,
-      resolve: (run) => resolveTurn({ run, request, forcedD20: preview.turn.d20, now, directorOutput })
+      resolve: (run) => resolveTurn({ run, request, forcedD20: preview.turn.d20, now, directorOutput, sceneDecision })
     });
     return { turn: publicTurn(committed.turn), run: publicRun(committed.run), fromIdempotencyCache: committed.fromIdempotencyCache };
   }
@@ -190,9 +216,12 @@ export class GameService {
     }
     const snapshot = await this.store.getRun(ownerId, runId);
     if (snapshot.version !== request.expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: snapshot.version });
+    const now = this.clock();
+    const preview = resolveSafeTravel({ run: snapshot, request, now });
+    const sceneDecision = await planDecisionScene({ narrator: this.narrator, run: preview.run, decisionType: "TRAVEL", navigation: preview.navigation, logger: this.logger });
     const committed = await this.store.commitNavigation({
       ownerId, runId, idempotencyKey: request.idempotencyKey, requestFingerprint: requestHash, expectedRunVersion: request.expectedRunVersion,
-      resolve: (run) => resolveSafeTravel({ run, request, now: this.clock() })
+      resolve: (run) => resolveTravelDecision({ run, request, sceneDecision, now })
     });
     return { navigation: committed.navigation, run: publicRun(committed.run), fromIdempotencyCache: committed.fromIdempotencyCache };
   }
@@ -274,6 +303,7 @@ function publicCampaign(campaign) {
     areaFlavors: campaign.areaFlavors || campaign.scenarioPlan?.areaFlavors || [],
     npcRoles: campaign.npcRoles,
     requiredStoryBeats: campaign.requiredStoryBeats,
+    campaignMacroPhases: campaign.campaignMacroPhases || [],
     endingCandidates: campaign.endingCandidates.map((item) => item.title),
     endingCandidateDetails: campaign.endingCandidates,
     world: publicWorld(campaign.world),

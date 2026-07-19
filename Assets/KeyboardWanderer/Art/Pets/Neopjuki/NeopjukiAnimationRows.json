@@ -1,0 +1,19 @@
+{
+  "atlas": "NeopjukiUnityAtlas.png",
+  "columns": 8,
+  "rows": 8,
+  "cellWidth": 192,
+  "cellHeight": 208,
+  "pixelsPerUnit": 192,
+  "states": [
+    {"row": 0, "name": "idle", "frames": 6},
+    {"row": 0, "name": "neutral", "startColumn": 6, "frames": 1},
+    {"row": 1, "name": "running-right", "frames": 8},
+    {"row": 2, "name": "running-left", "frames": 8},
+    {"row": 3, "name": "waving", "frames": 4},
+    {"row": 4, "name": "jumping", "frames": 5},
+    {"row": 5, "name": "failed", "frames": 8},
+    {"row": 6, "name": "waiting", "frames": 6},
+    {"row": 7, "name": "review", "frames": 6}
+  ]
+}

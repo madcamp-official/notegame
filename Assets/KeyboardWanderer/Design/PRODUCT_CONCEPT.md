@@ -1,8 +1,8 @@
-# 넙죽이와 붕괴한 코드 왕국 — product contract v4
+# Ninja Adventure — product contract v4
 
 ## Product identity
 
-`넙죽이와 붕괴한 코드 왕국` is a map-first pixel adventure set in Codria (`WORLD_CODRIA`). Nupjukyi (`PROTAGONIST_NUPJUKYI`) awakens the Administrator Keyboard (`ARTIFACT_ADMIN_KEYBOARD`), investigates a systemic collapse, recovers three administrator-access levels, and decides the final deployment inside the Root System.
+`Ninja Adventure` is a map-first pixel adventure set in Codria (`WORLD_CODRIA`). Nupjukyi (`PROTAGONIST_NUPJUKYI`) awakens the Administrator Keyboard (`ARTIFACT_ADMIN_KEYBOARD`), investigates a systemic collapse, recovers three administrator-access levels, and decides the final deployment inside the Root System.
 
 NinjaAdventure's `NinjaGreen` is the current temporary visual asset. It does not rename, replace, or define Nupjukyi.
 

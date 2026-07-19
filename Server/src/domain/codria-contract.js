@@ -1,7 +1,7 @@
 import { assert } from "../errors.js";
 import { clone } from "./serialization.js";
 
-export const GAME_TITLE = "넙죽이와 붕괴한 코드 왕국";
+export const GAME_TITLE = "Ninja Adventure";
 export const WORLD_CODRIA = "WORLD_CODRIA";
 export const WORLD_NAME_KO = "코드리아";
 export const PROTAGONIST_NUPJUKYI = "PROTAGONIST_NUPJUKYI";
@@ -27,7 +27,7 @@ export const ADMIN_ACCESS_LEVELS = Object.freeze([
 ]);
 
 export const INPUT_TYPES = Object.freeze(["MOVE", "USE_SKILL"]);
-export const KEYBOARD_SKILLS = Object.freeze(["COPY", "DELETE", "CONNECT", "RESTORE", "UNDO"]);
+export const KEYBOARD_SKILLS = Object.freeze(["COPY", "DELETE", "CONNECT", "RESTORE", "UNDO", "SEARCH", "SELECT_ALL"]);
 export const CAMPAIGN_ACTION_CONTEXTS = Object.freeze([
   "COMBAT",
   "INVESTIGATION",
@@ -90,7 +90,9 @@ export function technicalDebtDelta({ skillId, successful, forcedOverride = false
     DELETE: 2,
     CONNECT: 1,
     RESTORE: resolvesDebtEntryId ? -2 : 0,
-    UNDO: resolvesDebtEntryId ? -1 : 1
+    UNDO: resolvesDebtEntryId ? -1 : 1,
+    SEARCH: 0,
+    SELECT_ALL: 1
   }[skillId] ?? 0;
   return base + (forcedOverride ? 2 : 0);
 }

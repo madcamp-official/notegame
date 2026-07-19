@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderVersion: 3
+  BuilderVersion: 11
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -36,6 +36,10 @@ MonoBehaviour:
   WaterAtlas: {fileID: 2800000, guid: 5d3abc92281c8446ab98ba9e98ff40d8, type: 3}
   NatureAtlas: {fileID: 2800000, guid: 1e0319a13e264405ab53e4a15015dbd6, type: 3}
   HouseAtlas: {fileID: 2800000, guid: 230d4af9c8c14449d9f36d210deeeb0a, type: 3}
+  DesertAtlas: {fileID: 2800000, guid: 15b3e2811a5eb43f78f788f9c8cd8c3d, type: 3}
+  DungeonAtlas: {fileID: 2800000, guid: 9686237da15824a10b8c5f4305f82407, type: 3}
+  AbandonedVillageAtlas: {fileID: 2800000, guid: aad09769157f74dad910ae064edfc8ae, type: 3}
+  WatermillAtlas: {fileID: 2800000, guid: 8087e4765cde74824b0b19eca23d44d9, type: 3}
   OutdoorDirtRect:
     serializedVersion: 2
     x: 16
@@ -61,6 +65,9 @@ MonoBehaviour:
   VillagerWalkSheet: {fileID: 2800000, guid: 0a610727db16c4b10ac87cef66cca3cb, type: 3}
   PlayerFrameSize: 32
   CreatureFrameSize: 16
+  NeopjukiAtlas: {fileID: 2800000, guid: b4c6db23d0944df6a9c302e0b9d7f168, type: 3}
+  NeopjukiCellWidth: 192
+  NeopjukiCellHeight: 208
   PlayerIdle: {fileID: -7385789195546760866, guid: fd0dc91ff18f746dea9f1192a6d94a41, type: 3}
   WardenIdle: {fileID: -1176183960, guid: 07bb692ab5687420da17d27e29989325, type: 3}
   SlimeIdle: {fileID: 4518187702968751635, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}
@@ -72,12 +79,203 @@ MonoBehaviour:
   PlayerAnimatorController: {fileID: 9100000, guid: 370da4c39c3164e489e07ecf04721c08, type: 2}
   SlimeAnimatorController: {fileID: 9100000, guid: 7de334d523b4b4dd394ca62a64f54ed8, type: 2}
   VillagerAnimatorController: {fileID: 9100000, guid: f33b4198cae7c48e6af7c9d001060185, type: 2}
+  NpcAnimations:
+  - AssetId: npc.villager.green.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: 0a610727db16c4b10ac87cef66cca3cb, type: 3}
+    AnimatorController: {fileID: 9100000, guid: f33b4198cae7c48e6af7c9d001060185, type: 2}
+  - AssetId: npc.villager2.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: b888e1bcdbd3e4201aaed3ef1bf08e19, type: 3}
+    AnimatorController: {fileID: 9100000, guid: a940c402c58a3b3aec4af24544876da0, type: 2}
+  - AssetId: npc.villager3.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: ce9e5cce2d21946178142f900dbefcee, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 3613f90a4eebd45eb66e74f10d2aade0, type: 2}
+  - AssetId: npc.villager4.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: 351c3c28b65534be6ac0cc74d98338eb, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 0027c1766f3eb67a3b1a6551630b5530, type: 2}
+  - AssetId: npc.villager5.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: 044dfc212848e4b64b901e3336aa2a3b, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 5d8bd61ee18b594626d8e185e205b0a8, type: 2}
+  - AssetId: npc.villager6.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: 5cc782224b5c040cb9dd0b7041e4809b, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 982a5372a015fee276d5a6bd69c1a148, type: 2}
+  - AssetId: npc.old-man.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: 9f1c959107a3b421cb4f949db26f76e6, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 9afd871ed9364e307c38e7e9dec54b02, type: 2}
+  - AssetId: npc.noble.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: b2aeba39fe96d46d3ae99bece70b659e, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 66d993a27769fc064432140dc0cf9b8c, type: 2}
+  - AssetId: npc.princess.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: dc14e22666d8548d5833cd1fa201c0e7, type: 3}
+    AnimatorController: {fileID: 9100000, guid: baae7dba30fca6dcfd45d4d5918ab1f2, type: 2}
+  - AssetId: npc.samurai.v1
+    DefaultSprite: {fileID: 4035959289877228764, guid: d583b55eb6edb4dd2a1b6845352a62bb, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 0cd77706212d5792b9b6de8d2aa9787c, type: 2}
+  MonsterAnimations:
+  - AssetId: enemy.slime.blue.v1
+    DefaultSprite: {fileID: -7282886668606283007, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 7de334d523b4b4dd394ca62a64f54ed8, type: 2}
+  - AssetId: enemy.slime.green.v1
+    DefaultSprite: {fileID: 7860893253022973495, guid: 67aa05776422a4d168551d7c3c87c61c, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 3b207bfb1b55147f4fbaae704921df45, type: 2}
+  - AssetId: enemy.mushroom.v1
+    DefaultSprite: {fileID: 357749872346554099, guid: 7d9724ff98bfe45d4a2c1aea7246bf02, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 69d171db6933eadb0d23c9f409f7d0bd, type: 2}
+  - AssetId: enemy.blue-bat.v1
+    DefaultSprite: {fileID: 5546671543968653177, guid: 8f4dd3c4ecba94f94a5ecb7e952d7ad8, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 99cf56a18f47fc03934ddc7a262ac1a5, type: 2}
+  - AssetId: enemy.bear.v1
+    DefaultSprite: {fileID: 5546671543968653177, guid: 067f6e7bb39ce486b90103768d1db8ae, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 7c2406eb437756838e5c6f0c41e38aa5, type: 2}
+  - AssetId: enemy.cyclope.v1
+    DefaultSprite: {fileID: 5546671543968653177, guid: 74aab642986b049fe972e509636c8340, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 725e52e19fc0d2b38bcfa3628ea086fd, type: 2}
+  - AssetId: enemy.dragon.v1
+    DefaultSprite: {fileID: 5546671543968653177, guid: b907aae08bb6a448389af06e737a2949, type: 3}
+    AnimatorController: {fileID: 9100000, guid: f6f8abe99c0b3ad155b9982affc969bf, type: 2}
+  - AssetId: enemy.kappa-green.v1
+    DefaultSprite: {fileID: 5546671543968653177, guid: 481f6fc8d60534778a93625b85bd7aec, type: 3}
+    AnimatorController: {fileID: 9100000, guid: a97422e779f7049fc0cd6c8488159bed, type: 2}
+  - AssetId: enemy.snake.v1
+    DefaultSprite: {fileID: -7766637424382265647, guid: b69eb3f54d71846489b225bade2e3355, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 72052f85c2eb542792a2bbb27e9077b5, type: 2}
+  - AssetId: enemy.spider-red.v1
+    DefaultSprite: {fileID: 5546671543968653177, guid: 5922aa07e87784851b0b248e669eb369, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 2c4cbc2173cae483a30eaff68463a089, type: 2}
+  BossAnimations:
+  - AssetId: boss.demon-cyclop.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 62b050ca4bc1e4c8d941aacdffa79cd8, type: 3}
+    AnimatorController: {fileID: 9100000, guid: b3ef7abe4f2f793f1d0c4175cbcfe7cf, type: 2}
+  - AssetId: boss.demon-cyclop-2.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: e930f8e90bae74f5dbb7f9aa70877b4a, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 5377a982d7d74d755ac8a32d2717da91, type: 2}
+  - AssetId: boss.giant-bamboo.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: afb5b59889d00449bac2426757b08c69, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 2c07a1ee8037628f5c1603f504b79a27, type: 2}
+  - AssetId: boss.giant-bamboo-2.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: a25003e5664174f2e8f8db2cfdba9eea, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 78612e1e88623cedfde41395bcac28a9, type: 2}
+  - AssetId: boss.giant-blue-samurai.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: aaef4ebe77eee459baff3b01b43a00ae, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 7bd82db661a6919d81e62835786ae641, type: 2}
+  - AssetId: boss.giant-red-samurai.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 33db9f828d93a493dbc3ced40d13f935, type: 3}
+    AnimatorController: {fileID: 9100000, guid: b9202d020c9e6123d72117f1863bb073, type: 2}
+  - AssetId: boss.giant-flam.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 7df8fc84b6099497da2ad374d825b939, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 8fea5b1ac2ebdb1fb22d5459fa07928f, type: 2}
+  - AssetId: boss.giant-frog.v1
+    DefaultSprite: {fileID: 2044930938454195420, guid: ca9e2f0c0e76344b1acc38611014e687, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 42bc054e3f0c305f665079758ea56437, type: 2}
+  - AssetId: boss.giant-frog-2.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 6a75ae27a6dc8411392d11000406d4aa, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 6327595e112d54a5956df8b1b4b679a5, type: 2}
+  - AssetId: boss.giant-racoon.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: db2ec5335212b4b778df2b02cc5475b4, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 754ae6ae28119e07edc3fe9503d76907, type: 2}
+  - AssetId: boss.giant-racoon-gold.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 469ca46d504d34fdc82bf434d06c30a3, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 02d7c7f23ad5343b62fe59c15a7c93a3, type: 2}
+  - AssetId: boss.giant-slime.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 4166fc15811bc42d09130c3838df37d6, type: 3}
+    AnimatorController: {fileID: 9100000, guid: a95f05569a595cdd7baa1d89fca8157d, type: 2}
+  - AssetId: boss.giant-slime-2.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 71de982db78e74682af039f4ec88ed73, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 72d668de9e94fd6f5038838d5a7ca057, type: 2}
+  - AssetId: boss.giant-spirit.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 11eed8f102781477d908d057a5c47cdd, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 8bc19a0e8d75680750097c0da2fcbe57, type: 2}
+  - AssetId: boss.squid-green.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: b8d601ba9cafe408e81a840c3d7fecd7, type: 3}
+    AnimatorController: {fileID: 9100000, guid: ea28acde0dd39a418927d5e573e15a51, type: 2}
+  - AssetId: boss.squid-red.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: c0540d55ee06546baad0415d18d1cc6d, type: 3}
+    AnimatorController: {fileID: 9100000, guid: dbfefc5e972cbfcd4a985b2d6db4f865, type: 2}
+  - AssetId: boss.tengu-blue.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 7392ef6dd091d410e8913f7ba9ff8eeb, type: 3}
+    AnimatorController: {fileID: 9100000, guid: 759a3f7ea7139b13448b6b95da99359b, type: 2}
+  - AssetId: boss.tengu-red.v1
+    DefaultSprite: {fileID: 4723107735738678597, guid: 3f46ade550b43468d81f803355a545f7, type: 3}
+    AnimatorController: {fileID: 9100000, guid: f02734b092f96c7fc831335b1a66bdc3, type: 2}
   WoodPanel: {fileID: -8747778316048434277, guid: 481fd195d24644f91ab5b23504875a35, type: 3}
   WoodBackground: {fileID: -4030754755457138777, guid: df035b5cf01574195bb7af7cabc27e24, type: 3}
   WoodButtonNormal: {fileID: 1205776407840972037, guid: a772c7058990b4c8db9344ed9463d5a5, type: 3}
   WoodButtonHover: {fileID: -7293006983133732075, guid: f4e163f3835364e2597e9d08faffe5bd, type: 3}
   WoodButtonPressed: {fileID: 8346901879194642381, guid: 0682fedcaa43f431aaeec16f6134f72a, type: 3}
   WoodButtonDisabled: {fileID: -5836713271973203417, guid: 44be3270e04494480bbbe5c960c9e034, type: 3}
+  WoodPanelInterior: {fileID: 5826743041649243796, guid: 43933bcb56fec4af294b1cec8f4cb47e, type: 3}
+  WoodPanelFocus: {fileID: -1603659592809197610, guid: bf78ed04ce5f24e8ea1b1ab539538815, type: 3}
+  WoodInventoryCell: {fileID: -1108101418867940241, guid: d8216b8330af54928a9fb99da98949a8, type: 3}
+  WoodSliderProgress: {fileID: -1513774267364819124, guid: 5c1d38c2d2cd34c86ad391d1e4c435a1, type: 3}
+  WoodSliderGrabber: {fileID: 7716372281208020315, guid: e798bff29d5294bc690ef4c86415625b, type: 3}
+  WoodChecked: {fileID: -3330556178697155695, guid: c389027562ff74160a17a536e783f83b, type: 3}
+  WoodUnchecked: {fileID: 6696729183685123388, guid: 4b456f374089a4a7c99c7c9040c48667, type: 3}
+  DialogueBox: {fileID: 21300000, guid: cc93abf460dd649b4ab4254f241d5e7c, type: 3}
+  DialogueBoxFaceset: {fileID: -435810600079310665, guid: 42b7accdeffbe45789ed471e6cc2d0c1, type: 3}
+  ChoiceBox: {fileID: 2913089383398367032, guid: bbf987c5f82de4ef5991e564ca2c5531, type: 3}
+  DialogBox: {fileID: -7212743939725961781, guid: 778caab47b0004f7c9c870be96c78de4, type: 3}
+  DialogInfo: {fileID: -9118141224341489013, guid: 45cf371faedad4174a543bed035e0f04, type: 3}
+  FacesetBox: {fileID: 21300000, guid: fd666d4c6ccd140c5b3716525c688aa5, type: 3}
+  YesButton: {fileID: -7277274824335635877, guid: 106fa99e7fbd44e199533bdb64ddce5d, type: 3}
+  NoButton: {fileID: 7688679314300870848, guid: 2f738990f26a247509e3abfb7eeabc15, type: 3}
+  Emotes:
+  - {fileID: 416410043687704098, guid: 3134bbeb23a804363ad29115956d5ca2, type: 3}
+  - {fileID: -2763847052424005110, guid: 3a5de1690c5c3488a844fec7f378f35e, type: 3}
+  - {fileID: -2944816543742499412, guid: a1f0e797173e148a983ae5f948487216, type: 3}
+  - {fileID: -1502756394328649883, guid: 1d478684c1a1945688ba13c5dc6fe706, type: 3}
+  - {fileID: 8273615569582355518, guid: 0aa23be461a5f4a53ae945b1df6ca8e5, type: 3}
+  - {fileID: -6884290072670057205, guid: 8a5ce9529e6ba402d8d85757c4236f58, type: 3}
+  - {fileID: 8245636323033245053, guid: 5cf9263d867c04764871824e5f20d015, type: 3}
+  - {fileID: 2976727859504339130, guid: 89dbb33f95a9447c6aa3aceb3ed64beb, type: 3}
+  - {fileID: 3364672161527263852, guid: 53348b981bc6f4a989aab640fb6cb068, type: 3}
+  - {fileID: -6405861392467210627, guid: afb36b29b4ab64a49932d0faef086b25, type: 3}
+  - {fileID: 4004057595850752387, guid: 3f2ee0d43ce2e45248a22139fd50ab62, type: 3}
+  - {fileID: -4289849935701944878, guid: 88bf7320f7cad4abd8ea8ff4b04f404d, type: 3}
+  - {fileID: 5414946944802666015, guid: e0bebe6ae86064384b89e671fa77a834, type: 3}
+  - {fileID: 8074719409522434997, guid: 317d1a55481b64d0b8380518323e15a3, type: 3}
+  - {fileID: -4975110057135162518, guid: 21fbf46ec91e74941bcbd24308be6fec, type: 3}
+  - {fileID: 1914122851794722469, guid: 684ab339c3f1b4992a811db8a82a4c0d, type: 3}
+  - {fileID: -746015841672258653, guid: 13a4c4563ccdf4fbcb9e798d5995fc9f, type: 3}
+  - {fileID: -2414320067864537921, guid: 2067aa78af1044b6bb2044b8400d6e46, type: 3}
+  - {fileID: 2249359015346692359, guid: dbecd87e5578d44e9b4a29a560f55fe8, type: 3}
+  - {fileID: 8147004107710021074, guid: e61ee302d49b74397a932ff793152aaf, type: 3}
+  - {fileID: -5419310489963565622, guid: f72dda591b78e4059816c1eff9d3b345, type: 3}
+  - {fileID: -2122837972990275081, guid: c531a7181e0f64df68d11181d3a5f1c4, type: 3}
+  - {fileID: 7186400137079736901, guid: b0359b8aaf6db4a5a8815c36e9d594b8, type: 3}
+  - {fileID: 6988495802926739114, guid: 6af91aaa77c644d93b34666c4812127e, type: 3}
+  - {fileID: 2505231849738042878, guid: f2e9caea46fda4b62b63f48608e1ebac, type: 3}
+  - {fileID: -6690203665774340351, guid: 607cec67774dd4f419abf9c4ab65364e, type: 3}
+  - {fileID: 5906836577679550892, guid: 2bc2ce5057c724dc2bbd0e145c411e60, type: 3}
+  - {fileID: 5414225023240253199, guid: cfb8f27f576694bad8fc29f88a4e30e5, type: 3}
+  - {fileID: 3508545365113054121, guid: 3815c7de1c207456aa768907bc436412, type: 3}
+  - {fileID: 6016273963993995095, guid: ce1da621b51114c9f99137d812660de1, type: 3}
+  KeyCtrl: {fileID: -3822683649792919883, guid: 236ebfe2e8bd2485c993616c6579d139, type: 3}
+  KeyC: {fileID: -4313558654524732343, guid: 55b6a26f9a63143608b988ea74869d40, type: 3}
+  KeyV: {fileID: 4323996720627005271, guid: 9f2576366185940c282a7ebb38d1b33d, type: 3}
+  KeyZ: {fileID: 4439920671119133418, guid: 366f2a4a430b944f4a184018e43d74fd, type: 3}
+  KeyF: {fileID: -3908387760945074880, guid: 3c3ecc61779b24dc5b1bf776aa6a644f, type: 3}
+  KeyA: {fileID: -6590545505107437837, guid: 3ed05a994e8e444efa84133e445e8d85, type: 3}
+  KeyK: {fileID: -6755800807480432771, guid: acf603b2728fd45fbbb9e819fdea8578, type: 3}
+  KeyR: {fileID: -7731768577243295198, guid: ad1b744ce06924d1494852aacf7b8ee8, type: 3}
+  KeyW: {fileID: -1663556825898452565, guid: 94c22e140f52e421e8b3eaa62d2656b9, type: 3}
+  Key4: {fileID: 6561939249539616480, guid: 05934730ff7264d61aec5c199a7731ae, type: 3}
+  Key5: {fileID: -5371030014019963364, guid: 4677c1a57e8f24896a9739c6e28ce162, type: 3}
+  KeyDelete: {fileID: 11134835269899040, guid: 7b0837bfc86ee4fadab7d432cc51372f, type: 3}
+  KeyEnter: {fileID: 3347763546511698216, guid: f849a69b62a994b8484776bce414f2e1, type: 3}
+  KeyEscape: {fileID: 5640499534785027369, guid: bee434e437e73445d84ca87743739bc0, type: 3}
+  WoodBackgroundDark: {fileID: -1594966404269730284, guid: b82019e5efed74597a593cb073419b91, type: 3}
+  WoodPanelAlt: {fileID: -4720590692659331131, guid: ce3753a8c9aca43c6a4889f2cf9897e4, type: 3}
+  WoodPanelLight: {fileID: 5390783525562030341, guid: 0294b1ac9bbc4448f9cdbb71b1bc0dc3, type: 3}
+  WoodPanelDisabled: {fileID: 3911364559968567245, guid: a549f040f92414aca860ba120802b815, type: 3}
+  WoodArrowLeft: {fileID: 9184959684750031955, guid: 0c97f6f3c41ac4d91a690cc9aaa3c0ab, type: 3}
+  WoodArrowLeftHover: {fileID: -4299106196712753719, guid: c221a45f033544d63aa87e177e079907, type: 3}
+  WoodArrowRight: {fileID: 3312798837105470071, guid: d4893a1ff40c24361ac157d677c250c1, type: 3}
+  WoodArrowRightHover: {fileID: -4708750723527547414, guid: 1ad1c6831aca3495daba58974dc3cada, type: 3}
+  WoodTab: {fileID: -7285094799096962041, guid: 6408519b60ebe4b8ea1bb2526871b8e2, type: 3}
+  WoodTabHover: {fileID: -911694024083334007, guid: de311b72ad0a84028bfe61c64b82a0d9, type: 3}
+  WoodTabSelected: {fileID: -3585496830266694780, guid: 21fde8df466f04169b326907ec540d4b, type: 3}
+  WoodTabUnselected: {fileID: 5164143572359070637, guid: 91f0f19c9523246dc964f1fdd5e44b91, type: 3}
+  WoodButtonChecked: {fileID: 6376550155927202780, guid: 47d056d9adc264f5ba05f42c862d4639, type: 3}
+  WoodButtonUnchecked: {fileID: 7917787915471489456, guid: 8be71046dfecd4866b3175758881faf3, type: 3}
   HeartIcon: {fileID: 4543326179846441247, guid: a8bb3f1ef008c4a5e8ab4cc3f208f8f6, type: 3}
   MoveIcon: {fileID: -2241300882062069919, guid: d3ae3380aadc14afeb02fa47cc466214, type: 3}
   MoveIconDisabled: {fileID: 8259108488230064799, guid: 6da4219013c62425c9c312251d226150, type: 3}
@@ -86,6 +284,11 @@ MonoBehaviour:
   DeleteIcon: {fileID: -6607481912129624618, guid: 773d227a474084d9ba1c8c6d4fd1b146, type: 3}
   DeleteIconDisabled: {fileID: -3899677564991089478, guid: 216ed81a4075c4725ac9aac3a75d386f, type: 3}
   InteractIcon: {fileID: 5682281752145333396, guid: 5424cacac472b470d9dcb022fe3d15ac, type: 3}
+  ConnectIcon: {fileID: -5370881635111855658, guid: 9c3258a75a76b4205a4c79d4283e407c, type: 3}
+  RestoreIcon: {fileID: -696002883184369294, guid: 09b8792d9397b40fb9e1b6b365bec448, type: 3}
+  UndoIcon: {fileID: 4952043566522609014, guid: ce97d6d62f9734073abfdecaa616246e, type: 3}
+  SearchIcon: {fileID: 1737981779093564301, guid: 85c3aebf94a674e03be62d60b1269510, type: 3}
+  SelectAllIcon: {fileID: 2952564868547622667, guid: 4b13449cc3a0a4a6283c08b211ac7b2c, type: 3}
   PixelFont: {fileID: 12800000, guid: 8d0b54f2b8b774cb69af90b3584a4e9a, type: 3}
   AdventureMusic: {fileID: 8300000, guid: 918125628d5f84d0fa83ebbbd2743e3f, type: 3}
   VillageMusic: {fileID: 8300000, guid: b37b85a1a4d0c4601995e2c28a21d1bd, type: 3}

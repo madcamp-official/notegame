@@ -37,16 +37,17 @@ namespace KeyboardWanderer.Tests
         };
 
         [Test]
-        public void PublicInputContract_ExposesMoveAndExactlyFiveKeyboardSkills()
+        public void PublicInputContract_ExposesMoveInteractionAndSevenKeyboardSkills()
         {
             AbilityKind[] values = Enum.GetValues(typeof(AbilityKind)).Cast<AbilityKind>().ToArray();
 
             Assert.That(values, Is.EqualTo(new[]
             {
                 AbilityKind.Move, AbilityKind.Copy, AbilityKind.Delete, AbilityKind.Connect,
-                AbilityKind.Restore, AbilityKind.Undo
+                AbilityKind.Restore, AbilityKind.Undo, AbilityKind.Interact,
+                AbilityKind.Search, AbilityKind.SelectAll
             }));
-            Assert.That(values.Count(TurnRequest.IsPublicKeyboardSkill), Is.EqualTo(5));
+            Assert.That(values.Count(TurnRequest.IsPublicKeyboardSkill), Is.EqualTo(7));
             Assert.Throws<ArgumentException>(() => TurnRequest.UseSkill("legacy", 1, (AbilityKind)4));
 
             RunState state = LocalTurnService.CreateDemo(19).CreateSnapshot();
@@ -54,6 +55,29 @@ namespace KeyboardWanderer.Tests
                 new TurnRequest("legacy-raw", state.Version, (AbilityKind)4, null, null, string.Empty));
             Assert.That(rejected.IsValid, Is.False);
             Assert.That(rejected.ErrorCode, Is.EqualTo(TurnErrorCode.InvalidRequest));
+        }
+
+        [Test]
+        public void ShortcutAreaSkills_AcceptNoTargetAndUseBoundedFocus()
+        {
+            RunState searchState = LocalTurnService.CreateDemo(119).CreateSnapshot();
+            var engine = new RuleEngine();
+            RulePreparation search = engine.Prepare(searchState,
+                TurnRequest.UseSkill("ctrl-f-search", searchState.Version, AbilityKind.Search));
+            Assert.That(search.IsValid, Is.True);
+            Assert.That(search.FocusCost, Is.EqualTo(1));
+            Assert.That(RuleEngine.ClassifyAction(searchState,
+                TurnRequest.UseSkill("ctrl-f-context", searchState.Version, AbilityKind.Search)),
+                Is.EqualTo(ActionContext.Investigation));
+
+            RunState areaState = LocalTurnService.CreateDemo(120).CreateSnapshot();
+            RulePreparation area = engine.Prepare(areaState,
+                TurnRequest.UseSkill("ctrl-a-area", areaState.Version, AbilityKind.SelectAll));
+            Assert.That(area.IsValid, Is.True);
+            Assert.That(area.FocusCost, Is.EqualTo(3));
+            Assert.That(RuleEngine.ClassifyAction(areaState,
+                TurnRequest.UseSkill("ctrl-a-context", areaState.Version, AbilityKind.SelectAll)),
+                Is.EqualTo(ActionContext.Deployment));
         }
 
         [Test]
@@ -139,7 +163,7 @@ namespace KeyboardWanderer.Tests
             Assert.That(CampaignCatalog.WorldId, Is.EqualTo("WORLD_CODRIA"));
             Assert.That(CampaignCatalog.ProtagonistId, Is.EqualTo("PROTAGONIST_NUPJUKYI"));
             Assert.That(CampaignCatalog.AdministratorKeyboardId, Is.EqualTo("ARTIFACT_ADMIN_KEYBOARD"));
-            Assert.That(blueprint.Title, Is.EqualTo("넙죽이와 붕괴한 코드 왕국"));
+            Assert.That(blueprint.Title, Is.EqualTo("Ninja Adventure"));
             Assert.That(blueprint.WorldName, Is.EqualTo("코드리아"));
             Assert.That(blueprint.PlayerName, Is.EqualTo("넙죽이"));
             Assert.That(blueprint.PlayerAssetId, Is.EqualTo("player.ninja-green.v1"));

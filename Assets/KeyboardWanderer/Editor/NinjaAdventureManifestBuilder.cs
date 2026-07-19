@@ -8,7 +8,9 @@ namespace KeyboardWanderer.Editor
     public static class NinjaAdventureManifestBuilder
     {
         private const string ManifestPath = "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset";
-        private const int CurrentManifestVersion = 3;
+        private const int CurrentManifestVersion = 11;
+        private const string NeopjukiAtlasPath =
+            "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
 
         [InitializeOnLoadMethod]
         private static void ScheduleEnsureManifest()
@@ -40,6 +42,14 @@ namespace KeyboardWanderer.Editor
                 "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetNature.png");
             manifest.HouseAtlas = LoadPixelTexture(
                 "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetHouse.png");
+            manifest.DesertAtlas = LoadPixelTexture(
+                "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetDesert.png");
+            manifest.DungeonAtlas = LoadPixelTexture(
+                "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetDungeon.png");
+            manifest.AbandonedVillageAtlas = LoadPixelTexture(
+                "Assets/NinjaAdventure/Backgrounds/Tilesets/TilesetVillageAbandoned.png");
+            manifest.WatermillAtlas = LoadPixelTexture(
+                "Assets/NinjaAdventure/Backgrounds/Animated/WaterMill/Watermill_A_34x36.png");
             manifest.OutdoorDirtRect = new Rect(16, 208, 16, 16);
             manifest.OutdoorGrassRect = new Rect(16, 160, 16, 16);
             manifest.OutdoorDarkGrassRect = new Rect(16, 112, 16, 16);
@@ -56,6 +66,9 @@ namespace KeyboardWanderer.Editor
                 "Assets/NinjaAdventure/Actor/Character/Villager/SeparateAnim/Walk.png");
             manifest.PlayerFrameSize = 32;
             manifest.CreatureFrameSize = 16;
+            manifest.NeopjukiAtlas = LoadPixelTexture(NeopjukiAtlasPath);
+            manifest.NeopjukiCellWidth = 192;
+            manifest.NeopjukiCellHeight = 208;
 
             manifest.PlayerIdle = LoadSprite("Assets/NinjaAdventure/Actor/Character/NinjaGreen/SeparateAnim/Idle.png", "Idle_1");
             manifest.WardenIdle = LoadSprite("Assets/NinjaAdventure/Actor/Character/Samurai/SeparateAnim/Idle.png", "Idle_1");
@@ -68,11 +81,59 @@ namespace KeyboardWanderer.Editor
             manifest.D20 = LoadFirstSprite("Assets/NinjaAdventure/Items/Object/Dice 20.png");
 
             manifest.PlayerAnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
-                "Assets/KeyboardWanderer/Animations/Generated/Player.controller");
+                "Assets/KeyboardWanderer/Animations/Player/Player.controller");
             manifest.SlimeAnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
-                "Assets/KeyboardWanderer/Animations/Generated/Slime.controller");
+                "Assets/KeyboardWanderer/Animations/Slime/Slime.controller");
             manifest.VillagerAnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
-                "Assets/KeyboardWanderer/Animations/Generated/Villager.controller");
+                "Assets/KeyboardWanderer/Animations/Villager/Villager.controller");
+
+            manifest.NpcAnimations = new[]
+            {
+                Actor("npc.villager.green.v1", "Character/Villager/SeparateAnim/Walk.png", "Walk_0", "Villager/Villager.controller"),
+                Actor("npc.villager2.v1", "Character/Villager2/SeparateAnim/Walk.png", "Walk_0", "NPC/Villager2/Villager2.controller"),
+                Actor("npc.villager3.v1", "Character/Villager3/SeparateAnim/Walk.png", "Walk_0", "NPC/Villager3/Villager3.controller"),
+                Actor("npc.villager4.v1", "Character/Villager4/SeparateAnim/Walk.png", "Walk_0", "NPC/Villager4/Villager4.controller"),
+                Actor("npc.villager5.v1", "Character/Villager5/SeparateAnim/Walk.png", "Walk_0", "NPC/Villager5/Villager5.controller"),
+                Actor("npc.villager6.v1", "Character/Villager6/SeparateAnim/Walk.png", "Walk_0", "NPC/Villager6/Villager6.controller"),
+                Actor("npc.old-man.v1", "Character/OldMan/SeparateAnim/Walk.png", "Walk_0", "NPC/OldMan/OldMan.controller"),
+                Actor("npc.noble.v1", "Character/Noble/SeparateAnim/Walk.png", "Walk_0", "NPC/Noble/Noble.controller"),
+                Actor("npc.princess.v1", "Character/Princess/SeparateAnim/Walk.png", "Walk_0", "NPC/Princess/Princess.controller"),
+                Actor("npc.samurai.v1", "Character/Samurai/SeparateAnim/Walk.png", "Walk_0", "NPC/Samurai/Samurai.controller")
+            };
+            manifest.MonsterAnimations = new[]
+            {
+                Actor("enemy.slime.blue.v1", "Monster/Slime/Slime.png", "Slime_0", "Slime/Slime.controller"),
+                Actor("enemy.slime.green.v1", "Monster/Slime2/Slime2.png", "Slime2_0", "Monster/Slime2/Slime2.controller"),
+                Actor("enemy.mushroom.v1", "Monster/Mushroom/mushroom.png", "mushroom_0", "Monster/Mushroom/Mushroom.controller"),
+                Actor("enemy.blue-bat.v1", "Monster/BlueBat/SpriteSheet.png", "SpriteSheet_0", "Monster/BlueBat/BlueBat.controller"),
+                Actor("enemy.bear.v1", "Monster/Bear/SpriteSheet.png", "SpriteSheet_0", "Monster/Bear/Bear.controller"),
+                Actor("enemy.cyclope.v1", "Monster/Cyclope/SpriteSheet.png", "SpriteSheet_0", "Monster/Cyclope/Cyclope.controller"),
+                Actor("enemy.dragon.v1", "Monster/Dragon/SpriteSheet.png", "SpriteSheet_0", "Monster/Dragon/Dragon.controller"),
+                Actor("enemy.kappa-green.v1", "Monster/KappaGreen/SpriteSheet.png", "SpriteSheet_0", "Monster/KappaGreen/KappaGreen.controller"),
+                Actor("enemy.snake.v1", "Monster/Snake/Snake.png", "Snake_0", "Monster/Snake/Snake.controller"),
+                Actor("enemy.spider-red.v1", "Monster/SpiderRed/SpriteSheet.png", "SpriteSheet_0", "Monster/SpiderRed/SpiderRed.controller")
+            };
+            manifest.BossAnimations = new[]
+            {
+                Boss("boss.demon-cyclop.v1", "DemonCyclop", "Idle.png", "Idle_0"),
+                Boss("boss.demon-cyclop-2.v1", "DemonCyclop2", "Idle.png", "Idle_0"),
+                Boss("boss.giant-bamboo.v1", "GiantBamboo", "Idle.png", "Idle_0"),
+                Boss("boss.giant-bamboo-2.v1", "GiantBamboo2", "Idle.png", "Idle_0"),
+                Boss("boss.giant-blue-samurai.v1", "GiantBlueSamurai", "Idle.png", "Idle_0"),
+                Boss("boss.giant-red-samurai.v1", "GiantRedSamurai", "Idle.png", "Idle_0"),
+                Boss("boss.giant-flam.v1", "GiantFlam", "Idle.png", "Idle_0"),
+                Boss("boss.giant-frog.v1", "GiantFrog", "Idle40x40.png", "Idle40x40_0"),
+                Boss("boss.giant-frog-2.v1", "GiantFrog2", "Idle.png", "Idle_0"),
+                Boss("boss.giant-racoon.v1", "GiantRacoon", "Idle.png", "Idle_0"),
+                Boss("boss.giant-racoon-gold.v1", "GiantRacoonGold", "Idle.png", "Idle_0"),
+                Boss("boss.giant-slime.v1", "GiantSlime", "Idle.png", "Idle_0"),
+                Boss("boss.giant-slime-2.v1", "GiantSlime2", "Idle.png", "Idle_0"),
+                Boss("boss.giant-spirit.v1", "GiantSpirit", "Idle.png", "Idle_0"),
+                Boss("boss.squid-green.v1", "SquidGreen", "Idle.png", "Idle_0"),
+                Boss("boss.squid-red.v1", "SquidRed", "Idle.png", "Idle_0"),
+                Boss("boss.tengu-blue.v1", "TenguBlue", "Idle.png", "Idle_0"),
+                Boss("boss.tengu-red.v1", "TenguRed", "Idle.png", "Idle_0")
+            };
 
             manifest.WoodPanel = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_panel.png");
@@ -86,6 +147,59 @@ namespace KeyboardWanderer.Editor
                 "Assets/NinjaAdventure/Ui/Theme/Theme Wood/button_pressed.png");
             manifest.WoodButtonDisabled = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Theme/Theme Wood/button_disabled.png");
+            manifest.WoodPanelInterior = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_panel_interior.png");
+            manifest.WoodPanelFocus = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_focus.png");
+            manifest.WoodInventoryCell = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Theme/Theme Wood/inventory_cell.png");
+            manifest.WoodSliderProgress = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Theme/Theme Wood/slider_progress.png");
+            manifest.WoodSliderGrabber = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Theme/Theme Wood/h_slidder_grabber.png");
+            manifest.WoodChecked = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Theme/Theme Wood/checked.png");
+            manifest.WoodUnchecked = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Theme/Theme Wood/unchecked.png");
+            manifest.DialogueBox = LoadFirstSprite("Assets/NinjaAdventure/Ui/Dialog/DialogueBoxSimple.png");
+            manifest.DialogueBoxFaceset = LoadFirstSprite("Assets/NinjaAdventure/Ui/Dialog/DialogBoxFaceset.png");
+            manifest.ChoiceBox = LoadFirstSprite("Assets/NinjaAdventure/Ui/Dialog/ChoiceBox.png");
+            manifest.DialogBox = LoadFirstSprite("Assets/NinjaAdventure/Ui/Dialog/DialogBox.png");
+            manifest.DialogInfo = LoadFirstSprite("Assets/NinjaAdventure/Ui/Dialog/DialogInfo.png");
+            manifest.FacesetBox = LoadFirstSprite("Assets/NinjaAdventure/Ui/Dialog/FacesetBox.png");
+            manifest.YesButton = LoadFirstSprite("Assets/NinjaAdventure/Ui/Dialog/YesButton.png");
+            manifest.NoButton = LoadFirstSprite("Assets/NinjaAdventure/Ui/Dialog/NoButton.png");
+            manifest.Emotes = Enumerable.Range(1, 30)
+                .Select(index => LoadFirstSprite("Assets/NinjaAdventure/Ui/Emote/emote" + index + ".png"))
+                .ToArray();
+            manifest.KeyCtrl = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyCtrl.png");
+            manifest.KeyC = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyC.png");
+            manifest.KeyV = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyV.png");
+            manifest.KeyZ = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyZ.png");
+            manifest.KeyF = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyF.png");
+            manifest.KeyA = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyA.png");
+            manifest.KeyK = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyK.png");
+            manifest.KeyR = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyR.png");
+            manifest.KeyW = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyW.png");
+            manifest.Key4 = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/Key4.png");
+            manifest.Key5 = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/Key5.png");
+            manifest.KeyDelete = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyDelete.png");
+            manifest.KeyEnter = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyEnter.png");
+            manifest.KeyEscape = LoadFirstSprite("Assets/NinjaAdventure/Ui/Input/Keyboard/KeyEscape.png");
+            manifest.WoodBackgroundDark = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_bg_2.png");
+            manifest.WoodPanelAlt = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_panel_2.png");
+            manifest.WoodPanelLight = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_panel_3.png");
+            manifest.WoodPanelDisabled = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_panel_disabled.png");
+            manifest.WoodArrowLeft = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/arrow_left.png");
+            manifest.WoodArrowLeftHover = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/arrow_left_hover.png");
+            manifest.WoodArrowRight = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/arrow_right.png");
+            manifest.WoodArrowRightHover = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/arrow_right_hover.png");
+            manifest.WoodTab = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/tab.png");
+            manifest.WoodTabHover = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/tab_hover.png");
+            manifest.WoodTabSelected = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/tab_selected.png");
+            manifest.WoodTabUnselected = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/tab_unselected.png");
+            manifest.WoodButtonChecked = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/button_checked.png");
+            manifest.WoodButtonUnchecked = LoadFirstSprite("Assets/NinjaAdventure/Ui/Theme/Theme Wood/button_unchecked.png");
             manifest.HeartIcon = LoadFirstSprite("Assets/NinjaAdventure/Ui/Receptacle/IconHeart.png");
             manifest.MoveIcon = LoadFirstSprite("Assets/NinjaAdventure/Ui/Skill Icon/Items & Weapon/Boot.png");
             manifest.MoveIconDisabled = LoadFirstSprite(
@@ -98,6 +212,16 @@ namespace KeyboardWanderer.Editor
                 "Assets/NinjaAdventure/Ui/Skill Icon/Spell/FireballDisabled.png");
             manifest.InteractIcon = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Skill Icon/Job & Action/Interact.png");
+            manifest.ConnectIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Permutation.png");
+            manifest.RestoreIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Job & Action/Repair.png");
+            manifest.UndoIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Counter.png");
+            manifest.SearchIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Vision.png");
+            manifest.SelectAllIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Upgrade.png");
             manifest.PixelFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/NinjaAdventure/Ui/Font/NormalFont.ttf");
 
             manifest.AdventureMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/1 - Adventure Begin.ogg");
@@ -147,6 +271,25 @@ namespace KeyboardWanderer.Editor
             return AssetDatabase.LoadAssetAtPath<AudioClip>(path);
         }
 
+        private static ActorAnimationEntry Actor(string assetId, string sourcePath, string spriteName,
+            string controllerPath)
+        {
+            return new ActorAnimationEntry
+            {
+                AssetId = assetId,
+                DefaultSprite = LoadSprite("Assets/NinjaAdventure/Actor/" + sourcePath, spriteName),
+                AnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                    "Assets/KeyboardWanderer/Animations/" + controllerPath)
+            };
+        }
+
+        private static ActorAnimationEntry Boss(string assetId, string folder, string sourceFile,
+            string spriteName)
+        {
+            return Actor(assetId, "Boss/" + folder + "/" + sourceFile, spriteName,
+                "Boss/" + folder + "/" + folder + ".controller");
+        }
+
         private static void ConfigurePixelTexture(string path)
         {
             TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
@@ -175,6 +318,15 @@ namespace KeyboardWanderer.Editor
             if (importer.wrapMode != TextureWrapMode.Clamp)
             {
                 importer.wrapMode = TextureWrapMode.Clamp;
+                changed = true;
+            }
+
+            Vector4 desiredBorder = path.EndsWith("/FacesetBox.png")
+                ? new Vector4(8f, 8f, 8f, 8f)
+                : importer.spriteBorder;
+            if (importer.spriteBorder != desiredBorder)
+            {
+                importer.spriteBorder = desiredBorder;
                 changed = true;
             }
 

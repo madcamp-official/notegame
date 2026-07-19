@@ -1,58 +1,28 @@
-# 넙죽이와 붕괴한 코드 왕국 — 구현 핸드오프 v4
+# Ninja Adventure — Editable HUD Implementation Handoff v5
 
-## 읽는 순서
+## Read first
 
-1. `SOURCE_OF_TRUTH.md`
-2. `PRODUCT_CONCEPT_KO.md`
-3. `DESIGN.md`
-4. `design-contract.md`
+1. `DESIGN.md`
+2. `design-contract.md`
+3. `KeyboardWandererSceneUIBuilder.cs`
+4. `KeyboardWandererSceneUI.cs`
 
-## 구현 제약
+## Binding constraints
 
-- Desktop Unity, 한국어 우선, 16:9 기준입니다. 월드 viewport는 사용 가능 폭의 최소 60%를 차지합니다.
-- 160×160 월드를 런 시작에 한 번 생성하고 `layoutHash`로 봉인합니다. 이후 플레이는 기존 위치 사이 이동과 슬롯 활성화만 수행합니다.
-- `REGION_BUG_FOREST`부터 `REGION_ROOT_SYSTEM`까지 여섯 지역 축과 여섯 물리 바이옴을 서로 다른 필드·label·시각 계층으로 유지합니다.
-- 주인공 label과 상태 ID는 넙죽이입니다. NinjaAdventure `NinjaGreen`은 manifest가 해결하는 임시 sprite입니다.
-- 공개 입력은 `MOVE`와 `USE_SKILL`뿐이고, 기술은 COPY, DELETE, CONNECT, RESTORE, UNDO뿐입니다.
-- 안전 MOVE는 “턴 소비 없음”을 명시합니다. 위험 이동은 조우 활성화와 이후 소비 행동을 분리합니다.
-- `playerNote`는 선택 사항이며 빈 값으로도 유효 행동을 제출할 수 있어야 합니다.
-- 캠페인은 정확히 아홉 비트를 표현하고 세 관리자 권한의 획득 근거를 보여 줍니다.
-- 단계별 권한 후보는 최소 2개이며 영역과 행동 맥락이 서로 달라야 합니다.
-- 루트 게이트는 권한 3/3과 핵심 단서를 따로 검사하고 실패 이유를 설명합니다.
-- 기술 부채는 수치뿐 아니라 원인, 예정 결과와 명시적 해소 근거를 보여 줍니다.
-- 결말 UI는 Rule Engine이 확정한 `endingId`를 먼저 표시하고 Gemini 에필로그를 부가 서술로 표시합니다.
+- Reference resolution: 1440×900, Scale With Screen Size, match 0.5.
+- World remains full-screen behind HUD; edge panels must not create an opaque overlay.
+- Left: status `x 2–26%`, objectives below it, minimap at bottom-left.
+- Right: skill rail `x 86–98%`, menu hint above, confirm below.
+- Bottom story panel: centered, `x 25–82%`, at most 18% screen height.
+- Preserve all existing control names used by `KeyboardWandererDemoController`.
 
-## 화면 우선순위
+## Asset and runtime rules
 
-1. 중앙에 봉인 월드와 선택 경로
-2. 상단에 지역 축, 물리 바이옴, 9비트, 의미 턴, 권한 `0/3`, 핵심 단서, 기술 부채
-3. 우측에 주 목표 1개, 보조 목표 최대 2개, 추천 행동 2–3개
-4. 하단에 MOVE, 다섯 기술, 대상/목적지, 선택적 메모와 확정
-5. 확정 전에 대상, 기술, 턴 소비 여부와 위험을 요약
-6. 결과는 `판정 → 상태 변화 → 2–4문장 서술` 순서
+- Use existing project sprites and font; no reference artwork is imported.
+- Panels and buttons are ordinary serialized Unity components.
+- Runtime may update Text, interactable/selected state, Copy/Paste keycap and Emote.
+- Runtime must not replace authored anchors, panel sprites, button sprites, fonts or colors unless `Apply Runtime Theme` is explicitly enabled.
 
-사용할 수 없는 기술은 숨기지 않고 비활성화하며 이유를 표시합니다. 긴 한국어 이름은 map이나 확정 control과 겹치지 않도록 wrap 또는 말줄임 처리합니다.
+## Acceptance proof
 
-## 첫 플레이 가능 빌드 증거
-
-1. 같은 seed/version으로 같은 160×160 `layoutHash`가 생성됩니다.
-2. 여섯 지역 축과 여섯 물리 바이옴을 각각 검사할 수 있고 필수 POI가 도달 가능합니다.
-3. 저장·재개, Restore, Undo 전후에 `layoutHash`가 같습니다.
-4. 안전 MOVE는 턴을 쓰지 않고, 위험 목적지는 조우를 열며, 실제 USE_SKILL만 한 턴을 확정합니다.
-5. COPY, DELETE, CONNECT, RESTORE, UNDO의 합법·비합법 상태를 확인할 수 있습니다.
-6. 아홉 비트와 세 관리자 권한이 순서대로 진행됩니다.
-7. 각 권한 단계에 서로 다른 영역·맥락의 후보가 최소 두 개 존재합니다.
-8. 권한 3/3 또는 핵심 단서가 빠지면 루트 진입이 거부됩니다.
-9. 하나의 기술 부채가 생성되고 일반 성공으로 줄지 않으며 명시적 행동으로만 해소됩니다.
-10. 필수 이력 8종이 저장·재개 후 동일합니다.
-11. Gemini timeout·invalid output에서 1회 재시도 후 결정적 폴백으로 진행됩니다.
-12. Rule Engine 결말과 2–4문장 에필로그의 권위 차이가 명확합니다.
-
-## UI 검수
-
-- 레퍼런스 이미지에서는 구조·밀도·재질 감각만 남습니다.
-- 이미지의 지역, 인물, 적, 퀘스트, 문구, 아이콘과 레벨 배치가 없습니다.
-- `NinjaGreen`을 넙죽이 대신 제품명이나 캐릭터명으로 표시하지 않습니다.
-- pixel art가 모든 지원 zoom에서 정수 배율로 정렬됩니다.
-- provider 지연이나 실패 중에도 권위 판정과 상태 변화가 보입니다.
-- 좁은 데스크톱에서도 주 목표와 확정 조작이 접근 가능합니다.
+The first artifact proves the direction when Play Mode shows the same authored layout as Scene view, the world center remains clear, all bound buttons work, and a developer can move every panel directly in the Inspector without editing code.
