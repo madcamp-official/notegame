@@ -40,19 +40,117 @@ namespace KeyboardWanderer.Gameplay
         public const int DemoWorldHeight = 160;
         public const int CampaignTurnLimit = 40;
         public const int MaximumCampaignTurnLimit = 50;
+        public const int IdempotencyCacheLimit = 128;
 
         private readonly RuleEngine _ruleEngine;
         private readonly ID20Source _d20;
         private readonly Dictionary<string, StoredTurn> _idempotency = new Dictionary<string, StoredTurn>();
+        private readonly Queue<string> _idempotencyOrder = new Queue<string>();
         private RunState _state;
+        private RunView _cachedView;
 
-        public RunView CurrentView => new RunView(_state);
+        public RunView CurrentView
+        {
+            get
+            {
+                if (_cachedView == null || _cachedView.Version != _state.Version)
+                    _cachedView = new RunView(_state);
+                return _cachedView;
+            }
+        }
 
         public LocalTurnService(RunState initialState, ID20Source d20Source)
         {
             _state = initialState ?? throw new ArgumentNullException(nameof(initialState));
             _d20 = d20Source ?? throw new ArgumentNullException(nameof(d20Source));
             _ruleEngine = new RuleEngine();
+            foreach (EntityState entity in _state.Spatial.Entities)
+                if (entity.IsActive && entity.Kind == EntityKind.Npc)
+                {
+                    if (!_state.AmbientWanderOrigins.ContainsKey(entity.EntityId))
+                        _state.AmbientWanderOrigins[entity.EntityId] = entity.Position;
+                    if (!_state.AmbientWanderNextTicks.ContainsKey(entity.EntityId))
+                        _state.AmbientWanderNextTicks[entity.EntityId] =
+                            _state.AmbientWanderTick + 4 + (StableWanderSeed(entity.EntityId) & 3);
+                }
+        }
+
+        /// <summary>
+        /// Moves NPCs by one real grid cell while keeping them close to their spawn cell.
+        /// The SpatialIndex is updated, so occupancy and interaction checks observe the new position.
+        /// </summary>
+        public bool TryAdvanceAmbientWander(
+            int maxDistanceFromSpawn = 2,
+            GridCoord? activeMin = null,
+            GridCoord? activeMax = null)
+        {
+            if (_state.Status != RunStatus.Playing || maxDistanceFromSpawn < 1)
+                return false;
+
+            var npcs = new List<EntityState>();
+            foreach (EntityState entity in _state.Spatial.Entities)
+                if (entity.IsActive && entity.Kind == EntityKind.Npc &&
+                    _state.AmbientWanderOrigins.ContainsKey(entity.EntityId))
+                    npcs.Add(entity);
+            npcs.Sort((left, right) => string.CompareOrdinal(
+                left.EntityId.ToString("N"), right.EntityId.ToString("N")));
+            if (npcs.Count == 0)
+                return false;
+
+            _state.AmbientWanderTick++;
+            bool movedAny = false;
+            GridCoord[] directions =
+            {
+                new GridCoord(1, 0), new GridCoord(0, 1),
+                new GridCoord(-1, 0), new GridCoord(0, -1)
+            };
+            for (int npcIndex = 0; npcIndex < npcs.Count; npcIndex++)
+            {
+                EntityState npc = npcs[npcIndex];
+                if (activeMin.HasValue && activeMax.HasValue &&
+                    (npc.Position.X < activeMin.Value.X || npc.Position.X > activeMax.Value.X ||
+                     npc.Position.Y < activeMin.Value.Y || npc.Position.Y > activeMax.Value.Y))
+                    continue;
+                if (_state.AmbientWanderNextTicks.TryGetValue(npc.EntityId, out int nextTick) &&
+                    _state.AmbientWanderTick < nextTick)
+                    continue;
+
+                int seed = StableWanderSeed(npc.EntityId);
+                int interval = 4 + ((_state.AmbientWanderTick + seed) & 3);
+                _state.AmbientWanderNextTicks[npc.EntityId] = _state.AmbientWanderTick + interval;
+                GridCoord origin = _state.AmbientWanderOrigins[npc.EntityId];
+                int directionOffset = (_state.AmbientWanderTick + seed) & 3;
+                for (int i = 0; i < directions.Length; i++)
+                {
+                    GridCoord direction = directions[(directionOffset + i) & 3];
+                    var destination = new GridCoord(npc.Position.X + direction.X, npc.Position.Y + direction.Y);
+                    if (destination.ManhattanDistance(origin) > maxDistanceFromSpawn)
+                        continue;
+                    MoveResult move = _state.Spatial.TryMove(npc.EntityId, _state.Region.RegionId, destination, npc.Layer,
+                        (regionId, coord) => regionId == _state.Region.RegionId && _state.Region.IsWalkable(coord));
+                    if (!move.IsSuccess)
+                        continue;
+                    movedAny = true;
+                    break;
+                }
+            }
+            if (movedAny)
+            {
+                _state.Version++;
+                _cachedView = null;
+            }
+            return movedAny;
+        }
+
+        private static int StableWanderSeed(Guid entityId)
+        {
+            byte[] bytes = entityId.ToByteArray();
+            unchecked
+            {
+                int hash = 17;
+                for (int i = 0; i < bytes.Length; i++) hash = hash * 31 + bytes[i];
+                return hash & int.MaxValue;
+            }
         }
 
         public RunState CreateSnapshot() { return _state.Clone(); }
@@ -107,6 +205,7 @@ namespace KeyboardWanderer.Gameplay
 
             // Clone-and-swap keeps the entire authoritative commit atomic.
             RunState working = _state.Clone();
+            working.RollCount = _state.RollCount + 1;
             string immutableLayoutHash = working.Region.LayoutHash;
             ReversibleTurnRecord reversible = request.Ability == AbilityKind.Undo
                 ? null
@@ -115,18 +214,19 @@ namespace KeyboardWanderer.Gameplay
             string beforeArea = AreaId(working, beforePosition);
 
             working.RecordIntent(nextTurn, request.Ability, preparation.NormalizedAttempt);
-            List<string> events = _ruleEngine.Apply(working, request, preparation, outcome, nextTurn);
-            bool rewound = events.Exists(entry => entry.StartsWith("TIME_REWIND_COMPLETED:", StringComparison.Ordinal));
+            int consequenceBudget = RuleEngine.ConsequenceBudget(rawD20);
+            List<string> events = _ruleEngine.Apply(working, request, preparation, outcome, nextTurn,
+                consequenceBudget);
+            bool rewound = events.Exists(entry => entry.StartsWith("UNDO_COMPENSATION_COMPLETED:", StringComparison.Ordinal));
             if (!rewound)
             {
                 ApplyHazard(working, events);
                 ApplyEnemyPhase(working, nextTurn, events);
             }
 
-            working.CurrentTurn = rewound ? Math.Max(0, _state.CurrentTurn - 2) : nextTurn;
+            working.CurrentTurn = nextTurn;
             working.Version++;
-            if (!rewound)
-                CampaignDirector.ProcessCommittedTurn(working, request, actionContext, outcome, nextTurn, events);
+            CampaignDirector.ProcessCommittedTurn(working, request, actionContext, outcome, nextTurn, events);
             if (working.HasActiveEncounter && RuleEngine.ConsumesCampaignTurn(actionContext))
             {
                 working.HasActiveEncounter = false;
@@ -141,7 +241,7 @@ namespace KeyboardWanderer.Gameplay
                 while (working.ReversibleHistory.Count > 6)
                     working.ReversibleHistory.RemoveAt(0);
             }
-            events.Add(rewound ? "TURN_COUNTER_REWOUND:" + working.CurrentTurn : "TURN_COMMITTED:" + nextTurn);
+            events.Add(rewound ? "UNDO_COMPENSATED:source-turns=2:turn=" + nextTurn : "TURN_COMMITTED:" + nextTurn);
 
             working.LastNormalizedAttempt = preparation.NormalizedAttempt;
             working.LastRollRaw = rawD20;
@@ -198,9 +298,9 @@ namespace KeyboardWanderer.Gameplay
             _state = working;
             var response = TurnResponse.Success(working.CurrentTurn, rawD20, preparation.Modifier, preparation.Difficulty,
                 mechanicalScore, preparation.IntentAlignment, outcome, outcomeExplanation,
-                preparation.NormalizedAttempt, narrative, RuleEngine.ConsequenceBudget(rawD20), events, CurrentView,
+                preparation.NormalizedAttempt, narrative, consequenceBudget, events, CurrentView,
                 true, actionContext);
-            _idempotency.Add(request.IdempotencyKey, new StoredTurn(fingerprint, response));
+            StoreIdempotentResponse(request.IdempotencyKey, fingerprint, response);
             return response;
         }
 
@@ -227,9 +327,10 @@ namespace KeyboardWanderer.Gameplay
             if (IsRootSystemArea(destinationArea) && !CampaignDirector.CanEnterRootSystem(state))
                 return false;
 
+            HashSet<GridCoord> hostileInfluence = BuildHostileInfluence(state, 2);
             List<GridCoord> path = GridPathfinder.FindPath(state.Region, player.Position, request.Destination.Value,
                 coord => state.Spatial.IsBlockingOccupied(state.Region.RegionId, coord, player.Layer, player.EntityId) ||
-                         !IsSafeTravelTile(state, coord));
+                         !IsSafeTravelTile(state, coord, hostileInfluence));
             if (path.Count == 0)
                 return false;
             preparation = RulePreparation.Valid("Travel safely to " + request.Destination.Value + " through " +
@@ -238,15 +339,22 @@ namespace KeyboardWanderer.Gameplay
             return true;
         }
 
-        private static bool IsSafeTravelTile(RunState state, GridCoord coord)
+        private static bool IsSafeTravelTile(RunState state, GridCoord coord,
+            HashSet<GridCoord> hostileInfluence = null)
         {
             TileKind kind = state.Region.GetTile(coord).Kind;
             if (kind == TileKind.Hazard || kind == TileKind.Ruin)
                 return false;
-            foreach (EntityState entity in state.Spatial.Entities)
+            if (hostileInfluence != null)
             {
-                if (entity.IsActive && entity.IsHostile && entity.Position.ManhattanDistance(coord) <= 2)
+                if (hostileInfluence.Contains(coord))
                     return false;
+            }
+            else
+            {
+                foreach (EntityState entity in state.Spatial.Entities)
+                    if (entity.IsActive && entity.IsHostile && entity.Position.ManhattanDistance(coord) <= 2)
+                        return false;
             }
             WorldArea area = state.Region.AreaAt(coord);
             if (area != null && area.RequiredAdminAccess > state.AdminAccess)
@@ -255,6 +363,25 @@ namespace KeyboardWanderer.Gameplay
                 return false;
             bool discovered = area != null && state.VisitedAreaIds.Contains(area.Id);
             return discovered || kind == TileKind.Dirt || kind == TileKind.Bridge;
+        }
+
+        private static HashSet<GridCoord> BuildHostileInfluence(RunState state, int radius)
+        {
+            var influence = new HashSet<GridCoord>();
+            foreach (EntityState entity in state.Spatial.Entities)
+            {
+                if (!entity.IsActive || !entity.IsHostile) continue;
+                for (int y = -radius; y <= radius; y++)
+                {
+                    int remaining = radius - Math.Abs(y);
+                    for (int x = -remaining; x <= remaining; x++)
+                    {
+                        var coord = new GridCoord(entity.Position.X + x, entity.Position.Y + y);
+                        if (state.Region.Contains(coord)) influence.Add(coord);
+                    }
+                }
+            }
+            return influence;
         }
 
         private static bool CanOpenTravelEncounter(RunState state, TurnRequest request)
@@ -313,7 +440,7 @@ namespace KeyboardWanderer.Gameplay
                 working.LastNormalizedAttempt, "넙죽이는 안전 구간 끝에서 사건을 발견했다. " +
                 "다음 전투·조사·협상·배치 행동부터 D20과 캠페인 턴이 소비된다.", 0, events,
                 CurrentView, false, ActionContext.SafeTravel);
-            _idempotency.Add(request.IdempotencyKey, new StoredTurn(fingerprint, response));
+            StoreIdempotentResponse(request.IdempotencyKey, fingerprint, response);
             return response;
         }
 
@@ -322,6 +449,7 @@ namespace KeyboardWanderer.Gameplay
         {
             var queue = new Queue<GridCoord>();
             var distance = new Dictionary<GridCoord, int>();
+            HashSet<GridCoord> hostileInfluence = BuildHostileInfluence(state, 2);
             queue.Enqueue(player.Position);
             distance[player.Position] = 0;
             GridCoord best = player.Position;
@@ -342,7 +470,8 @@ namespace KeyboardWanderer.Gameplay
                 for (int i = 0; i < directions.Length; i++)
                 {
                     GridCoord next = new GridCoord(current.X + directions[i].X, current.Y + directions[i].Y);
-                    if (distance.ContainsKey(next) || !state.Region.IsWalkable(next) || !IsSafeTravelTile(state, next) ||
+                    if (distance.ContainsKey(next) || !state.Region.IsWalkable(next) ||
+                        !IsSafeTravelTile(state, next, hostileInfluence) ||
                         state.Spatial.IsBlockingOccupied(state.Region.RegionId, next, player.Layer, player.EntityId))
                         continue;
                     WorldArea area = state.Region.AreaAt(next);
@@ -404,7 +533,7 @@ namespace KeyboardWanderer.Gameplay
                 preparation.IntentAlignment, RuleOutcome.Success, working.LastOutcomeExplanation,
                 preparation.NormalizedAttempt, "안전한 길을 따라 이미 생성된 같은 월드 안에서 이동했다.",
                 0, events, CurrentView, false, ActionContext.SafeTravel);
-            _idempotency.Add(request.IdempotencyKey, new StoredTurn(fingerprint, response));
+            StoreIdempotentResponse(request.IdempotencyKey, fingerprint, response);
             return response;
         }
 
@@ -564,17 +693,16 @@ namespace KeyboardWanderer.Gameplay
                 new GridCoord(player.Position.X, player.Position.Y + 1),
                 new GridCoord(player.Position.X, player.Position.Y - 1)
             };
-            List<GridCoord> best = null;
+            var availableGoals = new List<GridCoord>(goals.Length);
             for (int i = 0; i < goals.Length; i++)
             {
                 GridCoord goal = goals[i];
                 if (!state.Region.IsWalkable(goal) ||
                     state.Spatial.IsBlockingOccupied(state.Region.RegionId, goal, 0, enemy.EntityId)) continue;
-                List<GridCoord> candidate = GridPathfinder.FindPath(state.Region, enemy.Position, goal,
-                    coord => state.Spatial.IsBlockingOccupied(state.Region.RegionId, coord, 0, enemy.EntityId));
-                if (candidate.Count > 0 && (best == null || candidate.Count < best.Count)) best = candidate;
+                availableGoals.Add(goal);
             }
-            return best ?? new List<GridCoord>();
+            return GridPathfinder.FindShortestPathToAny(state.Region, enemy.Position, availableGoals,
+                coord => state.Spatial.IsBlockingOccupied(state.Region.RegionId, coord, 0, enemy.EntityId));
         }
 
         private static void FinalizeReversibleRecord(ReversibleTurnRecord record, List<string> events)
@@ -601,9 +729,22 @@ namespace KeyboardWanderer.Gameplay
         private TurnResponse StoreFailure(TurnRequest request, string fingerprint, TurnErrorCode code, string message)
         {
             TurnResponse response = TurnResponse.Failure(code, message, CurrentView);
-            if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
-                _idempotency[request.IdempotencyKey] = new StoredTurn(fingerprint, response);
+            StoreIdempotentResponse(request.IdempotencyKey, fingerprint, response);
             return response;
+        }
+
+        private void StoreIdempotentResponse(string key, string fingerprint, TurnResponse response)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                return;
+            if (!_idempotency.ContainsKey(key))
+                _idempotencyOrder.Enqueue(key);
+            _idempotency[key] = new StoredTurn(fingerprint, response);
+            while (_idempotencyOrder.Count > IdempotencyCacheLimit)
+            {
+                string oldest = _idempotencyOrder.Dequeue();
+                _idempotency.Remove(oldest);
+            }
         }
 
         private static void RegisterOrThrow(SpatialIndex spatial, EntityState entity)

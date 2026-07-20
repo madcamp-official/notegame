@@ -1690,6 +1690,7 @@ GameObject:
   - component: {fileID: 2344987299194030346}
   - component: {fileID: 5063358530185508583}
   - component: {fileID: 6510379893274152284}
+  - component: {fileID: 4104889811963940820}
   m_Layer: 0
   m_Name: SettingsScreen
   m_TagString: Untagged
@@ -1755,6 +1756,23 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &4104889811963940820
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4798565329087855087}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 525f079a0c1d24acfb40fc526aa59a46, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSettingsView
+  musicSlider: {fileID: 5681633281300927516}
+  sfxSlider: {fileID: 8435426927527544466}
+  gmToggle: {fileID: 8805528681590633829}
+  backButton: {fileID: 567510001552793072}
+  deleteSaveButton: {fileID: 3903337454912730420}
 --- !u!1 &5471152380047233721
 GameObject:
   m_ObjectHideFlags: 0

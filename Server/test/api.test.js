@@ -33,8 +33,8 @@ function adjacentWalkable(world, origin) {
 class FakeNarrator {
   async narrate(context) {
     return {
-      summary: `A bounded scene unfolds in ${context.area}`,
-      body: "The server applies the selected keyboard skill. The confirmed state remains inside the sealed Codria world.",
+      summary: `${context.area}에서 제한된 장면이 이어진다`,
+      body: "서버가 선택한 키보드 기술을 적용했다. 확정된 상태는 봉인된 코드리아 세계 안에 유지된다.",
       dialogue: [],
       proposedOps: [],
       fallbackUsed: false,
@@ -135,6 +135,31 @@ test("health and campaign endpoints expose deterministic previews while each run
 
   const hidden = await jsonRequest(baseUrl, `/v1/campaigns/${campaignId}`, { userId: OTHER_USER_ID });
   assert.equal(hidden.response.status, 404);
+});
+
+test("ambient wander authoritatively moves visible NPCs on the grid", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+  const campaign = await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Wander Test", worldSeed: 22017, turnLimit: 40 }
+  });
+  const created = await jsonRequest(baseUrl, `/v1/campaigns/${campaign.payload.campaign.id}/runs`, {
+    method: "POST", body: {}
+  });
+  const before = created.payload.run;
+  const positions = new Map(before.entities.filter((item) => item.kind === "npc").map((item) => [item.id, item.position]));
+  const wandered = await jsonRequest(baseUrl, `/v1/runs/${before.id}/ambient-wander`, {
+    method: "POST",
+    body: { expectedRunVersion: before.version, minX: 0, minY: 0, maxX: 159, maxY: 159 }
+  });
+  assert.equal(wandered.response.status, 200);
+  assert.ok(wandered.payload.movedEntityIds.length > 0);
+  assert.equal(wandered.payload.run.version, before.version + 1);
+  for (const id of wandered.payload.movedEntityIds) {
+    const after = wandered.payload.run.entities.find((item) => item.id === id).position;
+    const origin = positions.get(id);
+    assert.equal(Math.abs(after.x - origin.x) + Math.abs(after.y - origin.y), 1);
+  }
 });
 
 test("turn submit is authoritative, versioned and idempotent without rebuilding the map", async (t) => {

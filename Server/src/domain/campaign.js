@@ -628,6 +628,20 @@ export function chooseEnding(run) {
   return run.endingCandidates.find((item) => item.emergency) || run.endingCandidates.at(-1);
 }
 
+export function endingConditionReports(run) {
+  return (run.endingCandidates || []).filter((ending) => !ending.emergency).map((ending) => {
+    const conditions = [];
+    for (const pair of ending.requiredLinks || []) conditions.push({ label: `${pair[0]}—${pair[1]} 연결`, satisfied: componentLinked(run, pair) });
+    for (const componentId of ending.requiredRemoved || []) conditions.push({ label: `${componentId} 비활성`, satisfied: componentRemoved(run, componentId) });
+    for (const componentId of ending.requiredActive || []) conditions.push({ label: `${componentId} 활성`, satisfied: componentActive(run, componentId) });
+    for (const pair of ending.forbiddenLinks || []) conditions.push({ label: `${pair[0]}—${pair[1]} 연결 없음`, satisfied: !componentLinked(run, pair) });
+    for (const [metric, condition] of Object.entries(ending.metricConditions || {})) conditions.push({ label: `${metric} 조건`, satisfied: metricMatches(run, metric, condition) });
+    conditions.unshift({ label: "관리자 권한 3단계", satisfied: run.progressLevel === 3 });
+    const satisfiedCount = conditions.filter((item) => item.satisfied).length;
+    return { id: ending.id, title: ending.title, eligible: satisfiedCount === conditions.length, satisfiedCount, totalCount: conditions.length, conditions };
+  }).sort((left, right) => right.satisfiedCount - left.satisfiedCount || left.id.localeCompare(right.id));
+}
+
 export function resolveFinalConvergence(run, ending, turnNo) {
   const poi = run.world.pois.find((item) => item.campaignRole === "FINAL_CONVERGENCE") || run.world.pois.at(-1) || null;
   const focus = componentEntities(run, "anchor")[0] || run.entities.find((item) => item.kind === "player") || null;

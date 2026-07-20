@@ -33,38 +33,42 @@ namespace KeyboardWanderer.Networking
             }
 
             IsPending = true;
-            if (request.Ability == AbilityKind.Move)
+            try
             {
-                if (!request.Destination.HasValue)
+                if (request.Ability == AbilityKind.Move)
                 {
-                    IsPending = false;
-                    completed?.Invoke(TurnGatewayResult.Failure("DESTINATION_REQUIRED", "Travel destination is missing."));
+                    if (!request.Destination.HasValue)
+                    {
+                        completed?.Invoke(TurnGatewayResult.Failure("DESTINATION_REQUIRED", "Travel destination is missing."));
+                        yield break;
+                    }
+                    var destination = new GameApiClient.PositionSnapshot
+                    {
+                        x = request.Destination.Value.X,
+                        y = request.Destination.Value.Y
+                    };
+                    GameApiClient.Result<GameApiClient.CommittedNavigation> response = null;
+                    yield return _client.SubmitTravel(runId, request.IdempotencyKey, request.ExpectedRunVersion,
+                        destination, value => response = value);
+                    Complete(response, completed);
                     yield break;
                 }
-                var destination = new GameApiClient.PositionSnapshot
-                {
-                    x = request.Destination.Value.X,
-                    y = request.Destination.Value.Y
-                };
-                GameApiClient.Result<GameApiClient.CommittedNavigation> response = null;
-                yield return _client.SubmitTravel(runId, request.IdempotencyKey, (int)request.ExpectedRunVersion,
-                    destination, value => response = value);
-                IsPending = false;
-                Complete(response, completed);
-                yield break;
-            }
 
-            var targetIds = new List<string>();
-            if (request.TargetEntityId.HasValue) targetIds.Add(request.TargetEntityId.Value.ToString());
-            if (request.SecondaryTargetEntityId.HasValue) targetIds.Add(request.SecondaryTargetEntityId.Value.ToString());
-            GameApiClient.PositionSnapshot actionDestination = request.Destination.HasValue
-                ? new GameApiClient.PositionSnapshot { x = request.Destination.Value.X, y = request.Destination.Value.Y }
-                : null;
-            GameApiClient.Result<GameApiClient.CommittedTurn> action = null;
-            yield return _client.SubmitAction(runId, request.IdempotencyKey, (int)request.ExpectedRunVersion,
-                SkillId(request.Ability), targetIds.ToArray(), actionDestination, value => action = value);
-            IsPending = false;
-            Complete(action, completed);
+                var targetIds = new List<string>();
+                if (request.TargetEntityId.HasValue) targetIds.Add(request.TargetEntityId.Value.ToString());
+                if (request.SecondaryTargetEntityId.HasValue) targetIds.Add(request.SecondaryTargetEntityId.Value.ToString());
+                GameApiClient.PositionSnapshot actionDestination = request.Destination.HasValue
+                    ? new GameApiClient.PositionSnapshot { x = request.Destination.Value.X, y = request.Destination.Value.Y }
+                    : null;
+                GameApiClient.Result<GameApiClient.CommittedTurn> action = null;
+                yield return _client.SubmitAction(runId, request.IdempotencyKey, request.ExpectedRunVersion,
+                    SkillId(request.Ability), targetIds.ToArray(), actionDestination, value => action = value);
+                Complete(action, completed);
+            }
+            finally
+            {
+                IsPending = false;
+            }
         }
 
         private static void Complete<T>(GameApiClient.Result<T> response, Action<TurnGatewayResult> completed)

@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 4857222126974896246}
   - component: {fileID: 8911488650981671506}
   - component: {fileID: 349017079315697659}
+  - component: {fileID: 2773563725233421704}
   m_Layer: 0
   m_Name: AuthoredUI
   m_TagString: Untagged
@@ -120,118 +121,34 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 59ef409520a1c46ae89127bdca5edabe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSceneUI
+  screenFlowView: {fileID: 2773563725233421704}
+  titleView: {fileID: 937872717309588592}
+  gameHudView: {fileID: 6397357338853557997}
+  settingsView: {fileID: 117039418962223300}
+  pauseView: {fileID: 7012593935056476330}
+  endingView: {fileID: 858432245862791242}
+  dialogueView: {fileID: 2725241243272759518}
+  tutorialView: {fileID: 3045559997203350099}
+  skillBarView: {fileID: 6590596321029093003}
+  selectionView: {fileID: 1681813649571005455}
+  minimapView: {fileID: 6416603330320448970}
+--- !u!114 &2773563725233421704
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5007972821124170673}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 65691207086254db8bf700f98b401aae, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererScreenFlowView
   titleScreen: {fileID: 728580452500194235}
   gameHud: {fileID: 7479186131900882326}
   settingsScreen: {fileID: 8934961942561576703}
   pauseScreen: {fileID: 3775790411490061586}
   endingScreen: {fileID: 1662925354539697704}
-  textBindings:
-  - Id: 0
-    Target: {fileID: 7850312793625250655}
-  - Id: 1
-    Target: {fileID: 1445592923786244250}
-  - Id: 2
-    Target: {fileID: 2809478822524972601}
-  - Id: 3
-    Target: {fileID: 5145748861465829137}
-  - Id: 4
-    Target: {fileID: 3680442132164512976}
-  - Id: 5
-    Target: {fileID: 4086919590757426293}
-  - Id: 6
-    Target: {fileID: 911814137841103540}
-  - Id: 7
-    Target: {fileID: 8053111809088172612}
-  - Id: 8
-    Target: {fileID: 3021404246044448596}
-  - Id: 9
-    Target: {fileID: 7277055540563708313}
-  - Id: 10
-    Target: {fileID: 819155419564696207}
-  - Id: 11
-    Target: {fileID: 7332844652232207782}
-  - Id: 12
-    Target: {fileID: 3209961104379169342}
-  - Id: 13
-    Target: {fileID: 609948012178972817}
-  - Id: 14
-    Target: {fileID: 4919418744028438056}
-  - Id: 15
-    Target: {fileID: 439198564290237003}
-  - Id: 16
-    Target: {fileID: 7390576298730229123}
-  buttonBindings:
-  - Id: 0
-    Target: {fileID: 8143527521914092590}
-    StateView: {fileID: 479071491817503569}
-  - Id: 1
-    Target: {fileID: 4837872983346981633}
-    StateView: {fileID: 4382849361782336929}
-  - Id: 2
-    Target: {fileID: 2559038351177312491}
-    StateView: {fileID: 6382011905156793494}
-  - Id: 3
-    Target: {fileID: 4505994796460159712}
-    StateView: {fileID: 4414231829317973436}
-  - Id: 4
-    Target: {fileID: 1099935550531557924}
-    StateView: {fileID: 3011916392332891735}
-  - Id: 5
-    Target: {fileID: 4985189244574739390}
-    StateView: {fileID: 6669067138682067856}
-  - Id: 6
-    Target: {fileID: 7352752127719132086}
-    StateView: {fileID: 6193213608026021595}
-  - Id: 7
-    Target: {fileID: 1554134650188249764}
-    StateView: {fileID: 3486823468543957140}
-  - Id: 8
-    Target: {fileID: 7218116057837160563}
-    StateView: {fileID: 2001736106646524775}
-  - Id: 9
-    Target: {fileID: 2724725921363393182}
-    StateView: {fileID: 7170108887162815793}
-  - Id: 10
-    Target: {fileID: 5836549866529829808}
-    StateView: {fileID: 4410471892649047722}
-  - Id: 11
-    Target: {fileID: 384163024986931797}
-    StateView: {fileID: 7806037689290797504}
-  - Id: 12
-    Target: {fileID: 8216826364371308333}
-    StateView: {fileID: 1031596918560175152}
-  - Id: 13
-    Target: {fileID: 1656683329268824903}
-    StateView: {fileID: 6189033407477696817}
-  - Id: 14
-    Target: {fileID: 1508881611608495731}
-    StateView: {fileID: 664565952401008708}
-  - Id: 15
-    Target: {fileID: 5167140599055823410}
-    StateView: {fileID: 683056398707629533}
-  - Id: 16
-    Target: {fileID: 6664796179217021182}
-    StateView: {fileID: 7795685527255690130}
-  - Id: 17
-    Target: {fileID: 3228745013920715928}
-    StateView: {fileID: 8753389085725837971}
-  - Id: 18
-    Target: {fileID: 6406300555690947836}
-    StateView: {fileID: 6056921309569377405}
-  - Id: 19
-    Target: {fileID: 9100363056990729681}
-    StateView: {fileID: 7007978560989039000}
-  musicSlider: {fileID: 8624822576184015628}
-  sfxSlider: {fileID: 5510181817564948866}
-  gmToggle: {fileID: 4853530870565575285}
-  storyPanel: {fileID: 8910084773930197010}
-  assetManifest: {fileID: 11400000, guid: d012343ab86804d75b78bd510c02c5ad, type: 2}
-  titleCharacter: {fileID: 5475848420478696020}
-  copyActionKeycap: {fileID: 4729346174599176908}
-  outcomeEmote: {fileID: 7339128556762963598}
-  minimapMap: {fileID: 4010536328745439137}
-  minimapPlaceholder: {fileID: 2994969712445161647}
-  minimapStatus: {fileID: 371002831820234484}
 --- !u!1001 &429747530073113327
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -413,404 +330,80 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
---- !u!114 &371002831820234484 stripped
+--- !u!114 &1681813649571005455 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 58779918067244059, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_CorrespondingSourceObject: {fileID: 1342571319627695840, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 429747530073113327}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Script: {fileID: 11500000, guid: 95fa8b30cd8b54259a99163f9ca45361, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &384163024986931797 stripped
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSelectionView
+--- !u!114 &2725241243272759518 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 45624399968305338, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_CorrespondingSourceObject: {fileID: 2316193136320727601, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 429747530073113327}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
+  m_Script: {fileID: 11500000, guid: b8f9a950a9fa1493f820e657fc1f1fa7, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &609948012178972817 stripped
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererDialogueView
+--- !u!114 &3045559997203350099 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 972845029091320446, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_CorrespondingSourceObject: {fileID: 3437026844240380092, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 429747530073113327}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Script: {fileID: 11500000, guid: 9d47863db979e45249de61bc0598ddd3, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &664565952401008708 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 923174342990391979, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &819155419564696207 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1056371849360924768, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &911814137841103540 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 671510485550411867, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &1031596918560175152 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 839414406305986271, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &1508881611608495731 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1226767793024079004, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &1554134650188249764 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1182089490341345355, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &1656683329268824903 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1372328705988049320, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &2001736106646524775 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 2175622865706111368, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &2724725921363393182 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 2316801635519953009, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &2994969712445161647 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3199385390801027648, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &3021404246044448596 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3177547086187599291, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &3209961104379169342 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 2988938264654334161, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &3486823468543957140 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3861109226626800251, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &4010536328745439137 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3629492903446302030, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
---- !u!114 &4086919590757426293 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4413917604594476698, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &4410471892649047722 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4090361151197344837, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &4729346174599176908 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4923778356396826659, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
---- !u!114 &4919418744028438056 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4734281919698214087, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &4985189244574739390 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4672544186839705937, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererTutorialView
 --- !u!224 &4997246925671262505 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 429747530073113327}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &5836549866529829808 stripped
+--- !u!114 &6397357338853557997 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6127519152065294687, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_CorrespondingSourceObject: {fileID: 6715218342309184514, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 429747530073113327}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7479186131900882326}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3a91c95a8aa70439ebddababc76c29a3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererGameHudView
+--- !u!114 &6416603330320448970 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6699842911406309157, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 429747530073113327}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
+  m_Script: {fileID: 11500000, guid: bb1a82638b8294d6a9da848df1ab5b1c, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &6189033407477696817 stripped
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererMinimapView
+--- !u!114 &6590596321029093003 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5770544945193012190, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_CorrespondingSourceObject: {fileID: 6809519007376569444, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 429747530073113327}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
+  m_Script: {fileID: 11500000, guid: 8139e78ee200047078b4c40eb41b2811, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &6193213608026021595 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5765860883303341108, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &6669067138682067856 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6447901362481797503, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &7170108887162815793 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7383542811731822558, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &7218116057837160563 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7051831442731518620, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &7277055540563708313 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6992839455476976502, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &7332844652232207782 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6932652012164116297, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &7339128556762963598 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6930784274691136609, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
---- !u!114 &7352752127719132086 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7204910583218325849, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSkillBarView
 --- !u!1 &7479186131900882326 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 7079004624151568249, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &7806037689290797504 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7611744114943537967, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &8053111809088172612 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7652921573932282027, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &8216826364371308333 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8646573808510471618, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!1 &8910084773930197010 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 9101845210922869501, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 429747530073113327}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1803112288789029370
@@ -910,82 +503,27 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
---- !u!114 &439198564290237003 stripped
+--- !u!114 &858432245862791242 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 2242134928991515569, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
+  m_CorrespondingSourceObject: {fileID: 1363520340726978992, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
   m_PrefabInstance: {fileID: 1803112288789029370}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 1662925354539697704}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Script: {fileID: 11500000, guid: 0d78e77c4fd2f4ff791b617b7b7afbf9, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererEndingView
 --- !u!1 &1662925354539697704 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1015021711382095826, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
   m_PrefabInstance: {fileID: 1803112288789029370}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &6056921309569377405 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5551654960666051975, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
-  m_PrefabInstance: {fileID: 1803112288789029370}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &6406300555690947836 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4747411361908249862, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
-  m_PrefabInstance: {fileID: 1803112288789029370}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
 --- !u!224 &6539008476389630918 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 4880433609784263228, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
   m_PrefabInstance: {fileID: 1803112288789029370}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &7007978560989039000 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8666234436203276386, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
-  m_PrefabInstance: {fileID: 1803112288789029370}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &7390576298730229123 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 9193369587307375737, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
-  m_PrefabInstance: {fileID: 1803112288789029370}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &9100363056990729681 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7444180729814864939, guid: 118302724422c4e418c4f10c9a8c0981, type: 3}
-  m_PrefabInstance: {fileID: 1803112288789029370}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
 --- !u!1001 &4136751086915366672
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1083,88 +621,22 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
---- !u!114 &1099935550531557924 stripped
+--- !u!114 &117039418962223300 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3903337454912730420, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
+  m_CorrespondingSourceObject: {fileID: 4104889811963940820, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
   m_PrefabInstance: {fileID: 4136751086915366672}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 8934961942561576703}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
+  m_Script: {fileID: 11500000, guid: 525f079a0c1d24acfb40fc526aa59a46, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSettingsView
 --- !u!224 &1865511365759624730 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 2344987299194030346, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
   m_PrefabInstance: {fileID: 4136751086915366672}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &3011916392332891735 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1199306818306750791, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
-  m_PrefabInstance: {fileID: 4136751086915366672}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &4414231829317973436 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 300106494332197548, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
-  m_PrefabInstance: {fileID: 4136751086915366672}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &4505994796460159712 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 567510001552793072, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
-  m_PrefabInstance: {fileID: 4136751086915366672}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &4853530870565575285 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8805528681590633829, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
-  m_PrefabInstance: {fileID: 4136751086915366672}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9085046f02f69544eb97fd06b6048fe2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Toggle
---- !u!114 &5510181817564948866 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8435426927527544466, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
-  m_PrefabInstance: {fileID: 4136751086915366672}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 67db9e8f0e2ae9c40bc1e2b64352a6b4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Slider
---- !u!114 &8624822576184015628 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5681633281300927516, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
-  m_PrefabInstance: {fileID: 4136751086915366672}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 67db9e8f0e2ae9c40bc1e2b64352a6b4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Slider
 --- !u!1 &8934961942561576703 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 4798565329087855087, guid: e84836bcd2cde4d41813bc7423dc3634, type: 3}
@@ -1267,17 +739,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
---- !u!114 &479071491817503569 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4999461681442751848, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
 --- !u!1 &728580452500194235 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 5322083905443970434, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
@@ -1288,127 +749,17 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 5730226550664079516, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
   m_PrefabInstance: {fileID: 4884056020908703289}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1445592923786244250 stripped
+--- !u!114 &937872717309588592 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6325411264474779299, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
+  m_CorrespondingSourceObject: {fileID: 5675759658755312201, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
   m_PrefabInstance: {fileID: 4884056020908703289}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 728580452500194235}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Script: {fileID: 11500000, guid: e104631d8b2e4410d9d72c8f6e448237, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &2559038351177312491 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6936705337442997970, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &2809478822524972601 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7294389972730875904, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &3680442132164512976 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8130168910416900841, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &4382849361782336929 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 9157125735638078360, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &4837872983346981633 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 64234338447119672, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &5145748861465829137 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 337479982342496552, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &5475848420478696020 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 592707353948374125, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
---- !u!114 &6382011905156793494 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1969991759349004975, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &7850312793625250655 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3401993388652901734, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
---- !u!114 &8143527521914092590 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3658110578138841623, guid: 3adcdd637fd554ad2a0af2b2c58b3ea6, type: 3}
-  m_PrefabInstance: {fileID: 4884056020908703289}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererTitleView
 --- !u!1001 &8539484255094929785
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1511,74 +862,19 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 8560934747348360983, guid: 6988165525286485a94913f652de54f4, type: 3}
   m_PrefabInstance: {fileID: 8539484255094929785}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &683056398707629533 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 9221370390490637476, guid: 6988165525286485a94913f652de54f4, type: 3}
-  m_PrefabInstance: {fileID: 8539484255094929785}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &3228745013920715928 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6506744699015376353, guid: 6988165525286485a94913f652de54f4, type: 3}
-  m_PrefabInstance: {fileID: 8539484255094929785}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
 --- !u!1 &3775790411490061586 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 4820007120810906731, guid: 6988165525286485a94913f652de54f4, type: 3}
   m_PrefabInstance: {fileID: 8539484255094929785}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &5167140599055823410 stripped
+--- !u!114 &7012593935056476330 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3546313471094278987, guid: 6988165525286485a94913f652de54f4, type: 3}
+  m_CorrespondingSourceObject: {fileID: 1716973890248434131, guid: 6988165525286485a94913f652de54f4, type: 3}
   m_PrefabInstance: {fileID: 8539484255094929785}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 3775790411490061586}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
+  m_Script: {fileID: 11500000, guid: e4f19da2610c24e31a8ffd453fcdaadf, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &6664796179217021182 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3097433655499620743, guid: 6988165525286485a94913f652de54f4, type: 3}
-  m_PrefabInstance: {fileID: 8539484255094929785}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &7795685527255690130 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1922334455595520747, guid: 6988165525286485a94913f652de54f4, type: 3}
-  m_PrefabInstance: {fileID: 8539484255094929785}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
---- !u!114 &8753389085725837971 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1150704139399934954, guid: 6988165525286485a94913f652de54f4, type: 3}
-  m_PrefabInstance: {fileID: 8539484255094929785}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4661f175e50e545008524e4798d5709e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererButtonStateView
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererPauseView

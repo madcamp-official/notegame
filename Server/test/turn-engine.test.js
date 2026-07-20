@@ -5,6 +5,18 @@ import { AppError } from "../src/errors.js";
 import { createCampaignBlueprint } from "../src/domain/campaign.js";
 import { areaAt, generateWorld, isWalkable } from "../src/domain/world.js";
 import { FixedD20Source, createRunState, normalizeTravelRequest, normalizeTurnRequest, publicRun, resolveSafeTravel, resolveTurn } from "../src/domain/turn-engine.js";
+import { capabilitiesFor } from "../src/domain/entity-capabilities.js";
+import { enemyArchetype } from "../src/domain/enemy-archetypes.js";
+
+test("seeded enemy dependencies are deterministic and vary while explicit archetypes stay fixed", () => {
+  const id = "12345678-1234-5678-9abc-def012345678";
+  const first = enemyArchetype("enemy.slime.v1", 100, id);
+  assert.equal(enemyArchetype("enemy.slime.v1", 100, id), first);
+  const variants = new Set(Array.from({ length: 60 }, (_, index) =>
+    enemyArchetype("enemy.slime.v1", 100 + index, id)));
+  assert.ok(variants.size > 1);
+  assert.equal(enemyArchetype("enemy.dragon.v1", 100, id), "root_process");
+});
 
 const OWNER_ID = "33333333-3333-4333-8333-333333333333";
 
@@ -19,6 +31,129 @@ function runFixture(seed = 44) {
   };
   return createRunState({ campaign, ownerId: OWNER_ID, now, resolutionSeed: "private-test-seed" });
 }
+
+test("entity capabilities expose world-editing rules independently from entity kind", () => {
+  const removable = capabilitiesFor({ kind: "prop", active: true, protected: false, cloneable: false, state: { finaleComponent: "threat" } });
+  const ambient = capabilitiesFor({ kind: "prop", active: true, protected: false, cloneable: true, state: {} });
+  const hostile = capabilitiesFor({ kind: "enemy", active: true, protected: false, cloneable: false, state: {} });
+  assert.deepEqual({ canDelete: removable.canDelete, requiredAdminAccess: removable.requiredAdminAccess, reward: removable.grantsDefeatReward }, { canDelete: true, requiredAdminAccess: 3, reward: false });
+  assert.equal(ambient.canCopy, true);
+  assert.equal(ambient.canInteract, true);
+  assert.equal(hostile.canConnect, false);
+  assert.equal(hostile.grantsDefeatReward, true);
+});
+
+test("partial success emits an ability-specific deterministic consequence", () => {
+  const run = runFixture(57);
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const target = run.entities.find((item) => item.active && item.id !== player.id);
+  player.position = { x: target.position.x - 1, y: target.position.y };
+  const result = resolveTurn({
+    run,
+    request: normalizeSkillRequest({
+      idempotencyKey: "partial-search-0001", expectedRunVersion: run.version,
+      ability: "search", targetEntityId: target.id, intent: "불완전한 단서를 추적한다"
+    }),
+    d20Source: new FixedD20Source(2)
+  });
+  assert.equal(result.turn.outcome, "partial_success");
+  assert.ok(result.turn.events.some((event) => event.type === "partial_search_noise"));
+  assert.ok(!result.turn.events.some((event) => event.type === "status_added"));
+  assert.equal(result.run.exposed, true);
+});
+
+test("technical debt thresholds mutate authoritative state exactly once", () => {
+  const run = runFixture(58);
+  run.metrics.technicalDebt = 75;
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const target = run.entities.find((item) => item.active && item.id !== player.id);
+  player.position = { x: target.position.x - 1, y: target.position.y };
+  const first = resolveTurn({
+    run,
+    request: normalizeSkillRequest({ idempotencyKey: "debt-trigger-0001", expectedRunVersion: run.version,
+      ability: "search", targetEntityId: target.id }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.deepEqual(first.run.debtThresholdsTriggered, [25, 50, 75]);
+  assert.ok(first.turn.events.some((event) => event.type === "debt_backflow_clone_drift"));
+  assert.ok(first.turn.events.some((event) => ["debt_backflow_hostile_spawned", "debt_backflow_blocked"].includes(event.type)));
+  assert.ok(first.turn.events.some((event) => event.type === "debt_paradox_surge"));
+
+  const second = resolveTurn({
+    run: first.run,
+    request: normalizeSkillRequest({ idempotencyKey: "debt-trigger-0002", expectedRunVersion: first.run.version,
+      ability: "search", targetEntityId: target.id }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.ok(!second.turn.events.some((event) => event.type.startsWith("debt_backflow_") || event.type.startsWith("debt_paradox_")));
+});
+
+test("public ending board reports concrete missing recipe conditions", () => {
+  const run = runFixture(59);
+  run.progressLevel = 3;
+  const snapshot = publicRun(run);
+  assert.equal(snapshot.endingConditionReports.length, run.endingCandidates.filter((ending) => !ending.emergency).length);
+  assert.ok(snapshot.endingConditionReports.every((report) => report.totalCount > 1));
+  assert.ok(snapshot.endingConditionReports.some((report) => report.conditions.some((condition) => !condition.satisfied)));
+  assert.ok(snapshot.endingConditionReports.every((report) => report.satisfiedCount === report.conditions.filter((condition) => condition.satisfied).length));
+});
+
+test("connecting an NPC creates a persistent promise and nearby support bonus", () => {
+  const run = runFixture(60);
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const npc = run.entities.find((item) => item.kind === "npc");
+  player.position = { x: npc.position.x - 1, y: npc.position.y };
+  const connected = resolveTurn({
+    run,
+    request: normalizeSkillRequest({ idempotencyKey: "npc-promise-connect", expectedRunVersion: run.version,
+      ability: "connect", targetEntityId: player.id, secondaryTargetEntityId: npc.id }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.equal(connected.run.npcPromises.length, 1);
+  assert.equal(connected.run.npcPromises[0].status, "made");
+  assert.ok(connected.turn.events.some((event) => event.type === "npc_promise_made"));
+
+  const searched = resolveTurn({
+    run: connected.run,
+    request: normalizeSkillRequest({ idempotencyKey: "npc-promise-search", expectedRunVersion: connected.run.version,
+      ability: "search", targetEntityId: npc.id }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.ok(searched.turn.events.some((event) => event.type === "companion_support_applied" && event.modifier === 1));
+  assert.equal(searched.turn.dice.modifier, 6);
+});
+
+test("Root Process requires Search before Delete", () => {
+  const run = runFixture(61);
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const target = run.entities.find((item) => item.kind === "enemy");
+  target.assetId = "enemy.dragon.v1";
+  player.position = { x: target.position.x - 1, y: target.position.y };
+  assert.equal(enemyArchetype(target.assetId), "root_process");
+  const deleteRequest = normalizeSkillRequest({ idempotencyKey: "root-process-delete-1",
+    expectedRunVersion: run.version, ability: "delete", targetEntityId: target.id });
+  assert.throws(() => resolveTurn({ run, request: deleteRequest, d20Source: new FixedD20Source(20) }),
+    (error) => error.code === "DEPENDENCY_NOT_REVEALED");
+  const searched = resolveTurn({ run, request: normalizeSkillRequest({ idempotencyKey: "root-process-search",
+    expectedRunVersion: run.version, ability: "search", targetEntityId: target.id }), d20Source: new FixedD20Source(20) });
+  const deleted = resolveTurn({ run: searched.run, request: normalizeSkillRequest({
+    idempotencyKey: "root-process-delete-2", expectedRunVersion: searched.run.version,
+    ability: "delete", targetEntityId: target.id }), d20Source: new FixedD20Source(20) });
+  assert.ok(deleted.turn.events.some((event) => event.type === "health_changed" && event.entityId === target.id));
+});
+
+test("unsearched Cache Replicator creates one deterministic copy on Delete", () => {
+  const run = runFixture(62);
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const target = run.entities.find((item) => item.kind === "enemy");
+  target.assetId = "enemy.mushroom-blue.v1";
+  target.state.hp = Math.min(5, target.state.hp);
+  player.position = { x: target.position.x - 1, y: target.position.y };
+  const result = resolveTurn({ run, request: normalizeSkillRequest({ idempotencyKey: "cache-replicator-delete",
+    expectedRunVersion: run.version, ability: "delete", targetEntityId: target.id }), d20Source: new FixedD20Source(20) });
+  assert.ok(result.turn.events.some((event) => event.type === "cache_enemy_replicated"));
+  assert.equal(result.run.entities.filter((item) => item.state?.sourceEntityId === target.id && item.state?.cacheReplica).length, 1);
+});
 
 function adjacentWalkable(run) {
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
@@ -67,6 +202,40 @@ test("Ctrl F investigates one target and Ctrl A damages every nearby enemy", () 
   assert.ok(selected.turn.events.some((event) => event.type === "area_attack_resolved"));
 });
 
+test("NPC investigation reveals one persistent clue and blocks repeated rewards", () => {
+  const run = runFixture(118);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const npc = run.entities.find((entity) => entity.kind === "npc" && entity.active);
+  player.position = { x: npc.position.x - 1, y: npc.position.y };
+  const first = resolveTurn({
+    run,
+    request: normalizeSkillRequest({ ability: "search", targetEntityId: npc.id,
+      idempotencyKey: "npc-investigation-0001", expectedRunVersion: 1 }),
+    d20Source: new FixedD20Source(20)
+  });
+  const firstRelationship = first.run.npcRelationships.find((item) => item.npcId === npc.id);
+  const clueEvent = first.turn.events.find((event) => event.type === "npc_clue_revealed");
+  assert.ok(clueEvent?.line);
+  assert.ok(clueEvent?.clueTitle);
+  assert.equal(clueEvent?.clueContent, npc.state.secret);
+  assert.match(clueEvent?.clueMeaning || "", /관리자|기록|붕괴|통제/);
+  assert.match(clueEvent?.storyConnection || "", /붕괴|관리자|통제/);
+  assert.ok(clueEvent?.nextObjective);
+  assert.equal(first.run.entities.find((item) => item.id === npc.id).state.revealedClues.length, 1);
+  assert.ok(first.run.canonicalFacts.some((fact) => fact.subject === npc.id && fact.predicate === "testimony"));
+  assert.ok(first.run.npcMemories.some((memory) => memory.npcId === npc.id && memory.expired === false));
+
+  const repeat = resolveTurn({
+    run: first.run,
+    request: normalizeSkillRequest({ ability: "search", targetEntityId: npc.id,
+      idempotencyKey: "npc-investigation-0002", expectedRunVersion: first.run.version }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.ok(repeat.turn.events.some((event) => event.type === "npc_investigation_repeat"));
+  assert.equal(repeat.run.npcRelationships.find((item) => item.npcId === npc.id).trust, firstRelationship.trust);
+  assert.equal(repeat.run.entities.find((item) => item.id === npc.id).state.revealedClues.length, 1);
+});
+
 test("books and crates block travel and support bounded nearby interaction", () => {
   const run = runFixture(91);
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
@@ -98,6 +267,18 @@ test("books and crates block travel and support bounded nearby interaction", () 
   assert.equal(committedCrate.state.interactionCount, 1);
   assert.equal(interacted.run.focus, run.focus + 1);
   assert.ok(interacted.turn.events.some((event) => event.type === "entity_interacted"));
+
+  interacted.run.focus = interacted.run.maxFocus - 3;
+  interacted.run.gold = 5;
+  const purchased = resolveTurn({
+    run: interacted.run,
+    request: normalizeSkillRequest({ idempotencyKey: "interact-crate-0002",
+      expectedRunVersion: interacted.run.version, ability: "interact", targetEntityId: crate.id }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.equal(purchased.run.gold, 3);
+  assert.equal(purchased.run.focus, purchased.run.maxFocus - 1);
+  assert.ok(purchased.turn.events.some((event) => event.type === "supply_purchased"));
 });
 
 test("copy validates and mutates only the cloned committed state", () => {
@@ -169,7 +350,7 @@ test("MOVE is rejected from the consuming action endpoint and blocked travel nev
   assert.equal(run.version, 1);
 });
 
-test("Undo rewinds the two most recent reversible turns and the turn counter", () => {
+test("Undo compensates two reversible turns while turn and version stay monotonic", () => {
   const run = runFixture(47);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const targets = run.entities.filter((item) => item.kind === "prop").slice(0, 2);
@@ -205,10 +386,11 @@ test("Undo rewinds the two most recent reversible turns and the turn counter", (
     d20Source: new FixedD20Source(20)
   });
   assert.equal(undone.run.connections.filter((item) => item.active).length, 0);
-  assert.equal(undone.run.currentTurn, 0);
+  assert.equal(undone.run.currentTurn, 3);
   assert.equal(undone.run.world.layoutHash, layoutHash);
-  assert.equal(undone.turn.events.filter((event) => event.type === "turn_rewound").length, 2);
-  assert.ok(undone.turn.events.some((event) => event.type === "time_rewind_completed"));
+  assert.equal(undone.turn.events.filter((event) => event.type === "turn_compensated").length, 2);
+  assert.ok(undone.turn.events.some((event) => event.type === "undo_compensation_completed"));
+  assert.ok(undone.turn.events.some((event) => event.type === "undo_compensated"));
 
   const replayed = resolveTurn({
     run: undone.run,
@@ -218,7 +400,7 @@ test("Undo rewinds the two most recent reversible turns and the turn counter", (
     }),
     d20Source: new FixedD20Source(20)
   });
-  assert.equal(replayed.turn.turnNo, searched.turn.turnNo);
+  assert.equal(replayed.turn.turnNo, 4);
   assert.notEqual(replayed.turn.id, searched.turn.id);
 });
 
@@ -229,15 +411,27 @@ test("Restore repairs the recent damage from a Delete single-target attack", () 
   player.position = { x: 2, y: 2 };
   target.position = { x: 3, y: 2 };
   const hpBefore = target.state.hp;
+  let preparedRun = run;
+  let expectedVersion = 1;
+  if (enemyArchetype(target.assetId, run.worldSeed ?? run.world?.worldSeed, target.id) === "root_process") {
+    const searched = resolveTurn({
+      run,
+      request: normalizeSkillRequest({ idempotencyKey: "restore-presearch-1", expectedRunVersion: 1,
+        ability: "search", targetEntityId: target.id, intent: "의존성을 먼저 조사한다" }),
+      d20Source: new FixedD20Source(20)
+    });
+    preparedRun = searched.run;
+    expectedVersion = 2;
+  }
   const attacked = resolveTurn({
-    run,
-    request: normalizeSkillRequest({ idempotencyKey: "delete-restore-1", expectedRunVersion: 1, ability: "delete", targetEntityId: target.id, intent: "적 하나를 공격한다" }),
+    run: preparedRun,
+    request: normalizeSkillRequest({ idempotencyKey: "delete-restore-1", expectedRunVersion: expectedVersion, ability: "delete", targetEntityId: target.id, intent: "적 하나를 공격한다" }),
     d20Source: new FixedD20Source(20)
   });
   assert.equal(attacked.run.entities.find((item) => item.id === target.id).state.hp, Math.max(0, hpBefore - 5));
   const restored = resolveTurn({
     run: attacked.run,
-    request: normalizeSkillRequest({ idempotencyKey: "restore-0001", expectedRunVersion: 2, ability: "restore", targetEntityId: target.id, intent: "방금 받은 피해를 복구한다" }),
+    request: normalizeSkillRequest({ idempotencyKey: "restore-0001", expectedRunVersion: expectedVersion + 1, ability: "restore", targetEntityId: target.id, intent: "방금 받은 피해를 복구한다" }),
     d20Source: new FixedD20Source(20)
   });
   assert.equal(restored.run.entities.find((item) => item.id === target.id).state.hp, hpBefore);

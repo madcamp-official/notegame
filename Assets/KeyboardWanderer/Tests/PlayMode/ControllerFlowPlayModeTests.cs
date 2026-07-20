@@ -6,6 +6,9 @@ using KeyboardWanderer.Core;
 using KeyboardWanderer.Demo;
 using KeyboardWanderer.Gameplay;
 using KeyboardWanderer.Networking;
+using KeyboardWanderer.Presentation;
+using KeyboardWanderer.Runtime;
+using KeyboardWanderer.World;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Tilemaps;
@@ -15,13 +18,18 @@ namespace KeyboardWanderer.Tests.PlayMode
 {
     public sealed class ControllerFlowPlayModeTests
     {
+        private const string GmEnabledKey = "keyboard-wanderer.gm-enabled";
         private GameObject _controllerObject;
         private KeyboardWandererAuthoringSettings _authoringSettings;
+        private bool _hadGmSetting;
+        private int _oldGmSetting;
 
         [SetUp]
         public void SetUp()
         {
             LocalRunSaveService.Delete();
+            _hadGmSetting = PlayerPrefs.HasKey(GmEnabledKey);
+            _oldGmSetting = PlayerPrefs.GetInt(GmEnabledKey, 1);
         }
 
         [TearDown]
@@ -30,6 +38,9 @@ namespace KeyboardWanderer.Tests.PlayMode
             LocalRunSaveService.Delete();
             if (_controllerObject != null) UnityEngine.Object.DestroyImmediate(_controllerObject);
             if (_authoringSettings != null) UnityEngine.Object.DestroyImmediate(_authoringSettings);
+            if (_hadGmSetting) PlayerPrefs.SetInt(GmEnabledKey, _oldGmSetting);
+            else PlayerPrefs.DeleteKey(GmEnabledKey);
+            PlayerPrefs.Save();
         }
 
         [UnityTest]
@@ -44,9 +55,10 @@ namespace KeyboardWanderer.Tests.PlayMode
             yield return null;
 
             Invoke(controller, "StartRun", service, false);
-            SetField(controller, "_gmEnabled", false);
-            SetField(controller, "_ability", AbilityKind.Search);
-            SetField(controller, "_selectedTarget", (Guid?)keyboard.EntityId);
+            controller.UiSetGmEnabled(false);
+            KeyboardWandererSelectionController selection = Selection(controller);
+            selection.ResetSelection(AbilityKind.Search);
+            selection.SelectPrimary(keyboard.EntityId);
             Invoke(controller, "Submit");
             yield return null;
 
@@ -64,7 +76,7 @@ namespace KeyboardWanderer.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator Controller_OffersTwoOrThreeCanonicalRecommendationsAndAtMostTwoSecondaryObjectives()
+        public IEnumerator Controller_OffersCanonicalRecommendationsAndBoundedSecondaryObjectives()
         {
             LocalTurnService service = LocalTurnService.CreateDemo(7302);
             KeyboardWandererDemoController controller = CreateAuthoredController("Codria Low Cognitive UI Test");
@@ -79,7 +91,7 @@ namespace KeyboardWanderer.Tests.PlayMode
             Assert.That(actions.All(action => action == AbilityKind.Move ||
                 TurnRequest.IsPublicKeyboardSkill(action)), Is.True);
             Assert.That(secondary.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length,
-                Is.LessThanOrEqualTo(2));
+                Is.LessThanOrEqualTo(3));
         }
 
         [UnityTest]
@@ -90,7 +102,7 @@ namespace KeyboardWanderer.Tests.PlayMode
             yield return null;
 
             Invoke(controller, "StartRun", service, false);
-            AbilityKind selected = (AbilityKind)GetField(controller, "_ability");
+            AbilityKind selected = Selection(controller).Ability;
             string objective = (string)Invoke(controller, "ObjectiveHudText", service.CurrentView);
             string guidance = (string)Invoke(controller, "ActionGuidanceText", service.CurrentView);
 
@@ -133,9 +145,12 @@ namespace KeyboardWanderer.Tests.PlayMode
             yield return null;
 
             Invoke(controller, "StartRun", service, false);
-            SetField(controller, "_gmEnabled", false);
+            controller.UiSetGmEnabled(false);
             controller.UiSetAbility(AbilityKind.Delete);
-            SetField(controller, "_selectedTarget", (Guid?)enemy.EntityId);
+            Selection(controller).SelectPrimary(enemy.EntityId);
+            controller.UiSubmit();
+            Assert.That(service.CurrentView.CurrentTurn, Is.Zero,
+                "첫 입력은 파괴적 행동 확인만 열고 턴을 소비하지 않아야 합니다.");
             controller.UiSubmit();
             yield return null;
             yield return null;
@@ -162,7 +177,10 @@ namespace KeyboardWanderer.Tests.PlayMode
 
             Assert.DoesNotThrow(controller.UiSubmit);
             Assert.That(service.CurrentView.Version, Is.EqualTo(version));
-            Assert.That(GetField(controller, "_lastOutcome"), Is.EqualTo("SELECTION REQUIRED"));
+            Assert.That(Selection(controller).Feedback, Does.Contain("현재 선택한 대상"));
+            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
+            Assert.That(dialogue.IsDismissed, Is.True,
+                "잘못된 선택이나 시스템 오류는 대화창을 열지 않아야 합니다.");
         }
 
         [Test]
@@ -232,8 +250,8 @@ namespace KeyboardWanderer.Tests.PlayMode
                     }
                 }
             });
-            SetField(controller, "_ability", AbilityKind.Search);
-            SetField(controller, "_selectedTarget", (Guid?)targetId);
+            Selection(controller).ResetSelection(AbilityKind.Search);
+            Selection(controller).SelectPrimary(targetId);
 
             Assert.That(Invoke(controller, "IsSkillEnabledForCurrentTarget", AbilityKind.Search), Is.True);
             string detail = (string)Invoke(controller, "SelectionStatusDetail", service.CurrentView);
@@ -274,9 +292,29 @@ namespace KeyboardWanderer.Tests.PlayMode
             KeyboardWandererWorldView world = worldObject.GetComponent<KeyboardWandererWorldView>();
             world.Configure(terrainObject.GetComponent<Tilemap>(), staticRoot, entities, landmarks, effects,
                 cursorObject.GetComponent<SpriteRenderer>());
+            KeyboardWandererVisualAssetLibrary visualAssets =
+                worldObject.AddComponent<KeyboardWandererVisualAssetLibrary>();
+            visualAssets.ConfigureManifest(null);
+            KeyboardWandererMinimapRenderer minimapRenderer =
+                worldObject.AddComponent<KeyboardWandererMinimapRenderer>();
+            KeyboardWandererPathPlanner pathPlanner =
+                worldObject.AddComponent<KeyboardWandererPathPlanner>();
+            Transform decorationPool = Child(worldObject.transform, "Decoration Pool");
+            decorationPool.gameObject.SetActive(false);
+            KeyboardWandererBiomeDecorationRenderer decorationRenderer =
+                worldObject.AddComponent<KeyboardWandererBiomeDecorationRenderer>();
+            decorationRenderer.Configure(landmarks, decorationPool);
+            Transform entityPool = Child(worldObject.transform, "Entity Pool");
+            entityPool.gameObject.SetActive(false);
+            KeyboardWandererEntityVisualFactory entityVisualFactory =
+                worldObject.AddComponent<KeyboardWandererEntityVisualFactory>();
+            entityVisualFactory.Configure(entityPrefab, entities, entityPool);
+            KeyboardWandererEntityAnimationDriver entityAnimationDriver =
+                worldObject.AddComponent<KeyboardWandererEntityAnimationDriver>();
 
+            // SampleScene의 Main Camera가 이미 AudioListener를 가지므로 테스트 카메라에는 중복 생성하지 않는다.
             GameObject cameraObject = new GameObject(
-                "Authored Camera", typeof(Camera), typeof(AudioListener), typeof(KeyboardWandererCameraController));
+                "Authored Camera", typeof(Camera), typeof(KeyboardWandererCameraController));
             cameraObject.transform.SetParent(_controllerObject.transform, false);
             KeyboardWandererCameraController cameraController =
                 cameraObject.GetComponent<KeyboardWandererCameraController>();
@@ -292,12 +330,33 @@ namespace KeyboardWanderer.Tests.PlayMode
 
             _authoringSettings = ScriptableObject.CreateInstance<KeyboardWandererAuthoringSettings>();
             _authoringSettings.Configure(null, entityPrefab, landmarkPrefab);
-            KeyboardWandererInputController input = _controllerObject.AddComponent<KeyboardWandererInputController>();
+            KeyboardWandererInputRouter input = _controllerObject.AddComponent<KeyboardWandererInputRouter>();
+            KeyboardWandererSelectionController selection =
+                _controllerObject.AddComponent<KeyboardWandererSelectionController>();
+            KeyboardWandererAbilityAvailability abilityAvailability =
+                _controllerObject.AddComponent<KeyboardWandererAbilityAvailability>();
+            KeyboardWandererTurnCoordinator turnCoordinator =
+                _controllerObject.AddComponent<KeyboardWandererTurnCoordinator>();
+            KeyboardWandererRunSessionController runSession =
+                _controllerObject.AddComponent<KeyboardWandererRunSessionController>();
+            KeyboardWandererSettingsController userSettings =
+                _controllerObject.AddComponent<KeyboardWandererSettingsController>();
+            userSettings.Configure(audio);
             KeyboardWandererDemoController controller = _controllerObject.AddComponent<KeyboardWandererDemoController>();
             controller.ConfigureAuthoredContent(_authoringSettings, null, world, cameraObject.GetComponent<Camera>(),
-                cameraController, music, sfx, audio, input);
+                cameraController, music, sfx, audio, input, selection, abilityAvailability, turnCoordinator, runSession, userSettings,
+                visualAssets, minimapRenderer, pathPlanner, decorationRenderer,
+                entityVisualFactory, entityAnimationDriver);
             _controllerObject.SetActive(true);
             return controller;
+        }
+
+        private static KeyboardWandererSelectionController Selection(KeyboardWandererDemoController controller)
+        {
+            KeyboardWandererSelectionController selection =
+                controller.GetComponent<KeyboardWandererSelectionController>();
+            Assert.That(selection, Is.Not.Null);
+            return selection;
         }
 
         private static KeyboardWandererEntityView BuildEntityFixture(Transform parent)

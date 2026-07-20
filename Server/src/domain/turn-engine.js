@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { assert, AppError } from "../errors.js";
 import { clone, deterministicUuid, fingerprint } from "./serialization.js";
-import { advanceStoryDirector, campaignAct, chooseEnding, macroPhaseForBeat, resolveFinale } from "./campaign.js";
+import { advanceStoryDirector, campaignAct, chooseEnding, endingConditionReports, macroPhaseForBeat, resolveFinale } from "./campaign.js";
 import { TILE, areaAt, isWalkable, movementCost, publicWorld, tileAt } from "./world.js";
 import { analyzeIntent, detectIntentActions, realizationAlignment } from "./intent.js";
 import { containsProtectedFactReference } from "./protected-mechanics.js";
 import { applyScenePlan } from "./consequence-resolver.js";
+import { capabilitiesFor } from "./entity-capabilities.js";
+import { enemyArchetype } from "./enemy-archetypes.js";
 import { CORE_NPC_CATALOG, monsterForAsset } from "./content-catalog.js";
 import {
   ADMIN_ACCESS_LEVELS,
@@ -158,11 +160,14 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     const slot = roleSlots[index % roleSlots.length] || npcSlots[index % npcSlots.length];
     const coreNpc = CORE_NPC_CATALOG[index % CORE_NPC_CATALOG.length];
     const npcAssetId = slot.allowedAssetIds.includes(coreNpc.assetId) ? coreNpc.assetId : slot.allowedAssetIds[index % slot.allowedAssetIds.length];
+    const concerns = ["누군가 통제 기록을 고쳐 쓰고 있다", "같은 오류가 의도적으로 반복되고 있다", "관리자 권한을 흉내 내는 신호가 돌아다닌다"];
+    const secrets = ["붕괴 직전 관리자 통로에서 낯선 접속 흔적을 보았다", "삭제된 기록 조각에 내부 통제 시스템의 서명이 남아 있었다", "안전하다고 알려진 경로가 사실은 ROOT_SYSTEM으로 이어진다"];
     entities.push(entity(deterministicUuid(`${runId}:npc:${role.id}`), "npc", npcAssetId, coreNpc.name || role.name || role.displayName || seededName(campaign.worldSeed, index), slot, false, true, false, {
       hp: 8, maxHp: 8, npcRole: role.role, slotId: slot.id, campaignRole: role.campaignRole,
       evidenceKey: role.evidenceKey, designatedCampaignEvidence: true, canonicalNpcId: coreNpc.id,
       roleTags: [...coreNpc.roleTags], factionId: coreNpc.factionId, goal: coreNpc.goal,
-      motivation: coreNpc.motivation, traits: coreNpc.roleTags.includes("COMBATANT") ? ["GUARDIAN"] : []
+      motivation: coreNpc.motivation, concern: concerns[index % concerns.length], secret: secrets[index % secrets.length],
+      revealedClues: [], traits: coreNpc.roleTags.includes("COMBATANT") ? ["GUARDIAN"] : []
     }));
   }
   const bookSlot = propSlots[0];
@@ -281,6 +286,10 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     endingCandidates: clone(campaign.endingCandidates),
     forbiddenEvents: clone(campaign.forbiddenEvents || []),
     focus: 10,
+    maxFocus: 10,
+    experience: 0,
+    gold: 5,
+    rewardedEnemyIds: [],
     pressure: 0,
     exposed: false,
     endingCode: null,
@@ -319,6 +328,7 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     finalPlacement: null,
     npcMemories: [],
     npcRelationships,
+    npcPromises: [],
     directorState: {
       decisionNo: 0,
       recentSceneTypes: [],
@@ -708,7 +718,7 @@ function prepare(run, request) {
   assertSpecialSkillCost(run, specialCost, request.skillId);
   if (request.ability === "copy") {
     assert(!request.secondaryTargetEntityId, 422, "TARGET_INVALID", "Copy accepts one source entity.");
-    assert(target.active && target.cloneable && !target.protected, 422, "ENTITY_NOT_CLONEABLE", "The selected entity cannot be copied.");
+    assert(capabilitiesFor(target).canCopy, 422, "ENTITY_NOT_CLONEABLE", "The selected entity cannot be copied.");
     assert(request.destination && isWalkable(run.world, request.destination), 422, "DESTINATION_INVALID", "Copy requires a walkable destination.");
     assert(!isBlockingOccupied(run, request.destination), 422, "DESTINATION_OCCUPIED", "Copy destination is occupied.");
     assert(!samePoint(target.position, request.destination), 422, "DESTINATION_INVALID", "Copy destination must differ from source.");
@@ -722,8 +732,11 @@ function prepare(run, request) {
   }
   if (request.ability === "delete") {
     assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Delete accepts exactly one entity target.");
-    assert(target.active && target.kind === "enemy" && !target.state?.disabled, 422, "TARGET_NOT_HOSTILE", "Delete is a single-target attack and requires one active enemy.");
-    if (target.state?.finaleComponent) assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all three administrator access levels, the essential clue, and physical Root System entry.");
+    const targetCapabilities = capabilitiesFor(target);
+    assert(targetCapabilities.canDelete, 422, "TARGET_NOT_HOSTILE", "Delete requires an active hostile or removable system component.");
+    if (enemyArchetype(target.assetId, run.worldSeed ?? run.world?.worldSeed, target.id) === "root_process")
+      assert(target.state?.revealed === true, 422, "DEPENDENCY_NOT_REVEALED", "Root Process dependency must be revealed with Search before Delete.");
+    if (targetCapabilities.requiredAdminAccess > 0) assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all three administrator access levels, the essential clue, and physical Root System entry.");
     assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Delete target must be within 3 tiles.");
     return { difficulty: 12, modifier: 3 + specialCost.modifierBonus, ...specialCost, target, damage: 5, normalizedAttempt: `Single-target attack on ${target.name}` };
   }
@@ -732,6 +745,7 @@ function prepare(run, request) {
     const secondary = request.secondaryTargetEntityId ? entityById(run, request.secondaryTargetEntityId) : null;
     assert(target.active && secondary, 422, "SECONDARY_TARGET_REQUIRED", "Connect requires two active entities.");
     assert(target.id !== secondary.id, 422, "TARGETS_IDENTICAL", "Connect targets must differ.");
+    assert(capabilitiesFor(target).canConnect && capabilitiesFor(secondary).canConnect, 422, "TARGET_NOT_CONNECTABLE", "Connect endpoints must be active and non-hostile.");
     assert(manhattan(player.position, target.position) <= 5 && manhattan(player.position, secondary.position) <= 5, 422, "OUT_OF_RANGE", "Both connection targets must be within 5 tiles.");
     assert(!run.connections.some((item) => item.active && ((item.fromId === target.id && item.toId === secondary.id) || (item.fromId === secondary.id && item.toId === target.id))), 422, "CONNECTION_EXISTS", "An active connection already joins those targets.");
     const finaleRelated = target.state?.finaleComponent || secondary.state?.finaleComponent;
@@ -885,12 +899,22 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
     target.state.hp = Math.max(0, priorHp - damage);
     target.state.disabled = target.state.hp === 0;
     events.push({ type: "health_changed", entityId: target.id, delta: -damage, hp: target.state.hp, disabled: target.state.disabled, attackType: "single" });
+    if (target.state.disabled) {
+      replicateCacheEnemy(run, target, turnNo, request.idempotencyKey, events);
+      grantDefeatReward(run, target, events);
+    }
     inverseOps.push({ type: "restore_state", entityId: target.id, stateSnapshot: { hp: priorHp, disabled: priorDisabled }, allowedFields: ["hp", "disabled"] });
   } else if (request.ability === "connect") {
     const connection = { id: deterministicUuid(`${run.id}:${turnNo}:${request.idempotencyKey}:connection`), fromId: preparation.target.id, toId: preparation.secondary.id, relation: "temporary_link", createdTurn: turnNo, expiresTurn: Math.min(run.turnLimit, turnNo + 5), active: true };
     run.connections.push(connection);
     events.push({ type: "connection_created", ...connection });
     inverseOps.push({ type: "remove_connection", connectionId: connection.id });
+    for (const endpoint of [preparation.target, preparation.secondary]) {
+      if (endpoint.kind !== "npc" || run.npcPromises.some((promise) => promise.npcId === endpoint.id)) continue;
+      run.npcPromises.push({ npcId: endpoint.id, status: "made", madeTurn: turnNo,
+        promise: "ROOT_SYSTEM까지 함께 동행한다" });
+      events.push({ type: "npc_promise_made", npcId: endpoint.id, turnNo, supportBonus: 1 });
+    }
     if ((preparation.specialSkill?.modifierIds || []).includes("EXTRA_TARGET")) {
       const player = entityById(run, run.playerEntityId);
       const extra = run.entities.find((item) => item.active && ![player.id, preparation.target.id, preparation.secondary.id].includes(item.id) && manhattan(player.position, item.position) <= 5);
@@ -928,9 +952,9 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
       assert(applied > 0, 409, "UNDO_CONFLICT", "One of the two prior turns can no longer be rewound safely.");
       reversible.consumed = true;
       sourceTurns.push(reversible.turnNo);
-      events.push({ type: "turn_rewound", sourceTurn: reversible.turnNo, sourceAbility: reversible.ability });
+      events.push({ type: "turn_compensated", sourceTurn: reversible.turnNo, sourceAbility: reversible.ability });
     }
-    events.push({ type: "time_rewind_completed", turns: 2, sourceTurns, focusCost: preparation.focusCost });
+    events.push({ type: "undo_compensation_completed", turns: 2, sourceTurns, focusCost: preparation.focusCost });
   } else if (request.ability === "search") {
     const target = entityById(run, preparation.target.id);
     const priorRevealed = Boolean(target.state?.revealed);
@@ -949,6 +973,7 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
       current.state.hp = Math.max(0, priorHp - damage);
       current.state.disabled = current.state.hp === 0;
       events.push({ type: "health_changed", entityId: current.id, delta: -damage, hp: current.state.hp, disabled: current.state.disabled, attackType: "area" });
+      if (current.state.disabled) grantDefeatReward(run, current, events);
       inverseOps.push({ type: "restore_state", entityId: current.id, stateSnapshot: { hp: priorHp, disabled: priorDisabled }, allowedFields: ["hp", "disabled"] });
     }
     events.push({ type: "area_attack_resolved", radius: preparation.radius, affectedCount: preparation.enemies.length });
@@ -972,6 +997,18 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
       run.focus = Math.min(run.maxFocus || 10, run.focus + 1);
       if (run.focus > priorFocus) events.push({ type: "resource_changed", resource: "focus", delta: run.focus - priorFocus, value: run.focus });
       target.state.opened = true;
+    } else if (!firstInteraction && String(target.assetId || "").startsWith("item.crate")) {
+      const price = 2;
+      if ((run.gold || 0) >= price && run.focus < run.maxFocus) {
+        const priorFocus = run.focus;
+        run.gold -= price;
+        run.focus = Math.min(run.maxFocus, run.focus + 2);
+        events.push({ type: "resource_changed", resource: "gold", delta: -price, value: run.gold });
+        events.push({ type: "resource_changed", resource: "focus", delta: run.focus - priorFocus, value: run.focus });
+        events.push({ type: "supply_purchased", resource: "focus", price });
+      } else {
+        events.push({ type: "supply_purchase_rejected", reason: (run.gold || 0) < price ? "gold_required" : "focus_full", price });
+      }
     }
   } else if (request.ability === "negotiate") {
     const relationship = run.npcRelationships.find((item) => item.npcId === preparation.target.id);
@@ -985,12 +1022,136 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
     const player = entityById(run, run.playerEntityId);
     const priorFocus = run.focus;
     const priorHp = player.state.hp;
-    run.focus = Math.min(10, run.focus + preparation.focusRecovery);
+    run.focus = Math.min(run.maxFocus || 10, run.focus + preparation.focusRecovery);
     player.state.hp = Math.min(player.state.maxHp, player.state.hp + preparation.healthRecovery);
     if (run.focus !== priorFocus) events.push({ type: "resource_changed", resource: "focus", delta: run.focus - priorFocus, reason: "rest" });
     if (player.state.hp !== priorHp) events.push({ type: "health_changed", entityId: player.id, delta: player.state.hp - priorHp, hp: player.state.hp, reversible: false, reason: "rest" });
   }
   if (inverseOps.length > 0) run.reversibleLedger.push({ turnNo, ability: request.ability, reversible: true, consumed: false, inverseOps });
+}
+
+function npcClueDetails(run, npc) {
+  const secret = String(npc.state?.secret || "말해지지 않은 증언").trim();
+  const otherNpcs = run.entities.filter((item) => item.active && item.kind === "npc" && item.id !== npc.id);
+  const nextTarget = otherNpcs.find((item) => (item.state?.roleTags || []).includes("ROOT_WITNESS"))
+    || otherNpcs.find((item) => (item.state?.roleTags || []).includes("AUDITOR"))
+    || otherNpcs[0]
+    || null;
+  let clueTitle = "붕괴 직전의 숨겨진 증언";
+  let meaning = "공식 기록과 실제 사건의 순서가 다르며, 누군가 붕괴 이전부터 진실을 감추고 있었다.";
+  const storyConnection = "코드리아의 붕괴가 우연한 외부 사고가 아니라 관리자 통제 계층 내부에서 시작됐을 가능성이 커졌다.";
+  if (secret.includes("접속 흔적")) {
+    clueTitle = "관리자 통로의 낯선 접속 흔적";
+    meaning = "붕괴가 시작되기 전에 권한 없는 누군가가 관리자 전용 통로를 사용했다.";
+  } else if (secret.includes("내부 통제 시스템의 서명")) {
+    clueTitle = "삭제 기록에 남은 내부 통제 서명";
+    meaning = "삭제된 기록은 외부 공격이 아니라 내부 통제 시스템이 직접 실행한 명령의 흔적이다.";
+  } else if (secret.includes("ROOT_SYSTEM")) {
+    clueTitle = "봉쇄된 안전 경로의 실제 목적지";
+    meaning = "안전 경로라는 안내는 거짓이며, 그 길은 사건의 중심인 ROOT_SYSTEM으로 이어진다.";
+  }
+  const nextObjective = nextTarget
+    ? `${nextTarget.name}에게 이 증언을 제시하고 서로 맞지 않는 기록을 확인한다.`
+    : "주변의 관리자 기록과 이 증언을 대조해 내부 통제 시스템의 개입을 확정한다.";
+  return { clueTitle, clueContent: secret, clueMeaning: meaning, storyConnection, nextObjective,
+    nextTargetId: nextTarget?.id || null, nextTargetName: nextTarget?.name || null };
+}
+
+function applyNpcInvestigation(run, request, preparation, outcome, turnNo, events) {
+  if (request.ability !== "search" || preparation.target?.kind !== "npc") return;
+  const npc = entityById(run, preparation.target.id);
+  const relationship = run.npcRelationships.find((item) => item.npcId === npc.id);
+  if (!npc || !relationship) return;
+  npc.state ||= {};
+  npc.state.revealedClues ||= [];
+  const clueId = "personal-secret";
+  const remember = (summary, importance = 0.8) => {
+    const memory = { id: deterministicUuid(`${run.id}:npc-investigation:${npc.id}:${turnNo}`), npcId: npc.id,
+      summary, importance, ttlTurns: null, createdTurn: turnNo, expired: false };
+    run.npcMemories.push(memory);
+    return memory;
+  };
+  const eventBase = { npcId: npc.id, npcName: npc.name, concern: npc.state.concern || "쉽게 말할 수 없는 문제가 있다",
+    motivation: npc.state.motivation || "이곳을 지키는 것", clueId, trust: relationship.trust, fear: relationship.fear };
+  if (npc.state.revealedClues.includes(clueId)) {
+    const line = `${npc.name}은 이미 털어놓은 이야기라며, 지금은 새로 덧붙일 말이 없다고 했다.`;
+    remember(line, 0.4);
+    events.push({ type: "npc_investigation_repeat", ...eventBase, line, repeat: true });
+    return;
+  }
+  if (["success", "critical_success"].includes(outcome)) {
+    const trustDelta = outcome === "critical_success" ? 3 : 2;
+    relationship.trust = Math.min(10, relationship.trust + trustDelta);
+    relationship.affinity = Math.min(5, relationship.affinity + 1);
+    relationship.lastChangedTurn = turnNo;
+    npc.state.revealedClues.push(clueId);
+    const clue = npcClueDetails(run, npc);
+    const line = `${npc.name}은 잠시 주위를 살핀 뒤 털어놓았다. “${clue.clueContent}.”`;
+    remember(line);
+    if (!run.canonicalFacts.some((fact) => fact.subject === npc.id && fact.predicate === "testimony"))
+      run.canonicalFacts.push({ id: deterministicUuid(`${run.id}:npc-clue:${npc.id}:${clueId}`), subject: npc.id,
+        predicate: "testimony", value: npc.state.secret, type: "canonical", establishedTurn: turnNo });
+    events.push({ type: "npc_clue_revealed", ...eventBase, ...clue, line, trustDelta,
+      trust: relationship.trust, affinityDelta: 1 });
+    return;
+  }
+  if (outcome === "partial_success") {
+    relationship.trust = Math.min(10, relationship.trust + 1);
+    relationship.fear = Math.min(10, relationship.fear + 1);
+    relationship.lastChangedTurn = turnNo;
+    npc.state.revealedClues.push(clueId);
+    const clue = npcClueDetails(run, npc);
+    const line = `${npc.name}은 확신하지 못한 채 목소리를 낮췄다. “${clue.clueContent}… 직접 확인하기 전에는 믿지 마.”`;
+    remember(line, 0.65);
+    run.rumors.push({ id: deterministicUuid(`${run.id}:npc-rumor:${npc.id}:${clueId}`), summary: npc.state.secret,
+      status: "active", firstHeardTurn: turnNo, expiresTurn: Math.min(run.turnLimit, turnNo + 10), sourceNpcId: npc.id });
+    events.push({ type: "npc_rumor_revealed", ...eventBase, ...clue, clueTitle: `미확인 · ${clue.clueTitle}`, line, trustDelta: 1,
+      fearDelta: 1, trust: relationship.trust, fear: relationship.fear });
+    return;
+  }
+  const fearDelta = outcome === "critical_failure" ? 2 : 1;
+  relationship.fear = Math.min(10, relationship.fear + fearDelta);
+  if (outcome === "critical_failure") relationship.trust = Math.max(-10, relationship.trust - 1);
+  relationship.lastChangedTurn = turnNo;
+  const line = `${npc.name}은 시선을 피했다. “지금은 그 이야기를 할 수 없어. 먼저 내가 널 믿을 이유를 보여 줘.”`;
+  remember(line, 0.5);
+  events.push({ type: "npc_investigation_refused", ...eventBase, line, fearDelta,
+    trust: relationship.trust, fear: relationship.fear });
+}
+
+function grantDefeatReward(run, target, events) {
+  run.rewardedEnemyIds ||= [];
+  if (!capabilitiesFor(target).grantsDefeatReward || run.rewardedEnemyIds.includes(target.id)) return;
+  run.rewardedEnemyIds.push(target.id);
+  const experience = String(target.assetId || "").includes("mushroom") ? 4 : 3;
+  const masteryBefore = Math.floor((run.experience || 0) / 10);
+  run.experience = (run.experience || 0) + experience;
+  run.gold = (run.gold || 0) + 2;
+  const masteryAfter = Math.floor(run.experience / 10);
+  events.push({ type: "defeat_reward_granted", entityId: target.id, experience, gold: 2 });
+  if (masteryAfter > masteryBefore) {
+    const increase = masteryAfter - masteryBefore;
+    run.maxFocus += increase;
+    run.focus = Math.min(run.maxFocus, run.focus + increase);
+    events.push({ type: "mastery_rank_increased", rank: masteryAfter, maxFocusDelta: increase });
+  }
+}
+
+function replicateCacheEnemy(run, target, turnNo, idempotencyKey, events) {
+  if (!target || enemyArchetype(target.assetId, run.worldSeed ?? run.world?.worldSeed, target.id) !== "cache_replicator" || target.state?.revealed === true ||
+      target.state?.cacheReplicated === true) return;
+  const position = [[1, 0], [0, 1], [-1, 0], [0, -1]]
+    .map(([dx, dy]) => ({ x: target.position.x + dx, y: target.position.y + dy }))
+    .find((point) => isWalkable(run.world, point) && !isBlockingOccupied(run, point));
+  if (!position) return;
+  const replica = entity(deterministicUuid(`${run.id}:cache-replica:${turnNo}:${idempotencyKey}`), "enemy",
+    target.assetId, `${target.name} Cache Copy`, position, true, false, false,
+    { hp: Math.max(2, (target.state?.maxHp || 4) - 1), maxHp: Math.max(2, (target.state?.maxHp || 4) - 1),
+      sourceEntityId: target.id, cacheReplica: true });
+  target.state.cacheReplicated = true;
+  run.entities.push(replica);
+  events.push({ type: "cache_enemy_replicated", entityId: target.id, cloneEntityId: replica.id,
+    reason: "dependency_not_revealed", position: clone(position) });
 }
 
 function evaluateFinalePuzzle(run, turnNo, events) {
@@ -1251,6 +1412,77 @@ function updateCampaignMetrics(run, request, outcome, actionContext, turnNo, eve
   if (changes.length > 0) events.push({ type: "campaign_metrics_changed", changes });
 }
 
+function triggerTechnicalDebtConsequences(run, turnNo, events) {
+  run.debtThresholdsTriggered ||= [];
+  for (const threshold of [25, 50, 75]) {
+    if (run.metrics.technicalDebt < threshold || run.debtThresholdsTriggered.includes(threshold)) continue;
+    run.debtThresholdsTriggered.push(threshold);
+    if (threshold === 25) {
+      const unstableClone = run.entities
+        .filter((item) => item.active && item.state?.sourceEntityId)
+        .sort((left, right) => left.id.localeCompare(right.id))[0];
+      if (unstableClone) {
+        unstableClone.state.unstable = true;
+        unstableClone.state.expiresTurn = Math.min(run.turnLimit, turnNo + 2);
+        events.push({ type: "debt_backflow_clone_drift", threshold, entityId: unstableClone.id, expiresTurn: unstableClone.state.expiresTurn });
+      } else {
+        run.metrics.worldStability = Math.max(0, run.metrics.worldStability - 2);
+        events.push({ type: "debt_backflow_clone_drift", threshold, worldStabilityDelta: -2, noClone: true });
+      }
+    } else if (threshold === 50) {
+      const player = entityById(run, run.playerEntityId);
+      const position = [[1, 0], [0, 1], [-1, 0], [0, -1]]
+        .map(([dx, dy]) => ({ x: player.position.x + dx, y: player.position.y + dy }))
+        .find((point) => isWalkable(run.world, point) && !isBlockingOccupied(run, point));
+      if (position) {
+        const hostile = entity(deterministicUuid(`${run.id}:debt-backflow:${turnNo}`), "enemy",
+          "enemy.dependency-backflow", "Dependency Backflow", position, true, false, false,
+          { hp: 3, maxHp: 3, spawnedByDebtThreshold: threshold });
+        run.entities.push(hostile);
+        events.push({ type: "debt_backflow_hostile_spawned", threshold, entityId: hostile.id, position: clone(position) });
+      } else {
+        run.metrics.worldStability = Math.max(0, run.metrics.worldStability - 5);
+        events.push({ type: "debt_backflow_blocked", threshold, worldStabilityDelta: -5 });
+      }
+    } else {
+      const player = entityById(run, run.playerEntityId);
+      const priorHp = Number.isInteger(player.state.hp) ? player.state.hp : 1;
+      const damage = Math.min(2, Math.max(0, priorHp - 1));
+      player.state.hp = priorHp - damage;
+      run.exposed = true;
+      events.push({ type: "debt_paradox_surge", threshold, entityId: player.id, damage, hp: player.state.hp, exposed: true });
+    }
+  }
+}
+
+function companionSupportBonus(run) {
+  const player = entityById(run, run.playerEntityId);
+  if (!player) return 0;
+  return (run.npcPromises || []).some((promise) => promise.status !== "broken" &&
+    run.entities.some((npc) => npc.id === promise.npcId && npc.active && manhattan(player.position, npc.position) <= 4)) ? 1 : 0;
+}
+
+function processNpcPromises(run, turnNo, events) {
+  run.npcPromises ||= [];
+  const player = entityById(run, run.playerEntityId);
+  if (!player || areaAt(run.world, player.position).regionAxis !== ROOT_SYSTEM || !finaleGateEligible(run)) return;
+  for (const promise of run.npcPromises) {
+    if (promise.status !== "made") continue;
+    promise.status = "fulfilled";
+    promise.fulfilledTurn = turnNo;
+    const relationship = run.npcRelationships.find((item) => item.npcId === promise.npcId);
+    if (relationship) {
+      relationship.affinity = Math.min(100, relationship.affinity + 5);
+      relationship.trust = Math.min(100, relationship.trust + 10);
+      relationship.lastChangedTurn = turnNo;
+    }
+    run.metrics.companionBond = Math.min(100, run.metrics.companionBond + 10);
+    run.metrics.publicTrust = Math.min(100, run.metrics.publicTrust + 2);
+    events.push({ type: "npc_promise_fulfilled", npcId: promise.npcId, turnNo,
+      companionBondDelta: 10, publicTrustDelta: 2 });
+  }
+}
+
 export function resolveTurn({ run: originalRun, request, d20Source = new DeterministicD20Source(), forcedD20 = null, now = new Date().toISOString(), directorOutput = null, sceneDecision = null }) {
   assert(originalRun.status === "active", 409, "RUN_NOT_ACTIVE", "The run does not accept turns.");
   assert(request.inputType === "USE_SKILL" && ACTION_SKILLS.includes(request.skillId), 400, "TURN_REQUEST_INVALID", "Only structured USE_SKILL commands consume campaign turns.");
@@ -1263,6 +1495,8 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   if (openedEncounter) assert(request.ability !== "rest", 422, "ENCOUNTER_ACTION_REQUIRED", "An active encounter requires a nearby meaningful action; rest cannot bypass it.", { activeEncounter: openedEncounter });
   const immutableLayout = fingerprint(publicWorld(originalRun.world));
   const preparation = prepare(originalRun, request);
+  const supportBonus = request.ability === "move" ? 0 : companionSupportBonus(originalRun);
+  if (supportBonus > 0) preparation.modifier += supportBonus;
   const actionContext = classifyActionContext(originalRun, request, preparation);
   assert(CAMPAIGN_ACTION_CONTEXTS.includes(actionContext), 500, "ACTION_CONTEXT_INVALID", "The server failed to classify a consuming action context.");
   const intentAnalysis = analyzeIntent({ run: originalRun, request, legalExecution: preparation.normalizedAttempt });
@@ -1280,6 +1514,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   run.technicalDebtEntries ||= [];
   run.unresolvedHooks ||= clone(run.openLoops || []);
   const events = [];
+  if (supportBonus > 0) events.push({ type: "companion_support_applied", modifier: supportBonus });
 
   if (preparation.focusCost > 0) {
     run.focus -= preparation.focusCost;
@@ -1301,9 +1536,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     applyPrimaryEffect(run, request, preparation, turnNo, events);
   }
   if (outcome === "partial_success") {
-    run.exposed = true;
-    run.pressure += 1;
-    events.push({ type: "status_added", status: "exposed", durationTurns: 1 });
+    applyPartialConsequence(run, request, Math.max(1, budget), events);
   } else if (outcome === "failure" || outcome === "critical_failure") {
     const pressureDelta = budget + (outcome === "critical_failure" ? 1 : 0);
     run.pressure += pressureDelta;
@@ -1324,9 +1557,10 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
       }
     }
   }
+  applyNpcInvestigation(run, request, preparation, outcome, turnNo, events);
 
-  const successfulRewind = events.some((event) => event.type === "time_rewind_completed");
-  run.currentTurn = successfulRewind ? Math.max(0, originalRun.currentTurn - 2) : turnNo;
+  const successfulRewind = events.some((event) => event.type === "undo_compensation_completed");
+  run.currentTurn = turnNo;
   run.abilityUsageHistory.push({
     id: deterministicUuid(`${run.id}:ability-usage:${turnNo}:v${request.expectedRunVersion}`),
     turnNo,
@@ -1345,7 +1579,14 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   }
   if (!successfulRewind) {
     updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events);
+    processNpcPromises(run, turnNo, events);
+    triggerTechnicalDebtConsequences(run, turnNo, events);
     evaluateFinalePuzzle(run, turnNo, events);
+  }
+  else {
+    updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events);
+    processNpcPromises(run, turnNo, events);
+    triggerTechnicalDebtConsequences(run, turnNo, events);
   }
   const campaignRole = areaAt(run.world, entityById(run, run.playerEntityId).position).campaignRole;
   const currentArea = areaAt(run.world, entityById(run, run.playerEntityId).position);
@@ -1381,7 +1622,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   run.version += 1;
   run.updatedAt = now;
   events.push(successfulRewind
-    ? { type: "turn_counter_rewound", fromTurn: originalRun.currentTurn, toTurn: run.currentTurn, runVersion: run.version }
+    ? { type: "undo_compensated", sourceTurns: 2, turnNo, runVersion: run.version }
     : { type: "turn_committed", turnNo, runVersion: run.version });
   if (!successfulRewind && (explicitFinaleReady || forcedTurnLimitFallback)) {
     const ending = chooseEnding(run);
@@ -1465,6 +1706,48 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     createdAt: now
   };
   return { run, turn };
+}
+
+function applyPartialConsequence(run, request, severity, events) {
+  const expose = (type, extra = {}) => {
+    run.exposed = true;
+    run.pressure += 1;
+    events.push({ type, severity, status: "exposed", durationTurns: 1, ...extra });
+  };
+  switch (request.ability) {
+    case "copy":
+      run.metrics.technicalDebt = Math.min(100, run.metrics.technicalDebt + severity);
+      events.push({ type: "partial_copy_drift", severity, unstableClone: true });
+      break;
+    case "delete":
+      run.metrics.technicalDebt = Math.min(100, run.metrics.technicalDebt + severity);
+      expose("partial_delete_backflow", { dependencyBackflow: true });
+      break;
+    case "connect":
+      run.metrics.technicalDebt = Math.min(100, run.metrics.technicalDebt + severity);
+      expose("partial_connect_hazard", { bidirectionalHazard: true });
+      break;
+    case "restore":
+      run.metrics.technicalDebt = Math.min(100, run.metrics.technicalDebt + 1);
+      events.push({ type: "partial_restore_defect", severity: 1, pastDefectRestored: true });
+      break;
+    case "undo":
+      run.metrics.technicalDebt = Math.min(100, run.metrics.technicalDebt + severity);
+      events.push({ type: "partial_undo_paradox", severity });
+      break;
+    case "select_all": {
+      const overload = Math.min(1, run.focus);
+      run.focus -= overload;
+      events.push({ type: "partial_select_all_overload", severity, resource: "focus", delta: -overload });
+      break;
+    }
+    case "search":
+      expose("partial_search_noise");
+      break;
+    default:
+      expose("partial_interaction_attention");
+      break;
+  }
 }
 
 function outcomeExplanation({ request, d20, score, outcome, preparation, intentAnalysis }) {
@@ -1593,7 +1876,7 @@ function restoreCandidatesForRun(run) {
 }
 
 export function publicRun(run) {
-  const publicEntities = run.entities.filter((item) => item.active).map((item) => ({ id: item.id, kind: item.kind, assetId: item.assetId, name: item.name, position: item.position, state: item.state, blocking: item.blocking, protected: item.protected, cloneable: item.cloneable }));
+  const publicEntities = run.entities.filter((item) => item.active).map((item) => ({ id: item.id, kind: item.kind, assetId: item.assetId, name: item.name, position: item.position, state: item.state, blocking: item.blocking, protected: item.protected, cloneable: item.cloneable, capabilities: capabilitiesFor(item) }));
   const player = publicEntities.find((item) => item.id === run.playerEntityId);
   const entityNames = new Map(publicEntities.map((item) => [item.id, item.name]));
   return {
@@ -1623,7 +1906,9 @@ export function publicRun(run) {
     health: player?.state?.hp ?? 0,
     maxHealth: player?.state?.maxHp ?? 0,
     focus: run.focus,
-    maxFocus: 10,
+    maxFocus: run.maxFocus || 10,
+    experience: run.experience || 0,
+    gold: run.gold || 0,
     pressure: run.pressure,
     exposed: run.exposed,
     endingCode: run.endingCode,
@@ -1647,6 +1932,7 @@ export function publicRun(run) {
     finaleGate: { ...rootSystemGate(run), requiredProgressLevel: 3, missingProgressTokens: rootSystemGate(run).missingAdminAccessLevels },
     endingCandidates: run.endingCandidates.map((item) => item.title),
     endingCandidateDetails: run.endingCandidates,
+    endingConditionReports: endingConditionReports(run),
     playerEntityId: run.playerEntityId,
     entities: publicEntities,
     connections: run.connections.filter((item) => item.active),
@@ -1656,6 +1942,7 @@ export function publicRun(run) {
     openLoops: run.openLoops.filter((item) => item.status === "open"),
     rumors: run.rumors.filter((item) => item.status === "active"),
     npcRelationships: run.npcRelationships.map((item) => ({ ...item, npcName: entityNames.get(item.npcId) || "", score: item.affinity, label: item.stance, reason: "authoritative relationship state" })),
+    npcPromises: clone(run.npcPromises || []),
     npcMemories: run.npcMemories.filter((item) => !item.expired).map((item) => ({ ...item, npcName: entityNames.get(item.npcId) || "", memory: item.summary, importance: Math.round(item.importance * 100), turnNo: item.createdTurn })),
     directorState: clone(run.directorState || {}),
     majorChoices: clone(run.majorChoices || []),

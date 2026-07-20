@@ -49,9 +49,15 @@ namespace KeyboardWanderer.Gameplay
         public IEnumerator Submit(TurnRequest request, Action<TurnGatewayResult> completed)
         {
             IsPending = true;
-            TurnResponse response = _service.Submit(request);
-            IsPending = false;
-            completed?.Invoke(TurnGatewayResult.FromLocal(response));
+            try
+            {
+                TurnResponse response = _service.Submit(request);
+                completed?.Invoke(TurnGatewayResult.FromLocal(response));
+            }
+            finally
+            {
+                IsPending = false;
+            }
             yield break;
         }
     }
@@ -68,20 +74,23 @@ namespace KeyboardWanderer.Gameplay
         public IEnumerator Submit(TurnRequest request, Action<TurnGatewayResult> completed)
         {
             IsPending = true;
-            bool completedOnce = false;
-            IEnumerator operation = _submit(request, result =>
+            try
             {
-                if (completedOnce) return;
-                completedOnce = true;
-                IsPending = false;
-                completed?.Invoke(result ?? TurnGatewayResult.Failure("EMPTY_RESPONSE", "Turn gateway returned no result."));
-            });
-            if (operation != null)
-                while (operation.MoveNext()) yield return operation.Current;
-            if (!completedOnce)
+                bool completedOnce = false;
+                IEnumerator operation = _submit(request, result =>
+                {
+                    if (completedOnce) return;
+                    completedOnce = true;
+                    completed?.Invoke(result ?? TurnGatewayResult.Failure("EMPTY_RESPONSE", "Turn gateway returned no result."));
+                });
+                if (operation != null)
+                    while (operation.MoveNext()) yield return operation.Current;
+                if (!completedOnce)
+                    completed?.Invoke(TurnGatewayResult.Failure("NO_COMPLETION", "Turn gateway completed without a response."));
+            }
+            finally
             {
                 IsPending = false;
-                completed?.Invoke(TurnGatewayResult.Failure("NO_COMPLETION", "Turn gateway completed without a response."));
             }
         }
     }

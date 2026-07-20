@@ -11,7 +11,8 @@ namespace KeyboardWanderer.Editor
     {
         public Texture2D Texture;
         public Sprite Sprite;
-        public WorldRenderer Renderer;
+        // WorldRenderer는 Unity 직렬화 대상이 아니며 미리보기 수명 동안만 유지한다.
+        public WorldRenderer Renderer { get; set; }
 
         private void OnDestroy()
         {

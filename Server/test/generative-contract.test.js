@@ -55,6 +55,8 @@ function deleteRequest(run, idempotencyKey, expectedRunVersion = run.version) {
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const target = run.entities.find((item) => item.kind === "enemy" && item.active);
   target.position = { ...player.position };
+  // 이 헬퍼는 결말 수렴만 검증하므로 시드형 적 의존성은 이미 조사된 상태로 준비한다.
+  target.state.revealed = true;
   return normalizeTurnRequest({ inputType: "USE_SKILL", idempotencyKey, expectedRunVersion, skillId: "DELETE", targetIds: [target.id] });
 }
 

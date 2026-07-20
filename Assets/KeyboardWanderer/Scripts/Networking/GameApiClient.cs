@@ -384,6 +384,7 @@ namespace KeyboardWanderer.Networking
             public MacroPhaseSnapshot[] campaignMacroPhases;
             public string[] endingCandidates;
             public EndingCandidateSnapshot[] endingCandidateDetails;
+            public EndingConditionReportSnapshot[] endingConditionReports;
             public WorldSnapshot world;
         }
 
@@ -422,6 +423,7 @@ namespace KeyboardWanderer.Networking
             public string evidenceKey;
             public bool designatedCampaignEvidence;
             public string fixtureType;
+            public string requiredSkillId;
             public string finaleComponent;
         }
 
@@ -437,6 +439,19 @@ namespace KeyboardWanderer.Networking
             public bool blocking;
             public bool @protected;
             public bool cloneable;
+            public EntityCapabilitySnapshot capabilities;
+        }
+
+        [Serializable]
+        public sealed class EntityCapabilitySnapshot
+        {
+            public bool canCopy;
+            public bool canDelete;
+            public bool canConnect;
+            public bool canRestore;
+            public bool canInteract;
+            public int requiredAdminAccess;
+            public bool grantsDefeatReward;
         }
 
         [Serializable]
@@ -495,6 +510,24 @@ namespace KeyboardWanderer.Networking
             public string description;
             public string valence;
             public bool eligible;
+        }
+
+        [Serializable]
+        public sealed class EndingConditionSnapshot
+        {
+            public string label;
+            public bool satisfied;
+        }
+
+        [Serializable]
+        public sealed class EndingConditionReportSnapshot
+        {
+            public string id;
+            public string title;
+            public bool eligible;
+            public int satisfiedCount;
+            public int totalCount;
+            public EndingConditionSnapshot[] conditions;
         }
 
         [Serializable]
@@ -716,6 +749,8 @@ namespace KeyboardWanderer.Networking
             public int maxHealth;
             public int focus;
             public int maxFocus;
+            public int experience;
+            public int gold;
             public int pressure;
             public bool exposed;
             public string endingCode;
@@ -737,6 +772,7 @@ namespace KeyboardWanderer.Networking
             public RootPuzzleSnapshot rootPuzzle;
             public string[] endingCandidates;
             public EndingCandidateSnapshot[] endingCandidateDetails;
+            public EndingConditionReportSnapshot[] endingConditionReports;
             public string playerEntityId;
             public EntitySnapshot[] entities;
             public WorldSnapshot world;
@@ -788,7 +824,25 @@ namespace KeyboardWanderer.Networking
             public string fact;
             public string endingCode;
             public string resource;
+            public string npcId;
+            public string npcName;
+            public string line;
+            public string concern;
+            public string motivation;
+            public string clueId;
+            public string clueTitle;
+            public string clueContent;
+            public string clueMeaning;
+            public string storyConnection;
+            public string nextObjective;
+            public string nextTargetId;
+            public string nextTargetName;
             public int delta;
+            public int trust;
+            public int fear;
+            public int trustDelta;
+            public int fearDelta;
+            public bool repeat;
             public int turnNo;
             public PositionSnapshot from;
             public PositionSnapshot to;
@@ -1034,6 +1088,13 @@ namespace KeyboardWanderer.Networking
         }
 
         [Serializable]
+        private sealed class AmbientWanderEnvelope
+        {
+            public RunSnapshot run;
+            public string[] movedEntityIds;
+        }
+
+        [Serializable]
         private sealed class TurnEnvelope
         {
             public TurnSnapshot turn;
@@ -1215,6 +1276,28 @@ namespace KeyboardWanderer.Networking
                 {
                     completed?.Invoke(Result<RunSnapshot>.Failure(raw.StatusCode, raw.ErrorCode,
                         raw.Success ? "런 상태를 해석할 수 없습니다." : raw.ErrorMessage, raw.CurrentVersion));
+                    return;
+                }
+                PopulateTileCodes(envelope.run.world, raw.Json);
+                completed?.Invoke(Result<RunSnapshot>.Success(raw.StatusCode, envelope.run));
+            });
+        }
+
+        public IEnumerator AdvanceAmbientWander(string runId, long expectedVersion,
+            int minX, int minY, int maxX, int maxY, Action<Result<RunSnapshot>> completed)
+        {
+            string body = "{\"expectedRunVersion\":" + expectedVersion.ToString(CultureInfo.InvariantCulture) +
+                          ",\"minX\":" + minX.ToString(CultureInfo.InvariantCulture) +
+                          ",\"minY\":" + minY.ToString(CultureInfo.InvariantCulture) +
+                          ",\"maxX\":" + maxX.ToString(CultureInfo.InvariantCulture) +
+                          ",\"maxY\":" + maxY.ToString(CultureInfo.InvariantCulture) + "}";
+            yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/ambient-wander", body, raw =>
+            {
+                AmbientWanderEnvelope envelope = raw.Success ? SafeParse<AmbientWanderEnvelope>(raw.Json) : null;
+                if (envelope?.run == null)
+                {
+                    completed?.Invoke(Result<RunSnapshot>.Failure(raw.StatusCode, raw.ErrorCode,
+                        raw.Success ? "NPC 배회 응답을 해석할 수 없습니다." : raw.ErrorMessage, raw.CurrentVersion));
                     return;
                 }
                 PopulateTileCodes(envelope.run.world, raw.Json);

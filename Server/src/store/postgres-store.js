@@ -234,6 +234,25 @@ export class PostgresStore {
     }, { readOnly: true });
   }
 
+  async commitAmbientWander({ ownerId, runId, expectedRunVersion, resolve }) {
+    return this.withOwner(ownerId, async (client) => {
+      const result = await client.query(`select * from ${SCHEMA}.runs where id = $1 and owner_id = $2 for update`, [runId, ownerId]);
+      if (result.rowCount === 0) throw notFound("Run");
+      const current = rowToRun(result.rows[0]);
+      if (current.version !== expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: current.version });
+      const committed = resolve(clone(current));
+      if (committed.movedEntityIds.length === 0) return committed;
+      await updateRunRow(client, committed.run);
+      for (const entityId of committed.movedEntityIds) {
+        const entity = committed.run.entities.find((item) => item.id === entityId);
+        const area = areaAt(committed.run.world, entity.position);
+        await client.query(`update ${SCHEMA}.entity_positions set area_id = $4, x = $5, y = $6, revision = revision + 1, updated_at = $7 where entity_id = $1 and owner_id = $2 and run_id = $3 and removed_at is null`,
+          [entityId, ownerId, runId, area.id, entity.position.x, entity.position.y, committed.run.updatedAt]);
+      }
+      return committed;
+    });
+  }
+
   async findTurnByIdempotency(ownerId, runId, idempotencyKey) {
     return this.withOwner(ownerId, async (client) => {
       const run = await client.query(`select 1 from ${SCHEMA}.runs where id = $1 and owner_id = $2`, [runId, ownerId]);

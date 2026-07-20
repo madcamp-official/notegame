@@ -22,6 +22,11 @@ function boundedString(value, { name, minimum = 0, maximum, status = 400 }) {
   return normalized;
 }
 
+function koreanPlayerText(value, name) {
+  if (!/[가-힣]/u.test(value)) throw new AppError(502, "LLM_LANGUAGE_INVALID", `${name} must contain natural Korean player-facing text.`);
+  return value;
+}
+
 function validateBase(input) {
   assert(Number.isInteger(input.turnNo) && input.turnNo >= 0 && input.turnNo <= 10000, 400, "NARRATION_CONTEXT_INVALID", "turnNo is invalid.");
   assert(Number.isInteger(input.remainingTurns) && input.remainingTurns >= 0 && input.remainingTurns <= 1000, 400, "NARRATION_CONTEXT_INVALID", "remainingTurns is invalid.");
@@ -76,6 +81,8 @@ export function validateNarrationOutput(input, contextInput) {
   exactKeys(input, ["summary", "body", "dialogue", "proposedOps"], "LLM_OUTPUT_INVALID", 502);
   const summary = boundedString(input.summary, { name: "summary", minimum: 1, maximum: 160, status: 502 });
   const body = boundedString(input.body, { name: "body", minimum: 1, maximum: 700, status: 502 });
+  koreanPlayerText(summary, "summary");
+  koreanPlayerText(body, "body");
   if (context.mode === "director") {
     const sentenceCount = body.split(/(?<=[.!?。！？])\s*/u).map((item) => item.trim()).filter(Boolean).length;
     assert(sentenceCount >= 2 && sentenceCount <= 4, 502, "LLM_NARRATIVE_LENGTH_INVALID", "Turn narration body must contain 2-4 sentences.");
@@ -102,13 +109,16 @@ function validateNarrativeMechanicalClaims(summary, body, context) {
 
 function validateLegacyOutput(output, context) {
   const dialogue = output.dialogue === null ? null : boundedString(output.dialogue, { name: "dialogue", minimum: 1, maximum: 280, status: 502 });
-  if (dialogue !== null) validateNarrativeMechanicalClaims(dialogue, "", context);
+  if (dialogue !== null) {
+    koreanPlayerText(dialogue, "dialogue");
+    validateNarrativeMechanicalClaims(dialogue, "", context);
+  }
   const proposedOps = output.proposedOps.map((operation) => {
     if (!operation || typeof operation !== "object" || Array.isArray(operation)) throw new AppError(502, "LLM_OUTPUT_INVALID", "Each legacy proposed operation must be an object.");
     exactKeys(operation, ["type", "text"], "LLM_OUTPUT_INVALID", 502);
     const type = boundedString(operation.type, { name: "proposedOps.type", minimum: 1, maximum: 40, status: 502 });
     if (!LEGACY_NARRATIVE_OPS.includes(type) || !context.allowedEffects.includes(type)) throw new AppError(502, "LLM_OPERATION_FORBIDDEN", "The model proposed a non-allowlisted legacy hint.");
-    const text = boundedString(operation.text, { name: "proposedOps.text", minimum: 1, maximum: 180, status: 502 });
+    const text = koreanPlayerText(boundedString(operation.text, { name: "proposedOps.text", minimum: 1, maximum: 180, status: 502 }), "proposedOps.text");
     validateNarrativeMechanicalClaims(text, "", context);
     return { type, text };
   });
@@ -122,7 +132,7 @@ function validateDialogue(value, context) {
     exactKeys(item, ["speakerId", "line"], "LLM_OUTPUT_INVALID", 502);
     const speakerId = item.speakerId === null ? null : boundedString(item.speakerId, { name: "dialogue.speakerId", minimum: 1, maximum: 80, status: 502 });
     if (speakerId !== null && !context.allowedEntityIds.includes(speakerId)) throw new AppError(502, "LLM_ENTITY_FORBIDDEN", "Dialogue referenced an entity outside the provided scene.");
-    const line = boundedString(item.line, { name: "dialogue.line", minimum: 1, maximum: 220, status: 502 });
+    const line = koreanPlayerText(boundedString(item.line, { name: "dialogue.line", minimum: 1, maximum: 220, status: 502 }), "dialogue.line");
     validateNarrativeMechanicalClaims(line, "", context);
     return { speakerId, line };
   });
@@ -169,24 +179,20 @@ function validateDirectorOperation(operation, context) {
 
 export function createFallbackNarration(contextInput) {
   const context = contextInput?.mode ? contextInput : validateNarrationContext(contextInput);
-  const korean = /[가-힣]/.test(context.playerNote || context.intent);
-  const outcomeText = korean ? {
+  const outcomeText = {
     critical_success: "명령이 서버 규칙 안에서 가장 의도에 가깝게 실현됐다.",
     success: "세계가 합법적인 명령을 받아들였다.",
     partial_success: "명령은 작동했지만 작은 대가와 다음 선택을 남겼다.",
     failure: "판정이 난이도에 미치지 못해 확정 상태가 보존됐다.",
     critical_failure: "명령이 크게 빗나갔지만, 복구 가능한 대가와 새 단서를 남겼다."
-  }[context.outcome] : {
-    critical_success: "The legal command lands as close to the intent as the rules permit.",
-    success: "The world accepts the legal command.",
-    partial_success: "The command works, leaving a bounded cost and another choice.",
-    failure: "The check misses its difficulty and preserves the confirmed state.",
-    critical_failure: "The command fails sharply, but its bounded cost still creates a way forward."
   }[context.outcome];
-  const urgency = context.remainingTurns <= 5 ? (korean ? " 남은 선택은 이제 결말로 수렴한다." : " Every remaining choice now converges on an ending.") : "";
+  const abilityLabel = { copy: "복제", delete: "삭제", connect: "연결", restore: "복구", undo: "되돌리기",
+    search: "조사", select_all: "광역 선택", interact: "상호작용", attack: "공격", negotiate: "협상", rest: "휴식" }[context.ability]
+    || "키보드 명령";
+  const urgency = context.remainingTurns <= 5 ? " 남은 선택은 이제 결말로 수렴한다." : "";
   return {
-    summary: korean ? `${context.area} · ${context.ability} · D20 ${context.d20}` : `${context.area} · ${context.ability} · D20 ${context.d20}`,
-    body: `${context.normalizedAttempt}. ${outcomeText}${urgency}`,
+    summary: `${abilityLabel} 판정 · D20 ${context.d20}`,
+    body: `${abilityLabel} 명령의 확정 결과가 세계에 반영됐다. ${outcomeText}${urgency}`,
     dialogue: context.mode === "legacy" ? null : [],
     proposedOps: [],
     fallbackUsed: true,

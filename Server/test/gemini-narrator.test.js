@@ -31,7 +31,7 @@ test("Gemini adapter retries one semantically invalid response and sends bounded
   const requests = [];
   const outputs = [
     { summary: "Unsafe", body: "Bad op", dialogue: null, proposedOps: [{ type: "delete_entity", text: "Delete it" }] },
-    { summary: "Lantern found", body: "Rain beads on the lantern's cracked glass.", dialogue: null, proposedOps: [{ type: "ambient_cue", text: "Play a soft rain cue." }] }
+    { summary: "깨진 등불 발견", body: "빗물이 깨진 등불의 유리 위로 흘러내린다.", dialogue: null, proposedOps: [{ type: "ambient_cue", text: "잔잔한 빗소리가 들린다." }] }
   ];
   const narrator = new GeminiNarrator({
     apiKey: "unit-test-token",
@@ -88,4 +88,22 @@ test("missing API key never performs a network request", async () => {
   const result = await narrator.narrate(context);
   assert.equal(calls, 0);
   assert.equal(result.fallbackUsed, true);
+  assert.match(result.body, /[가-힣]/);
+});
+
+test("English-only narration is rejected and falls back to Korean", async () => {
+  let calls = 0;
+  const narrator = new GeminiNarrator({
+    apiKey: "unit-test-token",
+    logger: silentLogger,
+    fetchImpl: async () => {
+      calls += 1;
+      return responseWith({ summary: "Clue found", body: "The witness reveals a hidden record.", dialogue: null, proposedOps: [] });
+    }
+  });
+  const result = await narrator.narrate(context);
+  assert.equal(calls, 2);
+  assert.equal(result.fallbackUsed, true);
+  assert.match(result.summary, /[가-힣]/);
+  assert.match(result.body, /[가-힣]/);
 });
