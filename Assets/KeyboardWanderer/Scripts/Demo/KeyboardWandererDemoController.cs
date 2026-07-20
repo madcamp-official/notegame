@@ -192,7 +192,7 @@ namespace KeyboardWanderer.Demo
         private Sprite _forestHouseSprite;
         private Sprite _wetlandPlantSprite;
         private Sprite _wetlandLandmarkSprite;
-        private Sprite _desertPalmSprite;
+        private Sprite _desertShrubSprite;
         private Sprite _desertLandmarkSprite;
         private Sprite _frostTreeSprite;
         private Sprite _frostLandmarkSprite;
@@ -202,6 +202,7 @@ namespace KeyboardWanderer.Demo
         private Sprite[] _forestDecorationSprites = Array.Empty<Sprite>();
         private Sprite[] _wetlandDecorationSprites = Array.Empty<Sprite>();
         private Sprite[] _desertDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _desertBuildingSprites = Array.Empty<Sprite>();
         private Sprite[] _frostDecorationSprites = Array.Empty<Sprite>();
         private Sprite[] _cavernDecorationSprites = Array.Empty<Sprite>();
         private Sprite[] _ruinDecorationSprites = Array.Empty<Sprite>();
@@ -2721,23 +2722,25 @@ namespace KeyboardWanderer.Demo
             _forestHouseSprite = CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
                 new Rect(0f, 304f, 64f, 64f), "Forest House", Hex("a7653f"), new Vector2(0.5f, 0.05f));
             _wetlandPlantSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
-                new Rect(96f, 144f, 32f, 32f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
+                new Rect(112f, 160f, 16f, 16f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
             _wetlandLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.WatermillAtlas : null,
                 new Rect(0f, 0f, 34f, 36f), "Wetland Watermill", Hex("9a6b43"), new Vector2(0.5f, 0.08f));
-            _desertPalmSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
-                new Rect(112f, 72f, 48f, 48f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
+            // The desert atlas is a modular construction sheet rather than a collection of standalone
+            // scenery sprites. Use isolated nature-atlas cells here so a crop cannot include building pieces.
+            _desertShrubSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(176f, 160f, 16f, 16f), "Desert Shrub", Hex("729347"), new Vector2(0.5f, 0.08f));
             _desertLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
-                new Rect(256f, 96f, 64f, 96f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
+                new Rect(48f, 112f, 48f, 80f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
             _frostTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
                 new Rect(128f, 304f, 32f, 32f), "Frost Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f));
             _frostLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
-                new Rect(0f, 144f, 96f, 80f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
+                new Rect(0f, 144f, 48f, 48f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
             _cavernCrystalSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
                 new Rect(0f, 112f, 32f, 32f), "Cavern Crystal", Hex("a978c4"), new Vector2(0.5f, 0.08f));
             _ruinTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
                 new Rect(64f, 304f, 32f, 32f), "Ruins Dead Tree", Hex("75624f"), new Vector2(0.5f, 0.08f));
             _ruinLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
-                new Rect(176f, 0f, 80f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
+                new Rect(192f, 16f, 64f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
             _forestDecorationSprites = new[]
             {
                 _forestTreeSprite,
@@ -2746,23 +2749,32 @@ namespace KeyboardWanderer.Demo
                 CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
                     new Rect(96f, 304f, 32f, 32f), "Forest Shrub", Hex("6a9a46"), new Vector2(0.5f, 0.08f)),
                 CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
-                    new Rect(96f, 208f, 32f, 32f), "Forest Plants", Hex("6f9e4c"), new Vector2(0.5f, 0.08f))
+                    new Rect(64f, 160f, 16f, 16f), "Forest Plants", Hex("6f9e4c"), new Vector2(0.5f, 0.08f))
             };
             _wetlandDecorationSprites = new[]
             {
                 _wetlandPlantSprite,
                 CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
-                    new Rect(128f, 208f, 32f, 32f), "Wetland Plants", Hex("4f8f68"), new Vector2(0.5f, 0.08f)),
+                    new Rect(128f, 160f, 16f, 16f), "Wetland Plants", Hex("4f8f68"), new Vector2(0.5f, 0.08f)),
                 CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
-                    new Rect(160f, 208f, 32f, 32f), "Wetland Flowers", Hex("6fa87b"), new Vector2(0.5f, 0.08f))
+                    new Rect(0f, 144f, 16f, 16f), "Wetland Flowers", Hex("6fa87b"), new Vector2(0.5f, 0.08f))
             };
             _desertDecorationSprites = new[]
             {
-                _desertPalmSprite,
-                CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
-                    new Rect(160f, 72f, 48f, 48f), "Desert Palm Cluster", Hex("7f9a4d"), new Vector2(0.5f, 0.08f)),
-                CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
-                    new Rect(208f, 72f, 48f, 48f), "Desert Oasis Plant", Hex("8ca454"), new Vector2(0.5f, 0.08f))
+                _desertShrubSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(144f, 176f, 16f, 16f), "Desert Rock", Hex("7f9a4d"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(160f, 176f, 16f, 16f), "Desert Bush", Hex("8ca454"), new Vector2(0.5f, 0.08f))
+            };
+            _desertBuildingSprites = new[]
+            {
+                _desertLandmarkSprite,
+                CreateAtlasSpriteWithoutBottomLeft(_assets != null ? _assets.HouseAtlas : null,
+                    new Rect(128f, 304f, 64f, 64f), new Vector2(32f, 16f),
+                    "Desert House", Hex("c98342"), new Vector2(0.5f, 0.04f)),
+                CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
+                    new Rect(192f, 304f, 64f, 64f), "Desert Red House", Hex("c56f45"), new Vector2(0.5f, 0.04f))
             };
             _frostDecorationSprites = new[]
             {
@@ -2842,6 +2854,43 @@ namespace KeyboardWanderer.Demo
                 SpriteMeshType.FullRect);
             sprite.name = spriteName;
             _runtimeSprites.Add(sprite);
+            return sprite;
+        }
+
+        private Sprite CreateAtlasSpriteWithoutBottomLeft(Texture2D texture, Rect requestedRect, Vector2 cutoutSize,
+            string spriteName, Color fallbackColor, Vector2? requestedPivot = null)
+        {
+            Sprite sprite = CreateAtlasSprite(texture, requestedRect, spriteName, fallbackColor, requestedPivot);
+            if (texture == null)
+                return sprite;
+
+            float width = sprite.rect.width;
+            float height = sprite.rect.height;
+            float cutoutWidth = Mathf.Clamp(cutoutSize.x, 0f, width);
+            float cutoutHeight = Mathf.Clamp(cutoutSize.y, 0f, height);
+            if (cutoutWidth <= 0f || cutoutHeight <= 0f ||
+                cutoutWidth >= width || cutoutHeight >= height)
+                return sprite;
+
+            // Keep the atlas rect intact for consistent placement, but omit the two unrelated
+            // 16 px cells at the lower-left of the orange house from the rendered sprite mesh.
+            sprite.OverrideGeometry(
+                new[]
+                {
+                    new Vector2(0f, cutoutHeight),
+                    new Vector2(0f, height),
+                    new Vector2(width, height),
+                    new Vector2(width, cutoutHeight),
+                    new Vector2(cutoutWidth, 0f),
+                    new Vector2(cutoutWidth, cutoutHeight),
+                    new Vector2(width, cutoutHeight),
+                    new Vector2(width, 0f)
+                },
+                new ushort[]
+                {
+                    0, 1, 2, 0, 2, 3,
+                    4, 5, 6, 4, 6, 7
+                });
             return sprite;
         }
 
@@ -3061,6 +3110,8 @@ namespace KeyboardWanderer.Demo
         {
             string layoutHash = useServerWorld ? _serverRun?.world?.layoutHash : view.Region.LayoutHash;
             HashSet<GridCoord> routeTiles = BuildRouteTileSet(view, useServerWorld);
+            HashSet<GridCoord> desertBuildingTiles = CreateDesertBuildings(
+                view, origin, useServerWorld, width, height, layoutHash, routeTiles);
             // step 2로 촘촘히 훑고, 타일마다 크기를 흔들어 우거진 느낌을 낸다.
             // 실제 route path만 비워 두므로 사막의 Dirt처럼 길과 같은 TileKind를 쓰는 넓은 지형도 채울 수 있다.
             for (int y = 2; y < height - 2; y += 2)
@@ -3070,7 +3121,8 @@ namespace KeyboardWanderer.Demo
                     var coord = new GridCoord(x, y);
                     string biomeId = BiomeIdAt(view, coord);
                     TileKind tileKind = WorldTileKind(view, coord, useServerWorld);
-                    if (routeTiles.Contains(coord) || !SupportsDecorationTerrain(biomeId, tileKind) ||
+                    if (routeTiles.Contains(coord) || desertBuildingTiles.Contains(coord) ||
+                        !SupportsDecorationTerrain(biomeId, tileKind) ||
                         IsNearWorldPoint(view, coord, useServerWorld, 4) ||
                         StableVisualHash(layoutHash, x, y, 17) % 100 >= DecorationDensity(biomeId))
                         continue;
@@ -3102,6 +3154,68 @@ namespace KeyboardWanderer.Demo
                     TryCreateBiomeLandmark(view, origin, false, area.Biome, area.Center, width, height, layoutHash, i);
                 }
             }
+        }
+
+        private HashSet<GridCoord> CreateDesertBuildings(RunView view, Vector2 origin, bool useServerWorld,
+            int width, int height, string layoutHash, HashSet<GridCoord> routeTiles)
+        {
+            var occupied = new HashSet<GridCoord>();
+            if (_desertBuildingSprites == null || _desertBuildingSprites.Length == 0)
+                return occupied;
+
+            // Buildings use a separate, sparse pass. Each anchor represents the bottom-center of a
+            // four-by-five-tile footprint, with one extra tile of padding reserved around it.
+            for (int y = 3; y < height - 6; y += 7)
+            {
+                for (int x = 4; x < width - 4; x += 7)
+                {
+                    var anchor = new GridCoord(x, y);
+                    if (!string.Equals(BiomeIdAt(view, anchor), "arid_desert",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        WorldTileKind(view, anchor, useServerWorld) != TileKind.Dirt ||
+                        StableVisualHash(layoutHash, x, y, 211) % 100 >= 36 ||
+                        IsNearWorldPoint(view, anchor, useServerWorld, 5) ||
+                        !TryReserveDesertBuildingFootprint(
+                            view, useServerWorld, width, height, anchor, routeTiles, occupied))
+                        continue;
+
+                    int variant = StableVisualHash(layoutHash, x, y, 223) % _desertBuildingSprites.Length;
+                    float scale = 0.86f + (StableVisualHash(layoutHash, x, y, 227) % 13) / 100f;
+                    CreateDecoration("Desert building", _desertBuildingSprites[variant], anchor, origin,
+                        Color.white, scale, 30);
+                }
+            }
+            return occupied;
+        }
+
+        private bool TryReserveDesertBuildingFootprint(RunView view, bool useServerWorld, int width, int height,
+            GridCoord anchor, HashSet<GridCoord> routeTiles, HashSet<GridCoord> occupied)
+        {
+            for (int y = 0; y < 5; y++)
+            {
+                for (int x = -2; x < 2; x++)
+                {
+                    var coord = new GridCoord(anchor.X + x, anchor.Y + y);
+                    if (coord.X < 0 || coord.Y < 0 || coord.X >= width || coord.Y >= height ||
+                        routeTiles.Contains(coord) || occupied.Contains(coord) ||
+                        !string.Equals(BiomeIdAt(view, coord), "arid_desert",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        !SupportsDecorationTerrain(
+                            "arid_desert", WorldTileKind(view, coord, useServerWorld)))
+                        return false;
+                }
+            }
+
+            for (int y = -1; y <= 5; y++)
+            {
+                for (int x = -3; x <= 2; x++)
+                {
+                    var coord = new GridCoord(anchor.X + x, anchor.Y + y);
+                    if (coord.X >= 0 && coord.Y >= 0 && coord.X < width && coord.Y < height)
+                        occupied.Add(coord);
+                }
+            }
+            return true;
         }
 
         private HashSet<GridCoord> BuildRouteTileSet(RunView view, bool useServerWorld)
@@ -3195,7 +3309,8 @@ namespace KeyboardWanderer.Demo
             return false;
         }
 
-        private void CreateDecoration(string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint, float scale)
+        private void CreateDecoration(string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint,
+            float scale, int sortingOrder = 20)
         {
             if (sprite == null) return;
             var decoration = new GameObject(prefix + " · " + sprite.name);
@@ -3204,7 +3319,7 @@ namespace KeyboardWanderer.Demo
             var renderer = decoration.AddComponent<SpriteRenderer>();
             renderer.sprite = sprite;
             renderer.color = tint;
-            renderer.sortingOrder = 20;
+            renderer.sortingOrder = sortingOrder;
             decoration.transform.localScale = Vector3.one * scale;
         }
 
