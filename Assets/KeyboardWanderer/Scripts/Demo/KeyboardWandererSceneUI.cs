@@ -80,13 +80,13 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private GameObject pauseScreen;
         [SerializeField] private GameObject endingScreen;
 
-        [Header("Typed controls")]
-        [SerializeField] private TextBinding[] textBindings = Array.Empty<TextBinding>();
-        [SerializeField] private ButtonBinding[] buttonBindings = Array.Empty<ButtonBinding>();
-        [SerializeField] private Slider musicSlider;
-        [SerializeField] private Slider sfxSlider;
-        [SerializeField] private Toggle gmToggle;
-        [SerializeField] private GameObject storyPanel;
+        private readonly Dictionary<string, Text> _texts = new Dictionary<string, Text>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Button> _buttons = new Dictionary<string, Button>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Slider> _sliders = new Dictionary<string, Slider>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Toggle> _toggles = new Dictionary<string, Toggle>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Image> _images = new Dictionary<string, Image>(StringComparer.Ordinal);
+        private readonly Dictionary<string, GameObject> _objects = new Dictionary<string, GameObject>(StringComparer.Ordinal);
+        private bool _bound;
 
         [Header("Dynamic presentation")]
         [SerializeField] private NinjaAdventureAssetManifest assetManifest;
@@ -196,7 +196,13 @@ namespace KeyboardWanderer.Demo
                 stateView.SetSelected(selected);
         }
 
-        public void SetMinimap(Sprite sprite, string status)
+        public void SetImageSprite(string controlName, Sprite sprite)
+        {
+            if (_images.TryGetValue(controlName, out Image image) && image.sprite != sprite)
+                image.sprite = sprite;
+        }
+
+        public void SetObjectActive(string controlName, bool active)
         {
             if (minimapMap != null && minimapMap.sprite != sprite)
                 minimapMap.sprite = sprite;
@@ -299,21 +305,16 @@ namespace KeyboardWanderer.Demo
         {
             _texts.Clear();
             _buttons.Clear();
-            _buttonStateViews.Clear();
-            _buttonInteractable.Clear();
-            _buttonSelected.Clear();
-            _buttonAvailable.Clear();
-            for (int i = 0; i < textBindings.Length; i++)
-            {
-                if (textBindings[i].Target != null) _texts[textBindings[i].Id] = textBindings[i].Target;
-            }
-            for (int i = 0; i < buttonBindings.Length; i++)
-            {
-                if (buttonBindings[i].Target == null) continue;
-                _buttons[buttonBindings[i].Id] = buttonBindings[i].Target;
-                if (buttonBindings[i].StateView != null)
-                    _buttonStateViews[buttonBindings[i].Id] = buttonBindings[i].StateView;
-            }
+            _sliders.Clear();
+            _toggles.Clear();
+            _images.Clear();
+            _objects.Clear();
+            foreach (Transform item in GetComponentsInChildren<Transform>(true)) _objects[item.gameObject.name] = item.gameObject;
+            foreach (Text text in GetComponentsInChildren<Text>(true)) _texts[text.gameObject.name] = text;
+            foreach (Button button in GetComponentsInChildren<Button>(true)) _buttons[button.gameObject.name] = button;
+            foreach (Slider slider in GetComponentsInChildren<Slider>(true)) _sliders[slider.gameObject.name] = slider;
+            foreach (Toggle toggle in GetComponentsInChildren<Toggle>(true)) _toggles[toggle.gameObject.name] = toggle;
+            foreach (Image image in GetComponentsInChildren<Image>(true)) _images[image.gameObject.name] = image;
         }
 
         private void BindButton(KeyboardWandererUiButton id, UnityEngine.Events.UnityAction action)

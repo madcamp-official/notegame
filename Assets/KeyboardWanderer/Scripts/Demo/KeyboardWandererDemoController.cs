@@ -37,6 +37,9 @@ namespace KeyboardWanderer.Demo
             public GameObject RootComponentLabel;
             public Sprite[] IdleFrames;
             public Sprite[] WalkFrames;
+            public Sprite[] WalkLeftFrames;
+            public Sprite[] WalkUpFrames;
+            public Sprite[] WalkDownFrames;
             public Sprite[] AttackFrames;
             public Vector3 TargetPosition;
             public readonly Queue<Vector3> MovementPath = new Queue<Vector3>();
@@ -48,11 +51,40 @@ namespace KeyboardWanderer.Demo
             public bool IsWandering;
             public Color BaseColor;
             public float DesiredSize;
+            public bool FacingLeft;
+            public int FacingVertical;
             public bool IsPlayer;
             public bool IsHostile;
         }
 
         private static readonly Color Gold = Hex("d3a64b");
+        private static readonly Color GoldDim = Hex("7c5d2b");
+        private static readonly Color Parchment = Hex("f0dfb6");
+        private static readonly Color Muted = Hex("ad9878");
+        private static readonly Color Leaf = Hex("65a850");
+        private static readonly Color Ruby = Hex("c84c43");
+        private static readonly Color FocusBlue = Hex("57a9bd");
+        private static readonly Rect NeopjukiTestPanelRect = new Rect(270f, 70f, 900f, 200f);
+        private static readonly (string Id, string Label)[] NeopjukiTestAnimations =
+        {
+            ("auto", "자동"),
+            ("idle", "기본"),
+            ("right", "오른쪽 이동"),
+            ("left", "왼쪽 이동"),
+            ("wave", "손 흔들기"),
+            ("jump", "점프"),
+            ("failed", "실패"),
+            ("waiting", "승인 대기"),
+            ("review", "리뷰"),
+            ("keyboard-attack", "오른쪽 공격"),
+            ("keyboard-magic", "키보드 마법"),
+            ("keyboard-debug", "버그 수정"),
+            ("keyboard-attack-left", "왼쪽 공격"),
+            ("keyboard-attack-up", "위쪽 공격"),
+            ("keyboard-attack-down", "아래쪽 공격"),
+            ("walking-up", "위로 걷기"),
+            ("walking-down", "아래로 걷기")
+        };
 
         private readonly Dictionary<Guid, EntityVisual> _entityVisuals = new Dictionary<Guid, EntityVisual>();
         private readonly List<Sprite> _runtimeSprites = new List<Sprite>();
@@ -131,6 +163,11 @@ namespace KeyboardWanderer.Demo
         private int _poiCursor = -1;
         private GridCoord? _cameraInspectCoord;
         private float _cameraInspectUntil;
+        // TEMP DEBUG — 구역 순회 (커밋 전 제거). 넙죽이 테스트 패널과 동일한 임시 도구.
+        private bool _debugTourActive;
+        private int _debugTourIndex;
+        private float _debugTourZoom = 32f;
+        private float _debugTourBaseOrthoSize = 8.25f;
         private string _poiLabel = "POI 탐색";
         private string _movementSelectionFeedback = string.Empty;
 
@@ -164,7 +201,7 @@ namespace KeyboardWanderer.Demo
         private Sprite _forestHouseSprite;
         private Sprite _wetlandPlantSprite;
         private Sprite _wetlandLandmarkSprite;
-        private Sprite _desertPalmSprite;
+        private Sprite _desertShrubSprite;
         private Sprite _desertLandmarkSprite;
         private Sprite _frostTreeSprite;
         private Sprite _frostLandmarkSprite;
@@ -174,6 +211,7 @@ namespace KeyboardWanderer.Demo
         private Sprite[] _forestDecorationSprites = Array.Empty<Sprite>();
         private Sprite[] _wetlandDecorationSprites = Array.Empty<Sprite>();
         private Sprite[] _desertDecorationSprites = Array.Empty<Sprite>();
+        private Sprite[] _desertBuildingSprites = Array.Empty<Sprite>();
         private Sprite[] _frostDecorationSprites = Array.Empty<Sprite>();
         private Sprite[] _cavernDecorationSprites = Array.Empty<Sprite>();
         private Sprite[] _ruinDecorationSprites = Array.Empty<Sprite>();
@@ -189,22 +227,49 @@ namespace KeyboardWanderer.Demo
         private Sprite[] _playerIdleFrames = Array.Empty<Sprite>();
         private Sprite[] _playerWalkFrames = Array.Empty<Sprite>();
         private Sprite[] _playerWalkLeftFrames = Array.Empty<Sprite>();
-        private Sprite[] _playerWalkUpFrames = Array.Empty<Sprite>();
-        private Sprite[] _playerWalkDownFrames = Array.Empty<Sprite>();
         private Sprite[] _playerAttackFrames = Array.Empty<Sprite>();
-        private Sprite[] _playerAttackLeftFrames = Array.Empty<Sprite>();
-        private Sprite[] _playerAttackUpFrames = Array.Empty<Sprite>();
-        private Sprite[] _playerAttackDownFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiWaveFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiJumpFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiFailedFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiWaitingFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiReviewFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardAttackFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardMagicFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardDebugFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardAttackLeftFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardAttackUpFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiKeyboardAttackDownFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiWalkUpFrames = Array.Empty<Sprite>();
+        private Sprite[] _neopjukiWalkDownFrames = Array.Empty<Sprite>();
         private Sprite[] _slimeFrames = Array.Empty<Sprite>();
         private Sprite[] _villagerFrames = Array.Empty<Sprite>();
-        private Texture2D _minimapTexture;
-        private Sprite _minimapSprite;
-        private readonly RunCoordinator _runCoordinator = new RunCoordinator();
-        private readonly MinimapPresenter _minimapPresenter = new MinimapPresenter();
-        private string _renderedLayoutHash = string.Empty;
-        private PresentationChange _pendingPresentationChanges = PresentationChange.All;
-        private HudPresenter _hudPresenter;
-        private Transform _visualPoolRoot;
+        private string _neopjukiTestAnimation = "auto";
+
+        private Texture2D _inkTexture;
+        private Texture2D _panelTexture;
+        private Texture2D _raisedTexture;
+        private Texture2D _buttonTexture;
+        private Texture2D _buttonHoverTexture;
+        private Texture2D _buttonPressedTexture;
+        private Texture2D _selectedTexture;
+        private Texture2D _disabledTexture;
+        private Texture2D _fieldTexture;
+        private Texture2D _whiteTexture;
+
+        private bool _stylesReady;
+        private GUIStyle _titleStyle;
+        private GUIStyle _subtitleStyle;
+        private GUIStyle _headerStyle;
+        private GUIStyle _labelStyle;
+        private GUIStyle _smallStyle;
+        private GUIStyle _mutedStyle;
+        private GUIStyle _centerStyle;
+        private GUIStyle _previewPremiseStyle;
+        private GUIStyle _buttonStyle;
+        private GUIStyle _selectedButtonStyle;
+        private GUIStyle _dangerButtonStyle;
+        private GUIStyle _textAreaStyle;
+        private GUIStyle _numberStyle;
 
         private void Awake()
         {
@@ -292,14 +357,17 @@ namespace KeyboardWanderer.Demo
 
             UpdateAnimatedVisuals();
             UpdateCameraFollow();
-            UpdateDecorationOcclusion();
+            HandleKeyboard();
+            HandleDebugRegionTour(); // TEMP DEBUG — 커밋 전 제거
+            HandleMapClick();
         }
 
         private void HandlePresentationChanged(RunPresentationState state, PresentationChange changes)
         {
-            _pendingPresentationChanges |= changes;
-            UpdateAuthoredUi();
-        }
+            DrawNeopjukiAnimationTestPanel();
+            DrawDebugRegionTourPanel(); // TEMP DEBUG — 커밋 전 제거
+            if (_sceneUi != null && _sceneUi.IsReady)
+                return;
 
         private void PublishPresentationState(PresentationChange requested = PresentationChange.None)
         {
@@ -310,6 +378,91 @@ namespace KeyboardWanderer.Demo
                 player, _selectedCoord, _selectedTarget, _ability, (int)_screenMode, _authoredDialoguePage,
                 _authoredDialogueSignature, _showPause, _serverPending || _gmPending, _playerWalking);
             _runCoordinator.Publish(state, requested);
+        }
+
+        private void DrawNeopjukiAnimationTestPanel()
+        {
+            if (_screenMode != ScreenMode.Playing || _service == null || _neopjukiWaveFrames.Length == 0)
+                return;
+
+            Matrix4x4 previousMatrix = GUI.matrix;
+            Color previousColor = GUI.color;
+            Font previousFont = GUI.skin.font;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(Screen.width / LogicalWidth, Screen.height / LogicalHeight, 1f));
+            if (_koreanFont != null)
+                GUI.skin.font = _koreanFont;
+            else if (_assets != null && _assets.PixelFont != null)
+                GUI.skin.font = _assets.PixelFont;
+            EnsureStyles();
+
+            GUI.Box(NeopjukiTestPanelRect, "넙죽이 애니메이션 테스트");
+            const float buttonWidth = 166f;
+            const float buttonHeight = 32f;
+            for (int i = 0; i < NeopjukiTestAnimations.Length; i++)
+            {
+                int column = i % 5;
+                int row = i / 5;
+                var rect = new Rect(
+                    NeopjukiTestPanelRect.x + 18f + column * 174f,
+                    NeopjukiTestPanelRect.y + 34f + row * 38f,
+                    buttonWidth,
+                    buttonHeight);
+                (string id, string label) = NeopjukiTestAnimations[i];
+                GUIStyle style = string.Equals(_neopjukiTestAnimation, id, StringComparison.Ordinal)
+                    ? _selectedButtonStyle
+                    : _buttonStyle;
+                if (GUI.Button(rect, label, style))
+                    SetNeopjukiTestAnimation(id);
+            }
+
+            GUI.skin.font = previousFont;
+            GUI.color = previousColor;
+            GUI.matrix = previousMatrix;
+        }
+
+        private void SetNeopjukiTestAnimation(string animationId)
+        {
+            _neopjukiTestAnimation = string.IsNullOrWhiteSpace(animationId) ? "auto" : animationId;
+            _animationFrame = 0;
+            _nextAnimationAt = 0f;
+            PlaySfx(AssetClip("UiMoveSound"));
+        }
+
+        private Sprite[] CurrentNeopjukiTestFrames()
+        {
+            switch (_neopjukiTestAnimation)
+            {
+                case "idle": return _playerIdleFrames;
+                case "right": return _playerWalkFrames;
+                case "left": return _playerWalkLeftFrames;
+                case "wave": return _neopjukiWaveFrames;
+                case "jump": return _neopjukiJumpFrames;
+                case "failed": return _neopjukiFailedFrames;
+                case "waiting": return _neopjukiWaitingFrames;
+                case "review": return _neopjukiReviewFrames;
+                case "keyboard-attack": return _neopjukiKeyboardAttackFrames;
+                case "keyboard-magic": return _neopjukiKeyboardMagicFrames;
+                case "keyboard-debug": return _neopjukiKeyboardDebugFrames;
+                case "keyboard-attack-left": return _neopjukiKeyboardAttackLeftFrames;
+                case "keyboard-attack-up": return _neopjukiKeyboardAttackUpFrames;
+                case "keyboard-attack-down": return _neopjukiKeyboardAttackDownFrames;
+                case "walking-up": return _neopjukiWalkUpFrames;
+                case "walking-down": return _neopjukiWalkDownFrames;
+                default: return Array.Empty<Sprite>();
+            }
+        }
+
+        private Sprite[] CurrentNeopjukiAttackFrames(EntityVisual visual)
+        {
+            if (visual == null || !visual.IsPlayer)
+                return visual != null ? visual.AttackFrames : Array.Empty<Sprite>();
+            if (visual.FacingVertical > 0 && _neopjukiKeyboardAttackUpFrames.Length > 0)
+                return _neopjukiKeyboardAttackUpFrames;
+            if (visual.FacingVertical < 0 && _neopjukiKeyboardAttackDownFrames.Length > 0)
+                return _neopjukiKeyboardAttackDownFrames;
+            if (visual.FacingLeft && _neopjukiKeyboardAttackLeftFrames.Length > 0)
+                return _neopjukiKeyboardAttackLeftFrames;
+            return visual.AttackFrames;
         }
 
         private void UpdateAuthoredUi()
@@ -327,15 +480,15 @@ namespace KeyboardWanderer.Demo
 
             int nextCounter = PlayerPrefs.GetInt("keyboard-wanderer.run-counter", 0) + 1;
             long nextSeed = 20260717L + nextCounter;
-            _sceneUi.SetText(KeyboardWandererUiText.TitleHeading, CampaignCatalog.CampaignTitle);
-            _sceneUi.SetText(KeyboardWandererUiText.TitleSubtitle, "관리자 키보드로 붕괴한 코드리아를 복구하는 탐험 RPG");
-            _sceneUi.SetText(KeyboardWandererUiText.TitleSeed, "NEXT SEED  " + nextSeed);
-            _sceneUi.SetText(KeyboardWandererUiText.TitlePremise,
-                "넙죽이가 되어 여섯 지역을 탐험하세요.\n" +
-                "대상을 조사하고 적과 싸워 관리자 권한 3개를 되찾으면 루트 시스템의 결말이 열립니다.");
-            _sceneUi.SetText(KeyboardWandererUiText.TitleStatus, _serverStatus + " · Ninja Adventure CC0");
-            _sceneUi.SetButtonState(KeyboardWandererUiButton.NewRun, !_serverPending);
-            _sceneUi.SetButtonState(KeyboardWandererUiButton.Continue, !_serverPending &&
+            CampaignBlueprint preview = CampaignCatalog.Create(nextSeed);
+            _sceneUi.SetText("Title Heading", CampaignCatalog.CampaignTitle);
+            _sceneUi.SetText("Title Subtitle", "코드리아 × 관리자 키보드 × 선택 회수");
+            _sceneUi.SetText("Title Seed", "NEXT SEED  " + nextSeed);
+            _sceneUi.SetText("Title Premise", preview.Title + "\n\n" + preview.Premise);
+            _sceneUi.SetText("Title Status", _serverStatus + " · Ninja Adventure CC0");
+            _sceneUi.SetImageSprite("Title Character", _playerSprite);
+            _sceneUi.SetButtonState("New Run Button", !_serverPending);
+            _sceneUi.SetButtonState("Continue Button", !_serverPending &&
                 (LocalRunSaveService.HasSave || !string.IsNullOrWhiteSpace(PlayerPrefs.GetString(ServerRunIdKey, string.Empty))));
 
             if (_service == null)
@@ -839,84 +992,22 @@ namespace KeyboardWanderer.Demo
 
         private string SelectionExecutionSummary()
         {
-            if (_ability == AbilityKind.Move)
-                return "실행 · 의미 턴 소비 없음 · 이동 중 사건 발생 가능";
-            string risk = _ability == AbilityKind.Delete || _ability == AbilityKind.Undo
-                ? "높은 위험"
-                : _ability == AbilityKind.Connect ? "관계 변화 가능" : "판정 결과 적용";
-            return "실행 · 의미 턴 1 + D20 · " + risk;
-        }
-
-        private static EntityView SelectedEntity(RunView view, Guid? entityId)
-        {
-            if (view == null || !entityId.HasValue) return null;
-            for (int i = 0; i < view.Entities.Count; i++)
-                if (view.Entities[i].EntityId == entityId.Value) return view.Entities[i];
-            return null;
-        }
-
-        private void ConfigureInput()
-        {
-            _inputController = authoredInputController;
-            if (_inputController == null)
-                return;
-            _inputController.PauseRequested += HandlePauseRequested;
-            _inputController.AbilityRequested += HandleAbilityRequested;
-            _inputController.PasteRequested += HandlePasteRequested;
-            _inputController.PoiCycleRequested += HandlePoiCycleRequested;
-            _inputController.SubmitRequested += HandleSubmitRequested;
-            _inputController.WorldClickRequested += HandleMapClick;
-        }
-
-        private bool CanHandleGameplayInput()
-        {
-            return _screenMode == ScreenMode.Playing && _service != null && !_showPause &&
-                   RunIsPlaying(_service.CurrentView) && !_serverPending && !_playerWalking;
-        }
-
-        private void HandlePauseRequested()
-        {
-            if (_screenMode != ScreenMode.Playing || _service == null)
-                return;
-            _showPause = !_showPause;
-            PlaySfx(_showPause ? AssetClip("UiCancelSound") : AssetClip("UiAcceptSound"));
-        }
-
-        private void HandleAbilityRequested(AbilityKind ability)
-        {
-            if (!CanHandleGameplayInput())
-                return;
-            SetAbility(ability);
-            if ((ability == AbilityKind.Search || ability == AbilityKind.SelectAll || ability == AbilityKind.Undo) &&
-                IsSkillEnabledForCurrentTarget(ability))
-                Submit();
-        }
-
-        private void HandlePasteRequested()
-        {
-            if (CanHandleGameplayInput() && _ability == AbilityKind.Copy && _copySourceCaptured &&
-                _selectedCoord.HasValue)
-                Submit();
-        }
-
-        private void HandlePoiCycleRequested(int direction)
-        {
-            if (CanHandleGameplayInput()) CyclePoi(direction);
-        }
-
-        private void HandleSubmitRequested()
-        {
-            if (CanHandleGameplayInput()) Submit();
-        }
-
-        private void HandleMapClick(Vector2 mousePosition)
-        {
-            if (!CanHandleGameplayInput() || _cameraController == null || !_cameraController.IsReady)
-                return;
-            if (!_cameraController.ContainsScreenPoint(mousePosition))
+            Mouse mouse = Mouse.current;
+            if (_debugTourActive || _showPause || _playerWalking || mouse == null || !mouse.leftButton.wasPressedThisFrame || _camera == null)
                 return;
 
-            Vector3 world = _cameraController.ScreenToWorld(mousePosition);
+            Vector2 mousePosition = mouse.position.ReadValue();
+            Vector2 logicalGuiPosition = new Vector2(
+                mousePosition.x * LogicalWidth / Mathf.Max(1f, Screen.width),
+                (Screen.height - mousePosition.y) * LogicalHeight / Mathf.Max(1f, Screen.height));
+            if (_neopjukiWaveFrames.Length > 0 && NeopjukiTestPanelRect.Contains(logicalGuiPosition))
+                return;
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                return;
+            if (!_camera.pixelRect.Contains(mousePosition))
+                return;
+
+            Vector3 world = _camera.ScreenToWorldPoint(new Vector3(mousePosition.x, mousePosition.y, 0f));
             RunView view = _service.CurrentView;
             Vector2 origin = MapOrigin(view);
             var coord = new GridCoord(
@@ -1694,46 +1785,50 @@ namespace KeyboardWanderer.Demo
 
             // One Tilemap renders the immutable 160x160 terrain. Online, the server snapshot is the
             // sole geometry authority; the local map remains only an offline continuity fallback.
-            _worldRoot = authoredWorld.gameObject;
-            _worldRoot.name = "Authored World · " + ShortHash(layoutHash);
-            if (rebuildStaticWorld)
-                _decorationBaseColors.Clear();
-            authoredWorld.ResetRuntimeContent(rebuildStaticWorld);
-            Tilemap tilemap = authoredWorld.TerrainTilemap;
-            tilemap.transform.position = new Vector3(origin.x, origin.y, 0f);
-            _selectionRenderer = authoredWorld.SelectionCursor;
-            TilemapRenderer activeTilemapRenderer = tilemap.GetComponent<TilemapRenderer>();
-            if (activeTilemapRenderer != null)
-                activeTilemapRenderer.sortingOrder = TerrainSortingOrder;
+            Tilemap tilemap;
+            if (authoredWorld != null && authoredWorld.TerrainTilemap != null)
+            {
+                _worldRoot = authoredWorld.gameObject;
+                _worldRoot.name = "Authored World · " + ShortHash(layoutHash);
+                authoredWorld.ResetRuntimeContent();
+                tilemap = authoredWorld.TerrainTilemap;
+                tilemap.transform.position = new Vector3(origin.x, origin.y, 0f);
+                _selectionRenderer = authoredWorld.SelectionCursor;
+            }
+            else
+            {
+                _worldRoot = new GameObject("Persistent World · " + ShortHash(layoutHash));
+                _worldRoot.transform.SetParent(transform, false);
+                _worldRoot.AddComponent<Grid>();
+                var terrainObject = new GameObject("Immutable Terrain Tilemap");
+                terrainObject.transform.SetParent(_worldRoot.transform, false);
+                terrainObject.transform.position = new Vector3(origin.x, origin.y, 0f);
+                tilemap = terrainObject.AddComponent<Tilemap>();
+                var tilemapRenderer = terrainObject.AddComponent<TilemapRenderer>();
+                tilemapRenderer.sortingOrder = 0;
+            }
             var tilePalette = new Dictionary<string, Tile>(StringComparer.Ordinal);
 
             if (rebuildStaticWorld)
             {
                 for (int y = 0; y < worldHeight; y++)
                 {
-                    for (int x = 0; x < worldWidth; x++)
+                    var coord = new GridCoord(x, y);
+                    TileKind tileKind = useServerWorld
+                        ? TileKindForServer(serverWorld, serverWorld.tileCodes[y * serverWorld.width + x])
+                        : view.Region.GetTile(coord).Kind;
+                    string biomeId = BiomeIdAt(view, coord);
+                    TileAppearance(tileKind, biomeId, coord, out Sprite sprite, out Color tint);
+                    string paletteKey = biomeId + ":" + tileKind;
+                    if (!tilePalette.TryGetValue(paletteKey, out Tile visualTile))
                     {
-                        var coord = new GridCoord(x, y);
-                        TileKind tileKind = useServerWorld
-                            ? TileKindForServer(serverWorld, serverWorld.tileCodes[y * serverWorld.width + x])
-                            : view.Region.GetTile(coord).Kind;
-                        string biomeId = BiomeIdAt(view, coord);
-                        TileAppearance(tileKind, biomeId, coord, out Sprite sprite, out Color tint);
-                        string paletteKey = biomeId + ":" + tileKind;
-                        if (!tilePalette.TryGetValue(paletteKey, out Tile visualTile))
-                        {
-                            visualTile = ScriptableObject.CreateInstance<Tile>();
-                            visualTile.name = "Runtime " + biomeId + " " + tileKind + " Tile";
-                            visualTile.sprite = sprite;
-                            visualTile.color = Color.white;
-                            visualTile.flags = TileFlags.None;
-                            tilePalette.Add(paletteKey, visualTile);
-                            _runtimeTiles.Add(visualTile);
-                        }
-                        var cell = new Vector3Int(x, y, 0);
-                        tilemap.SetTile(cell, visualTile);
-                        tilemap.SetTileFlags(cell, TileFlags.None);
-                        tilemap.SetColor(cell, tint);
+                        visualTile = ScriptableObject.CreateInstance<Tile>();
+                        visualTile.name = "Runtime " + biomeId + " " + tileKind + " Tile";
+                        visualTile.sprite = sprite;
+                        visualTile.color = Color.white;
+                        visualTile.flags = TileFlags.None;
+                        tilePalette.Add(paletteKey, visualTile);
+                        _runtimeTiles.Add(visualTile);
                     }
                 }
                 CreateBiomeDecorations(view, origin, useServerWorld, worldWidth, worldHeight);
@@ -1741,6 +1836,15 @@ namespace KeyboardWanderer.Demo
                 _renderedLayoutHash = layoutHash;
             }
 
+            CreateBiomeDecorations(view, origin, useServerWorld, worldWidth, worldHeight);
+            CreateCampaignLandmarkMarkers(view, origin, useServerWorld);
+
+            if (_selectionRenderer == null)
+            {
+                var selection = new GameObject("Selection Cursor");
+                selection.transform.SetParent(WorldContentRoot, false);
+                _selectionRenderer = selection.AddComponent<SpriteRenderer>();
+            }
             _selectionRenderer.sprite = _grassSprite;
             _selectionRenderer.color = new Color(1f, 0.85f, 0.35f, 0.42f);
             _selectionRenderer.sortingOrder = 900;
@@ -1821,6 +1925,9 @@ namespace KeyboardWanderer.Demo
                         Renderer = renderer,
                         IdleFrames = FramesForAsset(entity.assetId, entity.kind, isPlayer),
                         WalkFrames = isPlayer ? _playerWalkFrames : Array.Empty<Sprite>(),
+                        WalkLeftFrames = isPlayer ? _playerWalkLeftFrames : Array.Empty<Sprite>(),
+                        WalkUpFrames = isPlayer ? _neopjukiWalkUpFrames : Array.Empty<Sprite>(),
+                        WalkDownFrames = isPlayer ? _neopjukiWalkDownFrames : Array.Empty<Sprite>(),
                         AttackFrames = isPlayer ? _playerAttackFrames : Array.Empty<Sprite>(),
                         TargetPosition = root.transform.position,
                         BaseColor = ServerEntityTint(entity),
@@ -1903,6 +2010,9 @@ namespace KeyboardWanderer.Demo
                 Renderer = renderer,
                 IdleFrames = FramesForEntity(entity),
                 WalkFrames = isPlayer ? _playerWalkFrames : Array.Empty<Sprite>(),
+                WalkLeftFrames = isPlayer ? _playerWalkLeftFrames : Array.Empty<Sprite>(),
+                WalkUpFrames = isPlayer ? _neopjukiWalkUpFrames : Array.Empty<Sprite>(),
+                WalkDownFrames = isPlayer ? _neopjukiWalkDownFrames : Array.Empty<Sprite>(),
                 AttackFrames = isPlayer ? _playerAttackFrames : Array.Empty<Sprite>(),
                 TargetPosition = root.transform.position,
                 BaseColor = EntityTint(entity),
@@ -2051,10 +2161,19 @@ namespace KeyboardWanderer.Demo
                     visual.Root.transform.position = Vector3.MoveTowards(before, visual.TargetPosition,
                         PlayerWalkSpeed * Time.unscaledDeltaTime);
                     float horizontal = visual.Root.transform.position.x - before.x;
-                    if (!usesAnimator && Mathf.Abs(horizontal) > 0.0001f)
-                        visual.Renderer.flipX = horizontal < 0f;
-                    else if (usesAnimator)
+                    float vertical = visual.Root.transform.position.y - before.y;
+                    if (Mathf.Abs(vertical) > 0.0001f)
+                    {
+                        visual.FacingVertical = vertical > 0f ? 1 : -1;
+                        visual.FacingLeft = false;
                         visual.Renderer.flipX = false;
+                    }
+                    else if (Mathf.Abs(horizontal) > 0.0001f)
+                    {
+                        visual.FacingVertical = 0;
+                        visual.FacingLeft = horizontal < 0f;
+                        visual.Renderer.flipX = visual.WalkLeftFrames.Length == 0 && visual.FacingLeft;
+                    }
                     if (Vector3.SqrMagnitude(visual.Root.transform.position - visual.TargetPosition) < 0.0004f)
                     {
                         visual.Root.transform.position = visual.TargetPosition;
@@ -2072,32 +2191,25 @@ namespace KeyboardWanderer.Demo
                 {
                     visual.Root.transform.position = Vector3.Lerp(visual.Root.transform.position, visual.TargetPosition, smoothing);
                 }
-                Vector2 mapOrigin = MapOrigin(_service.CurrentView);
-                int visualY = Mathf.FloorToInt((visual.Root.transform.position.y - mapOrigin.y) / TileSize);
-                visual.Renderer.sortingOrder = 500 - visualY * 4;
-                bool playerAction = visual.IsPlayer && Time.unscaledTime < _playerActionUntil;
-                Sprite[] frames = visual.IsPlayer && walkingThisFrame
-                    ? DirectionalPlayerFrames(visual.Facing, false, visual.WalkFrames)
-                    : playerAction
-                        ? DirectionalPlayerFrames(visual.Facing, true, visual.AttackFrames)
-                        : visual.IdleFrames;
-                if (visual.IsPlayer && _assets != null && _assets.NeopjukiAtlas != null)
+                Sprite[] testFrames = visual.IsPlayer ? CurrentNeopjukiTestFrames() : Array.Empty<Sprite>();
+                Sprite[] walkFrames = visual.FacingVertical > 0 && visual.WalkUpFrames.Length > 0
+                    ? visual.WalkUpFrames
+                    : visual.FacingVertical < 0 && visual.WalkDownFrames.Length > 0
+                        ? visual.WalkDownFrames
+                        : visual.FacingLeft && visual.WalkLeftFrames.Length > 0
+                            ? visual.WalkLeftFrames
+                            : visual.WalkFrames;
+                Sprite[] attackFrames = CurrentNeopjukiAttackFrames(visual);
+                Sprite[] frames = testFrames.Length > 0
+                    ? testFrames
+                    : walkingThisFrame && walkFrames.Length > 0
+                        ? walkFrames
+                        : visual.IsPlayer && Time.unscaledTime < _playerActionUntil && attackFrames.Length > 0
+                            ? attackFrames
+                            : visual.IdleFrames;
+                if (testFrames.Length > 0 && visual.WalkLeftFrames.Length > 0)
                     visual.Renderer.flipX = false;
-                if (usesAnimator && visual.IsPlayer)
-                {
-                    visual.Animator.SetFloat("MoveX", visual.Facing.x);
-                    visual.Animator.SetFloat("MoveY", visual.Facing.y);
-                    visual.Animator.SetBool("IsMoving", walkingThisFrame);
-                    visual.Animator.SetBool("IsAttacking",
-                        !walkingThisFrame && Time.unscaledTime < _playerActionUntil);
-                }
-                else if (usesAnimator)
-                {
-                    SetAnimatorFloat(visual.Animator, "MoveX", visual.Facing.x);
-                    SetAnimatorFloat(visual.Animator, "MoveY", visual.Facing.y);
-                    SetAnimatorFloat(visual.Animator, "MoveSpeed", visual.IsWandering ? 1f : 0f);
-                }
-                else if (!usesAnimator && frames.Length > 0)
+                if (frames.Length > 0)
                 {
                     Sprite frame = frames[_animationFrame % frames.Length];
                     if (visual.Renderer.sprite != frame)
@@ -2610,8 +2722,11 @@ namespace KeyboardWanderer.Demo
 
         private void UpdateCameraFollow()
         {
-            if (_cameraController == null || !_cameraController.IsReady || _service == null)
+            if (_debugTourActive) // TEMP DEBUG — 커밋 전 제거
+            {
+                UpdateDebugTourCamera();
                 return;
+            }
             RunView view = _service.CurrentView;
             if (!TryGetPlayerPosition(view, out GridCoord playerPosition))
                 return;
@@ -2626,6 +2741,181 @@ namespace KeyboardWanderer.Demo
             int worldWidth = ActiveWorldWidth(view);
             int worldHeight = ActiveWorldHeight(view);
             _cameraController.Follow(desired, origin, worldWidth, worldHeight, Time.unscaledDeltaTime);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // TEMP DEBUG — 구역 순회 기능 (커밋 전 제거).
+        // F1 토글 · F2/F3 이전·다음 · +/- 줌 · F4 전체보기.
+        // 넙죽이 테스트 패널과 마찬가지로 임시 개발 도구다.
+        // ─────────────────────────────────────────────────────────────
+        private void HandleDebugRegionTour()
+        {
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null)
+                return;
+
+            if (keyboard.backquoteKey.wasPressedThisFrame)
+            {
+                _debugTourActive = !_debugTourActive;
+                if (_debugTourActive)
+                {
+                    _debugTourBaseOrthoSize = _camera != null ? _camera.orthographicSize : 8.25f;
+                    FocusDebugTourRegion(_debugTourIndex);
+                }
+                else
+                {
+                    _cameraInspectCoord = null;
+                    _cameraInspectUntil = 0f;
+                    if (_camera != null) _camera.orthographicSize = _debugTourBaseOrthoSize;
+                }
+                PlaySfx(AssetClip("UiAcceptSound"));
+            }
+
+            if (!_debugTourActive)
+                return;
+
+            int count = DebugTourRegionCount();
+            if (count > 0)
+            {
+                if (keyboard.periodKey.wasPressedThisFrame || keyboard.pageDownKey.wasPressedThisFrame)
+                    FocusDebugTourRegion(_debugTourIndex + 1);
+                if (keyboard.commaKey.wasPressedThisFrame || keyboard.pageUpKey.wasPressedThisFrame)
+                    FocusDebugTourRegion(_debugTourIndex - 1);
+            }
+            if (keyboard.equalsKey.wasPressedThisFrame || keyboard.numpadPlusKey.wasPressedThisFrame)
+                _debugTourZoom = Mathf.Max(6f, _debugTourZoom - 4f);
+            if (keyboard.minusKey.wasPressedThisFrame || keyboard.numpadMinusKey.wasPressedThisFrame)
+                _debugTourZoom = Mathf.Min(90f, _debugTourZoom + 4f);
+            if (keyboard.digit0Key.wasPressedThisFrame)
+                _debugTourZoom = 84f;
+        }
+
+        private void FocusDebugTourRegion(int index)
+        {
+            int count = DebugTourRegionCount();
+            if (count <= 0)
+                return;
+            _debugTourIndex = ((index % count) + count) % count;
+            if (TryGetDebugTourRegion(_debugTourIndex, out GridCoord center, out _))
+            {
+                _cameraInspectCoord = center;
+                _cameraInspectUntil = float.MaxValue;
+            }
+        }
+
+        private void UpdateDebugTourCamera()
+        {
+            RunView view = _service != null ? _service.CurrentView : null;
+            if (view == null || _camera == null)
+                return;
+            _camera.orthographicSize = Mathf.Lerp(_camera.orthographicSize, _debugTourZoom,
+                1f - Mathf.Exp(-8f * Time.unscaledDeltaTime));
+            if (!TryGetDebugTourRegion(_debugTourIndex, out GridCoord center, out _))
+                return;
+            Vector3 desired = WorldPosition(MapOrigin(view), center);
+            desired.z = -10f;
+            _camera.transform.position = Vector3.SmoothDamp(_camera.transform.position, desired,
+                ref _cameraVelocity, 0.16f, Mathf.Infinity, Time.unscaledDeltaTime);
+        }
+
+        private int DebugTourRegionCount()
+        {
+            RunView view = _service != null ? _service.CurrentView : null;
+            if (view == null)
+                return 0;
+            if (_serverOnline && _serverRun?.world?.areas != null)
+                return _serverRun.world.areas.Length;
+            return view.Region?.Areas?.Count ?? 0;
+        }
+
+        private bool TryGetDebugTourRegion(int index, out GridCoord center, out string label)
+        {
+            center = default;
+            label = string.Empty;
+            RunView view = _service != null ? _service.CurrentView : null;
+            if (view == null)
+                return false;
+            if (_serverOnline && _serverRun?.world?.areas != null)
+            {
+                GameApiClient.AreaSnapshot[] areas = _serverRun.world.areas;
+                if (index < 0 || index >= areas.Length)
+                    return false;
+                GameApiClient.AreaSnapshot area = areas[index];
+                center = area.anchor != null
+                    ? new GridCoord(area.anchor.x, area.anchor.y)
+                    : (area.bounds != null
+                        ? new GridCoord(area.bounds.x + area.bounds.width / 2, area.bounds.y + area.bounds.height / 2)
+                        : new GridCoord(view.Region.Width / 2, view.Region.Height / 2));
+                string name = !string.IsNullOrWhiteSpace(area.nameKo) ? area.nameKo
+                    : (!string.IsNullOrWhiteSpace(area.name) ? area.name : area.id);
+                label = name + " · " + BiomeLabelForId(area.biomeId);
+                return true;
+            }
+            if (view.Region?.Areas != null && index >= 0 && index < view.Region.Areas.Count)
+            {
+                WorldArea area = view.Region.Areas[index];
+                center = area.Center;
+                label = area.DisplayName + " · " + BiomeLabelForId(area.Biome);
+                return true;
+            }
+            return false;
+        }
+
+        private static string BiomeLabelForId(string id)
+        {
+            switch (id)
+            {
+                case "root_system": return "루트 시스템 · 코어";
+                case "temperate_forest_field": return "온대 숲·들판";
+                case "river_wetland": return "강·습지";
+                case "arid_desert": return "건조 사막";
+                case "frost_highland": return "설원 고지";
+                case "subterranean_cavern": return "지하 동굴";
+                case "ancient_ruins": return "고대 유적";
+                default: return string.IsNullOrWhiteSpace(id) ? "바이옴 미확인" : id;
+            }
+        }
+
+        private void DrawDebugRegionTourPanel()
+        {
+            if (!_debugTourActive || _screenMode != ScreenMode.Playing || _service == null)
+                return;
+
+            Matrix4x4 previousMatrix = GUI.matrix;
+            Color previousColor = GUI.color;
+            Font previousFont = GUI.skin.font;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(Screen.width / LogicalWidth, Screen.height / LogicalHeight, 1f));
+            if (_koreanFont != null)
+                GUI.skin.font = _koreanFont;
+            else if (_assets != null && _assets.PixelFont != null)
+                GUI.skin.font = _assets.PixelFont;
+            EnsureStyles();
+
+            int count = DebugTourRegionCount();
+            int rows = (count + 1) / 2;
+            var panel = new Rect(24f, 250f, 396f, 118f + rows * 34f);
+            GUI.Box(panel, "구역 순회 (임시 디버그)");
+
+            string current = TryGetDebugTourRegion(_debugTourIndex, out _, out string label) ? label : "구역 없음";
+            GUI.Label(new Rect(panel.x + 16f, panel.y + 32f, panel.width - 32f, 22f),
+                "현재 [" + (count == 0 ? 0 : _debugTourIndex + 1) + "/" + count + "]  " + current, _headerStyle);
+            GUI.Label(new Rect(panel.x + 16f, panel.y + 56f, panel.width - 32f, 40f),
+                "` 토글 · , / . 이전·다음 · - / = 줌 · 0 전체", _mutedStyle);
+
+            for (int i = 0; i < count; i++)
+            {
+                int column = i % 2;
+                int row = i / 2;
+                var rect = new Rect(panel.x + 16f + column * 184f, panel.y + 104f + row * 34f, 176f, 30f);
+                TryGetDebugTourRegion(i, out _, out string itemLabel);
+                GUIStyle style = i == _debugTourIndex ? _selectedButtonStyle : _buttonStyle;
+                if (GUI.Button(rect, itemLabel, style))
+                    FocusDebugTourRegion(i);
+            }
+
+            GUI.skin.font = previousFont;
+            GUI.color = previousColor;
+            GUI.matrix = previousMatrix;
         }
 
         private void SnapCameraToPlayer()
@@ -2713,87 +3003,92 @@ namespace KeyboardWanderer.Demo
             _forestHouseSprite = CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
                 new Rect(0f, 304f, 64f, 64f), "Forest House", Hex("a7653f"), new Vector2(0.5f, 0.05f));
             _wetlandPlantSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
-                new Rect(96f, 144f, 32f, 32f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
+                new Rect(112f, 160f, 16f, 16f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
             _wetlandLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.WatermillAtlas : null,
                 new Rect(0f, 0f, 34f, 36f), "Wetland Watermill", Hex("9a6b43"), new Vector2(0.5f, 0.08f));
-            _desertPalmSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
-                new Rect(112f, 72f, 48f, 48f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
+            // The desert atlas is a modular construction sheet rather than a collection of standalone
+            // scenery sprites. Use isolated nature-atlas cells here so a crop cannot include building pieces.
+            _desertShrubSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                new Rect(176f, 160f, 16f, 16f), "Desert Shrub", Hex("729347"), new Vector2(0.5f, 0.08f));
             _desertLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null,
-                new Rect(256f, 96f, 64f, 96f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
+                new Rect(48f, 112f, 48f, 80f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
             _frostTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
                 new Rect(128f, 304f, 32f, 32f), "Frost Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f));
             _frostLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
-                new Rect(0f, 144f, 96f, 80f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
+                new Rect(0f, 144f, 48f, 48f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
             _cavernCrystalSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
                 new Rect(0f, 112f, 32f, 32f), "Cavern Crystal", Hex("a978c4"), new Vector2(0.5f, 0.08f));
             _ruinTreeSprite = CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
                 new Rect(64f, 304f, 32f, 32f), "Ruins Dead Tree", Hex("75624f"), new Vector2(0.5f, 0.08f));
             _ruinLandmarkSprite = CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
-                new Rect(176f, 0f, 80f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
-
+                new Rect(192f, 16f, 64f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
             _forestDecorationSprites = new[]
             {
                 _forestTreeSprite,
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(32f, 304f, 32f, 32f),
-                    "Forest Pine", Hex("477a3d"), new Vector2(0.5f, 0.08f)),
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(96f, 304f, 32f, 32f),
-                    "Forest Shrub", Hex("6a9a46"), new Vector2(0.5f, 0.08f)),
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(96f, 208f, 32f, 32f),
-                    "Forest Plants", Hex("6f9e4c"), new Vector2(0.5f, 0.08f))
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(32f, 304f, 32f, 32f), "Forest Pine", Hex("477a3d"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(96f, 304f, 32f, 32f), "Forest Shrub", Hex("6a9a46"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(64f, 160f, 16f, 16f), "Forest Plants", Hex("6f9e4c"), new Vector2(0.5f, 0.08f))
             };
             _wetlandDecorationSprites = new[]
             {
                 _wetlandPlantSprite,
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(128f, 208f, 32f, 32f),
-                    "Wetland Plants", Hex("4f8f68"), new Vector2(0.5f, 0.08f)),
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(160f, 208f, 32f, 32f),
-                    "Wetland Flowers", Hex("6fa87b"), new Vector2(0.5f, 0.08f))
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(128f, 160f, 16f, 16f), "Wetland Plants", Hex("4f8f68"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(0f, 144f, 16f, 16f), "Wetland Flowers", Hex("6fa87b"), new Vector2(0.5f, 0.08f))
             };
             _desertDecorationSprites = new[]
             {
-                _desertPalmSprite,
-                CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null, new Rect(160f, 72f, 48f, 48f),
-                    "Desert Palm Cluster", Hex("7f9a4d"), new Vector2(0.5f, 0.08f)),
-                CreateAtlasSprite(_assets != null ? _assets.DesertAtlas : null, new Rect(208f, 72f, 48f, 48f),
-                    "Desert Oasis Plant", Hex("8ca454"), new Vector2(0.5f, 0.08f))
+                _desertShrubSprite,
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(144f, 176f, 16f, 16f), "Desert Rock", Hex("7f9a4d"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(160f, 176f, 16f, 16f), "Desert Bush", Hex("8ca454"), new Vector2(0.5f, 0.08f))
+            };
+            _desertBuildingSprites = new[]
+            {
+                _desertLandmarkSprite,
+                CreateAtlasSpriteWithoutBottomLeft(_assets != null ? _assets.HouseAtlas : null,
+                    new Rect(128f, 304f, 64f, 64f), new Vector2(32f, 16f),
+                    "Desert House", Hex("c98342"), new Vector2(0.5f, 0.04f)),
+                CreateAtlasSprite(_assets != null ? _assets.HouseAtlas : null,
+                    new Rect(192f, 304f, 64f, 64f), "Desert Red House", Hex("c56f45"), new Vector2(0.5f, 0.04f))
             };
             _frostDecorationSprites = new[]
             {
                 _frostTreeSprite,
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(160f, 304f, 32f, 32f),
-                    "Frost Snow Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f)),
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(192f, 304f, 32f, 32f),
-                    "Frost Bush", Hex("d4e7ed"), new Vector2(0.5f, 0.08f))
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(160f, 304f, 32f, 32f), "Frost Snow Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(192f, 304f, 32f, 32f), "Frost Bush", Hex("d4e7ed"), new Vector2(0.5f, 0.08f))
             };
             _cavernDecorationSprites = new[]
             {
                 _cavernCrystalSprite,
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(32f, 112f, 32f, 32f),
-                    "Cavern Crystal Cluster", Hex("9670b8"), new Vector2(0.5f, 0.08f)),
-                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null, new Rect(64f, 112f, 32f, 32f),
-                    "Cavern Ore", Hex("8062a0"), new Vector2(0.5f, 0.08f))
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(32f, 112f, 32f, 32f), "Cavern Crystal Cluster", Hex("9670b8"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.NatureAtlas : null,
+                    new Rect(64f, 112f, 32f, 32f), "Cavern Ore", Hex("8062a0"), new Vector2(0.5f, 0.08f))
             };
             _ruinDecorationSprites = new[]
             {
                 _ruinTreeSprite,
-                CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null, new Rect(0f, 112f, 32f, 32f),
-                    "Ruin Rubble", Hex("8b7757"), new Vector2(0.5f, 0.08f)),
-                CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null, new Rect(32f, 112f, 32f, 32f),
-                    "Ruin Overgrowth", Hex("788152"), new Vector2(0.5f, 0.08f))
+                CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
+                    new Rect(0f, 112f, 32f, 32f), "Ruin Rubble", Hex("8b7757"), new Vector2(0.5f, 0.08f)),
+                CreateAtlasSprite(_assets != null ? _assets.AbandonedVillageAtlas : null,
+                    new Rect(32f, 112f, 32f, 32f), "Ruin Overgrowth", Hex("788152"), new Vector2(0.5f, 0.08f))
             };
 
             if (_assets != null)
             {
-                if (_assets.PlayerAnimatorController == null)
-                {
-                    _playerIdleFrames = CreateSheetFrames(_assets.PlayerIdleSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Idle");
-                    _playerWalkFrames = CreateSheetFrames(_assets.PlayerWalkSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Walk");
-                    _playerAttackFrames = CreateSheetFrames(_assets.PlayerAttackSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Attack");
-                }
-                if (_assets.SlimeAnimatorController == null)
-                    _slimeFrames = CreateSheetFrames(_assets.SlimeSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Slime");
-                if (_assets.VillagerAnimatorController == null)
-                    _villagerFrames = CreateSheetFrames(_assets.VillagerWalkSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Villager");
+                _playerIdleFrames = CreateSheetFrames(_assets.PlayerIdleSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Idle");
+                _playerWalkFrames = CreateSheetFrames(_assets.PlayerWalkSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Walk");
+                _playerAttackFrames = CreateSheetFrames(_assets.PlayerAttackSheet, Mathf.Max(1, _assets.PlayerFrameSize), 3, "Player Attack");
+                _slimeFrames = CreateSheetFrames(_assets.SlimeSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Slime");
+                _villagerFrames = CreateSheetFrames(_assets.VillagerWalkSheet, Mathf.Max(1, _assets.CreatureFrameSize), 3, "Villager");
 
                 if (_assets.NeopjukiAtlas != null)
                 {
@@ -2802,12 +3097,20 @@ namespace KeyboardWanderer.Demo
                     _playerIdleFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 0, 6, "Neopjuki Idle");
                     _playerWalkFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 1, 8, "Neopjuki Right");
                     _playerWalkLeftFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 2, 8, "Neopjuki Left");
-                    _playerAttackFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 8, 8, "Neopjuki Attack Right");
-                    _playerAttackLeftFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 11, 8, "Neopjuki Attack Left");
-                    _playerAttackUpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 12, 8, "Neopjuki Attack Up");
-                    _playerAttackDownFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 13, 8, "Neopjuki Attack Down");
-                    _playerWalkUpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 14, 8, "Neopjuki Walk Up");
-                    _playerWalkDownFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 15, 8, "Neopjuki Walk Down");
+                    _neopjukiWaveFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 3, 4, "Neopjuki Wave");
+                    _neopjukiJumpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 4, 5, "Neopjuki Jump");
+                    _neopjukiFailedFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 5, 8, "Neopjuki Failed");
+                    _neopjukiWaitingFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 6, 6, "Neopjuki Waiting");
+                    _neopjukiReviewFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 7, 6, "Neopjuki Review");
+                    _neopjukiKeyboardAttackFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 8, 8, "Neopjuki Keyboard Attack");
+                    _neopjukiKeyboardMagicFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 9, 8, "Neopjuki Keyboard Magic");
+                    _neopjukiKeyboardDebugFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 10, 8, "Neopjuki Keyboard Debug");
+                    _neopjukiKeyboardAttackLeftFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 11, 8, "Neopjuki Keyboard Attack Left");
+                    _neopjukiKeyboardAttackUpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 12, 8, "Neopjuki Keyboard Attack Up");
+                    _neopjukiKeyboardAttackDownFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 13, 8, "Neopjuki Keyboard Attack Down");
+                    _neopjukiWalkUpFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 14, 8, "Neopjuki Walk Up");
+                    _neopjukiWalkDownFrames = CreateNeopjukiFrames(_assets.NeopjukiAtlas, cellWidth, cellHeight, 15, 8, "Neopjuki Walk Down");
+                    _playerAttackFrames = _neopjukiKeyboardAttackFrames;
                 }
             }
 
@@ -2832,6 +3135,43 @@ namespace KeyboardWanderer.Demo
                 SpriteMeshType.FullRect);
             sprite.name = spriteName;
             _runtimeSprites.Add(sprite);
+            return sprite;
+        }
+
+        private Sprite CreateAtlasSpriteWithoutBottomLeft(Texture2D texture, Rect requestedRect, Vector2 cutoutSize,
+            string spriteName, Color fallbackColor, Vector2? requestedPivot = null)
+        {
+            Sprite sprite = CreateAtlasSprite(texture, requestedRect, spriteName, fallbackColor, requestedPivot);
+            if (texture == null)
+                return sprite;
+
+            float width = sprite.rect.width;
+            float height = sprite.rect.height;
+            float cutoutWidth = Mathf.Clamp(cutoutSize.x, 0f, width);
+            float cutoutHeight = Mathf.Clamp(cutoutSize.y, 0f, height);
+            if (cutoutWidth <= 0f || cutoutHeight <= 0f ||
+                cutoutWidth >= width || cutoutHeight >= height)
+                return sprite;
+
+            // Keep the atlas rect intact for consistent placement, but omit the two unrelated
+            // 16 px cells at the lower-left of the orange house from the rendered sprite mesh.
+            sprite.OverrideGeometry(
+                new[]
+                {
+                    new Vector2(0f, cutoutHeight),
+                    new Vector2(0f, height),
+                    new Vector2(width, height),
+                    new Vector2(width, cutoutHeight),
+                    new Vector2(cutoutWidth, 0f),
+                    new Vector2(cutoutWidth, cutoutHeight),
+                    new Vector2(width, cutoutHeight),
+                    new Vector2(width, 0f)
+                },
+                new ushort[]
+                {
+                    0, 1, 2, 0, 2, 3,
+                    4, 5, 6, 4, 6, 7
+                });
             return sprite;
         }
 
@@ -2958,10 +3298,6 @@ namespace KeyboardWanderer.Demo
 
         private Sprite GroundSpriteForBiome(string biomeId)
         {
-            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
-            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored) &&
-                authored.GroundSprite != null)
-                return authored.GroundSprite;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
                 case "root_system": return _cavernFloorSprite;
@@ -2971,160 +3307,6 @@ namespace KeyboardWanderer.Demo
                 case "subterranean_cavern": return _cavernFloorSprite;
                 case "ancient_ruins": return _ruinFloorSprite;
                 default: return _grassSprite;
-            }
-        }
-
-        private void UpdateMinimap(RunView view)
-        {
-            if (_sceneUi == null || view == null || !TryGetPlayerPosition(view, out GridCoord player))
-                return;
-            GameApiClient.WorldSnapshot serverWorld = _serverOnline ? _serverRun?.world : null;
-            bool useServerWorld = serverWorld != null && serverWorld.HasCompleteLayout;
-            int width = useServerWorld ? serverWorld.width : view.Region.Width;
-            int height = useServerWorld ? serverWorld.height : view.Region.Height;
-            string layoutHash = useServerWorld ? serverWorld.layoutHash : view.Region.LayoutHash;
-            bool hasObjective = TryGetServerObjectiveTarget(view, out GameApiClient.EntitySnapshot objectiveTarget,
-                out GridCoord objectiveCoord);
-            long presentationVersion = _serverOnline && _serverRun != null ? _serverRun.version : view.Version;
-            string signature = layoutHash + ":" + presentationVersion + ":" + player.X + ":" + player.Y + ":" +
-                               (_selectedCoord.HasValue ? _selectedCoord.Value.ToString() : "none") + ":" +
-                               (_selectedTarget.HasValue ? _selectedTarget.Value.ToString("N") : "none") + ":" +
-                               (hasObjective ? objectiveTarget.id + "@" + objectiveCoord : "no-objective");
-            if (_minimapPresenter.ShouldRedraw(signature))
-            {
-                const int size = 80;
-                if (_minimapTexture == null)
-                {
-                    _minimapTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-                    {
-                        name = "Runtime World Minimap",
-                        filterMode = FilterMode.Point,
-                        wrapMode = TextureWrapMode.Clamp
-                    };
-                    _runtimeTextures.Add(_minimapTexture);
-                    _minimapSprite = Sprite.Create(_minimapTexture, new Rect(0f, 0f, size, size),
-                        new Vector2(0.5f, 0.5f), size, 0, SpriteMeshType.FullRect);
-                    _minimapSprite.name = "Runtime World Minimap";
-                    _runtimeSprites.Add(_minimapSprite);
-                }
-
-                for (int py = 0; py < size; py++)
-                {
-                    int worldY = Mathf.Clamp(py * height / size, 0, height - 1);
-                    for (int px = 0; px < size; px++)
-                    {
-                        int worldX = Mathf.Clamp(px * width / size, 0, width - 1);
-                        var coord = new GridCoord(worldX, worldY);
-                        if (!useServerWorld && OutsideLocalWorldDisc(coord, width, height))
-                        {
-                            _minimapTexture.SetPixel(px, py, Color.clear);
-                            continue;
-                        }
-                        TileKind kind = WorldTileKind(view, coord, useServerWorld);
-                        _minimapTexture.SetPixel(px, py, MinimapTileColor(BiomeIdAt(view, coord), kind));
-                    }
-                }
-
-                if (_serverOnline && _serverRun?.world?.points != null)
-                {
-                    for (int i = 0; i < _serverRun.world.points.Length; i++)
-                    {
-                        GameApiClient.PointSnapshot point = _serverRun.world.points[i];
-                        if (point != null) PaintMinimapMarker(point.x, point.y, width, height, new Color(1f, 0.55f, 0.18f), 1);
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < view.Region.Areas.Count; i++)
-                    {
-                        GridCoord center = view.Region.Areas[i].Center;
-                        PaintMinimapMarker(center.X, center.Y, width, height, new Color(1f, 0.55f, 0.18f), 1);
-                    }
-                }
-                if (_serverOnline && _serverRun?.entities != null)
-                {
-                    for (int i = 0; i < _serverRun.entities.Length; i++)
-                    {
-                        GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
-                        if (entity?.position == null || !string.Equals(entity.kind, "enemy", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        bool selected = _selectedTarget.HasValue && Guid.TryParse(entity.id, out Guid id) &&
-                                        id == _selectedTarget.Value;
-                        PaintMinimapMarker(entity.position.x, entity.position.y, width, height,
-                            selected ? new Color(1f, 0.86f, 0.2f) : new Color(0.92f, 0.18f, 0.2f), selected ? 2 : 1);
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < view.Entities.Count; i++)
-                    {
-                        EntityView entity = view.Entities[i];
-                        if (!entity.IsHostile) continue;
-                        bool selected = _selectedTarget.HasValue && entity.EntityId == _selectedTarget.Value;
-                        PaintMinimapMarker(entity.Position.X, entity.Position.Y, width, height,
-                            selected ? new Color(1f, 0.86f, 0.2f) : new Color(0.92f, 0.18f, 0.2f), selected ? 2 : 1);
-                    }
-                }
-                if (_selectedCoord.HasValue)
-                    PaintMinimapMarker(_selectedCoord.Value.X, _selectedCoord.Value.Y, width, height,
-                        new Color(1f, 0.86f, 0.2f), 2);
-                if (hasObjective)
-                    PaintMinimapMarker(objectiveCoord.X, objectiveCoord.Y, width, height,
-                        new Color(1f, 0.2f, 0.62f), 2);
-                PaintMinimapMarker(player.X, player.Y, width, height, new Color(0.2f, 0.95f, 1f), 2);
-                _minimapTexture.Apply(false, false);
-            }
-
-            string status = "턴 " + CurrentTurn(view) + " · 나 " + player;
-            if (hasObjective)
-                status += " · " + objectiveTarget.name + " " + DirectionLabel(player, objectiveCoord) + " " +
-                          player.ManhattanDistance(objectiveCoord) + "칸";
-            else if (_selectedCoord.HasValue) status += " · 선택 " + _selectedCoord.Value;
-            _sceneUi.SetMinimap(_minimapSprite, status);
-        }
-
-        private void PaintMinimapMarker(int worldX, int worldY, int width, int height, Color color, int radius)
-        {
-            if (_minimapTexture == null) return;
-            int px = Mathf.Clamp(worldX * _minimapTexture.width / Mathf.Max(1, width), 0, _minimapTexture.width - 1);
-            int py = Mathf.Clamp(worldY * _minimapTexture.height / Mathf.Max(1, height), 0, _minimapTexture.height - 1);
-            for (int y = -radius; y <= radius; y++)
-                for (int x = -radius; x <= radius; x++)
-                    if (px + x >= 0 && py + y >= 0 && px + x < _minimapTexture.width && py + y < _minimapTexture.height)
-                        _minimapTexture.SetPixel(px + x, py + y, color);
-        }
-
-        private static bool OutsideLocalWorldDisc(GridCoord coord, int width, int height)
-        {
-            double cx = (width - 1) / 2.0;
-            double cy = (height - 1) / 2.0;
-            double dx = coord.X - cx;
-            double dy = coord.Y - cy;
-            double radius = Math.Min(width, height) / 2.0 - 1.0;
-            return dx * dx + dy * dy > radius * radius;
-        }
-
-        private static Color MinimapTileColor(string biomeId, TileKind kind)
-        {
-            Color biome;
-            switch ((biomeId ?? string.Empty).ToLowerInvariant())
-            {
-                case "root_system": biome = Hex("49234f"); break;
-                case "river_wetland": biome = Hex("397d83"); break;
-                case "arid_desert": biome = Hex("c28a42"); break;
-                case "frost_highland": biome = Hex("a9d1df"); break;
-                case "subterranean_cavern": biome = Hex("57406f"); break;
-                case "ancient_ruins": biome = Hex("877053"); break;
-                default: biome = Hex("477b43"); break;
-            }
-            switch (kind)
-            {
-                case TileKind.Wall: return Color.Lerp(biome, Color.black, 0.72f);
-                case TileKind.Water: return Hex("2f7595");
-                case TileKind.Bridge: return Hex("b77a3c");
-                case TileKind.Dirt: return Color.Lerp(biome, Hex("c28a4b"), 0.6f);
-                case TileKind.Hazard: return Hex("bd493f");
-                default: return biome;
             }
         }
 
@@ -3149,9 +3331,11 @@ namespace KeyboardWanderer.Demo
                     }
                 }
             }
+            // 로컬 원반 월드는 각도 섹터로 바이옴을 정한다(생성기 SectorBiomeIndex와 동일 공식).
             return SectorBiomeId(coord, view.Region.Width, view.Region.Height);
         }
 
+        // 생성기 CreateBiomes()와 동일한 순서 — 파이 슬라이스 바이옴 매핑.
         private static readonly string[] SectorBiomeOrder =
         {
             "temperate_forest_field", "river_wetland", "arid_desert",
@@ -3164,25 +3348,19 @@ namespace KeyboardWanderer.Demo
             double cy = (height - 1) / 2.0;
             double dx = coord.X - cx;
             double dy = coord.Y - cy;
-            double centralRadius = Math.Min(width, height) * 0.12;
+            double centralRadius = Math.Min(width, height) * 0.12; // 중심 최종 스테이지 존(생성기와 동일)
             if (dx * dx + dy * dy <= centralRadius * centralRadius)
-                return "root_system";
-
-            double angle = Math.Atan2(dy, dx) + Math.PI;
+                return "root_system"; // 다크 보스 코어
+            double angle = Math.Atan2(dy, dx) + Math.PI; // 0..2π
             int sector = (int)(angle / (2.0 * Math.PI) * SectorBiomeOrder.Length);
-            return SectorBiomeOrder[Mathf.Clamp(sector, 0, SectorBiomeOrder.Length - 1)];
+            if (sector < 0) sector = 0;
+            if (sector >= SectorBiomeOrder.Length) sector = SectorBiomeOrder.Length - 1;
+            return SectorBiomeOrder[sector];
         }
 
-        private Color ApplyBiomePalette(Color tileTint, string biomeId)
+        private static readonly string[] SectorBiomeOrder =
         {
-            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
-            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored))
-            {
-                Color palette = authored.Palette;
-                return new Color(Mathf.Clamp01(tileTint.r * 0.34f + palette.r * 0.72f),
-                    Mathf.Clamp01(tileTint.g * 0.34f + palette.g * 0.72f),
-                    Mathf.Clamp01(tileTint.b * 0.34f + palette.b * 0.72f), tileTint.a);
-            }
+            // 다크 보스 코어: 기존 타일을 크게 어둡게 낮추고 심홍/보라 기운을 더한다.
             if (string.Equals(biomeId, "root_system", StringComparison.OrdinalIgnoreCase))
             {
                 Color core = Hex("2a1830");
@@ -3213,6 +3391,10 @@ namespace KeyboardWanderer.Demo
         {
             string layoutHash = useServerWorld ? _serverRun?.world?.layoutHash : view.Region.LayoutHash;
             HashSet<GridCoord> routeTiles = BuildRouteTileSet(view, useServerWorld);
+            HashSet<GridCoord> desertBuildingTiles = CreateDesertBuildings(
+                view, origin, useServerWorld, width, height, layoutHash, routeTiles);
+            // step 2로 촘촘히 훑고, 타일마다 크기를 흔들어 우거진 느낌을 낸다.
+            // 실제 route path만 비워 두므로 사막의 Dirt처럼 길과 같은 TileKind를 쓰는 넓은 지형도 채울 수 있다.
             for (int y = 2; y < height - 2; y += 2)
             {
                 for (int x = 2; x < width - 2; x += 2)
@@ -3220,13 +3402,13 @@ namespace KeyboardWanderer.Demo
                     var coord = new GridCoord(x, y);
                     string biomeId = BiomeIdAt(view, coord);
                     TileKind tileKind = WorldTileKind(view, coord, useServerWorld);
-                    if (routeTiles.Contains(coord) || !SupportsDecorationTerrain(biomeId, tileKind) ||
+                    if (routeTiles.Contains(coord) || desertBuildingTiles.Contains(coord) ||
+                        !SupportsDecorationTerrain(biomeId, tileKind) ||
                         IsNearWorldPoint(view, coord, useServerWorld, 4) ||
-                        IsNearEntity(view, coord, useServerWorld, 2) ||
                         StableVisualHash(layoutHash, x, y, 17) % 100 >= DecorationDensity(biomeId))
                         continue;
                     float scale = 0.62f + (StableVisualHash(layoutHash, x, y, 31) % 44) / 100f;
-                    CreateDecoration(biomeId, "Scenery", DecorationSpriteForBiome(
+                    CreateDecoration("Scenery", DecorationSpriteForBiome(
                             biomeId, StableVisualHash(layoutHash, x, y, 47)), coord, origin,
                         DecorationTint(biomeId), scale);
                 }
@@ -3241,8 +3423,7 @@ namespace KeyboardWanderer.Demo
                     if (area?.bounds == null) continue;
                     var center = area.anchor != null
                         ? new GridCoord(area.anchor.x, area.anchor.y)
-                        : new GridCoord(area.bounds.x + area.bounds.width / 2,
-                            area.bounds.y + area.bounds.height / 2);
+                        : new GridCoord(area.bounds.x + area.bounds.width / 2, area.bounds.y + area.bounds.height / 2);
                     TryCreateBiomeLandmark(view, origin, true, area.biomeId, center, width, height, layoutHash, i);
                 }
             }
@@ -3254,6 +3435,68 @@ namespace KeyboardWanderer.Demo
                     TryCreateBiomeLandmark(view, origin, false, area.Biome, area.Center, width, height, layoutHash, i);
                 }
             }
+        }
+
+        private HashSet<GridCoord> CreateDesertBuildings(RunView view, Vector2 origin, bool useServerWorld,
+            int width, int height, string layoutHash, HashSet<GridCoord> routeTiles)
+        {
+            var occupied = new HashSet<GridCoord>();
+            if (_desertBuildingSprites == null || _desertBuildingSprites.Length == 0)
+                return occupied;
+
+            // Buildings use a separate, sparse pass. Each anchor represents the bottom-center of a
+            // four-by-five-tile footprint, with one extra tile of padding reserved around it.
+            for (int y = 3; y < height - 6; y += 7)
+            {
+                for (int x = 4; x < width - 4; x += 7)
+                {
+                    var anchor = new GridCoord(x, y);
+                    if (!string.Equals(BiomeIdAt(view, anchor), "arid_desert",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        WorldTileKind(view, anchor, useServerWorld) != TileKind.Dirt ||
+                        StableVisualHash(layoutHash, x, y, 211) % 100 >= 36 ||
+                        IsNearWorldPoint(view, anchor, useServerWorld, 5) ||
+                        !TryReserveDesertBuildingFootprint(
+                            view, useServerWorld, width, height, anchor, routeTiles, occupied))
+                        continue;
+
+                    int variant = StableVisualHash(layoutHash, x, y, 223) % _desertBuildingSprites.Length;
+                    float scale = 0.86f + (StableVisualHash(layoutHash, x, y, 227) % 13) / 100f;
+                    CreateDecoration("Desert building", _desertBuildingSprites[variant], anchor, origin,
+                        Color.white, scale, 30);
+                }
+            }
+            return occupied;
+        }
+
+        private bool TryReserveDesertBuildingFootprint(RunView view, bool useServerWorld, int width, int height,
+            GridCoord anchor, HashSet<GridCoord> routeTiles, HashSet<GridCoord> occupied)
+        {
+            for (int y = 0; y < 5; y++)
+            {
+                for (int x = -2; x < 2; x++)
+                {
+                    var coord = new GridCoord(anchor.X + x, anchor.Y + y);
+                    if (coord.X < 0 || coord.Y < 0 || coord.X >= width || coord.Y >= height ||
+                        routeTiles.Contains(coord) || occupied.Contains(coord) ||
+                        !string.Equals(BiomeIdAt(view, coord), "arid_desert",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        !SupportsDecorationTerrain(
+                            "arid_desert", WorldTileKind(view, coord, useServerWorld)))
+                        return false;
+                }
+            }
+
+            for (int y = -1; y <= 5; y++)
+            {
+                for (int x = -3; x <= 2; x++)
+                {
+                    var coord = new GridCoord(anchor.X + x, anchor.Y + y);
+                    if (coord.X >= 0 && coord.Y >= 0 && coord.X < width && coord.Y < height)
+                        occupied.Add(coord);
+                }
+            }
+            return true;
         }
 
         private HashSet<GridCoord> BuildRouteTileSet(RunView view, bool useServerWorld)
@@ -3292,8 +3535,8 @@ namespace KeyboardWanderer.Demo
             var candidate = new GridCoord(center.X + offset.X, center.Y + offset.Y);
             if (!TryFindDecorationTile(view, useServerWorld, biomeId, candidate, width, height, out GridCoord coord))
                 return;
-            CreateDecoration(biomeId, "Biome landmark", LandmarkSpriteForBiome(biomeId), coord, origin, Color.white,
-                string.Equals(biomeId, "subterranean_cavern", StringComparison.OrdinalIgnoreCase) ? 1.4f : 0.92f);
+            CreateDecoration("Biome landmark", LandmarkSpriteForBiome(biomeId), coord, origin,
+                Color.white, string.Equals(biomeId, "subterranean_cavern", StringComparison.OrdinalIgnoreCase) ? 1.4f : 0.92f);
         }
 
         private bool TryFindDecorationTile(RunView view, bool useServerWorld, string biomeId, GridCoord origin,
@@ -3310,8 +3553,7 @@ namespace KeyboardWanderer.Demo
                         if (coord.X < 2 || coord.Y < 2 || coord.X >= width - 2 || coord.Y >= height - 2 ||
                             !string.Equals(BiomeIdAt(view, coord), biomeId, StringComparison.OrdinalIgnoreCase) ||
                             !SupportsDecorationTerrain(biomeId, WorldTileKind(view, coord, useServerWorld)) ||
-                            IsNearWorldPoint(view, coord, useServerWorld, 4) ||
-                            IsNearEntity(view, coord, useServerWorld, 2))
+                            IsNearWorldPoint(view, coord, useServerWorld, 4))
                             continue;
                         result = coord;
                         return true;
@@ -3338,8 +3580,7 @@ namespace KeyboardWanderer.Demo
             {
                 GameApiClient.PointSnapshot[] points = _serverRun.world.points;
                 for (int i = 0; i < points.Length; i++)
-                    if (points[i] != null && Math.Abs(coord.X - points[i].x) +
-                        Math.Abs(coord.Y - points[i].y) <= clearance)
+                    if (points[i] != null && Math.Abs(coord.X - points[i].x) + Math.Abs(coord.Y - points[i].y) <= clearance)
                         return true;
                 return false;
             }
@@ -3349,110 +3590,22 @@ namespace KeyboardWanderer.Demo
             return false;
         }
 
-        private bool IsNearEntity(RunView view, GridCoord coord, bool useServerWorld, int clearance)
+        private void CreateDecoration(string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint,
+            float scale, int sortingOrder = 20)
         {
-            if (useServerWorld && _serverRun?.entities != null)
-            {
-                for (int i = 0; i < _serverRun.entities.Length; i++)
-                {
-                    GameApiClient.PositionSnapshot position = _serverRun.entities[i]?.position;
-                    if (position != null && Math.Abs(coord.X - position.x) + Math.Abs(coord.Y - position.y) <= clearance)
-                        return true;
-                }
-                return false;
-            }
-            for (int i = 0; i < view.Entities.Count; i++)
-                if (coord.ManhattanDistance(view.Entities[i].Position) <= clearance)
-                    return true;
-            return false;
-        }
-
-        private void CreateDecoration(string biomeId, string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint,
-            float scale)
-        {
-            if (sprite == null || WorldLandmarkRoot == null) return;
-            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
-            GameObject authoredPrefab = profile != null && profile.TryGet(biomeId,
-                out KeyboardWandererWorldVisualProfile.BiomeVisual authored) ? authored.DecorationPrefab : null;
-            while (_decorationPool.Count > 0 && _decorationPool.Peek() == null)
-                _decorationPool.Pop();
-            SpriteRenderer renderer;
-            if (authoredPrefab != null)
-            {
-                GameObject instance = Instantiate(authoredPrefab, WorldLandmarkRoot);
-                renderer = instance.GetComponent<SpriteRenderer>();
-                if (renderer == null)
-                {
-                    Destroy(instance);
-                    return;
-                }
-            }
-            else if (_decorationPool.Count > 0)
-            {
-                renderer = _decorationPool.Pop();
-                renderer.gameObject.SetActive(true);
-            }
-            else
-            {
-                renderer = new GameObject().AddComponent<SpriteRenderer>();
-            }
-            GameObject decoration = renderer.gameObject;
-            decoration.name = prefix + " · " + sprite.name;
-            decoration.transform.SetParent(WorldLandmarkRoot, false);
+            if (sprite == null) return;
+            var decoration = new GameObject(prefix + " · " + sprite.name);
+            decoration.transform.SetParent(WorldContentRoot, false);
             decoration.transform.position = WorldPosition(origin, coord) + new Vector3(0f, 0.18f, -0.03f);
+            var renderer = decoration.AddComponent<SpriteRenderer>();
             renderer.sprite = sprite;
             renderer.color = tint;
-            renderer.sortingOrder = 499 - coord.Y * 4;
+            renderer.sortingOrder = sortingOrder;
             decoration.transform.localScale = Vector3.one * scale;
-            _decorationBaseColors[renderer] = tint;
-            _activeDecorations.Add(renderer);
-        }
-
-        private void UpdateDecorationOcclusion()
-        {
-            if (_service == null || !TryGetPlayerVisual(_service.CurrentView, out EntityVisual player) ||
-                player.Renderer == null)
-                return;
-            Vector2 playerPosition = player.Root.transform.position;
-            float blend = 1f - Mathf.Exp(-12f * Time.unscaledDeltaTime);
-            foreach (KeyValuePair<SpriteRenderer, Color> pair in _decorationBaseColors)
-            {
-                SpriteRenderer renderer = pair.Key;
-                if (renderer == null) continue;
-                Bounds bounds = renderer.bounds;
-                float clearance = Mathf.Max(bounds.extents.x, bounds.extents.y) + 0.75f;
-                bool coversPlayer = renderer.sortingOrder >= player.Renderer.sortingOrder &&
-                                    Vector2.Distance(renderer.transform.position, playerPosition) <= clearance;
-                Color target = pair.Value;
-                if (coversPlayer) target.a = Mathf.Min(target.a, 0.16f);
-                renderer.color = Color.Lerp(renderer.color, target, blend);
-            }
-        }
-
-        private void ReleaseActiveDecorations()
-        {
-            EnsureVisualPoolRoot();
-            for (int i = 0; i < _activeDecorations.Count; i++)
-            {
-                SpriteRenderer renderer = _activeDecorations[i];
-                if (renderer == null) continue;
-                renderer.sprite = null;
-                renderer.gameObject.SetActive(false);
-                renderer.transform.SetParent(_visualPoolRoot, false);
-                _decorationBaseColors.Remove(renderer);
-                _decorationPool.Push(renderer);
-            }
-            _activeDecorations.Clear();
         }
 
         private Sprite DecorationSpriteForBiome(string biomeId, int variantHash)
         {
-            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
-            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored))
-            {
-                Sprite authoredSprite = authored.DecorationSprite(variantHash);
-                if (authoredSprite != null) return authoredSprite;
-            }
             Sprite[] variants;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
@@ -3470,10 +3623,6 @@ namespace KeyboardWanderer.Demo
 
         private Sprite LandmarkSpriteForBiome(string biomeId)
         {
-            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
-            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored) &&
-                authored.LandmarkSprite != null)
-                return authored.LandmarkSprite;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
                 case "river_wetland": return _wetlandLandmarkSprite;
@@ -3503,11 +3652,8 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        private int DecorationDensity(string biomeId)
+        private static int DecorationDensity(string biomeId)
         {
-            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
-            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored))
-                return authored.DecorationDensity;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
                 case "root_system": return 52;
@@ -3521,14 +3667,11 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        private Color DecorationTint(string biomeId)
+        private static Color DecorationTint(string biomeId)
         {
-            KeyboardWandererWorldVisualProfile profile = authoringSettings != null ? authoringSettings.WorldVisualProfile : null;
-            if (profile != null && profile.TryGet(biomeId, out KeyboardWandererWorldVisualProfile.BiomeVisual authored))
-                return authored.DecorationTint;
             switch ((biomeId ?? string.Empty).ToLowerInvariant())
             {
-                case "root_system": return Hex("b667d8");
+                case "root_system": return Hex("b667d8"); // 어둠 속 크리스탈 발광
                 case "river_wetland": return Hex("b6e1cf");
                 case "arid_desert": return Hex("f0c879");
                 case "frost_highland": return Hex("e8f6ff");
@@ -4668,6 +4811,7 @@ namespace KeyboardWanderer.Demo
             string id = BiomeIdAt(view, position);
             switch (id)
             {
+                case "root_system": return "루트 시스템 · 코어";
                 case "temperate_forest_field": return "온대 숲·들판";
                 case "river_wetland": return "강·습지";
                 case "arid_desert": return "건조 사막";

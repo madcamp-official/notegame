@@ -28,6 +28,10 @@ export function loadConfig(env = process.env) {
   if (storage === "postgres" && !env.DATABASE_URL) {
     throw new AppError(500, "CONFIG_INVALID", "DATABASE_URL is required for postgres storage.");
   }
+  const llmProvider = env.LLM_PROVIDER || "gemini";
+  if (!["gemini", "vllm"].includes(llmProvider)) {
+    throw new AppError(500, "CONFIG_INVALID", "LLM_PROVIDER must be gemini or vllm.");
+  }
 
   return Object.freeze({
     host: env.HOST || "127.0.0.1",
@@ -41,10 +45,17 @@ export function loadConfig(env = process.env) {
     defaultUserId: env.DEFAULT_USER_ID || LOCAL_USER_ID,
     geminiApiKey: env.GEMINI_API_KEY || "",
     geminiTimeoutMs: integer(env.GEMINI_TIMEOUT_MS, 4000, 250, 15000, "GEMINI_TIMEOUT_MS"),
-    geminiFastModel: env.GEMINI_FAST_MODEL || "gemini-3.1-flash-lite",
-    geminiQualityModel: env.GEMINI_QUALITY_MODEL || env.GEMINI_FAST_MODEL || "gemini-3.1-flash-lite",
-    geminiFastOutputTokens: integer(env.GEMINI_FAST_OUTPUT_TOKENS, 1024, 256, 2048, "GEMINI_FAST_OUTPUT_TOKENS"),
-    geminiQualityOutputTokens: integer(env.GEMINI_QUALITY_OUTPUT_TOKENS, 1536, 512, 3072, "GEMINI_QUALITY_OUTPUT_TOKENS"),
+    geminiFastModel: env.GEMINI_FAST_MODEL || "gemini-2.5-flash-lite",
+    geminiQualityModel: env.GEMINI_QUALITY_MODEL || env.GEMINI_FAST_MODEL || "gemini-2.5-flash-lite",
+    geminiFastOutputTokens: integer(env.GEMINI_FAST_OUTPUT_TOKENS, 384, 128, 1024, "GEMINI_FAST_OUTPUT_TOKENS"),
+    geminiQualityOutputTokens: integer(env.GEMINI_QUALITY_OUTPUT_TOKENS, 640, 256, 1536, "GEMINI_QUALITY_OUTPUT_TOKENS"),
+    llmProvider,
+    vllmBaseUrl: env.VLLM_BASE_URL || "",
+    vllmApiKey: env.VLLM_API_KEY || "",
+    vllmModel: env.VLLM_MODEL || "game-director",
+    vllmTimeoutMs: integer(env.VLLM_TIMEOUT_MS, 8000, 250, 30000, "VLLM_TIMEOUT_MS"),
+    vllmFastOutputTokens: integer(env.VLLM_FAST_OUTPUT_TOKENS, 768, 128, 2048, "VLLM_FAST_OUTPUT_TOKENS"),
+    vllmQualityOutputTokens: integer(env.VLLM_QUALITY_OUTPUT_TOKENS, 1024, 256, 2048, "VLLM_QUALITY_OUTPUT_TOKENS"),
     corsOrigins: (env.CORS_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean)
   });
 }

@@ -6,6 +6,7 @@ import { DeterministicD20Source, createRunState, directorContext, normalizeTrave
 import { planDecisionScene, resolveTravelDecision } from "../domain/decision-orchestrator.js";
 import { applyCampaignPlanEnrichment, createCampaignPlanContext, createCampaignPlanFallback, createDeterministicCampaignPreview, validateCampaignPlanOutput } from "../llm/campaign-planning.js";
 import { createFallbackNarration, validateNarrationContext, validateNarrationOutput } from "../llm/narration.js";
+import { createFallbackScenePlan, validateSceneTransitionRequest } from "../llm/scene-transition.js";
 import { PRODUCT_CONTRACT } from "../domain/codria-contract.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -250,6 +251,18 @@ export class GameService {
 
   async narrate(input) {
     return this.narrator.narrate(validateNarrationContext(input));
+  }
+
+  /**
+   * SCENE_TRANSITION_PLAN: providers without a scene director (e.g. Gemini today) degrade to the
+   * deterministic first-candidate plan, so the endpoint always answers with a valid v1.0 plan.
+   */
+  async planSceneTransition(input) {
+    const request = validateSceneTransitionRequest(input);
+    if (typeof this.narrator?.planSceneTransition !== "function") {
+      return createFallbackScenePlan(request, "provider_unsupported");
+    }
+    return this.narrator.planSceneTransition(request);
   }
 }
 

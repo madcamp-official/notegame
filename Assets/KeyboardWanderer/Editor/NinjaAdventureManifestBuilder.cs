@@ -8,7 +8,7 @@ namespace KeyboardWanderer.Editor
     public static class NinjaAdventureManifestBuilder
     {
         private const string ManifestPath = "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset";
-        private const int CurrentManifestVersion = 11;
+        private const int CurrentManifestVersion = 4;
         private const string NeopjukiAtlasPath =
             "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
 
