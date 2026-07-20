@@ -43,6 +43,15 @@ export class MemoryStore {
     return clone(run);
   }
 
+  async commitAmbientWander({ ownerId, runId, expectedRunVersion, resolve }) {
+    const run = this.runs.get(runId);
+    if (!run || run.ownerId !== ownerId) throw notFound("Run");
+    if (run.version !== expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: run.version });
+    const committed = resolve(clone(run));
+    if (committed.movedEntityIds.length > 0) this.runs.set(runId, clone(committed.run));
+    return { run: clone(committed.run), movedEntityIds: [...committed.movedEntityIds] };
+  }
+
   async findTurnByIdempotency(ownerId, runId, idempotencyKey) {
     const run = this.runs.get(runId);
     if (!run || run.ownerId !== ownerId) throw notFound("Run");

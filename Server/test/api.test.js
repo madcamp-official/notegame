@@ -137,6 +137,31 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.equal(hidden.response.status, 404);
 });
 
+test("ambient wander authoritatively moves visible NPCs on the grid", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+  const campaign = await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Wander Test", worldSeed: 22017, turnLimit: 40 }
+  });
+  const created = await jsonRequest(baseUrl, `/v1/campaigns/${campaign.payload.campaign.id}/runs`, {
+    method: "POST", body: {}
+  });
+  const before = created.payload.run;
+  const positions = new Map(before.entities.filter((item) => item.kind === "npc").map((item) => [item.id, item.position]));
+  const wandered = await jsonRequest(baseUrl, `/v1/runs/${before.id}/ambient-wander`, {
+    method: "POST",
+    body: { expectedRunVersion: before.version, minX: 0, minY: 0, maxX: 159, maxY: 159 }
+  });
+  assert.equal(wandered.response.status, 200);
+  assert.ok(wandered.payload.movedEntityIds.length > 0);
+  assert.equal(wandered.payload.run.version, before.version + 1);
+  for (const id of wandered.payload.movedEntityIds) {
+    const after = wandered.payload.run.entities.find((item) => item.id === id).position;
+    const origin = positions.get(id);
+    assert.equal(Math.abs(after.x - origin.x) + Math.abs(after.y - origin.y), 1);
+  }
+});
+
 test("turn submit is authoritative, versioned and idempotent without rebuilding the map", async (t) => {
   const { application, baseUrl } = await startServer();
   t.after(() => application.close());

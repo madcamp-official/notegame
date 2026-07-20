@@ -58,6 +58,111 @@ namespace KeyboardWanderer.Tests
         }
 
         [Test]
+        public void GridPathfinder_HeapFindsDeterministicPathAndHonorsExpansionBudget()
+        {
+            RunView view = LocalTurnService.CreateDemo(20260720L).CurrentView;
+            GridCoord start = view.PlayerPosition;
+            List<GridCoord> path = null;
+            for (int y = 0; y < view.Region.Height && path == null; y++)
+            {
+                for (int x = 0; x < view.Region.Width; x++)
+                {
+                    var candidate = new GridCoord(x, y);
+                    if (start.ManhattanDistance(candidate) < 12 || !view.Region.IsWalkable(candidate))
+                        continue;
+                    List<GridCoord> candidatePath = GridPathfinder.FindPath(view.Region, start, candidate);
+                    if (candidatePath.Count > 2)
+                        path = candidatePath;
+                }
+            }
+
+            Assert.That(path, Is.Not.Null, "테스트 월드에서 충분히 먼 도달 가능 타일을 찾아야 합니다.");
+            Assert.That(path[0], Is.EqualTo(start));
+            for (int i = 1; i < path.Count; i++)
+                Assert.That(path[i - 1].ManhattanDistance(path[i]), Is.EqualTo(1));
+
+            List<GridCoord> repeated = GridPathfinder.FindPath(view.Region, start, path[path.Count - 1]);
+            Assert.That(repeated, Is.EqualTo(path), "동일 월드의 동률 경로 선택은 결정론적이어야 합니다.");
+            Assert.That(GridPathfinder.FindPath(view.Region, start, path[path.Count - 1], null, 1), Is.Empty,
+                "확장 예산을 소진하면 부분 경로를 커밋하지 않아야 합니다.");
+
+            List<GridCoord> nearest = GridPathfinder.FindShortestPathToAny(view.Region, start,
+                new[] { path[path.Count - 1], path[2] });
+            Assert.That(nearest.Count, Is.EqualTo(3));
+            Assert.That(nearest[nearest.Count - 1], Is.EqualTo(path[2]),
+                "다중 목표 탐색은 한 번의 순회로 가장 가까운 목표를 선택해야 합니다.");
+        }
+
+        [Test]
+        public void SpatialIndex_CopyAtReusesCallerBufferAndMoveRejectsMissingValidator()
+        {
+            RunState state = LocalTurnService.CreateDemo(20260720L).CreateSnapshot();
+            EntityState player = state.Spatial.Entities.Single(entity => entity.EntityId == state.PlayerEntityId);
+            var buffer = new List<EntityState>();
+
+            int firstCount = state.Spatial.CopyAt(state.Region.RegionId, player.Position, buffer, player.Layer);
+            int secondCount = state.Spatial.CopyAt(state.Region.RegionId, player.Position, buffer, player.Layer);
+
+            Assert.That(firstCount, Is.GreaterThanOrEqualTo(1));
+            Assert.That(secondCount, Is.EqualTo(firstCount));
+            Assert.That(buffer.Any(entity => entity.EntityId == player.EntityId), Is.True);
+            MoveResult rejected = state.Spatial.TryMove(player.EntityId, state.Region.RegionId,
+                player.Position, player.Layer, null);
+            Assert.That(rejected.IsSuccess, Is.False);
+            Assert.That(rejected.ErrorCode, Is.EqualTo("WALKABILITY_CHECK_REQUIRED"));
+        }
+
+        [Test]
+        public void AmbientWander_MovesNpcAuthoritativelyWithinTwoTilesWithoutOverlap()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(20260720L);
+            RunView cachedBefore = service.CurrentView;
+            Assert.That(service.CurrentView, Is.SameAs(cachedBefore));
+            Dictionary<Guid, GridCoord> origins = service.CurrentView.Entities
+                .Where(entity => entity.Kind == EntityKind.Npc)
+                .ToDictionary(entity => entity.EntityId, entity => entity.Position);
+
+            bool moved = false;
+            for (int step = 0; step < origins.Count * 8; step++)
+                moved |= service.TryAdvanceAmbientWander(2);
+
+            RunView view = service.CurrentView;
+            Assert.That(moved, Is.True);
+            Assert.That(view, Is.Not.SameAs(cachedBefore));
+            Assert.That(view.Version, Is.GreaterThan(cachedBefore.Version));
+            Assert.That(service.CurrentView, Is.SameAs(view));
+            foreach (EntityView npc in view.Entities.Where(entity => entity.Kind == EntityKind.Npc))
+                Assert.That(npc.Position.ManhattanDistance(origins[npc.EntityId]), Is.LessThanOrEqualTo(2));
+
+            GridCoord[] blockingPositions = service.CreateSnapshot().Spatial.Entities
+                .Where(entity => entity.IsBlocking)
+                .Select(entity => entity.Position)
+                .ToArray();
+            Assert.That(blockingPositions.Distinct().Count(), Is.EqualTo(blockingPositions.Length));
+        }
+
+        [Test]
+        public void AmbientWander_SaveResumePreservesDeterministicScheduleAndOrigin()
+        {
+            LocalTurnService uninterrupted = LocalTurnService.CreateDemo(20260721L);
+            for (int step = 0; step < 12; step++) uninterrupted.TryAdvanceAmbientWander(2);
+            LocalTurnService resumed = LocalRunSaveService.Deserialize(LocalRunSaveService.Serialize(uninterrupted));
+
+            for (int step = 0; step < 20; step++)
+            {
+                uninterrupted.TryAdvanceAmbientWander(2);
+                resumed.TryAdvanceAmbientWander(2);
+                Dictionary<Guid, GridCoord> expected = uninterrupted.CurrentView.Entities
+                    .Where(entity => entity.Kind == EntityKind.Npc)
+                    .ToDictionary(entity => entity.EntityId, entity => entity.Position);
+                Dictionary<Guid, GridCoord> actual = resumed.CurrentView.Entities
+                    .Where(entity => entity.Kind == EntityKind.Npc)
+                    .ToDictionary(entity => entity.EntityId, entity => entity.Position);
+                Assert.That(actual, Is.EqualTo(expected));
+            }
+        }
+
+        [Test]
         public void SearchRequiresOneTarget_AndSelectAllIsBoundedCombat()
         {
             RunState searchState = LocalTurnService.CreateDemo(119).CreateSnapshot();
@@ -292,7 +397,7 @@ namespace KeyboardWanderer.Tests
         }
 
         [Test]
-        public void Undo_RewindsTwoMeaningfulTurnsAndTheirMechanicalState()
+        public void Undo_CompensatesTwoMeaningfulTurnsWithoutRewindingTurnCounter()
         {
             RunState state = LocalTurnService.CreateDemo(821).CreateSnapshot();
             EntityState target = state.Spatial.Entities.Single(entity =>
@@ -308,13 +413,68 @@ namespace KeyboardWanderer.Tests
                 AbilityKind.Undo));
 
             Assert.That(first.IsSuccess && second.IsSuccess && rewind.IsSuccess, Is.True);
-            Assert.That(rewind.Run.CurrentTurn, Is.EqualTo(0));
+            Assert.That(rewind.Run.CurrentTurn, Is.EqualTo(3));
+            Assert.That(rewind.Run.RollCount, Is.EqualTo(3));
             Assert.That(rewind.Run.Focus, Is.EqualTo(state.Focus - 2),
                 "The skill costs 3 focus and this fixed natural 20 returns the normal +1 critical reward.");
-            Assert.That(rewind.Events.Count(value => value.StartsWith("TURN_REWOUND:", StringComparison.Ordinal)),
+            Assert.That(rewind.Events.Count(value => value.StartsWith("TURN_COMPENSATED:", StringComparison.Ordinal)),
                 Is.EqualTo(2));
-            Assert.That(rewind.Events.Any(value => value.StartsWith("TIME_REWIND_COMPLETED:",
+            Assert.That(rewind.Events.Any(value => value.StartsWith("UNDO_COMPENSATION_COMPLETED:",
                 StringComparison.Ordinal)), Is.True);
+            Assert.That(rewind.Events.Any(value => value.StartsWith("UNDO_COMPENSATED:",
+                StringComparison.Ordinal)), Is.True);
+            Assert.That(rewind.Run.TechnicalDebt, Is.GreaterThan(state.TechnicalDebt));
+        }
+
+        [Test]
+        public void SaveResume_UsesPersistedRollCountAfterCompensatingUndo()
+        {
+            const long seed = 824;
+            LocalTurnService uninterrupted = LocalTurnService.CreateDemo(seed);
+            EntityView target = uninterrupted.CurrentView.Entities.First(entity =>
+                entity.AssetId == CampaignCatalog.AdministratorKeyboardId);
+            RunState positioned = uninterrupted.CreateSnapshot();
+            MovePlayerNear(positioned, positioned.Spatial.Entities.Single(entity => entity.EntityId == target.EntityId));
+            uninterrupted = new LocalTurnService(positioned, new SeededD20Source((int)seed));
+
+            uninterrupted.Submit(TurnRequest.UseSkill("rng-one", uninterrupted.CurrentView.Version,
+                AbilityKind.Search, target.EntityId));
+            uninterrupted.Submit(TurnRequest.UseSkill("rng-two", uninterrupted.CurrentView.Version,
+                AbilityKind.Search, target.EntityId));
+            LocalTurnService resumed = LocalRunSaveService.Deserialize(LocalRunSaveService.Serialize(uninterrupted));
+
+            TurnResponse expected = uninterrupted.Submit(TurnRequest.UseSkill("rng-three-a",
+                uninterrupted.CurrentView.Version, AbilityKind.Search, target.EntityId));
+            TurnResponse actual = resumed.Submit(TurnRequest.UseSkill("rng-three-b",
+                resumed.CurrentView.Version, AbilityKind.Search, target.EntityId));
+
+            Assert.That(actual.D20, Is.EqualTo(expected.D20));
+            Assert.That(actual.Run.RollCount, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void RestoredEnemy_CannotGrantDefeatRewardTwice()
+        {
+            RunState state = LocalTurnService.CreateDemo(825).CreateSnapshot();
+            EntityState enemy = state.Spatial.Entities.First(entity => entity.IsActive && entity.Kind == EntityKind.Enemy);
+            state.AddCanonicalFact(EnemyArchetypeCatalog.RevealedFact(enemy.EntityId));
+            MovePlayerNear(state, enemy);
+            var service = new LocalTurnService(state, new SequenceD20Source(20));
+
+            service.Submit(TurnRequest.UseSkill("reward-hit", service.CurrentView.Version,
+                AbilityKind.Delete, enemy.EntityId));
+            TurnResponse defeated = service.Submit(TurnRequest.UseSkill("reward-kill", service.CurrentView.Version,
+                AbilityKind.Delete, enemy.EntityId));
+            TurnResponse restored = service.Submit(TurnRequest.UseSkill("reward-restore", service.CurrentView.Version,
+                AbilityKind.Restore, enemy.EntityId));
+            TurnResponse defeatedAgain = service.Submit(TurnRequest.UseSkill("reward-rekill", service.CurrentView.Version,
+                AbilityKind.Delete, enemy.EntityId));
+
+            Assert.That(defeated.IsSuccess && restored.IsSuccess && defeatedAgain.IsSuccess, Is.True);
+            Assert.That(defeatedAgain.Run.Gold, Is.EqualTo(defeated.Run.Gold));
+            Assert.That(defeatedAgain.Run.Experience, Is.EqualTo(defeated.Run.Experience));
+            Assert.That(defeatedAgain.Run.EnemiesDefeated, Is.EqualTo(defeated.Run.EnemiesDefeated));
+            Assert.That(defeatedAgain.Events.Any(value => value.Contains("reward=already-claimed")), Is.True);
         }
 
         [Test]
@@ -339,6 +499,37 @@ namespace KeyboardWanderer.Tests
             Assert.That(restored.RegionOutcomes, Is.EqualTo(state.RegionOutcomes));
             Assert.That(restored.TechnicalDebtEntries, Has.Count.EqualTo(1));
             Assert.That(restored.RequiredBeats, Has.Count.EqualTo(9));
+        }
+
+        [Test]
+        public void SaveChecksum_RejectsModifiedPayload()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(831);
+            string json = LocalRunSaveService.Serialize(service);
+            string tampered = json.Replace("\"gold\":5", "\"gold\":500");
+
+            Assert.That(tampered, Is.Not.EqualTo(json));
+            Assert.Throws<System.IO.InvalidDataException>(() => LocalRunSaveService.Deserialize(tampered));
+        }
+
+        [Test]
+        public void IdempotencyCache_EvictsOldResponsesAtFixedLimit()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(832);
+            long staleVersion = service.CurrentView.Version + 1000;
+            for (int index = 0; index < LocalTurnService.IdempotencyCacheLimit + 20; index++)
+            {
+                TurnResponse response = service.Submit(TurnRequest.UseSkill("bounded-cache-" + index,
+                    staleVersion, AbilityKind.Undo));
+                Assert.That(response.IsSuccess, Is.False);
+            }
+
+            FieldInfo field = typeof(LocalTurnService).GetField("_idempotency",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            object cache = field?.GetValue(service);
+            int count = (int)cache?.GetType().GetProperty("Count")?.GetValue(cache);
+
+            Assert.That(count, Is.EqualTo(LocalTurnService.IdempotencyCacheLimit));
         }
 
         [Test]

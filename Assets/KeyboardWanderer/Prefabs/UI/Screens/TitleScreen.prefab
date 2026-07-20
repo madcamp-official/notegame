@@ -953,6 +953,7 @@ GameObject:
   - component: {fileID: 5730226550664079516}
   - component: {fileID: 372803598041147503}
   - component: {fileID: 5876058980211796711}
+  - component: {fileID: 5675759658755312201}
   m_Layer: 0
   m_Name: TitleScreen
   m_TagString: Untagged
@@ -1018,6 +1019,27 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &5675759658755312201
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5322083905443970434}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e104631d8b2e4410d9d72c8f6e448237, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererTitleView
+  heading: {fileID: 3401993388652901734}
+  subtitle: {fileID: 6325411264474779299}
+  seed: {fileID: 7294389972730875904}
+  premise: {fileID: 337479982342496552}
+  status: {fileID: 8130168910416900841}
+  character: {fileID: 592707353948374125}
+  newRunButton: {fileID: 3658110578138841623}
+  continueButton: {fileID: 64234338447119672}
+  settingsButton: {fileID: 6936705337442997970}
 --- !u!1 &7257971929702177388
 GameObject:
   m_ObjectHideFlags: 0

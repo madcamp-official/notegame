@@ -288,12 +288,42 @@ namespace KeyboardWanderer.Gameplay
         }
     }
 
+    public sealed class EndingCondition
+    {
+        public string Label { get; }
+        public bool IsSatisfied { get; }
+        public EndingCondition(string label, bool isSatisfied) { Label = label ?? string.Empty; IsSatisfied = isSatisfied; }
+    }
+
+    public sealed class EndingConditionReport
+    {
+        public string Code { get; }
+        public string Title { get; }
+        public IReadOnlyList<EndingCondition> Conditions { get; }
+        public int SatisfiedCount { get; }
+        public bool IsEligible => SatisfiedCount == Conditions.Count;
+        public EndingConditionReport(string code, string title, IReadOnlyList<EndingCondition> conditions)
+        {
+            Code = code ?? string.Empty; Title = title ?? string.Empty;
+            Conditions = conditions ?? Array.Empty<EndingCondition>();
+            for (int i = 0; i < Conditions.Count; i++) if (Conditions[i].IsSatisfied) SatisfiedCount++;
+        }
+    }
+
     public sealed class NpcStoryState
     {
         public Guid EntityId { get; }
         public string NpcName { get; }
         public string Role { get; }
         public int Affinity { get; set; }
+        public int Trust { get; set; }
+        public int Fear { get; set; }
+        public int Obligation { get; set; }
+        public string Motivation { get; set; }
+        public string Secret { get; set; }
+        public string CurrentConcern { get; set; }
+        public int LastConversationTurn { get; set; }
+        public List<string> RevealedClues { get; }
         public List<string> Memories { get; }
 
         public NpcStoryState(Guid entityId, string npcName, string role, int affinity = 0)
@@ -302,6 +332,10 @@ namespace KeyboardWanderer.Gameplay
             NpcName = npcName ?? string.Empty;
             Role = role ?? string.Empty;
             Affinity = affinity;
+            Motivation = string.Empty;
+            Secret = string.Empty;
+            CurrentConcern = string.Empty;
+            RevealedClues = new List<string>();
             Memories = new List<string>();
         }
 
@@ -317,6 +351,14 @@ namespace KeyboardWanderer.Gameplay
         public NpcStoryState Clone()
         {
             var clone = new NpcStoryState(EntityId, NpcName, Role, Affinity);
+            clone.Trust = Trust;
+            clone.Fear = Fear;
+            clone.Obligation = Obligation;
+            clone.Motivation = Motivation;
+            clone.Secret = Secret;
+            clone.CurrentConcern = CurrentConcern;
+            clone.LastConversationTurn = LastConversationTurn;
+            clone.RevealedClues.AddRange(RevealedClues);
             clone.Memories.AddRange(Memories);
             return clone;
         }
@@ -438,6 +480,12 @@ namespace KeyboardWanderer.Gameplay
         public string NpcName { get; }
         public string Role { get; }
         public int Affinity { get; }
+        public int Trust { get; }
+        public int Fear { get; }
+        public int Obligation { get; }
+        public string Motivation { get; }
+        public string CurrentConcern { get; }
+        public IReadOnlyList<string> RevealedClues { get; }
         public string LatestMemory { get; }
         public IReadOnlyList<string> Memories { get; }
 
@@ -447,6 +495,12 @@ namespace KeyboardWanderer.Gameplay
             NpcName = state.NpcName;
             Role = state.Role;
             Affinity = state.Affinity;
+            Trust = state.Trust;
+            Fear = state.Fear;
+            Obligation = state.Obligation;
+            Motivation = state.Motivation;
+            CurrentConcern = state.CurrentConcern;
+            RevealedClues = new List<string>(state.RevealedClues);
             Memories = new List<string>(state.Memories);
             LatestMemory = state.Memories.Count == 0 ? string.Empty : state.Memories[state.Memories.Count - 1];
         }
@@ -525,6 +579,7 @@ namespace KeyboardWanderer.Gameplay
         public IReadOnlyList<string> ForbiddenEvents { get; }
         public IReadOnlyList<NpcMemoryView> NpcMemories { get; }
         public IReadOnlyList<EndingCandidateView> EndingCandidates { get; }
+        public IReadOnlyList<EndingConditionReport> EndingConditionReports { get; }
 
         public string LastIntentText { get; }
         public string LastNormalizedAttempt { get; }
@@ -538,6 +593,7 @@ namespace KeyboardWanderer.Gameplay
         public IReadOnlyList<string> IntentHistory { get; }
 
         public int EnemiesDefeated { get; }
+        public int RollCount { get; }
         public IReadOnlyList<string> Inventory { get; }
         public IReadOnlyList<string> Connections { get; }
         public IReadOnlyList<string> GmLog { get; }
@@ -629,6 +685,7 @@ namespace KeyboardWanderer.Gameplay
             for (int i = 0; i < state.EndingCandidates.Count; i++)
                 endingCandidates.Add(new EndingCandidateView(state.EndingCandidates[i]));
             EndingCandidates = endingCandidates;
+            EndingConditionReports = CampaignDirector.EvaluateEndingBoard(state);
 
             LastIntentText = state.LastIntentText;
             LastNormalizedAttempt = state.LastNormalizedAttempt;
@@ -642,6 +699,7 @@ namespace KeyboardWanderer.Gameplay
             IntentHistory = new List<string>(state.IntentHistory);
 
             EnemiesDefeated = state.EnemiesDefeated;
+            RollCount = state.RollCount;
             Inventory = new List<string>(state.Inventory);
             Connections = new List<string>(state.Connections);
             GmLog = new List<string>(state.GmLog);
@@ -792,6 +850,11 @@ namespace KeyboardWanderer.Gameplay
         public List<ReversibleTurnRecord> ReversibleHistory { get; }
 
         public int EnemiesDefeated { get; set; }
+        public int RollCount { get; set; }
+        public HashSet<Guid> RewardedEnemyIds { get; }
+        public int AmbientWanderTick { get; set; }
+        public Dictionary<Guid, GridCoord> AmbientWanderOrigins { get; }
+        public Dictionary<Guid, int> AmbientWanderNextTicks { get; }
         public int QuestStage { get; set; }
         public bool QuestAccepted { get; set; }
         public List<string> Inventory { get; }
@@ -852,6 +915,9 @@ namespace KeyboardWanderer.Gameplay
             LastOutcomeExplanation = string.Empty;
             IntentHistory = new List<string>();
             RestorationLedger = new List<RestorationRecord>();
+            RewardedEnemyIds = new HashSet<Guid>();
+            AmbientWanderOrigins = new Dictionary<Guid, GridCoord>();
+            AmbientWanderNextTicks = new Dictionary<Guid, int>();
             ReversibleHistory = new List<ReversibleTurnRecord>();
             TechnicalDebtEntries = new List<TechnicalDebtEntry>();
             AdminAccessAcquisitionHistory = new List<AdminAccessAcquisitionRecord>();
@@ -979,6 +1045,8 @@ namespace KeyboardWanderer.Gameplay
                 LastOutcome = LastOutcome,
                 LastOutcomeExplanation = LastOutcomeExplanation,
                 EnemiesDefeated = EnemiesDefeated,
+                RollCount = RollCount,
+                AmbientWanderTick = AmbientWanderTick,
                 QuestStage = QuestStage,
                 QuestAccepted = QuestAccepted,
                 AdminAccess = AdminAccess,
@@ -1014,6 +1082,11 @@ namespace KeyboardWanderer.Gameplay
             clone.Inventory.AddRange(Inventory);
             clone.Connections.AddRange(Connections);
             clone.GmLog.AddRange(GmLog);
+            clone.RewardedEnemyIds.UnionWith(RewardedEnemyIds);
+            foreach (KeyValuePair<Guid, GridCoord> pair in AmbientWanderOrigins)
+                clone.AmbientWanderOrigins[pair.Key] = pair.Value;
+            foreach (KeyValuePair<Guid, int> pair in AmbientWanderNextTicks)
+                clone.AmbientWanderNextTicks[pair.Key] = pair.Value;
             clone.VisitedAreaIds.Clear();
             clone.VisitedAreaIds.AddRange(VisitedAreaIds);
             return clone;

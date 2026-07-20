@@ -1,5 +1,8 @@
+using KeyboardWanderer.Editor;
 using KeyboardWanderer.Editor.Validation;
 using NUnit.Framework;
+using TMPro;
+using UnityEditor;
 using UnityEngine;
 
 namespace KeyboardWanderer.Tests.EditMode
@@ -11,6 +14,39 @@ namespace KeyboardWanderer.Tests.EditMode
         {
             var problems = UnityAssetIntegrityValidator.CollectProblems(Application.dataPath);
             Assert.That(problems, Is.Empty, string.Join("\n", problems));
+        }
+
+        [Test]
+        public void KoreanTmpFont_IsPrewarmedAndKeepsValidAtlasReferences()
+        {
+            TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                KeyboardWandererFontAssetAuthoring.FontAssetPath);
+            Assert.That(font, Is.Not.Null, "기본 한글 TMP 폰트 에셋이 없습니다.");
+            Assert.That(font.atlasPopulationMode, Is.EqualTo(AtlasPopulationMode.Dynamic));
+            Assert.That(font.isMultiAtlasTexturesEnabled, Is.True);
+            Assert.That(font.atlasWidth, Is.EqualTo(KeyboardWandererFontAssetAuthoring.AtlasSize));
+            Assert.That(font.atlasHeight, Is.EqualTo(KeyboardWandererFontAssetAuthoring.AtlasSize));
+            Assert.That(font.atlasTextureCount, Is.EqualTo(1),
+                "현재 게임 문자는 첫 프레임에서 추가 Atlas를 만들지 않도록 하나의 Atlas에 미리 들어가야 합니다.");
+
+            var serializedFont = new SerializedObject(font);
+            Assert.That(serializedFont.FindProperty("m_ClearDynamicDataOnBuild").boolValue, Is.False,
+                "빌드에서 미리 채운 한글 글리프를 지우면 첫 화면에서 Atlas가 다시 분리됩니다.");
+
+            string requiredCharacters = KeyboardWandererFontAssetAuthoring.CollectRuntimeCharacters();
+            Assert.That(requiredCharacters, Is.Not.Empty);
+            Assert.That(KeyboardWandererFontAssetAuthoring.HasAllRuntimeCharacters(font), Is.True,
+                "게임 문자열에 필요한 글리프가 TMP 폰트에 미리 들어 있어야 합니다.");
+
+            Texture2D[] atlases = font.atlasTextures;
+            Assert.That(atlases, Is.Not.Null.And.Not.Empty);
+            foreach (var glyph in font.glyphTable)
+            {
+                Assert.That(glyph.atlasIndex, Is.LessThan((uint)atlases.Length),
+                    "글리프가 존재하지 않는 Atlas 인덱스를 참조하고 있습니다.");
+                Assert.That(atlases[glyph.atlasIndex], Is.Not.Null,
+                    "글리프가 비어 있는 Atlas 슬롯을 참조하고 있습니다.");
+            }
         }
     }
 }

@@ -4,6 +4,9 @@ using System.Linq;
 using System.Reflection;
 using KeyboardWanderer.Demo;
 using KeyboardWanderer.Gameplay;
+using KeyboardWanderer.Presentation;
+using KeyboardWanderer.Runtime;
+using KeyboardWanderer.World;
 using NUnit.Framework;
 using TMPro;
 using UnityEngine;
@@ -27,6 +30,22 @@ namespace KeyboardWanderer.Tests.PlayMode
             _controller = Object.FindAnyObjectByType<KeyboardWandererDemoController>(FindObjectsInactive.Include);
             Assert.That(_sceneUi, Is.Not.Null);
             Assert.That(_controller, Is.Not.Null);
+            Assert.That(_controller.GetComponent<KeyboardWandererInputRouter>(), Is.Not.Null,
+                "게임 루트에 키보드·포인터 입력 전용 InputRouter가 있어야 합니다.");
+            Assert.That(_controller.GetComponent<KeyboardWandererSelectionController>(), Is.Not.Null,
+                "게임 루트에 선택 상태 전용 SelectionController가 있어야 합니다.");
+            Assert.That(_controller.GetComponent<KeyboardWandererAbilityAvailability>(), Is.Not.Null,
+                "게임 루트에 로컬·서버 공통 스킬 판정 컴포넌트가 있어야 합니다.");
+            Assert.That(Object.FindAnyObjectByType<KeyboardWandererMinimapRenderer>(FindObjectsInactive.Include),
+                Is.Not.Null, "Authored World에 미니맵 렌더링 전용 컴포넌트가 있어야 합니다.");
+            Assert.That(Object.FindAnyObjectByType<KeyboardWandererPathPlanner>(FindObjectsInactive.Include),
+                Is.Not.Null, "Authored World에 이동 경로 계산 전용 컴포넌트가 있어야 합니다.");
+            Assert.That(_controller.GetComponent<KeyboardWandererRunSessionController>(), Is.Not.Null,
+                "게임 루트에 새 게임·이어하기 전용 RunSessionController가 있어야 합니다.");
+            Assert.That(_controller.GetComponent<KeyboardWandererSettingsController>(), Is.Not.Null,
+                "게임 루트에 사용자 설정 저장 전용 SettingsController가 있어야 합니다.");
+            Assert.That(Object.FindAnyObjectByType<KeyboardWandererVisualAssetLibrary>(FindObjectsInactive.Include),
+                Is.Not.Null, "Authored World에 시각 에셋 생성 전용 VisualAssetLibrary가 있어야 합니다.");
         }
 
         [Test]
@@ -34,6 +53,17 @@ namespace KeyboardWanderer.Tests.PlayMode
         {
             Assert.That(_sceneUi.IsReady, Is.True);
             Assert.That(_sceneUi.GetComponentsInChildren<Text>(true), Is.Empty);
+
+            Assert.That(_sceneUi.GetComponent<KeyboardWandererScreenFlowView>()?.IsReady, Is.True,
+                "Authored UI 루트가 화면 활성 상태만 소유해야 합니다.");
+            Assert.That(Find(_sceneUi.transform, "Title Screen")
+                ?.GetComponent<KeyboardWandererTitleView>()?.IsReady, Is.True);
+            Assert.That(Find(_sceneUi.transform, "Game HUD")
+                ?.GetComponent<KeyboardWandererGameHudView>()?.IsReady, Is.True);
+            Assert.That(Find(_sceneUi.transform, "Pause Screen")
+                ?.GetComponent<KeyboardWandererPauseView>()?.IsReady, Is.True);
+            Assert.That(Find(_sceneUi.transform, "Ending Screen")
+                ?.GetComponent<KeyboardWandererEndingView>()?.IsReady, Is.True);
 
             TMP_Text[] texts = _sceneUi.GetComponentsInChildren<TMP_Text>(true);
             Assert.That(texts.Length, Is.GreaterThan(20));
@@ -44,6 +74,40 @@ namespace KeyboardWanderer.Tests.PlayMode
             Assert.That(minimap, Is.Not.Null);
             Assert.That(minimap.GetComponent<Image>(), Is.Not.Null);
             Assert.That(Find(_sceneUi.transform, "Runtime Minimap"), Is.Null);
+            Assert.That(Find(_sceneUi.transform, "Minimap Panel")
+                .GetComponent<KeyboardWandererMinimapView>()?.IsReady, Is.True,
+                "미니맵 패널이 자체 표시 컴포넌트와 직렬화 참조를 소유해야 합니다.");
+
+            var dialogueView = Find(_sceneUi.transform, "Story Panel")
+                .GetComponent<KeyboardWandererDialogueView>();
+            Assert.That(dialogueView, Is.Not.Null,
+                "대화 상태를 소유하는 컴포넌트가 Story Panel에 있어야 합니다.");
+            Assert.That(dialogueView.IsReady, Is.True,
+                "대화 텍스트와 Next 버튼은 Inspector 참조로 연결되어야 합니다.");
+            Assert.That(Find(_sceneUi.transform, "Story Panel")
+                ?.GetComponent<KeyboardWandererTutorialView>()?.IsReady, Is.True,
+                "튜토리얼 문구는 Story Panel 컴포넌트에서 편집할 수 있어야 합니다.");
+
+            var selectionView = Find(_sceneUi.transform, "Selection Panel")
+                ?.GetComponent<KeyboardWandererSelectionView>();
+            Assert.That(selectionView, Is.Not.Null,
+                "Game HUD에 현재 스킬과 대상을 보여 주는 Selection Panel이 있어야 합니다.");
+            Assert.That(selectionView.IsReady, Is.True,
+                "Selection Panel의 텍스트와 아이콘은 Inspector 참조로 연결되어야 합니다.");
+
+            var skillBarView = Find(_sceneUi.transform, "Action Bar")
+                ?.GetComponent<KeyboardWandererSkillBarView>();
+            Assert.That(skillBarView, Is.Not.Null,
+                "Action Bar가 스킬 버튼 상태를 직접 소유해야 합니다.");
+            Assert.That(skillBarView.IsReady, Is.True,
+                "Action Bar의 버튼, 상태 표시, 단축키 참조는 Inspector에서 연결되어야 합니다.");
+
+            var settingsView = Find(_sceneUi.transform, "Settings Screen")
+                ?.GetComponent<KeyboardWandererSettingsView>();
+            Assert.That(settingsView, Is.Not.Null,
+                "Settings Screen이 슬라이더와 GM 토글을 직접 소유해야 합니다.");
+            Assert.That(settingsView.IsReady, Is.True,
+                "Settings Screen의 설정 컨트롤은 Inspector에서 연결되어야 합니다.");
 
             Button delete = Find(_sceneUi.transform, "Delete Skill Button").GetComponent<Button>();
             var stateView = delete.GetComponent<KeyboardWandererButtonStateView>();
@@ -52,10 +116,10 @@ namespace KeyboardWanderer.Tests.PlayMode
             Assert.That(outline, Is.Not.Null);
 
             int componentCount = delete.GetComponents<Component>().Length;
-            _sceneUi.SetButtonState(KeyboardWandererUiButton.Delete, true, true);
+            _sceneUi.SetAbilityState(AbilityKind.Delete, true, true);
             Assert.That(outline.enabled, Is.True);
             Assert.That(delete.transform.localScale.x, Is.GreaterThan(1f));
-            _sceneUi.SetButtonState(KeyboardWandererUiButton.Delete, false, false);
+            _sceneUi.SetAbilityState(AbilityKind.Delete, false, false);
             Assert.That(outline.enabled, Is.False);
             Assert.That(delete.GetComponents<Component>().Length, Is.EqualTo(componentCount));
         }
@@ -80,7 +144,7 @@ namespace KeyboardWanderer.Tests.PlayMode
             SetField(_controller, "_lastOutcome", "SUCCESS");
             SetField(_controller, "_lastNarrative", "첫 번째 이야기");
             SetField(_controller, "_lastDialogue", new[] { "두 번째 대화", "세 번째 대화" });
-            SetField(_controller, "_authoredDialogueSignature", string.Empty);
+            ((DialoguePresenter)GetField(_controller, "_dialoguePresenter")).Reset();
             Invoke(_controller, "UpdateAuthoredUi");
 
             TMP_Text story = Find(_sceneUi.transform, "Story Text").GetComponent<TMP_Text>();
@@ -97,15 +161,17 @@ namespace KeyboardWanderer.Tests.PlayMode
             LocalTurnService service = LocalTurnService.CreateDemo(7306);
             Invoke(_controller, "StartRun", service, false);
             yield return null;
-            MinimapPresenter presenter = (MinimapPresenter)GetField(_controller, "_minimapPresenter");
-            string before = presenter.Signature;
+            KeyboardWandererMinimapRenderer renderer =
+                Object.FindAnyObjectByType<KeyboardWandererMinimapRenderer>(FindObjectsInactive.Include);
+            Assert.That(renderer, Is.Not.Null);
+            string before = renderer.Signature;
             EntityView enemy = service.CurrentView.Entities.First(entity => entity.IsHostile);
 
-            SetField(_controller, "_selectedTarget", (System.Guid?)enemy.EntityId);
+            _controller.GetComponent<KeyboardWandererSelectionController>().SelectPrimary(enemy.EntityId);
             yield return null;
 
-            Assert.That(presenter.Signature, Is.Not.EqualTo(before));
-            Assert.That(presenter.Signature, Does.Contain(enemy.EntityId.ToString("N")));
+            Assert.That(renderer.Signature, Is.Not.EqualTo(before));
+            Assert.That(renderer.Signature, Does.Contain(enemy.EntityId.ToString("N")));
         }
 
         [UnityTest]

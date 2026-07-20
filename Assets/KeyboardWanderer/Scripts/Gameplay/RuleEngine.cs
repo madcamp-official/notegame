@@ -94,6 +94,13 @@ namespace KeyboardWanderer.Gameplay
             return new RulePreparation(true, TurnErrorCode.None, null, NormalizedAttempt, Difficulty,
                 Modifier + alignment, FocusCost, alignment, ResolvedTargetEntityId, Path);
         }
+
+        public RulePreparation WithModifier(int bonus)
+        {
+            if (!IsValid || bonus == 0) return this;
+            return new RulePreparation(true, TurnErrorCode.None, null, NormalizedAttempt, Difficulty,
+                Modifier + bonus, FocusCost, IntentAlignment, ResolvedTargetEntityId, Path);
+        }
     }
 
     /// <summary>
@@ -134,7 +141,22 @@ namespace KeyboardWanderer.Gameplay
             }
             // Free text is never rules authority. Skill, targets, location, and scene state alone
             // determine legality, modifier, difficulty, and outcome.
+            if (preparation.IsValid && request.Ability != AbilityKind.Move)
+                preparation = preparation.WithModifier(CompanionSupportBonus(state, player));
             return preparation;
+        }
+
+        private static int CompanionSupportBonus(RunState state, EntityState player)
+        {
+            for (int i = 0; i < state.NpcStories.Count; i++)
+            {
+                NpcStoryState story = state.NpcStories[i];
+                bool promised = story.Memories.Exists(memory =>
+                    memory.StartsWith("[약속]", StringComparison.Ordinal));
+                if (promised && state.Spatial.TryGetEntity(story.EntityId, out EntityState npc) && npc.IsActive &&
+                    player.Position.ManhattanDistance(npc.Position) <= 4) return 1;
+            }
+            return 0;
         }
 
         public static ActionContext ClassifyAction(RunState state, TurnRequest request)
@@ -201,7 +223,7 @@ namespace KeyboardWanderer.Gameplay
         }
 
         public List<string> Apply(RunState state, TurnRequest request, RulePreparation preparation,
-            RuleOutcome outcome, int turnNo)
+            RuleOutcome outcome, int turnNo, int consequenceBudget = 0)
         {
             var events = new List<string>();
             bool primary = IsApplied(outcome);
@@ -223,7 +245,7 @@ namespace KeyboardWanderer.Gameplay
                     case AbilityKind.Restore: ApplyRestore(state, preparation, events); break;
                     case AbilityKind.Undo: ApplyUndo(state, preparation.FocusCost, events); break;
                     case AbilityKind.Interact: ApplyInteract(state, request, events); break;
-                    case AbilityKind.Search: ApplySearch(state, request, events); break;
+                    case AbilityKind.Search: ApplySearch(state, request, outcome, turnNo, events); break;
                     case AbilityKind.SelectAll: ApplyAreaAttack(state, events); break;
                 }
             }
@@ -232,11 +254,14 @@ namespace KeyboardWanderer.Gameplay
                 state.Focus = Math.Max(0, state.Focus - preparation.FocusCost);
                 events.Add("RESOURCE_CHANGED:focus:-" + preparation.FocusCost);
             }
+            else if (request.Ability == AbilityKind.Search)
+            {
+                ApplyNpcInvestigation(state, request, outcome, turnNo, events);
+            }
 
             if (outcome == RuleOutcome.PartialSuccess)
             {
-                state.IsExposed = true;
-                events.Add("STATUS_ADDED:player:exposed:1");
+                ApplyPartialConsequence(state, request, Math.Max(1, consequenceBudget), events);
             }
             else if (outcome == RuleOutcome.CriticalSuccess)
             {
@@ -245,6 +270,53 @@ namespace KeyboardWanderer.Gameplay
                 events.Add("RESOURCE_CHANGED:focus:+1");
             }
             return events;
+        }
+
+        private static void ApplyPartialConsequence(RunState state, TurnRequest request, int severity,
+            List<string> events)
+        {
+            switch (request.Ability)
+            {
+                case AbilityKind.Copy:
+                    state.TechnicalDebt = RunState.ClampMetric(state.TechnicalDebt + severity);
+                    events.Add("PARTIAL_COPY_DRIFT:severity=" + severity + ":clone=unstable");
+                    break;
+                case AbilityKind.Delete:
+                    state.TechnicalDebt = RunState.ClampMetric(state.TechnicalDebt + severity);
+                    state.IsExposed = true;
+                    events.Add("PARTIAL_DELETE_BACKFLOW:severity=" + severity + ":player=exposed");
+                    break;
+                case AbilityKind.Connect:
+                    state.TechnicalDebt = RunState.ClampMetric(state.TechnicalDebt + severity);
+                    state.IsExposed = true;
+                    events.Add("PARTIAL_CONNECT_HAZARD:severity=" + severity + ":bidirectional=true");
+                    break;
+                case AbilityKind.Restore:
+                    state.TechnicalDebt = RunState.ClampMetric(state.TechnicalDebt + 1);
+                    events.Add("PARTIAL_RESTORE_DEFECT:severity=1:past-defect=restored");
+                    break;
+                case AbilityKind.Undo:
+                    state.TechnicalDebt = RunState.ClampMetric(state.TechnicalDebt + severity);
+                    events.Add("PARTIAL_UNDO_PARADOX:severity=" + severity);
+                    break;
+                case AbilityKind.SelectAll:
+                    int overload = Math.Min(1, state.Focus);
+                    state.Focus -= overload;
+                    events.Add("PARTIAL_SELECT_ALL_OVERLOAD:focus=-" + overload);
+                    break;
+                case AbilityKind.Search:
+                    state.IsExposed = true;
+                    events.Add("PARTIAL_SEARCH_NOISE:player=exposed");
+                    break;
+                case AbilityKind.Interact:
+                    state.IsExposed = true;
+                    events.Add("PARTIAL_INTERACTION_ATTENTION:player=exposed");
+                    break;
+                default:
+                    state.IsExposed = true;
+                    events.Add("PARTIAL_MOVE_EXPOSURE:player=exposed");
+                    break;
+            }
         }
 
         private static RulePreparation PrepareMove(RunState state, TurnRequest request, EntityState player)
@@ -296,9 +368,7 @@ namespace KeyboardWanderer.Gameplay
                 return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Copy requires 1 focus.");
             if (!TryTarget(state, request.TargetEntityId, out EntityState target))
                 return RulePreparation.Invalid(TurnErrorCode.EntityNotFound, "Choose an active source object.");
-            if (target.IsProtected)
-                return RulePreparation.Invalid(TurnErrorCode.ProtectedEntity, "Protected objects cannot be copied.");
-            if (!target.IsCloneable || target.Kind == EntityKind.Player || target.Kind == EntityKind.Npc)
+            if (!EntityCapabilityCatalog.CanCopy(target.Kind, target.IsProtected, target.IsCloneable))
                 return RulePreparation.Invalid(TurnErrorCode.NotCloneable, "This object is not cloneable.");
             if (!request.Destination.HasValue || !state.Region.IsWalkable(request.Destination.Value) ||
                 state.Spatial.IsBlockingOccupied(state.Region.RegionId, request.Destination.Value, target.Layer))
@@ -316,11 +386,15 @@ namespace KeyboardWanderer.Gameplay
                 return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Delete requires 1 focus.");
             if (!TryTarget(state, request.TargetEntityId, out EntityState target))
                 return RulePreparation.Invalid(TurnErrorCode.EntityNotFound, "Choose an active target.");
-            if (target.Kind != EntityKind.Enemy || !target.IsHostile)
+            if (!EntityCapabilityCatalog.CanDelete(target.Kind, target.IsHostile, target.AssetId))
                 return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
-                    "Delete is a single-target attack and requires one hostile enemy.");
-            if ((target.AssetId == "finale.threat" || target.AssetId == "finale.freedom") &&
-                state.AdminAccess < 3)
+                    "Delete requires a hostile enemy or a removable ROOT_SYSTEM component.");
+            if (EnemyArchetypeCatalog.Resolve(target.AssetId, state.WorldSeed, target.EntityId) == EnemyDependencyArchetype.RootProcess &&
+                !state.CanonicalFacts.Contains(EnemyArchetypeCatalog.RevealedFact(target.EntityId)))
+                return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
+                    "Root Process dependency must be revealed with Search before Delete.");
+            int requiredAdminAccess = EntityCapabilityCatalog.RequiredAdminAccessForDelete(target.AssetId);
+            if (state.AdminAccess < requiredAdminAccess)
                 return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
                     "ROOT_SYSTEM components require administrator access 3/3 before removal.");
             if (player.Position.ManhattanDistance(target.Position) > 3)
@@ -337,7 +411,8 @@ namespace KeyboardWanderer.Gameplay
                 !TryTarget(state, request.SecondaryTargetEntityId, out EntityState second) ||
                 first.EntityId == second.EntityId)
                 return RulePreparation.Invalid(TurnErrorCode.InvalidTarget, "Choose two distinct active endpoints.");
-            if (first.IsHostile || second.IsHostile)
+            if (!EntityCapabilityCatalog.CanConnect(first.IsActive, first.IsHostile) ||
+                !EntityCapabilityCatalog.CanConnect(second.IsActive, second.IsHostile))
                 return RulePreparation.Invalid(TurnErrorCode.InvalidTarget, "Hostile endpoints must be pacified first.");
             if ((first.AssetId.StartsWith("finale.", StringComparison.Ordinal) ||
                  second.AssetId.StartsWith("finale.", StringComparison.Ordinal)) && state.AdminAccess < 3)
@@ -360,7 +435,7 @@ namespace KeyboardWanderer.Gameplay
             if (state.Focus < 2)
                 return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Restore requires 2 focus.");
             if (TryTarget(state, request.TargetEntityId, out EntityState accessCandidate) &&
-                accessCandidate.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal))
+                EntityCapabilityCatalog.IsAdministratorAccessCandidate(accessCandidate.AssetId))
             {
                 if (player.Position.ManhattanDistance(accessCandidate.Position) > 4)
                     return RulePreparation.Invalid(TurnErrorCode.OutOfRange,
@@ -439,10 +514,19 @@ namespace KeyboardWanderer.Gameplay
             return RulePreparation.Valid("Area attack within 4 tiles of " + player.Position, 14, 4, 3);
         }
 
-        private static void ApplySearch(RunState state, TurnRequest request, List<string> events)
+        private static void ApplySearch(RunState state, TurnRequest request, RuleOutcome outcome, int turnNo, List<string> events)
         {
             if (!state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState target)) return;
             events.Add("SEARCH_REVEALED:" + target.EntityId);
+            if (target.Kind == EntityKind.Npc)
+                ApplyNpcInvestigation(state, request, outcome, turnNo, events);
+            if (target.Kind == EntityKind.Enemy)
+            {
+                string fact = EnemyArchetypeCatalog.RevealedFact(target.EntityId);
+                if (!state.CanonicalFacts.Contains(fact)) state.AddCanonicalFact(fact);
+                events.Add("ENEMY_DEPENDENCY_REVEALED:" + target.EntityId + ":archetype=" +
+                           EnemyArchetypeCatalog.Resolve(target.AssetId, state.WorldSeed, target.EntityId));
+            }
             if (target.AssetId == CampaignCatalog.AdministratorKeyboardId)
             {
                 state.AddCanonicalFact("관리자 키보드는 이미 존재하는 대상과 관계만 편집한다.");
@@ -456,6 +540,53 @@ namespace KeyboardWanderer.Gameplay
             }
             if (target.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal))
                 events.Add("ADMIN_ACCESS_CANDIDATE_INSPECTED:" + target.EntityId);
+        }
+
+        private static void ApplyNpcInvestigation(RunState state, TurnRequest request, RuleOutcome outcome,
+            int turnNo, List<string> events)
+        {
+            if (!request.TargetEntityId.HasValue ||
+                !state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState target) ||
+                target.Kind != EntityKind.Npc)
+                return;
+            NpcStoryState npc = state.FindNpcStory(target.EntityId);
+            if (npc == null) return;
+            npc.LastConversationTurn = turnNo;
+            string clueId = "personal-secret";
+            bool alreadyKnown = npc.RevealedClues.Contains(clueId);
+            if (alreadyKnown)
+            {
+                npc.Remember("이미 털어놓은 이야기를 다시 묻자, " + npc.NpcName + "은 지금은 새로 덧붙일 말이 없다고 했다.");
+                events.Add("NPC_INVESTIGATION_REPEAT:" + target.EntityId);
+                return;
+            }
+            if (outcome == RuleOutcome.Success || outcome == RuleOutcome.CriticalSuccess)
+            {
+                npc.RevealedClues.Add(clueId);
+                int trustDelta = outcome == RuleOutcome.CriticalSuccess ? 3 : 2;
+                npc.Trust = Math.Min(10, npc.Trust + trustDelta);
+                npc.Affinity = Math.Min(5, npc.Affinity + 1);
+                string fact = npc.NpcName + "의 증언: " + npc.Secret;
+                state.AddCanonicalFact(fact);
+                npc.Remember(npc.NpcName + "은 잠시 주위를 살핀 뒤 털어놓았다. “" + npc.Secret + ".”");
+                events.Add("NPC_CLUE_REVEALED:" + target.EntityId + ":trust=+" + trustDelta);
+                return;
+            }
+            if (outcome == RuleOutcome.PartialSuccess)
+            {
+                npc.RevealedClues.Add(clueId);
+                npc.Trust = Math.Min(10, npc.Trust + 1);
+                npc.Fear = Math.Min(10, npc.Fear + 1);
+                state.AddRumor(npc.Secret);
+                npc.Remember(npc.NpcName + "은 확신하지 못한 채 목소리를 낮췄다. “" + npc.Secret + "… 직접 확인하기 전에는 믿지 마.”");
+                events.Add("NPC_RUMOR_REVEALED:" + target.EntityId + ":trust=+1:fear=+1");
+                return;
+            }
+            int fearDelta = outcome == RuleOutcome.CriticalFailure ? 2 : 1;
+            npc.Fear = Math.Min(10, npc.Fear + fearDelta);
+            if (outcome == RuleOutcome.CriticalFailure) npc.Trust = Math.Max(-10, npc.Trust - 1);
+            npc.Remember(npc.NpcName + "은 시선을 피했다. “지금은 그 이야기를 할 수 없어. 먼저 내가 널 믿을 이유를 보여 줘.”");
+            events.Add("NPC_INVESTIGATION_REFUSED:" + target.EntityId + ":fear=+" + fearDelta);
         }
 
         private static void ApplyAreaAttack(RunState state, List<string> events)
@@ -473,7 +604,12 @@ namespace KeyboardWanderer.Gameplay
                 if (!state.Spatial.TryDamage(targets[i], 3, out int health, out bool wasDefeated, out string error))
                     throw new InvalidOperationException("Validated area attack failed: " + error);
                 events.Add("ENTITY_DAMAGED:" + targets[i] + ":3:hp=" + health);
-                if (wasDefeated) { defeated++; state.EnemiesDefeated++; events.Add("ENEMY_DEFEATED:" + targets[i]); }
+                if (wasDefeated)
+                {
+                    defeated++;
+                    if (state.Spatial.TryGetEntity(targets[i], out EntityState defeatedEnemy))
+                        RewardEnemy(state, defeatedEnemy, events);
+                }
             }
             events.Add("AREA_ATTACK_HIT_COUNT:" + targets.Count + ":DEFEATED=" + defeated);
         }
@@ -530,8 +666,40 @@ namespace KeyboardWanderer.Gameplay
             events.Add("ENTITY_DAMAGED:" + target.EntityId + ":5:hp=" + health);
             if (defeated)
             {
-                RewardEnemy(state, target, events);
-                events.Add("ENEMY_DEFEATED:" + target.EntityId);
+                TryReplicateCacheEnemy(state, target, turnNo, request.IdempotencyKey, events);
+                if (EntityCapabilityCatalog.GrantsDefeatReward(target.Kind, target.IsHostile))
+                    RewardEnemy(state, target, events);
+                else
+                    events.Add("ENTITY_REMOVED:" + target.EntityId + ":asset=" + target.AssetId);
+            }
+        }
+
+        private static void TryReplicateCacheEnemy(RunState state, EntityState target, int turnNo,
+            string idempotencyKey, List<string> events)
+        {
+            if (target == null || EnemyArchetypeCatalog.Resolve(target.AssetId, state.WorldSeed, target.EntityId) !=
+                EnemyDependencyArchetype.CacheReplicator ||
+                state.CanonicalFacts.Contains(EnemyArchetypeCatalog.RevealedFact(target.EntityId)) ||
+                state.CanonicalFacts.Contains(EnemyArchetypeCatalog.ReplicatedFact(target.EntityId))) return;
+            GridCoord[] directions =
+            {
+                new GridCoord(1, 0), new GridCoord(0, 1), new GridCoord(-1, 0), new GridCoord(0, -1)
+            };
+            for (int i = 0; i < directions.Length; i++)
+            {
+                var position = new GridCoord(target.Position.X + directions[i].X,
+                    target.Position.Y + directions[i].Y);
+                if (!state.Region.IsWalkable(position) ||
+                    state.Spatial.IsBlockingOccupied(state.Region.RegionId, position, target.Layer)) continue;
+                Guid cloneId = DeterministicGuid.Create(state.RunId + ":cache-replica:" + turnNo + ":" + idempotencyKey);
+                var replica = new EntityState(cloneId, EntityKind.Enemy, target.AssetId,
+                    target.DisplayName + " Cache Copy", true, false, false, true,
+                    Math.Max(2, target.MaxHealth - 1), state.Region.RegionId, position, target.Layer);
+                if (!state.Spatial.Register(replica, out _)) continue;
+                state.AddCanonicalFact(EnemyArchetypeCatalog.ReplicatedFact(target.EntityId));
+                events.Add("CACHE_ENEMY_REPLICATED:" + target.EntityId + ":clone=" + cloneId +
+                           ":reason=dependency-not-revealed");
+                return;
             }
         }
 
@@ -578,6 +746,25 @@ namespace KeyboardWanderer.Gameplay
                 state.Focus = Math.Min(state.MaxFocus, state.Focus + 1);
                 if (state.Focus > before) events.Add("RESOURCE_CHANGED:focus:+1");
             }
+            else if (!firstInteraction && target.AssetId.StartsWith("item.crate", StringComparison.Ordinal))
+            {
+                const int price = 2;
+                if (state.Gold >= price && state.Focus < state.MaxFocus)
+                {
+                    int before = state.Focus;
+                    state.Gold -= price;
+                    state.Focus = Math.Min(state.MaxFocus, state.Focus + 2);
+                    events.Add("RESOURCE_CHANGED:gold:-" + price);
+                    events.Add("RESOURCE_CHANGED:focus:+" + (state.Focus - before));
+                    events.Add("SUPPLY_PURCHASED:focus:price=" + price);
+                }
+                else
+                {
+                    events.Add(state.Gold < price
+                        ? "SUPPLY_PURCHASE_REJECTED:gold-required=" + price
+                        : "SUPPLY_PURCHASE_REJECTED:focus-full");
+                }
+            }
         }
 
         private static void ApplyUndo(RunState state, int focusCost, List<string> events)
@@ -593,7 +780,7 @@ namespace KeyboardWanderer.Gameplay
 
             ReversibleTurnRecord oldest = records[records.Count - 1];
             state.Focus = Math.Max(0, oldest.FocusBefore - focusCost);
-            events.Add("TIME_REWIND_COMPLETED:turns=2:from=" + records[0].SourceTurn + ":to=" + oldest.SourceTurn);
+            events.Add("UNDO_COMPENSATION_COMPLETED:turns=2:newest=" + records[0].SourceTurn + ":oldest=" + oldest.SourceTurn);
             events.Add("RESOURCE_CHANGED:focus:-" + focusCost);
         }
 
@@ -649,16 +836,32 @@ namespace KeyboardWanderer.Gameplay
                 state.Connections.AddRange(record.ConnectionsBefore);
             }
             record.IsConsumed = true;
-            events.Add("TURN_REWOUND:source-turn=" + record.SourceTurn + ":ability=" + record.SourceAbility);
+            events.Add("TURN_COMPENSATED:source-turn=" + record.SourceTurn + ":ability=" + record.SourceAbility);
         }
 
         private static void RewardEnemy(RunState state, EntityState enemy, List<string> events)
         {
+            bool firstReward = state.RewardedEnemyIds.Add(enemy.EntityId);
+            if (!firstReward)
+            {
+                events.Add("ENEMY_DEFEATED:" + enemy.EntityId + ":reward=already-claimed");
+                return;
+            }
             state.EnemiesDefeated++;
             int experience = enemy.AssetId.Contains("mushroom") ? 4 : 3;
+            int masteryBefore = state.Experience / 10;
             state.Experience += experience;
             state.Gold += 2;
+            int masteryAfter = state.Experience / 10;
+            if (masteryAfter > masteryBefore)
+            {
+                int increase = masteryAfter - masteryBefore;
+                state.MaxFocus += increase;
+                state.Focus = Math.Min(state.MaxFocus, state.Focus + increase);
+                events.Add("MASTERY_RANK_INCREASED:" + masteryAfter + ":max-focus=+" + increase);
+            }
             events.Add("ENEMY_DEFEATED:" + enemy.EntityId);
+            events.Add("DEFEAT_REWARD_GRANTED:" + enemy.EntityId);
             events.Add("IRREVERSIBLE_ENTITY:" + enemy.EntityId);
             events.Add("RESOURCE_CHANGED:xp:+" + experience);
             events.Add("RESOURCE_CHANGED:gold:+2");

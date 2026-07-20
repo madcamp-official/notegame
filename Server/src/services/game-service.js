@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { assert, AppError } from "../errors.js";
 import { createCampaignBlueprint } from "../domain/campaign.js";
-import { generateWorld, publicWorld } from "../domain/world.js";
+import { generateWorld, isWalkable, publicWorld } from "../domain/world.js";
 import { DeterministicD20Source, createRunState, directorContext, normalizeTravelRequest, normalizeTurnRequest, publicRun, publicTurn, resolveSafeTravel, resolveTurn, travelFingerprint, turnFingerprint } from "../domain/turn-engine.js";
 import { planDecisionScene, resolveTravelDecision } from "../domain/decision-orchestrator.js";
 import { applyCampaignPlanEnrichment, createCampaignPlanContext, createCampaignPlanFallback, createDeterministicCampaignPreview, validateCampaignPlanOutput } from "../llm/campaign-planning.js";
@@ -144,6 +144,21 @@ export class GameService {
     return publicRun(await this.store.getRun(ownerId, runId));
   }
 
+  async ambientWander(ownerId, runId, input) {
+    validateResourceId(runId, "runId");
+    assert(input && typeof input === "object" && !Array.isArray(input), 400, "AMBIENT_WANDER_INVALID", "A JSON body is required.");
+    exactKeys(input, ["expectedRunVersion", "minX", "minY", "maxX", "maxY"], "AMBIENT_WANDER_INVALID");
+    for (const key of ["expectedRunVersion", "minX", "minY", "maxX", "maxY"])
+      assert(Number.isSafeInteger(input[key]), 400, "AMBIENT_WANDER_INVALID", `${key} must be an integer.`);
+    assert(input.minX <= input.maxX && input.minY <= input.maxY, 400, "AMBIENT_WANDER_INVALID", "Active bounds are invalid.");
+    const now = this.clock();
+    const result = await this.store.commitAmbientWander({
+      ownerId, runId, expectedRunVersion: input.expectedRunVersion,
+      resolve: (run) => resolveAmbientWander(run, input, now)
+    });
+    return { run: publicRun(result.run), movedEntityIds: result.movedEntityIds };
+  }
+
   async submitTurn(ownerId, runId, input) {
     validateResourceId(runId, "runId");
     const request = normalizeTurnRequest(input);
@@ -251,6 +266,38 @@ export class GameService {
   async narrate(input) {
     return this.narrator.narrate(validateNarrationContext(input));
   }
+}
+
+function resolveAmbientWander(run, bounds, now) {
+  const nowMs = Date.parse(now);
+  const movedEntityIds = [];
+  const directions = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  const occupied = (point, exceptId) => run.entities.some((item) => item.active && item.blocking && item.id !== exceptId && item.position.x === point.x && item.position.y === point.y);
+  const npcs = run.entities.filter((item) => item.active && item.kind === "npc").sort((a, b) => a.id.localeCompare(b.id));
+  for (const npc of npcs) {
+    if (npc.position.x < bounds.minX || npc.position.x > bounds.maxX || npc.position.y < bounds.minY || npc.position.y > bounds.maxY) continue;
+    npc.state ||= {};
+    npc.state.wanderOrigin ||= { ...npc.position };
+    const dueAt = Date.parse(npc.state.nextWanderAt || "");
+    if (Number.isFinite(dueAt) && nowMs < dueAt) continue;
+    const seed = [...npc.id].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+    npc.state.nextWanderAt = new Date(nowMs + 1400 + ((seed + nowMs) % 1100)).toISOString();
+    const offset = (seed + Math.floor(nowMs / 1000)) & 3;
+    for (let index = 0; index < directions.length; index += 1) {
+      const [dx, dy] = directions[(offset + index) & 3];
+      const destination = { x: npc.position.x + dx, y: npc.position.y + dy };
+      const distance = Math.abs(destination.x - npc.state.wanderOrigin.x) + Math.abs(destination.y - npc.state.wanderOrigin.y);
+      if (distance > 2 || !isWalkable(run.world, destination) || occupied(destination, npc.id)) continue;
+      npc.position = destination;
+      movedEntityIds.push(npc.id);
+      break;
+    }
+  }
+  if (movedEntityIds.length > 0) {
+    run.version += 1;
+    run.updatedAt = now;
+  }
+  return { run, movedEntityIds };
 }
 
 function lifecycleVersion(input) {

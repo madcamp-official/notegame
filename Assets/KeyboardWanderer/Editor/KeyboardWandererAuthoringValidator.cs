@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using KeyboardWanderer.Demo;
+using KeyboardWanderer.Runtime;
+using KeyboardWanderer.World;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -65,8 +67,39 @@ namespace KeyboardWanderer.Editor
             AudioSource sfx = ObjectReference<AudioSource>(serializedController, "authoredSfxSource");
             KeyboardWandererAudioController audio = ObjectReference<KeyboardWandererAudioController>(
                 serializedController, "authoredAudioController");
-            KeyboardWandererInputController input = ObjectReference<KeyboardWandererInputController>(
-                serializedController, "authoredInputController");
+            KeyboardWandererInputRouter input = ObjectReference<KeyboardWandererInputRouter>(
+                serializedController, "authoredInputRouter");
+            KeyboardWandererSelectionController selection = ObjectReference<KeyboardWandererSelectionController>(
+                serializedController, "authoredSelectionController");
+            KeyboardWandererAbilityAvailability abilityAvailability =
+                ObjectReference<KeyboardWandererAbilityAvailability>(serializedController,
+                    "authoredAbilityAvailability");
+            KeyboardWandererTurnCoordinator turnCoordinator = ObjectReference<KeyboardWandererTurnCoordinator>(
+                serializedController, "authoredTurnCoordinator");
+            KeyboardWandererRunSessionController runSession =
+                ObjectReference<KeyboardWandererRunSessionController>(serializedController,
+                    "authoredRunSessionController");
+            KeyboardWandererSettingsController userSettings =
+                ObjectReference<KeyboardWandererSettingsController>(serializedController,
+                    "authoredSettingsController");
+            KeyboardWandererVisualAssetLibrary visualAssets =
+                ObjectReference<KeyboardWandererVisualAssetLibrary>(serializedController,
+                    "authoredVisualAssetLibrary");
+            KeyboardWandererMinimapRenderer minimapRenderer =
+                ObjectReference<KeyboardWandererMinimapRenderer>(serializedController,
+                    "authoredMinimapRenderer");
+            KeyboardWandererPathPlanner pathPlanner =
+                ObjectReference<KeyboardWandererPathPlanner>(serializedController,
+                    "authoredPathPlanner");
+            KeyboardWandererBiomeDecorationRenderer decorations =
+                ObjectReference<KeyboardWandererBiomeDecorationRenderer>(serializedController,
+                    "authoredDecorationRenderer");
+            KeyboardWandererEntityVisualFactory entityFactory =
+                ObjectReference<KeyboardWandererEntityVisualFactory>(serializedController,
+                    "authoredEntityVisualFactory");
+            KeyboardWandererEntityAnimationDriver entityAnimation =
+                ObjectReference<KeyboardWandererEntityAnimationDriver>(serializedController,
+                    "authoredEntityAnimationDriver");
 
             if (settings == null) errors.Add("Controller Authoring Settings reference is missing.");
             if (world == null) errors.Add("Controller Authored World reference is missing.");
@@ -78,7 +111,29 @@ namespace KeyboardWanderer.Editor
             if (audio == null || !audio.IsReady)
                 errors.Add("Controller Authored Audio Controller reference is missing or incomplete.");
             if (input == null)
-                errors.Add("Controller Authored Input Controller reference is missing.");
+                errors.Add("Controller Authored Input Router reference is missing.");
+            if (selection == null)
+                errors.Add("Controller Authored Selection Controller reference is missing.");
+            if (abilityAvailability == null)
+                errors.Add("Controller Authored Ability Availability reference is missing.");
+            if (turnCoordinator == null)
+                errors.Add("Controller Authored Turn Coordinator reference is missing.");
+            if (runSession == null)
+                errors.Add("Controller Authored Run Session Controller reference is missing.");
+            if (userSettings == null)
+                errors.Add("Controller Authored Settings Controller reference is missing.");
+            if (visualAssets == null || visualAssets.Manifest == null)
+                errors.Add("Controller Authored Visual Asset Library reference is missing or has no manifest.");
+            if (minimapRenderer == null)
+                errors.Add("Controller Authored Minimap Renderer reference is missing.");
+            if (pathPlanner == null)
+                errors.Add("Controller Authored Path Planner reference is missing.");
+            if (decorations == null || !decorations.IsReady)
+                errors.Add("Controller Authored Decoration Renderer reference is missing or incomplete.");
+            if (entityFactory == null || !entityFactory.IsReady)
+                errors.Add("Controller Authored Entity Visual Factory reference is missing or incomplete.");
+            if (entityAnimation == null)
+                errors.Add("Controller Authored Entity Animation Driver reference is missing.");
             if (controller.GetComponent<SceneSequencePlayer>() == null)
                 errors.Add("Controller object must contain SceneSequencePlayer.");
 

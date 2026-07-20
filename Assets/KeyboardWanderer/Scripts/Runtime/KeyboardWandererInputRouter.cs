@@ -4,10 +4,14 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
-namespace KeyboardWanderer.Demo
+namespace KeyboardWanderer.Runtime
 {
+    /// <summary>
+    /// Input System의 키보드와 포인터 입력을 게임 의미 이벤트로 변환한다.
+    /// 게임 상태와 규칙은 알지 못하며 Pause, 스킬 선택, 실행, 월드 클릭 요청만 전달한다.
+    /// </summary>
     [DisallowMultipleComponent]
-    public sealed class KeyboardWandererInputController : MonoBehaviour
+    public sealed class KeyboardWandererInputRouter : MonoBehaviour
     {
         public event Action PauseRequested;
         public event Action<AbilityKind> AbilityRequested;
@@ -33,6 +37,7 @@ namespace KeyboardWanderer.Demo
                 return;
             }
 
+            // 숫자 키는 접근성용 보조 입력이고, 실제 키보드 스킬 조합은 Ctrl 계열을 우선한다.
             bool ctrl = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed;
             if (keyboard.digit1Key.wasPressedThisFrame || !ctrl && keyboard.wKey.wasPressedThisFrame)
                 AbilityRequested?.Invoke(AbilityKind.Move);
@@ -66,6 +71,7 @@ namespace KeyboardWanderer.Demo
             Mouse mouse = Mouse.current;
             if (mouse == null || !mouse.leftButton.wasPressedThisFrame)
                 return;
+            // UI 위 클릭은 Button이 처리하므로 월드 선택 이벤트로 중복 전달하지 않는다.
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
                 return;
             WorldClickRequested?.Invoke(mouse.position.ReadValue());

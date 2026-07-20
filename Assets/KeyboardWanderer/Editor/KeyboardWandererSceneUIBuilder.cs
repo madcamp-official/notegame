@@ -13,10 +13,6 @@ namespace KeyboardWanderer.Editor
     public static class KeyboardWandererSceneUIBuilder
     {
         private const string UiPrefabPath = "Assets/KeyboardWanderer/Prefabs/UI/AuthoredUI.prefab";
-        private const string DefaultFontPath =
-            "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf";
-        private const string DefaultTmpFontPath =
-            "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular SDF.asset";
         private static readonly Color Ink = Hex("160f0a");
         private static readonly Color Panel = Hex("281a11");
         private static readonly Color Raised = Hex("352419");
@@ -195,23 +191,7 @@ namespace KeyboardWanderer.Editor
 
         private static TMP_FontAsset LoadDefaultFont()
         {
-            TMP_FontAsset fontAsset = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(DefaultTmpFontPath);
-            if (fontAsset != null)
-                return fontAsset;
-
-            Font sourceFont = AssetDatabase.LoadAssetAtPath<Font>(DefaultFontPath);
-            if (sourceFont == null)
-                throw new UnityException("Default authored UI font is missing: " + DefaultFontPath);
-            fontAsset = TMP_FontAsset.CreateFontAsset(sourceFont);
-            Texture2D atlas = fontAsset.atlasTexture;
-            Material material = fontAsset.material;
-            fontAsset.atlasPopulationMode = AtlasPopulationMode.Dynamic;
-            fontAsset.isMultiAtlasTexturesEnabled = true;
-            AssetDatabase.CreateAsset(fontAsset, DefaultTmpFontPath);
-            AssetDatabase.AddObjectToAsset(atlas, fontAsset);
-            AssetDatabase.AddObjectToAsset(material, fontAsset);
-            AssetDatabase.SaveAssets();
-            return fontAsset;
+            return KeyboardWandererFontAssetAuthoring.EnsureProjectFontAsset();
         }
 
         private static void BuildTitle(Transform canvas)

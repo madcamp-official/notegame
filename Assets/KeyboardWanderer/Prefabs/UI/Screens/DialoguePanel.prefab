@@ -221,7 +221,7 @@ MonoBehaviour:
   m_text: "\uB2E4\uC74C \u25B6"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-  m_sharedMaterial: {fileID: 0}
+  m_sharedMaterial: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -359,7 +359,7 @@ MonoBehaviour:
     \uC2A4\uD0AC\uC744 \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4."
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-  m_sharedMaterial: {fileID: 0}
+  m_sharedMaterial: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -515,6 +515,8 @@ GameObject:
   - component: {fileID: 8019827854313964019}
   - component: {fileID: 2321823686778697274}
   - component: {fileID: 9222788559002312193}
+  - component: {fileID: 7668616220315440419}
+  - component: {fileID: 7348296810487947182}
   m_Layer: 0
   m_Name: DialoguePanel
   m_TagString: Untagged
@@ -583,6 +585,63 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &7668616220315440419
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3753925449563962863}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b8f9a950a9fa1493f820e657fc1f1fa7, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererDialogueView
+  speakerText: {fileID: 2340749409526165433}
+  storyText: {fileID: 7372474559764695721}
+  nextLabel: {fileID: 3117386902922171492}
+  nextButton: {fileID: 6579471527362431886}
+--- !u!114 &7348296810487947182
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3753925449563962863}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9d47863db979e45249de61bc0598ddd3, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererTutorialView
+  dialogueView: {fileID: 7668616220315440419}
+  pages:
+  - "\uB2F9\uC2E0\uC740 \uB119\uC8FD\uC774\uC785\uB2C8\uB2E4. \uBD95\uAD34\uD55C
+    \uCF54\uB4DC\uB9AC\uC544\uB97C \uD0D0\uD5D8\uD574 \uAD00\uB9AC\uC790 \uAD8C\uD55C
+    3\uAC1C\uB97C \uB418\uCC3E\uACE0, \uB8E8\uD2B8 \uC2DC\uC2A4\uD15C\uAE4C\uC9C0
+    \uB3C4\uB2EC\uD558\uB294 \uAC83\uC774 \uCD5C\uC885 \uBAA9\uD45C\uC785\uB2C8\uB2E4.\n\uC9C0\uAE08
+    \uD560 \uC77C\uC740 \uC88C\uCE21 \uC0C1\uB2E8\uC758 \u2018\uD604\uC7AC \uBAA9\uD45C\u2019\uC5D0\uC11C
+    \uD655\uC778\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4."
+  - "\uC774\uB3D9: W \uBC84\uD2BC\uC744 \uC120\uD0DD\uD558\uACE0 \uC9C0\uB3C4\uC5D0\uC11C
+    \uBE48 \uD0C0\uC77C\uC744 \uB204\uB978 \uB4A4, \uC6B0\uCE21 \uC544\uB798 \uC2E4\uD589
+    \uBC84\uD2BC\uC744 \uB204\uB974\uC138\uC694.\n\uC774\uB3D9\uC740 \uC758\uBBF8
+    \uD134\uACFC D20\uC744 \uC0AC\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uBD84\uD64D
+    \uBBF8\uB2C8\uB9F5 \uD45C\uC2DD\uC774 \uD604\uC7AC \uBAA9\uD45C\uC785\uB2C8\uB2E4."
+  - "\uC870\uC0AC: Ctrl F\uB97C \uC120\uD0DD\uD558\uACE0 \uBAA9\uD45C \uC778\uBB3C\uC774\uB098
+    \uBB3C\uAC74\uC744 \uB204\uB978 \uB4A4 \uC2E4\uD589\uD558\uC138\uC694.\n\uC870\uC0AC\xB7\uACF5\uACA9\xB7\uC5F0\uACB0
+    \uAC19\uC740 \uD0A4\uBCF4\uB4DC \uAE30\uC220\uC740 \uC758\uBBF8 \uD134 1\uD68C\uC640
+    D20 \uD310\uC815\uC744 \uC0AC\uC6A9\uD558\uBA70, \uC131\uACF5\uACFC \uC2E4\uD328\uAC00
+    \uC138\uACC4\uC5D0 \uB0A8\uC2B5\uB2C8\uB2E4."
+  - "\uC8FC\uC694 \uAE30\uC220: Delete\uB294 \uC801 1\uBA85 \uACF5\uACA9, Ctrl A\uB294
+    \uC8FC\uBCC0 \uC801 \uC804\uCCB4 \uACF5\uACA9, Ctrl K\uB294 \uB450 \uB300\uC0C1
+    \uC5F0\uACB0\xB7\uB300\uD654, Ctrl Z\uB294 \uCD5C\uADFC \uC758\uBBF8 \uD134 2\uAC1C
+    \uB418\uB3CC\uB9AC\uAE30\uC785\uB2C8\uB2E4.\n\uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC744
+    \uB54C\uB294 \uC0C1\uB2E8 \uC120\uD0DD \uD328\uB110\uC5D0 \uD544\uC694\uD55C
+    \uB300\uC0C1\xB7\uAC70\uB9AC\xB7\uC870\uAC74\uC774 \uD45C\uC2DC\uB429\uB2C8\uB2E4."
+  - "\uCCAB \uBAA9\uD45C: {objective}\n\uD589\uB3D9 \uACB0\uACFC\uB294 \uC11C\uBC84
+    \uADDC\uCE59\uC774 \uD655\uC815\uD558\uACE0, \uADF8 \uB4A4\uC758 \uC9E7\uC740
+    \uC7A5\uBA74\uACFC \uB300\uC0AC\uB294 AI\uAC00 \uD45C\uD604\uD569\uB2C8\uB2E4.
+    AI\uAC00 \uC751\uB2F5\uD558\uC9C0 \uC54A\uC544\uB3C4 \uAE30\uBCF8 \uC774\uC57C\uAE30\uB85C
+    \uAC8C\uC784\uC740 \uACC4\uC18D\uB429\uB2C8\uB2E4."
 --- !u!1 &4916679259784320024
 GameObject:
   m_ObjectHideFlags: 0
@@ -878,7 +937,7 @@ MonoBehaviour:
   m_text: "\uC774\uACF3\uC5D0\uC11C \uBC8C\uC5B4\uC9C4 \uC774\uC57C\uAE30\uAC00 \uD45C\uC2DC\uB429\uB2C8\uB2E4."
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-  m_sharedMaterial: {fileID: 0}
+  m_sharedMaterial: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -1015,7 +1074,7 @@ MonoBehaviour:
   m_text: "\uCF54\uB4DC\uB9AC\uC544 \uC8FC\uBBFC"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-  m_sharedMaterial: {fileID: 0}
+  m_sharedMaterial: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []

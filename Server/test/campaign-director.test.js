@@ -32,6 +32,7 @@ function deleteRequest(run, idempotencyKey, expectedRunVersion = run.version) {
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const target = run.entities.find((item) => item.kind === "enemy" && item.active);
   target.position = { ...player.position };
+  target.state.revealed = true;
   return normalizeTurnRequest({
     inputType: "USE_SKILL",
     idempotencyKey,

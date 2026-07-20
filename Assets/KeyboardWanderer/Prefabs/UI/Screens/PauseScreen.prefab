@@ -379,6 +379,7 @@ GameObject:
   - component: {fileID: 8560934747348360983}
   - component: {fileID: 7074845375178361984}
   - component: {fileID: 8572670150825070650}
+  - component: {fileID: 1716973890248434131}
   m_Layer: 0
   m_Name: PauseScreen
   m_TagString: Untagged
@@ -444,6 +445,21 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &1716973890248434131
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4820007120810906731}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e4f19da2610c24e31a8ffd453fcdaadf, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererPauseView
+  resumeButton: {fileID: 3546313471094278987}
+  settingsButton: {fileID: 3097433655499620743}
+  titleButton: {fileID: 6506744699015376353}
 --- !u!1 &5040127129770952414
 GameObject:
   m_ObjectHideFlags: 0

@@ -263,11 +263,31 @@ namespace KeyboardWanderer.Core
 
         public IReadOnlyList<EntityState> FindAt(Guid regionId, GridCoord coord, int layer = 0)
         {
-            var result = new List<EntityState>();
             var key = new SpatialCellKey(regionId, coord, layer);
             if (!_occupancy.TryGetValue(key, out OccupancyCell cell))
-                return result;
+                return Array.Empty<EntityState>();
 
+            var result = new List<EntityState>(cell.NonBlockingEntityIds.Count +
+                                               (cell.BlockingEntityId.HasValue ? 1 : 0));
+            CopyCellEntities(cell, result);
+            return result;
+        }
+
+        /// <summary>Copies occupants into a caller-owned buffer so repeated tile queries allocate no lists.</summary>
+        public int CopyAt(Guid regionId, GridCoord coord, List<EntityState> buffer, int layer = 0)
+        {
+            if (buffer == null)
+                throw new ArgumentNullException(nameof(buffer));
+            buffer.Clear();
+            var key = new SpatialCellKey(regionId, coord, layer);
+            if (!_occupancy.TryGetValue(key, out OccupancyCell cell))
+                return 0;
+            CopyCellEntities(cell, buffer);
+            return buffer.Count;
+        }
+
+        private void CopyCellEntities(OccupancyCell cell, List<EntityState> result)
+        {
             if (cell.BlockingEntityId.HasValue && _entities.TryGetValue(cell.BlockingEntityId.Value, out EntityState blocking))
                 result.Add(blocking);
             for (int i = 0; i < cell.NonBlockingEntityIds.Count; i++)
@@ -275,7 +295,6 @@ namespace KeyboardWanderer.Core
                 if (_entities.TryGetValue(cell.NonBlockingEntityIds[i], out EntityState item))
                     result.Add(item);
             }
-            return result;
         }
 
         public MoveResult TryMove(
@@ -287,6 +306,8 @@ namespace KeyboardWanderer.Core
         {
             if (!_entities.TryGetValue(entityId, out EntityState entity) || !entity.IsActive)
                 return MoveResult.Fail("ENTITY_NOT_FOUND");
+            if (isWalkable == null)
+                return MoveResult.Fail("WALKABILITY_CHECK_REQUIRED");
             if (!isWalkable(targetRegionId, destination))
                 return MoveResult.Fail("TILE_NOT_WALKABLE");
             if (IsBlockingOccupied(targetRegionId, destination, targetLayer, entityId))
@@ -423,7 +444,7 @@ namespace KeyboardWanderer.Core
             var snapshots = new List<EntityRuntimeSnapshot>();
             foreach (EntityState entity in _entities.Values)
                 snapshots.Add(EntityRuntimeSnapshot.Capture(entity));
-            snapshots.Sort((left, right) => string.CompareOrdinal(left.EntityId.ToString("N"), right.EntityId.ToString("N")));
+            snapshots.Sort((left, right) => left.EntityId.CompareTo(right.EntityId));
             return snapshots;
         }
 
@@ -510,7 +531,11 @@ namespace KeyboardWanderer.Core
                 throw new InvalidOperationException("Spatial index is inconsistent.");
 
             if (entity.IsBlocking)
+            {
+                if (!cell.BlockingEntityId.HasValue || cell.BlockingEntityId.Value != entity.EntityId)
+                    throw new InvalidOperationException("Blocking occupancy owner mismatch.");
                 cell.BlockingEntityId = null;
+            }
             else
                 cell.NonBlockingEntityIds.Remove(entity.EntityId);
 

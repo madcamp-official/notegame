@@ -1,4 +1,6 @@
 using KeyboardWanderer.Demo;
+using KeyboardWanderer.Runtime;
+using KeyboardWanderer.World;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -48,17 +50,54 @@ namespace KeyboardWanderer.Editor
                 throw new UnityException("Open SampleScene before converting the project.");
 
             KeyboardWandererWorldView world = EnsureAuthoredWorld(controller.transform);
+            KeyboardWandererVisualAssetLibrary visualAssetLibrary =
+                EnsureVisualAssetLibrary(world, manifest);
+            KeyboardWandererMinimapRenderer minimapRenderer =
+                world.GetComponent<KeyboardWandererMinimapRenderer>();
+            if (minimapRenderer == null)
+                minimapRenderer = world.gameObject.AddComponent<KeyboardWandererMinimapRenderer>();
+            KeyboardWandererPathPlanner pathPlanner = world.GetComponent<KeyboardWandererPathPlanner>();
+            if (pathPlanner == null)
+                pathPlanner = world.gameObject.AddComponent<KeyboardWandererPathPlanner>();
+            KeyboardWandererBiomeDecorationRenderer decorationRenderer = EnsureDecorationRenderer(world);
+            KeyboardWandererEntityVisualFactory entityVisualFactory =
+                EnsureEntityVisualFactory(world, entityPrefab);
+            KeyboardWandererEntityAnimationDriver entityAnimationDriver =
+                EnsureEntityAnimationDriver(world);
             Camera sceneCamera = EnsureSceneCamera(out KeyboardWandererCameraController cameraController);
             KeyboardWandererAudioController audioController =
                 EnsureAuthoredAudio(controller.transform, out AudioSource music, out AudioSource sfx);
-            KeyboardWandererInputController inputController = controller.GetComponent<KeyboardWandererInputController>();
-            if (inputController == null)
-                inputController = controller.gameObject.AddComponent<KeyboardWandererInputController>();
+            KeyboardWandererInputRouter inputRouter = controller.GetComponent<KeyboardWandererInputRouter>();
+            if (inputRouter == null)
+                inputRouter = controller.gameObject.AddComponent<KeyboardWandererInputRouter>();
+            KeyboardWandererSelectionController selectionController =
+                controller.GetComponent<KeyboardWandererSelectionController>();
+            if (selectionController == null)
+                selectionController = controller.gameObject.AddComponent<KeyboardWandererSelectionController>();
+            KeyboardWandererAbilityAvailability abilityAvailability =
+                controller.GetComponent<KeyboardWandererAbilityAvailability>();
+            if (abilityAvailability == null)
+                abilityAvailability = controller.gameObject.AddComponent<KeyboardWandererAbilityAvailability>();
+            KeyboardWandererTurnCoordinator turnCoordinator =
+                controller.GetComponent<KeyboardWandererTurnCoordinator>();
+            if (turnCoordinator == null)
+                turnCoordinator = controller.gameObject.AddComponent<KeyboardWandererTurnCoordinator>();
+            KeyboardWandererRunSessionController runSessionController =
+                controller.GetComponent<KeyboardWandererRunSessionController>();
+            if (runSessionController == null)
+                runSessionController = controller.gameObject.AddComponent<KeyboardWandererRunSessionController>();
+            KeyboardWandererSettingsController settingsController =
+                controller.GetComponent<KeyboardWandererSettingsController>();
+            if (settingsController == null)
+                settingsController = controller.gameObject.AddComponent<KeyboardWandererSettingsController>();
+            settingsController.Configure(audioController);
             if (controller.GetComponent<SceneSequencePlayer>() == null)
                 controller.gameObject.AddComponent<SceneSequencePlayer>();
             controller.ConfigureAuthoredContent(
                 settings, manifest, world, sceneCamera, cameraController, music, sfx, audioController,
-                inputController);
+                inputRouter, selectionController, abilityAvailability, turnCoordinator, runSessionController, settingsController,
+                visualAssetLibrary, minimapRenderer, pathPlanner, decorationRenderer, entityVisualFactory,
+                entityAnimationDriver);
             EditorUtility.SetDirty(controller);
 
             // Preserve scene/prefab UI edits. Rebuild only when no authored UI exists yet.
@@ -171,6 +210,57 @@ namespace KeyboardWanderer.Editor
             root.SetActive(false);
             EditorUtility.SetDirty(view);
             return view;
+        }
+
+        private static KeyboardWandererBiomeDecorationRenderer EnsureDecorationRenderer(
+            KeyboardWandererWorldView world)
+        {
+            KeyboardWandererBiomeDecorationRenderer renderer =
+                world.GetComponent<KeyboardWandererBiomeDecorationRenderer>();
+            if (renderer == null)
+                renderer = world.gameObject.AddComponent<KeyboardWandererBiomeDecorationRenderer>();
+            Transform pool = EnsureChild(world.transform, "Decoration Pool");
+            pool.gameObject.SetActive(false);
+            renderer.Configure(world.RuntimeLandmarks, pool);
+            EditorUtility.SetDirty(renderer);
+            return renderer;
+        }
+
+        private static KeyboardWandererVisualAssetLibrary EnsureVisualAssetLibrary(
+            KeyboardWandererWorldView world, NinjaAdventureAssetManifest manifest)
+        {
+            KeyboardWandererVisualAssetLibrary library =
+                world.GetComponent<KeyboardWandererVisualAssetLibrary>();
+            if (library == null)
+                library = world.gameObject.AddComponent<KeyboardWandererVisualAssetLibrary>();
+            library.ConfigureManifest(manifest);
+            EditorUtility.SetDirty(library);
+            return library;
+        }
+
+        private static KeyboardWandererEntityVisualFactory EnsureEntityVisualFactory(
+            KeyboardWandererWorldView world, KeyboardWandererEntityView prefab)
+        {
+            KeyboardWandererEntityVisualFactory factory =
+                world.GetComponent<KeyboardWandererEntityVisualFactory>();
+            if (factory == null)
+                factory = world.gameObject.AddComponent<KeyboardWandererEntityVisualFactory>();
+            Transform pool = EnsureChild(world.transform, "Entity Pool");
+            pool.gameObject.SetActive(false);
+            factory.Configure(prefab, world.RuntimeEntities, pool);
+            EditorUtility.SetDirty(factory);
+            return factory;
+        }
+
+        private static KeyboardWandererEntityAnimationDriver EnsureEntityAnimationDriver(
+            KeyboardWandererWorldView world)
+        {
+            KeyboardWandererEntityAnimationDriver driver =
+                world.GetComponent<KeyboardWandererEntityAnimationDriver>();
+            if (driver == null)
+                driver = world.gameObject.AddComponent<KeyboardWandererEntityAnimationDriver>();
+            EditorUtility.SetDirty(driver);
+            return driver;
         }
 
         private static Camera EnsureSceneCamera(out KeyboardWandererCameraController cameraController)

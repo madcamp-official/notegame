@@ -4,7 +4,8 @@
   "references": [
     "KeyboardWanderer.Runtime",
     "KeyboardWanderer.Editor.Validation",
-    "KeyboardWanderer.Editor"
+    "KeyboardWanderer.Editor",
+    "Unity.TextMeshPro"
   ],
   "includePlatforms": [
     "Editor"

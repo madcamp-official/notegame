@@ -13,10 +13,6 @@ namespace KeyboardWanderer.Editor
     public static class AuthoredUiMigration
     {
         private const string UiPrefabPath = "Assets/KeyboardWanderer/Prefabs/UI/AuthoredUI.prefab";
-        private const string FontSourcePath =
-            "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf";
-        private const string FontAssetPath =
-            "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular SDF.asset";
         private const string ScreenFolder = "Assets/KeyboardWanderer/Prefabs/UI/Screens";
 
         [MenuItem("Keyboard Wanderer/Migrate Authored UI to Components")]
@@ -79,36 +75,7 @@ namespace KeyboardWanderer.Editor
         private static TMP_FontAsset EnsureFontAsset()
         {
             EnsureTmpSettingsAsset();
-            TMP_FontAsset asset = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontAssetPath);
-            Font source = AssetDatabase.LoadAssetAtPath<Font>(FontSourcePath);
-            if (source == null)
-                throw new InvalidOperationException("Missing UI font: " + FontSourcePath);
-
-            if (asset != null && asset.atlasTextures != null && asset.atlasTextures.Length > 0 &&
-                asset.atlasTextures[0] != null && asset.material != null)
-                return asset;
-
-            TMP_FontAsset generated = TMP_FontAsset.CreateFontAsset(source);
-            Texture2D atlas = generated.atlasTexture;
-            Material material = generated.material;
-            if (asset == null)
-            {
-                asset = generated;
-                AssetDatabase.CreateAsset(asset, FontAssetPath);
-            }
-            else
-            {
-                EditorUtility.CopySerialized(generated, asset);
-            }
-            asset.name = "NeoDunggeunmoPro-Regular SDF";
-            asset.atlasPopulationMode = AtlasPopulationMode.Dynamic;
-            asset.isMultiAtlasTexturesEnabled = true;
-            atlas.name = "NeoDunggeunmoPro-Regular Atlas";
-            material.name = "NeoDunggeunmoPro-Regular Material";
-            AssetDatabase.AddObjectToAsset(atlas, asset);
-            AssetDatabase.AddObjectToAsset(material, asset);
-            EditorUtility.SetDirty(asset);
-            return asset;
+            return KeyboardWandererFontAssetAuthoring.EnsureProjectFontAsset();
         }
 
         private static void ConvertLegacyTexts(GameObject root, TMP_FontAsset font)
