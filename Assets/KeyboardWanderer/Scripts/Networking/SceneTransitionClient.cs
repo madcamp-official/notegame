@@ -70,6 +70,21 @@ namespace KeyboardWanderer.Networking
     }
 
     /// <summary>
+    /// Everything worth warming up while the scene plan request is in flight. Because the game
+    /// authors the candidate allowlist itself, these are known at 0ms — before the model answers —
+    /// so maps, music, and effects for every possible pick can start loading immediately and the
+    /// chosen one is already resident when the plan arrives. Whatever the model selects is
+    /// guaranteed to be one of these.
+    /// </summary>
+    public sealed class ScenePreloadTargets
+    {
+        public string[] destinationAreaIds;
+        public string[] bgmCueIds;
+        public string[] sfxCueIds;
+        public string[] transitionStyleIds;
+    }
+
+    /// <summary>
     /// Client for <c>POST /v1/gm/scene-transitions</c> on the authoritative game service.
     /// The caller always receives a plan that passed <see cref="SceneTransitionPlanValidator"/>:
     /// a network failure, stale echo, or contract violation degrades to the same deterministic
@@ -104,6 +119,22 @@ namespace KeyboardWanderer.Networking
         public SceneTransitionClient(string baseUrl = null)
         {
             _baseUrl = (string.IsNullOrWhiteSpace(baseUrl) ? DefaultBaseUrl : baseUrl.Trim()).TrimEnd('/');
+        }
+
+        /// <summary>
+        /// Same as <see cref="RequestScenePlan(SceneTransitionRequest, Action{Result})"/>, but fires
+        /// <paramref name="preloadStarted"/> synchronously at call time — before any network
+        /// traffic — so the caller can begin loading every candidate map and audio cue while the
+        /// model decides. By the time the plan lands (~1-3s), the selected assets are warm.
+        /// </summary>
+        public IEnumerator RequestScenePlan(
+            SceneTransitionRequest request,
+            Action<ScenePreloadTargets> preloadStarted,
+            Action<Result> completed)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            preloadStarted?.Invoke(BuildPreloadTargets(request));
+            return RequestScenePlan(request, completed);
         }
 
         public IEnumerator RequestScenePlan(SceneTransitionRequest request, Action<Result> completed)
@@ -160,6 +191,34 @@ namespace KeyboardWanderer.Networking
                 expectedRunVersion = request.run?.expectedRunVersion ?? 0,
                 worldLayoutHash = request.context?.worldLayoutHash,
                 contextHash = request.context?.contextHash,
+            };
+        }
+
+        /// <summary>
+        /// Distinct asset ids worth warming for this request, available before the request is even
+        /// sent. Preloading all of them bounds the worst case: the plan can only pick from here.
+        /// </summary>
+        public static ScenePreloadTargets BuildPreloadTargets(SceneTransitionRequest request)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            var areas = new List<string>();
+            var seenAreas = new HashSet<string>();
+            var destinations = request.candidates?.destinations;
+            if (destinations != null)
+            {
+                foreach (var destination in destinations)
+                {
+                    var areaId = destination?.destinationAreaId;
+                    if (!string.IsNullOrEmpty(areaId) && seenAreas.Add(areaId)) areas.Add(areaId);
+                }
+            }
+
+            return new ScenePreloadTargets
+            {
+                destinationAreaIds = areas.ToArray(),
+                bgmCueIds = Distinct(request.candidates?.bgmCueIds),
+                sfxCueIds = Distinct(request.candidates?.sfxCueIds),
+                transitionStyleIds = Distinct(request.candidates?.transitionStyleIds),
             };
         }
 
@@ -266,6 +325,19 @@ namespace KeyboardWanderer.Networking
         }
 
         private static string First(string[] values) => values != null && values.Length > 0 ? values[0] : null;
+
+        private static string[] Distinct(string[] values)
+        {
+            if (values == null || values.Length == 0) return Array.Empty<string>();
+            var seen = new HashSet<string>();
+            var result = new List<string>(values.Length);
+            foreach (var value in values)
+            {
+                if (!string.IsNullOrEmpty(value) && seen.Add(value)) result.Add(value);
+            }
+
+            return result.ToArray();
+        }
 
         private static void Add(ISet<string> ids, string value)
         {

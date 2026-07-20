@@ -1,3 +1,4 @@
+using System;
 using KeyboardWanderer.Networking;
 using NUnit.Framework;
 using UnityEngine;
@@ -128,6 +129,52 @@ namespace KeyboardWanderer.Tests
             Assert.That(validation.IsValid, Is.True, validation.ErrorSummary);
             Assert.That(plan.selection.storyBeatId, Is.EqualTo("BEAT_FACE_RIVAL"));
             Assert.That(plan.usage.latencyMs, Is.EqualTo(2148));
+        }
+
+        [Test]
+        public void BuildPreloadTargets_ListsEveryDistinctCandidateAsset()
+        {
+            var request = MakeRequest();
+            // A second destination reusing the same area id must not duplicate the preload entry.
+            request.candidates.destinations = new[]
+            {
+                request.candidates.destinations[0],
+                new SceneDestinationCandidate
+                {
+                    destinationAreaId = "AREA_MOON_MARKET",
+                    routeIds = new[] { "ROUTE_TUNNEL" },
+                    entrySlotIds = new[] { "ENTRY_HATCH" },
+                },
+                new SceneDestinationCandidate
+                {
+                    destinationAreaId = "AREA_SIGNAL_TOWER",
+                    routeIds = new[] { "ROUTE_STAIRS" },
+                    entrySlotIds = new[] { "ENTRY_DOOR" },
+                },
+            };
+
+            var targets = SceneTransitionClient.BuildPreloadTargets(request);
+
+            Assert.That(targets.destinationAreaIds, Is.EqualTo(new[] { "AREA_MOON_MARKET", "AREA_SIGNAL_TOWER" }));
+            Assert.That(targets.bgmCueIds, Is.EqualTo(new[] { "BGM_SUSPENSE_LOW", "BGM_MYSTERY_RAIN" }));
+            Assert.That(targets.sfxCueIds, Is.EqualTo(new[] { "SFX_RAIN", "SFX_RADIO", "SFX_FOOTSTEP" }));
+            Assert.That(targets.transitionStyleIds, Is.EqualTo(new[] { "TRANSITION_FADE", "TRANSITION_WIPE" }));
+        }
+
+        [Test]
+        public void RequestScenePlan_WithPreloadCallback_FiresBeforeAnyNetworkStep()
+        {
+            var request = MakeRequest();
+            var client = new SceneTransitionClient("http://127.0.0.1:9");
+            ScenePreloadTargets targets = null;
+
+            // Creating the coroutine must already deliver the preload targets — the caller can start
+            // loading maps and audio in the same frame, before the request even leaves the machine.
+            var coroutine = client.RequestScenePlan(request, value => targets = value, _ => { });
+
+            Assert.That(targets, Is.Not.Null);
+            Assert.That(targets.destinationAreaIds, Is.EqualTo(new[] { "AREA_MOON_MARKET" }));
+            (coroutine as IDisposable)?.Dispose();
         }
 
         [Test]
