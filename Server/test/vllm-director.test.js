@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_MODEL, VllmNarrator } from "../src/llm/vllm-director.js";
-import { FALLBACK_MODEL } from "../src/llm/narration.js";
+import { DEFAULT_MODEL, DEFAULT_MODEL_PROFILES, narrowSchemaForContext, VllmNarrator } from "../src/llm/vllm-director.js";
+import { DIRECTOR_RESPONSE_JSON_SCHEMA, FALLBACK_MODEL } from "../src/llm/narration.js";
 
 const context = {
   turnNo: 3,
@@ -51,7 +51,7 @@ test("vLLM adapter retries one semantically invalid response and sends OpenAI st
   assert.equal(requests[0].url, "http://127.0.0.1:8000/v1/chat/completions");
   const requestBody = JSON.parse(requests[0].options.body);
   assert.equal(requestBody.model, DEFAULT_MODEL);
-  assert.equal(requestBody.max_tokens, 384);
+  assert.equal(requestBody.max_tokens, DEFAULT_MODEL_PROFILES.fast.maxOutputTokens);
   assert.equal(requestBody.chat_template_kwargs.enable_thinking, false);
   assert.equal(requestBody.response_format.type, "json_schema");
   assert.equal(requestBody.response_format.json_schema.strict, true);
@@ -94,6 +94,27 @@ test("vLLM adapter treats a truncated (non-stop) response as a failed attempt", 
   const result = await narrator.narrate(context);
   assert.equal(calls, 2);
   assert.equal(result.fallbackUsed, true);
+});
+
+test("an empty director allowlist becomes a structural no-operations schema", () => {
+  const narrowed = narrowSchemaForContext(DIRECTOR_RESPONSE_JSON_SCHEMA, { mode: "director", allowedEffects: [] });
+
+  assert.equal(narrowed.properties.proposedOps.maxItems, 0);
+  // The shared frozen schema must never be mutated in place.
+  assert.equal(DIRECTOR_RESPONSE_JSON_SCHEMA.properties.proposedOps.maxItems, 5);
+});
+
+test("a populated director allowlist constrains the op enum", () => {
+  const narrowed = narrowSchemaForContext(DIRECTOR_RESPONSE_JSON_SCHEMA, { mode: "director", allowedEffects: ["ADD_FACT"] });
+
+  assert.deepEqual(narrowed.properties.proposedOps.items.properties.op, { type: "string", enum: ["ADD_FACT"] });
+  assert.equal(narrowed.properties.proposedOps.maxItems, 5);
+});
+
+test("legacy contexts keep the shared schema untouched", () => {
+  const schema = narrowSchemaForContext(DIRECTOR_RESPONSE_JSON_SCHEMA, { mode: "legacy", allowedEffects: [] });
+
+  assert.equal(schema, DIRECTOR_RESPONSE_JSON_SCHEMA);
 });
 
 test("missing base URL never performs a network request", async () => {

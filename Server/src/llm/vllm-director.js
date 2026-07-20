@@ -8,10 +8,31 @@ const CAMPAIGN_PLAN_MAX_ATTEMPTS = 2;
 
 export const DEFAULT_MODEL = "game-director";
 
+// Korean output plus the director JSON envelope costs noticeably more tokens than the Gemini
+// path, and a truncated completion is unrecoverable, so the local model gets a larger budget.
 export const DEFAULT_MODEL_PROFILES = Object.freeze({
-  fast: Object.freeze({ model: DEFAULT_MODEL, maxOutputTokens: 384 }),
-  quality: Object.freeze({ model: DEFAULT_MODEL, maxOutputTokens: 640 })
+  fast: Object.freeze({ model: DEFAULT_MODEL, maxOutputTokens: 768 }),
+  quality: Object.freeze({ model: DEFAULT_MODEL, maxOutputTokens: 1024 })
 });
+
+/**
+ * Narrows the shared response schema to the operations this turn actually allows. vLLM enforces
+ * JSON Schema with xgrammar during decoding, so an empty allowlist becomes a structural guarantee
+ * of no proposed operations instead of a post-hoc validation failure.
+ */
+export function narrowSchemaForContext(schema, context) {
+  const allowed = Array.isArray(context?.allowedEffects) ? context.allowedEffects : null;
+  if (context?.mode !== "director" || !allowed) return schema;
+  const narrowed = structuredClone(schema);
+  const proposedOps = narrowed?.properties?.proposedOps;
+  if (!proposedOps) return schema;
+  if (allowed.length === 0) {
+    proposedOps.maxItems = 0;
+  } else if (proposedOps.items?.properties?.op) {
+    proposedOps.items.properties.op = { type: "string", enum: [...allowed] };
+  }
+  return narrowed;
+}
 
 /**
  * Narrator/director adapter for a local vLLM OpenAI-compatible server (e.g. Qwen served as
@@ -70,10 +91,15 @@ export class VllmNarrator {
   }
 
   async generateOnce(context, profile) {
+    // The sentence-count rule lives in the shared system prompt, but the smaller local model
+    // follows it far more reliably when it is restated next to the data it must satisfy.
+    const userPayload = context.mode === "director"
+      ? { outputConstraints: { bodyMustContainSentences: "2 to 4", countedBy: "terminal . ! ? 。！？" }, untrustedPlayerAndDirectorContext: context }
+      : { untrustedPlayerAndDirectorContext: context };
     return this.requestJson({
       systemText: TURN_SYSTEM_PROMPT,
-      userPayload: { untrustedPlayerAndDirectorContext: context },
-      responseJsonSchema: responseSchemaForContext(context),
+      userPayload,
+      responseJsonSchema: narrowSchemaForContext(responseSchemaForContext(context), context),
       schemaName: "director_output",
       profile,
       temperature: context.mode === "director" ? 0.4 : 0.3,
