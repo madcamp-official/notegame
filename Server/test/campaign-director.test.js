@@ -30,7 +30,7 @@ function campaign(seed, turnLimit = 40) {
 
 function deleteRequest(run, idempotencyKey, expectedRunVersion = run.version) {
   const player = run.entities.find((item) => item.id === run.playerEntityId);
-  const target = run.entities.find((item) => item.kind === "prop" && !item.protected && !item.state?.adminAccessLevelId);
+  const target = run.entities.find((item) => item.kind === "enemy" && item.active);
   target.position = { ...player.position };
   return normalizeTurnRequest({
     inputType: "USE_SKILL",

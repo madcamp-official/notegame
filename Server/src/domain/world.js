@@ -42,7 +42,7 @@ const FINALE_ROLE = "FINAL_CONVERGENCE";
 const ARRIVAL_ROLE = "ARRIVAL_CATALYST";
 const ADMIN_ACCESS_TOKENS = Object.freeze(ADMIN_ACCESS_LEVELS.map((item) => item.id));
 const SUPPORTED_ACQUISITION_MODES = Object.freeze(new Set([
-  "copy", "delete", "connect", "restore", "undo"
+  "copy", "delete", "connect", "restore", "undo", "search"
 ]));
 const DIRECTIONS = Object.freeze([[1, 0], [-1, 0], [0, 1], [0, -1]]);
 const FINALE_COMPONENTS = Object.freeze([
@@ -973,7 +973,7 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
     slot.acquisitionModes = [...acquisitionModes];
     slot.actionContext = actionContext;
   };
-  promoteSupportSlot(ARRIVAL_ROLE, "npc", "ARRIVAL_GUIDE", ["connect"]);
+  promoteSupportSlot(ARRIVAL_ROLE, "npc", "ARRIVAL_GUIDE", ["search"], "INVESTIGATION");
   const preRootRoles = CAMPAIGN_REGION_ROLES.filter((role) => role.regionAxis !== ROOT_SYSTEM).map((role) => role.id);
   const alternateCandidate = (level, primaryRole, kind, paths) => {
     const roles = preRootRoles.filter((role) => role !== primaryRole);
@@ -983,26 +983,26 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
   };
   alternateCandidate(1, "LOCAL_STAKES", "loot", [
     { skillId: "RESTORE", actionContext: "DEPLOYMENT" },
-    { skillId: "DELETE", actionContext: "COMBAT" },
     { skillId: "CONNECT", actionContext: "NEGOTIATION" },
-    { skillId: "DELETE", actionContext: "COMBAT" }
+    { skillId: "RESTORE", actionContext: "DEPLOYMENT" },
+    { skillId: "CONNECT", actionContext: "NEGOTIATION" }
   ]);
   alternateCandidate(2, "RELATIONSHIP_CONFLICT", "quest", [
-    { skillId: "DELETE", actionContext: "COMBAT" },
-    { skillId: "COPY", actionContext: "INVESTIGATION" },
+    { skillId: "SEARCH", actionContext: "INVESTIGATION" },
     { skillId: "RESTORE", actionContext: "DEPLOYMENT" },
-    { skillId: "COPY", actionContext: "INVESTIGATION" }
+    { skillId: "SEARCH", actionContext: "INVESTIGATION" },
+    { skillId: "RESTORE", actionContext: "DEPLOYMENT" }
   ]);
   promoteSupportSlot("HIDDEN_TRUTH", "npc", "STORY_REVELATION", ["connect"]);
   alternateCandidate(3, "CONSEQUENCE_RETURN", "enemy", [
-    { skillId: "CONNECT", actionContext: "INVESTIGATION" },
     { skillId: "DELETE", actionContext: "COMBAT" },
-    { skillId: "COPY", actionContext: "NEGOTIATION" },
-    { skillId: "DELETE", actionContext: "COMBAT" }
+    { skillId: "SEARCH", actionContext: "INVESTIGATION" },
+    { skillId: "DELETE", actionContext: "COMBAT" },
+    { skillId: "SEARCH", actionContext: "INVESTIGATION" }
   ]);
 
   const primaryAccessDefinitions = [
-    { reservedFor: "ADMIN_ACCESS_LEVEL_1", campaignRole: "LOCAL_STAKES", modes: ["copy"], actionContext: "INVESTIGATION" },
+    { reservedFor: "ADMIN_ACCESS_LEVEL_1", campaignRole: "LOCAL_STAKES", modes: ["search"], actionContext: "INVESTIGATION" },
     { reservedFor: "ADMIN_ACCESS_LEVEL_2", campaignRole: "RELATIONSHIP_CONFLICT", modes: ["connect"], actionContext: "NEGOTIATION" },
     { reservedFor: "ADMIN_ACCESS_LEVEL_3", campaignRole: "CONSEQUENCE_RETURN", modes: ["restore"], actionContext: "DEPLOYMENT" }
   ];
@@ -1033,7 +1033,8 @@ function createPlacementSlots({ worldSeed, areas, points, areaMap, tiles, width,
       reservedFor: "STORY_REVELATION",
       offset: 90 + index,
       clearanceRadius: 2,
-      acquisitionModes: ["copy"]
+      acquisitionModes: ["search"],
+      actionContext: "INVESTIGATION"
     });
   }
 

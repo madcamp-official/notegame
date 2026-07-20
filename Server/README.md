@@ -83,9 +83,9 @@ Seed는 위 항목을 바꾸지 않습니다. 여섯 지역 축의 실제 area·
 
 ## LLM 경계
 
-Gemini 요청은 구조화 JSON, 작은 출력, thinking budget 0, 최대 1회 repair로 제한합니다. 실패하면 deterministic fallback을 사용하며 게임 상태 commit은 서버 검증 뒤에만 일어납니다.
+Gemini 요청은 구조화 JSON, 제한된 출력, 최소 thinking level, 최대 1회 repair로 제한합니다. 실패하면 deterministic fallback을 사용하며 게임 상태 commit은 서버 검증 뒤에만 일어납니다.
 
-기본값은 비용 우선 설정인 `gemini-2.5-flash-lite`입니다. 이 모델은 2026-10-16 종료 예정이므로 배포 시 환경 변수만 바꿔 `gemini-3.1-flash-lite`로 전환할 수 있습니다.
+기본값은 현재 API에서 신규 프로젝트 호출이 가능한 비용 우선 설정인 `gemini-3.1-flash-lite`입니다. 모델 교체는 `GEMINI_FAST_MODEL`과 `GEMINI_QUALITY_MODEL` 환경 변수로만 수행합니다.
 
 - 가격: <https://ai.google.dev/gemini-api/docs/pricing>
 - 모델 수명주기: <https://ai.google.dev/gemini-api/docs/deprecations>

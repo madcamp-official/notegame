@@ -232,5 +232,34 @@ export const LEGACY_RESPONSE_JSON_SCHEMA = Object.freeze({
 });
 
 export function responseSchemaForContext(context) {
-  return context.mode === "legacy" ? LEGACY_RESPONSE_JSON_SCHEMA : DIRECTOR_RESPONSE_JSON_SCHEMA;
+  const base = context.mode === "legacy" ? LEGACY_RESPONSE_JSON_SCHEMA : DIRECTOR_RESPONSE_JSON_SCHEMA;
+  const allowed = Array.isArray(context.allowedEffects) ? [...new Set(context.allowedEffects)] : [];
+  const baseOps = base.properties.proposedOps;
+  const baseItems = baseOps.items;
+  const constrainedItems = context.mode === "legacy"
+    ? {
+        ...baseItems,
+        properties: {
+          ...baseItems.properties,
+          type: allowed.length > 0 ? { type: "string", enum: allowed } : baseItems.properties.type
+        }
+      }
+    : {
+        ...baseItems,
+        properties: {
+          ...baseItems.properties,
+          op: allowed.length > 0 ? { type: "string", enum: allowed } : baseItems.properties.op
+        }
+      };
+  return {
+    ...base,
+    properties: {
+      ...base.properties,
+      proposedOps: {
+        ...baseOps,
+        maxItems: allowed.length > 0 ? baseOps.maxItems : 0,
+        items: constrainedItems
+      }
+    }
+  };
 }

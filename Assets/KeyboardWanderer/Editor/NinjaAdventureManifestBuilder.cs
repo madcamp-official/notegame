@@ -207,22 +207,22 @@ namespace KeyboardWanderer.Editor
             manifest.CopyIcon = LoadFirstSprite("Assets/NinjaAdventure/Ui/Skill Icon/Items & Weapon/Scroll.png");
             manifest.CopyIconDisabled = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Skill Icon/Items & Weapon/ScrollDisabled.png");
-            manifest.DeleteIcon = LoadFirstSprite("Assets/NinjaAdventure/Ui/Skill Icon/Spell/Fireball.png");
+            manifest.DeleteIcon = LoadFirstSprite("Assets/NinjaAdventure/Ui/Skill Icon/Job & Action/Punch.png");
             manifest.DeleteIconDisabled = LoadFirstSprite(
-                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/FireballDisabled.png");
+                "Assets/NinjaAdventure/Ui/Skill Icon/Job & Action/PunchDisabled.png");
             manifest.InteractIcon = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Skill Icon/Job & Action/Interact.png");
             manifest.ConnectIcon = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Permutation.png");
             manifest.RestoreIcon = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Skill Icon/Job & Action/Repair.png");
-            manifest.UndoIcon = LoadFirstSprite(
-                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Counter.png");
+            manifest.UndoIcon = LoadFirstSprite("Assets/NinjaAdventure/Items/Object/Hourglass.png");
             manifest.SearchIcon = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Vision.png");
             manifest.SelectAllIcon = LoadFirstSprite(
-                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Upgrade.png");
-            manifest.PixelFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/NinjaAdventure/Ui/Font/NormalFont.ttf");
+                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Explosion.png");
+            manifest.PixelFont = AssetDatabase.LoadAssetAtPath<Font>(
+                "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf");
 
             manifest.AdventureMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/1 - Adventure Begin.ogg");
             manifest.VillageMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/33 - Calm Village.ogg");
@@ -323,7 +323,9 @@ namespace KeyboardWanderer.Editor
 
             Vector4 desiredBorder = path.EndsWith("/FacesetBox.png")
                 ? new Vector4(8f, 8f, 8f, 8f)
-                : importer.spriteBorder;
+                : path.EndsWith("/nine_path_focus.png")
+                    ? new Vector4(4f, 4f, 4f, 4f)
+                    : importer.spriteBorder;
             if (importer.spriteBorder != desiredBorder)
             {
                 importer.spriteBorder = desiredBorder;

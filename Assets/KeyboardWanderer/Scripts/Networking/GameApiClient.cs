@@ -419,6 +419,10 @@ namespace KeyboardWanderer.Networking
             public bool gated;
             public string campaignRole;
             public string reservedFor;
+            public string evidenceKey;
+            public bool designatedCampaignEvidence;
+            public string fixtureType;
+            public string finaleComponent;
         }
 
         [Serializable]
@@ -528,7 +532,14 @@ namespace KeyboardWanderer.Networking
             public string id;
             public string title;
             public string description;
+            public string phaseId;
+            public string macroPhaseId;
             public string requiredAbility;
+            public string[] allowedAbilities;
+            public string requiredCampaignRole;
+            public string requiredEvidenceKey;
+            public string requiredEvidencePolicy;
+            public int targetTurn;
             public string status;
             public string act;
         }
@@ -930,6 +941,17 @@ namespace KeyboardWanderer.Networking
         }
 
         [Serializable]
+        public sealed class TurnRequestSnapshot
+        {
+            public string inputType;
+            public string skillId;
+            public string ability;
+            public string targetEntityId;
+            public string secondaryTargetEntityId;
+            public PositionSnapshot destination;
+        }
+
+        [Serializable]
         public sealed class TurnSnapshot
         {
             public string id;
@@ -940,6 +962,7 @@ namespace KeyboardWanderer.Networking
             public string skillId;
             public string actionContext;
             public string[] targetIds;
+            public TurnRequestSnapshot request;
             public DiceSnapshot dice;
             public int mechanicalScore;
             public string outcome;

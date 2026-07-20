@@ -23,7 +23,7 @@
 - 지역 축: `REGION_BUG_FOREST`, `REGION_BUFFER_VILLAGE`, `REGION_DEADLOCK_CITY`, `REGION_DATA_GRAND_LIBRARY`, `REGION_LEGACY_CITADEL`, `REGION_ROOT_SYSTEM`
 - 여섯 지역 축과 여섯 물리 바이옴은 독립된 차원
 - 입력: `MOVE`, `USE_SKILL`만 사용
-- 기술: `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`만 사용하며 MOVE는 기술이 아님
+- 기술: `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`, `SEARCH`, `SELECT_ALL`만 사용하며 MOVE는 기술이 아님
 - 소비 맥락: `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT`
 - 안전 MOVE: D20과 캠페인 턴을 소비하지 않음; 위험 이동은 조우 활성화와 실제 행동을 분리
 - `playerNote`: 선택적 flavor이며 규칙 권위가 없음

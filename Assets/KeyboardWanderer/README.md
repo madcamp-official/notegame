@@ -51,7 +51,7 @@ Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 열고 Play Mode를 
 | `MOVE` | 검증 가능한 목적지 | 안전 이동은 D20·캠페인 턴을 소비하지 않으며 위험 이동은 조우만 활성화할 수 있음 |
 | `USE_SKILL` | `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`, `SEARCH`, `SELECT_ALL` | 전투·조사·협상·배치 맥락에서 의미 있는 결과를 확정하며 정확히 한 턴 소비 |
 
-화면 스킬명은 단축키를 우선합니다. `Delete`만 키 이름을 그대로 쓰며, 복제는 `Ctrl C`로 원본을 캡처하면 `Ctrl V` 상태로 전환되고 빈 배치 타일을 고른 뒤 실행됩니다. `Ctrl Z`는 Undo, `Ctrl F`는 주변 6칸 검색, `Ctrl A`는 주변 4칸 관리자 영역 전개입니다.
+화면 스킬명은 단축키를 우선합니다. `Ctrl C`는 원본을 유지한 채 `Ctrl V`로 복제본을 빈 타일에 배치하고 조사 효과는 없습니다. `Delete`는 선택한 적 하나에게 피해 5를 주는 단일 공격, `Ctrl F`는 선택 대상 하나의 조사, `Ctrl Z`는 최근 의미 턴 2회의 기계 상태와 턴 카운터 역행, `Ctrl A`는 반경 4칸 모든 적에게 피해 3을 주는 범위 공격입니다.
 
 Attack, Interact, Negotiate, Rest는 공개 기술이나 별도 입력이 아닙니다. 서버는 선택한 기술과 대상을 `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT` 중 하나로 분류합니다. `playerNote`는 선택 사항이며, 자연어 없이도 합법적인 턴이 완성되어야 합니다.
 

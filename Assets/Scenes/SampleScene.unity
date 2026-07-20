@@ -346,7 +346,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: 
   m_RenderShadows: 1
   m_RequiresDepthTextureOption: 2
@@ -456,7 +456,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9aef6db2b1d41fabcf3c11ff36eb516, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererCameraController
   targetCamera: {fileID: 519420031}
   followSmoothTime: 0.16
@@ -523,7 +523,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: af912d6bf27ba4786a6b53c835a3d05a, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererDemoController
   authoringSettings: {fileID: 11400000, guid: 6c28f40adccae404a93ddde147c50ff1, type: 2}
   authoredAssetManifest: {fileID: 11400000, guid: d012343ab86804d75b78bd510c02c5ad, type: 2}
@@ -562,7 +562,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 27fb302f38d74cf09d3636bbbd1bd23f, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.SceneSequencePlayer
 --- !u!114 &595319634
 MonoBehaviour:
@@ -574,7 +574,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5d28d90c3c6f462ba65e0aa7953c4647, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererInputController
 --- !u!1 &619394800
 GameObject:
@@ -1124,7 +1124,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4c063d23cb8c458daaf60055bde503e5, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererAudioController
   musicSource: {fileID: 1382090983}
   sfxSource: {fileID: 725255115}
@@ -1268,7 +1268,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &2138741070
 Transform:
   m_ObjectHideFlags: 0

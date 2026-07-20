@@ -71,13 +71,13 @@
 | `MOVE` | 검증 가능한 목적지 | 안전 이동은 D20·캠페인 턴을 쓰지 않음. 위험 이동은 안전 지점에 배치하고 조우를 활성화할 수 있음 |
 | `USE_SKILL` | 기술과 검증 가능한 대상 | 실제 결과를 확정하며 의미 턴을 정확히 하나 소비 |
 
-기술은 `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO` 다섯 개뿐입니다. MOVE는 기술이 아닙니다. Attack, Interact, Negotiate, Rest는 공개 기술이나 입력 종류가 아닙니다.
+기술은 `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`, `SEARCH`, `SELECT_ALL` 일곱 개입니다. `COPY`는 복제, `DELETE`는 적 하나 공격, `SEARCH`는 선택 대상 조사, `UNDO`는 최근 의미 턴 2회 역행, `SELECT_ALL`은 주변 적 범위 공격을 담당합니다. MOVE는 기술이 아닙니다. Attack, Interact, Negotiate, Rest는 공개 기술이나 입력 종류가 아닙니다.
 
 서버는 USE_SKILL을 `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT` 중 하나의 맥락으로 분류합니다. `playerNote`는 선택적 flavor이며 비어 있어도 행동할 수 있습니다. 자연어는 좌표, 합법성, 비용, D20, 권한이나 진행을 결정하지 않습니다.
 
 ## 7. 규칙 권위와 기술 부채
 
-Rule Engine이 경로, 점유, 대상 합법성, D20, 수정치, 피해, 자원, 권한, 핵심 단서, 상태 변화와 결말을 확정합니다. Undo는 새 보상 이벤트를 추가할 뿐 과거 턴, 주사위, 불변 사실과 geometry를 되감지 않습니다.
+Rule Engine이 경로, 점유, 대상 합법성, D20, 수정치, 피해, 자원, 권한, 핵심 단서, 상태 변화와 결말을 확정합니다. Undo는 최근 두 가역 턴의 기계 상태와 턴 카운터를 되돌리되 봉인된 월드 geometry는 바꾸지 않습니다.
 
 기술 부채는 수치와 인과 ledger를 함께 가집니다. 각 항목은 원인 턴, 기술·연산, 대상, 강제 우회 여부, 증감량, 지연 결과와 해소 근거를 기록합니다. 일반 성공은 기존 부채를 자동으로 낮추지 않습니다. 회복, 책임 수용, 자원 지불 또는 NPC 협력을 명시적으로 확정한 행동만 부채를 해소합니다.
 

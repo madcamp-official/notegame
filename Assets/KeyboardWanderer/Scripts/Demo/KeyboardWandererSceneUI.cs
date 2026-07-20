@@ -25,7 +25,10 @@ namespace KeyboardWanderer.Demo
         UndoSkillLabel,
         ConfirmActionLabel,
         EndingHeading,
-        EndingText
+        EndingText,
+        CurrentObjective,
+        SelectionHeading,
+        SelectionDetail
     }
 
     public enum KeyboardWandererUiButton
@@ -90,6 +93,8 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private Image titleCharacter;
         [SerializeField] private Image copyActionKeycap;
         [SerializeField] private Image outcomeEmote;
+        [SerializeField] private Image selectedSkillIcon;
+        [SerializeField] private Image selectedTargetIcon;
         [SerializeField] private Image minimapMap;
         [SerializeField] private TMP_Text minimapPlaceholder;
         [SerializeField] private TMP_Text minimapStatus;
@@ -103,6 +108,8 @@ namespace KeyboardWanderer.Demo
         private readonly Dictionary<KeyboardWandererUiButton, bool> _buttonInteractable =
             new Dictionary<KeyboardWandererUiButton, bool>();
         private readonly Dictionary<KeyboardWandererUiButton, bool> _buttonSelected =
+            new Dictionary<KeyboardWandererUiButton, bool>();
+        private readonly Dictionary<KeyboardWandererUiButton, bool> _buttonAvailable =
             new Dictionary<KeyboardWandererUiButton, bool>();
         private bool _bound;
         private bool _copyPasteMode;
@@ -170,16 +177,20 @@ namespace KeyboardWanderer.Demo
                 text.text = value ?? string.Empty;
         }
 
-        public void SetButtonState(KeyboardWandererUiButton id, bool interactable, bool selected = false)
+        public void SetButtonState(KeyboardWandererUiButton id, bool interactable, bool selected = false,
+            bool available = true)
         {
             if (!_buttons.TryGetValue(id, out Button button) || button == null)
                 return;
             if (_buttonInteractable.TryGetValue(id, out bool previousInteractable) &&
                 _buttonSelected.TryGetValue(id, out bool previousSelected) &&
-                previousInteractable == interactable && previousSelected == selected)
+                _buttonAvailable.TryGetValue(id, out bool previousAvailable) &&
+                previousInteractable == interactable && previousSelected == selected &&
+                previousAvailable == available)
                 return;
             _buttonInteractable[id] = interactable;
             _buttonSelected[id] = selected;
+            _buttonAvailable[id] = available;
             button.interactable = interactable;
             if (_buttonStateViews.TryGetValue(id, out KeyboardWandererButtonStateView stateView))
                 stateView.SetSelected(selected);
@@ -195,6 +206,38 @@ namespace KeyboardWanderer.Demo
                 minimapPlaceholder.gameObject.SetActive(sprite == null);
             if (minimapStatus != null && minimapStatus.text != status)
                 minimapStatus.text = status ?? string.Empty;
+        }
+
+        public void SetSelectionVisual(AbilityKind ability, Sprite targetSprite, bool available)
+        {
+            if (selectedSkillIcon != null && assetManifest != null)
+            {
+                selectedSkillIcon.sprite = SkillIcon(ability);
+                selectedSkillIcon.enabled = selectedSkillIcon.sprite != null;
+                selectedSkillIcon.color = available ? Color.white : new Color(0.45f, 0.45f, 0.45f, 0.72f);
+            }
+            if (selectedTargetIcon != null)
+            {
+                selectedTargetIcon.sprite = targetSprite;
+                selectedTargetIcon.enabled = targetSprite != null;
+                selectedTargetIcon.color = targetSprite != null ? Color.white : Color.clear;
+            }
+        }
+
+        private Sprite SkillIcon(AbilityKind ability)
+        {
+            switch (ability)
+            {
+                case AbilityKind.Copy: return assetManifest.CopyIcon;
+                case AbilityKind.Delete: return assetManifest.DeleteIcon;
+                case AbilityKind.Connect: return assetManifest.ConnectIcon;
+                case AbilityKind.Restore: return assetManifest.RestoreIcon;
+                case AbilityKind.Undo: return assetManifest.UndoIcon;
+                case AbilityKind.Search: return assetManifest.SearchIcon;
+                case AbilityKind.SelectAll: return assetManifest.SelectAllIcon;
+                case AbilityKind.Move: return assetManifest.MoveIcon;
+                default: return assetManifest.InteractIcon;
+            }
         }
 
         public void SetStoryVisible(bool visible)
@@ -259,6 +302,7 @@ namespace KeyboardWanderer.Demo
             _buttonStateViews.Clear();
             _buttonInteractable.Clear();
             _buttonSelected.Clear();
+            _buttonAvailable.Clear();
             for (int i = 0; i < textBindings.Length; i++)
             {
                 if (textBindings[i].Target != null) _texts[textBindings[i].Id] = textBindings[i].Target;
@@ -292,6 +336,8 @@ namespace KeyboardWanderer.Demo
             gmToggle = FindComponent<Toggle>("GM Toggle");
             titleCharacter = FindComponent<Image>("Title Character");
             outcomeEmote = FindComponent<Image>("Speaker Emote");
+            selectedSkillIcon = FindComponent<Image>("Selected Skill Icon");
+            selectedTargetIcon = FindComponent<Image>("Selected Target Icon");
             minimapMap = FindComponent<Image>("Minimap Map");
             minimapPlaceholder = FindComponent<TMP_Text>("Minimap Placeholder");
             minimapStatus = FindComponent<TMP_Text>("Minimap Status");
@@ -372,6 +418,9 @@ namespace KeyboardWanderer.Demo
                 case KeyboardWandererUiText.ConfirmActionLabel: return "Confirm Action Label";
                 case KeyboardWandererUiText.EndingHeading: return "Ending Heading";
                 case KeyboardWandererUiText.EndingText: return "Ending Text";
+                case KeyboardWandererUiText.CurrentObjective: return "Objective Text";
+                case KeyboardWandererUiText.SelectionHeading: return "Selection Heading";
+                case KeyboardWandererUiText.SelectionDetail: return "Selection Detail";
                 default: throw new ArgumentOutOfRangeException(nameof(id), id, null);
             }
         }

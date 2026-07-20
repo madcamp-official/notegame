@@ -789,6 +789,7 @@ namespace KeyboardWanderer.Gameplay
         public List<string> IntentHistory { get; }
         public List<RestorationRecord> RestorationLedger { get; }
         public ReversibleTurnRecord LastReversibleTurn { get; set; }
+        public List<ReversibleTurnRecord> ReversibleHistory { get; }
 
         public int EnemiesDefeated { get; set; }
         public int QuestStage { get; set; }
@@ -851,6 +852,7 @@ namespace KeyboardWanderer.Gameplay
             LastOutcomeExplanation = string.Empty;
             IntentHistory = new List<string>();
             RestorationLedger = new List<RestorationRecord>();
+            ReversibleHistory = new List<ReversibleTurnRecord>();
             TechnicalDebtEntries = new List<TechnicalDebtEntry>();
             AdminAccessAcquisitionHistory = new List<AdminAccessAcquisitionRecord>();
             MajorChoices = new List<string>();
@@ -1007,6 +1009,8 @@ namespace KeyboardWanderer.Gameplay
             clone.MajorChoices.AddRange(MajorChoices);
             clone.RegionOutcomes.AddRange(RegionOutcomes);
             clone.LastReversibleTurn = LastReversibleTurn == null ? null : LastReversibleTurn.Clone();
+            for (int i = 0; i < ReversibleHistory.Count; i++)
+                clone.ReversibleHistory.Add(ReversibleHistory[i].Clone());
             clone.Inventory.AddRange(Inventory);
             clone.Connections.AddRange(Connections);
             clone.GmLog.AddRange(GmLog);

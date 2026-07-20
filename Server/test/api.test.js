@@ -150,8 +150,10 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   assert.deepEqual(playerBefore.position, { x: entry.x, y: entry.y });
 
   const stored = application.store.runs.get(run.id);
-  const target = stored.entities.find((entity) => entity.kind === "prop" && !entity.protected && !entity.state?.adminAccessLevelId);
+  const target = stored.entities.find((entity) => entity.kind === "enemy" && entity.active &&
+    !entity.state?.adminAccessLevelId);
   target.position = { ...stored.entities.find((entity) => entity.id === stored.playerEntityId).position };
+  target.state.hp = 5;
   application.store.runs.set(run.id, stored);
   const legacyAction = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, {
     method: "POST",
@@ -189,8 +191,10 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   assert.equal(first.payload.run.version, 2);
   assert.equal(first.payload.run.currentTurn, 1);
   assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
-  assert.equal(first.payload.turn.actionContext, "INVESTIGATION");
-  assert.equal(first.payload.run.entities.some((entity) => entity.id === target.id), false);
+  assert.equal(first.payload.turn.actionContext, "COMBAT");
+  const attackedTarget = first.payload.run.entities.find((entity) => entity.id === target.id);
+  assert.equal(attackedTarget.state.hp, 0);
+  assert.equal(attackedTarget.state.disabled, true);
   assert.equal(first.payload.run.abilityUsageHistory.length, 1);
   assert.equal(first.payload.run.directorState.decisionNo, 1);
 
