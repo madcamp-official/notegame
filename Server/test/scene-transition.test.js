@@ -156,6 +156,8 @@ test("out-of-range indices and oversized prose are rejected as 502 contract viol
   assert.throws(() => restoreScenePlan(request, paths, { ...docExampleDecision(), p: 4 }, usage), /index is outside/);
   assert.throws(() => restoreScenePlan(request, paths, { ...docExampleDecision(), g: "가".repeat(81) }, usage), /length limit/);
   assert.throws(() => restoreScenePlan(request, paths, { ...docExampleDecision(), c: [{ l: "하나", i: "의도" }] }, usage), /exactly 2/);
+  // Seen in a live run: the model leaked HTML markup into a prose field.
+  assert.throws(() => restoreScenePlan(request, paths, { ...docExampleDecision(), g: "</span><span class='bg-gray'>비가 내린다" }, usage), /markup/);
 });
 
 test("the deterministic fallback picks first candidates and flags itself", () => {

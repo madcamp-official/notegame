@@ -212,11 +212,18 @@ function pickIndex(value, length, name) {
   return value;
 }
 
+// Live Qwen runs occasionally leak HTML-like markup into prose fields; player-facing text must
+// be plain, so any markup or control character fails the attempt and triggers retry/fallback.
+const PROSE_FORBIDDEN = /[<>\u0000-\u001F]/;
+
 function decisionText(value, maximum, name) {
   if (typeof value !== "string") throw new AppError(502, "SCENE_DECISION_INVALID", `${name} must be a string.`);
   const normalized = value.trim();
   if (normalized.length < 1 || normalized.length > maximum) {
     throw new AppError(502, "SCENE_DECISION_INVALID", `${name} is outside its length limit.`);
+  }
+  if (PROSE_FORBIDDEN.test(normalized)) {
+    throw new AppError(502, "SCENE_DECISION_INVALID", `${name} contains markup or control characters.`);
   }
   return normalized;
 }
