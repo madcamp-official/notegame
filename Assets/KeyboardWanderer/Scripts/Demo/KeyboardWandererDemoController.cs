@@ -1135,6 +1135,11 @@ namespace KeyboardWanderer.Demo
             }
 
             GameApiClient.CommittedTurn committed = gatewayResult.Payload as GameApiClient.CommittedTurn;
+            if (committed == null)
+            {
+                PresentActionRejection("EMPTY_RESPONSE", "Server reported success but returned no committed turn.");
+                yield break;
+            }
             CaptureRestorableTarget(committed.Turn, runBeforeSubmit);
             _serverRun = committed.Run;
             SyncEncounterStateFromServer();
@@ -1225,6 +1230,11 @@ namespace KeyboardWanderer.Demo
             }
 
             GameApiClient.CommittedNavigation committed = gatewayResult.Payload as GameApiClient.CommittedNavigation;
+            if (committed == null)
+            {
+                PresentActionRejection("EMPTY_RESPONSE", "Server reported success but returned no committed navigation.");
+                yield break;
+            }
             GameApiClient.NavigationSnapshot navigation = committed.Navigation;
             _serverRun = committed.Run;
             bool encounterOpened = (navigation != null && navigation.encounterOpened) ||

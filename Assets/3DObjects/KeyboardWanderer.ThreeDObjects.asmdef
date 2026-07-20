@@ -1,12 +1,7 @@
 {
-  "name": "KeyboardWanderer.Runtime",
-  "rootNamespace": "KeyboardWanderer",
-  "references": [
-    "Unity.InputSystem",
-    "Unity.ugui",
-    "Unity.TextMeshPro",
-    "KeyboardWanderer.ThreeDObjects"
-  ],
+  "name": "KeyboardWanderer.ThreeDObjects",
+  "rootNamespace": "",
+  "references": [],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

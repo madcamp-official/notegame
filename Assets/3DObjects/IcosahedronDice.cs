@@ -52,8 +52,20 @@ public class IcosahedronDice : MonoBehaviour
 
     private void Awake()
     {
-        if (targetCamera == null) targetCamera = Camera.main;
         ExtractFaceNormals();
+    }
+
+    /// <summary>Resolves the facing camera lazily so a late-appearing MainCamera is still picked up.</summary>
+    private Camera ActiveCamera
+    {
+        get
+        {
+            if (targetCamera == null) targetCamera = Camera.main;
+            if (targetCamera == null)
+                throw new InvalidOperationException(
+                    "IcosahedronDice needs a Target Camera assigned (or a Camera tagged MainCamera in the scene).");
+            return targetCamera;
+        }
     }
 
     /// <summary>
@@ -122,7 +134,7 @@ public class IcosahedronDice : MonoBehaviour
     /// <summary>World rotation that presents faceNormals[faceIndex] to the camera.</summary>
     private Quaternion TargetRotationFor(int faceIndex)
     {
-        Vector3 toCamera = -targetCamera.transform.forward; // face the screen head-on
+        Vector3 toCamera = -ActiveCamera.transform.forward; // face the screen head-on
         Quaternion align = Quaternion.FromToRotation(faceNormals[faceIndex], toCamera);
 
         if (randomFinalTwist)
@@ -199,7 +211,7 @@ public class IcosahedronDice : MonoBehaviour
     /// </summary>
     public int GetFaceTowardCamera()
     {
-        Vector3 toCamera = -targetCamera.transform.forward;
+        Vector3 toCamera = -ActiveCamera.transform.forward;
         int best = 0;
         float bestDot = float.NegativeInfinity;
         for (int i = 0; i < faceNormals.Length; i++)
