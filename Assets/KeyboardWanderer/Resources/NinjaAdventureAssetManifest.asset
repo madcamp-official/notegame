@@ -58,6 +58,36 @@ MonoBehaviour:
     y: 112
     width: 16
     height: 16
+  GeneralFieldTiles: {fileID: 2800000, guid: 6a4a29343c0954542a3d8f94a63afbbd, type: 3}
+  GeneralWaterTiles: {fileID: 2800000, guid: e4eb8e1cde224db409d616c1efda0229, type: 3}
+  GeneralHighGroundTiles: {fileID: 2800000, guid: 00e3bbe77e30e8b46b929458836d96af, type: 3}
+  GeneralSlopeTiles: {fileID: 2800000, guid: b27a8787de596f943b0ba9907b89776c, type: 3}
+  BugForestGroundTiles: {fileID: 2800000, guid: a7dcdf513a0f4cc44a4cdbbd81a18afa, type: 3}
+  BugForestCampTiles: {fileID: 2800000, guid: 25252b947d10d004aa91f71fca4e5144, type: 3}
+  BugForestHoleTiles: {fileID: 2800000, guid: c5cfd8e61c21fe848b8ffc0d70625e0b, type: 3}
+  BugForestLakeTiles: {fileID: 2800000, guid: 7ffdd196f4345d74f84d7b084a78c9bc, type: 3}
+  BufferVillageGroundTiles: {fileID: 2800000, guid: ad93d238703bbb14488d9317773b9413, type: 3}
+  DeadlockCityGroundTiles: {fileID: 2800000, guid: 687a55a78b7d5ff4e8005596e8c91c14, type: 3}
+  DeadlockCityVirusTiles: {fileID: 2800000, guid: a9fcbdd6fe6944844950e90ec6c1da5e, type: 3}
+  DataArchiveRockTiles: {fileID: 2800000, guid: 834ce6ffea0c7834eb2de3957039b61c, type: 3}
+  DataArchiveCrystalFloorTiles: {fileID: 2800000, guid: ad68f9fcb926a49a194a1d1469690449, type: 3}
+  DataArchiveWoodPlankTiles: {fileID: 2800000, guid: 66e53de37a9d86940bb2589919dab50a, type: 3}
+  LegacyCitadelSnowTiles: {fileID: 2800000, guid: 86c98e4a9075d8a46b704e2b89533af2, type: 3}
+  LegacyCitadelIceTiles: {fileID: 2800000, guid: c089ce0a8941f494ab5a0663bdeafff2, type: 3}
+  RootSystemGroundTiles: {fileID: 2800000, guid: 786c760fcfed8c4409a8b63652f1a958, type: 3}
+  CodriaTileSize: 16
+  BugForestDataTreeProps: {fileID: 2800000, guid: cb733cc9584e5564c833e426081eb428, type: 3}
+  BugForestRockProps: {fileID: 2800000, guid: 5ffb2b99967138745a81aec966acb987, type: 3}
+  BugForestCampProps: {fileID: 2800000, guid: fb5633ed81ceaa6458a9343619b5588b, type: 3}
+  BufferVillageBuildingProps: {fileID: 2800000, guid: aa9b8f3435db04b4e9b9f23003641519, type: 3}
+  BufferVillageFenceProps: {fileID: 2800000, guid: bf8002c4fa74f6940b322e3624267c9b, type: 3}
+  DeadlockCityBuildingProps: {fileID: 2800000, guid: fca6b0e474893cc4b91a238443a577c1, type: 3}
+  DataArchiveBookshelfProps: {fileID: 2800000, guid: 2876b2ccfb81a77468f174dcc9a2845c, type: 3}
+  DataArchiveCrystalProps: {fileID: 2800000, guid: baae3bce1b1161c4db84cc7b16bb2e35, type: 3}
+  LegacyCitadelEdificeProps: {fileID: 2800000, guid: 82beab04aff93c1439ae3c315be26758, type: 3}
+  LegacyCitadelGooseProps: {fileID: 2800000, guid: b9676c4e2ad372643b62f5d679ac91e0, type: 3}
+  RootSystemServerProps: {fileID: 2800000, guid: 547ddd8b87c996e4785283e77cba08c0, type: 3}
+  RootSystemMonitorProps: {fileID: 2800000, guid: a0d7c839df8f28e4489232b58cdf83ec, type: 3}
   PlayerIdleSheet: {fileID: 2800000, guid: f85ec122d2c2f4aeb9cb75aac6af6bc9, type: 3}
   PlayerWalkSheet: {fileID: 2800000, guid: e771f1022aa0a4b139af54671ffc4433, type: 3}
   PlayerAttackSheet: {fileID: 2800000, guid: 63e3a84d5b4d04162a82e95ff2ce4444, type: 3}

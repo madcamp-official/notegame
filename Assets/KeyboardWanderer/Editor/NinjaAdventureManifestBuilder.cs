@@ -14,6 +14,7 @@ namespace KeyboardWanderer.Editor
         private const string BuilderScriptPath = "Assets/KeyboardWanderer/Editor/NinjaAdventureManifestBuilder.cs";
         private const string NeopjukiAtlasPath =
             "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
+        private const string CodriaTilesetFolder = "Assets/testSprite/tilesets/";
 
         private static readonly List<string> _missingAssetPaths = new();
 
@@ -59,6 +60,38 @@ namespace KeyboardWanderer.Editor
             manifest.OutdoorDirtRect = new Rect(16, 208, 16, 16);
             manifest.OutdoorGrassRect = new Rect(16, 160, 16, 16);
             manifest.OutdoorDarkGrassRect = new Rect(16, 112, 16, 16);
+
+            manifest.GeneralFieldTiles = LoadCodriaTileset("General_Field");
+            manifest.GeneralWaterTiles = LoadCodriaTileset("General_Water");
+            manifest.GeneralHighGroundTiles = LoadCodriaTileset("General_HighGround");
+            manifest.GeneralSlopeTiles = LoadCodriaTileset("General_Slope");
+            manifest.BugForestGroundTiles = LoadCodriaTileset("BugForest_Ground");
+            manifest.BugForestCampTiles = LoadCodriaTileset("BugForest_Camp");
+            manifest.BugForestHoleTiles = LoadCodriaTileset("BugForest_Hole");
+            manifest.BugForestLakeTiles = LoadCodriaTileset("BugForest_Lake");
+            manifest.BufferVillageGroundTiles = LoadCodriaTileset("BufferVillage_Ground");
+            manifest.DeadlockCityGroundTiles = LoadCodriaTileset("DeadlockCity_Ground");
+            manifest.DeadlockCityVirusTiles = LoadCodriaTileset("DeadlockCity_Virus");
+            manifest.DataArchiveRockTiles = LoadCodriaTileset("DataArchive_Rock");
+            manifest.DataArchiveCrystalFloorTiles = LoadCodriaTileset("DataArchive_PureCrystalTile");
+            manifest.DataArchiveWoodPlankTiles = LoadCodriaTileset("DataArchive_WoodPlank");
+            manifest.LegacyCitadelSnowTiles = LoadCodriaTileset("LegacyCitadel_Snow");
+            manifest.LegacyCitadelIceTiles = LoadCodriaTileset("LegacyCitadel_Ice");
+            manifest.RootSystemGroundTiles = LoadCodriaTileset("RootSystem_Ground");
+            manifest.CodriaTileSize = 16;
+
+            manifest.BugForestDataTreeProps = LoadCodriaTileset("BugForest_DataTree");
+            manifest.BugForestRockProps = LoadCodriaTileset("BugForest_Rocks");
+            manifest.BugForestCampProps = LoadCodriaTileset("BugForest_Camp_Objects");
+            manifest.BufferVillageBuildingProps = LoadCodriaTileset("BufferVillage_Buildings");
+            manifest.BufferVillageFenceProps = LoadCodriaTileset("BufferVillage_Fence");
+            manifest.DeadlockCityBuildingProps = LoadCodriaTileset("DeadlockCity_Buildings");
+            manifest.DataArchiveBookshelfProps = LoadCodriaTileset("DataArchive_Bookshelf");
+            manifest.DataArchiveCrystalProps = LoadCodriaTileset("DataArchive_Crystal");
+            manifest.LegacyCitadelEdificeProps = LoadCodriaTileset("LegacyCitadel_Edifice");
+            manifest.LegacyCitadelGooseProps = LoadCodriaTileset("LegacyCitadel_Goose");
+            manifest.RootSystemServerProps = LoadCodriaTileset("RootSystem_Device_Server");
+            manifest.RootSystemMonitorProps = LoadCodriaTileset("RootSystem_Device_Monitor");
 
             manifest.PlayerIdleSheet = LoadPixelTexture(
                 "Assets/NinjaAdventure/Actor/CharacterAnimated/NinjaGreen/Separate/Idle.png");
@@ -293,6 +326,11 @@ namespace KeyboardWanderer.Editor
             Sprite sprite = AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
             if (sprite == null) _missingAssetPaths.Add(path);
             return sprite;
+        }
+
+        private static Texture2D LoadCodriaTileset(string sheetName)
+        {
+            return LoadPixelTexture(CodriaTilesetFolder + sheetName + ".png");
         }
 
         private static Texture2D LoadPixelTexture(string path)

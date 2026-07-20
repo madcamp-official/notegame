@@ -1505,21 +1505,62 @@ namespace KeyboardWanderer.Demo
 
             if (rebuildStaticWorld)
             {
+                // 1패스: 칸마다 지형 종류와 타일 시트를 미리 정해 둔다. 오토타일 마스크는 이웃이
+                // 같은 시트를 쓰는지로 결정되므로, 전체 배열이 있어야 2패스에서 이웃을 볼 수 있다.
+                int tileCount = worldWidth * worldHeight;
+                var tileKinds = new TileKind[tileCount];
+                var biomeIds = new string[tileCount];
+                var tileSheets = new Texture2D[tileCount];
                 for (int y = 0; y < worldHeight; y++)
                 {
                     for (int x = 0; x < worldWidth; x++)
                     {
+                        int index = y * worldWidth + x;
                         var coord = new GridCoord(x, y);
-                        TileKind tileKind = useServerWorld
+                        tileKinds[index] = useServerWorld
                             ? TileKindForServer(serverWorld, serverWorld.tileCodes[y * serverWorld.width + x])
                             : view.Region.GetTile(coord).Kind;
-                        string biomeId = BiomeIdAt(view, coord);
-                        TileAppearance(tileKind, biomeId, coord, out Sprite sprite, out Color tint);
-                        string paletteKey = biomeId + ":" + tileKind;
+                        biomeIds[index] = BiomeIdAt(view, coord);
+                        tileSheets[index] = CodriaTerrainSheet(biomeIds[index], tileKinds[index]);
+                    }
+                }
+
+                // 2패스: 이웃 네 방향이 같은 시트면 비트를 세워 타일 인덱스를 만든다. 월드 밖은
+                // 같은 지형으로 취급해 가장자리가 잘려 보이지 않게 한다.
+                for (int y = 0; y < worldHeight; y++)
+                {
+                    for (int x = 0; x < worldWidth; x++)
+                    {
+                        int index = y * worldWidth + x;
+                        TileKind tileKind = tileKinds[index];
+                        string biomeId = biomeIds[index];
+                        Texture2D sheet = tileSheets[index];
+
+                        Sprite sprite;
+                        Color tint;
+                        string paletteKey;
+                        if (sheet != null)
+                        {
+                            int mask = 0;
+                            if (y + 1 >= worldHeight || tileSheets[index + worldWidth] == sheet) mask |= 1; // N
+                            if (x + 1 >= worldWidth || tileSheets[index + 1] == sheet) mask |= 2;           // E
+                            if (y - 1 < 0 || tileSheets[index - worldWidth] == sheet) mask |= 4;            // S
+                            if (x - 1 < 0 || tileSheets[index - 1] == sheet) mask |= 8;                     // W
+                            sprite = _visualAssetLibrary.CodriaAutotileSprite(sheet, mask);
+                            tint = Color.white; // 시트에 지역 색이 이미 입혀져 있어 덧칠하지 않는다.
+                            paletteKey = sheet.name + ":" + mask;
+                        }
+                        else
+                        {
+                            // 매니페스트에 시트가 없으면 기존 Ninja Adventure 경로로 되돌아간다.
+                            TileAppearance(tileKind, biomeId, new GridCoord(x, y), out sprite, out tint);
+                            paletteKey = biomeId + ":" + tileKind;
+                        }
+
                         if (!tilePalette.TryGetValue(paletteKey, out Tile visualTile))
                         {
                             visualTile = ScriptableObject.CreateInstance<Tile>();
-                            visualTile.name = "Runtime " + biomeId + " " + tileKind + " Tile";
+                            visualTile.name = "Runtime " + paletteKey + " Tile";
                             visualTile.sprite = sprite;
                             visualTile.color = Color.white;
                             visualTile.flags = TileFlags.None;
@@ -2249,6 +2290,53 @@ namespace KeyboardWanderer.Demo
             tint = ApplyBiomePalette(tint, biomeId);
             float variation = (((coord.X * 31 + coord.Y * 17) & 3) - 1.5f) * 0.025f;
             tint = new Color(Mathf.Clamp01(tint.r + variation), Mathf.Clamp01(tint.g + variation), Mathf.Clamp01(tint.b + variation), tint.a);
+        }
+
+        // 지형 한 칸이 어느 타일 시트에서 그려지는지 고른다. 같은 시트를 쓰는 이웃끼리만
+        // 오토타일로 이어지므로, 이 반환값이 곧 "지형 그룹" 식별자 역할도 한다.
+        private Texture2D CodriaTerrainSheet(string biomeId, TileKind kind)
+        {
+            if (_assets == null) return null;
+            string biome = (biomeId ?? string.Empty).ToLowerInvariant();
+
+            switch (kind)
+            {
+                case TileKind.Water:
+                    return biome == "temperate_forest_field"
+                        ? _assets.BugForestLakeTiles : _assets.GeneralWaterTiles;
+                case TileKind.Hazard:
+                    switch (biome)
+                    {
+                        case "temperate_forest_field": return _assets.BugForestHoleTiles;
+                        case "frost_highland": return _assets.LegacyCitadelIceTiles;
+                        default: return _assets.DeadlockCityVirusTiles;
+                    }
+                case TileKind.Dirt:
+                case TileKind.Bridge:
+                    switch (biome)
+                    {
+                        case "temperate_forest_field": return _assets.BugForestCampTiles;
+                        case "subterranean_cavern": return _assets.DataArchiveWoodPlankTiles;
+                        case "frost_highland": return _assets.LegacyCitadelIceTiles;
+                        default: return CodriaGroundSheet(biome);
+                    }
+                default:
+                    return CodriaGroundSheet(biome);
+            }
+        }
+
+        private Texture2D CodriaGroundSheet(string biome)
+        {
+            switch (biome)
+            {
+                case "temperate_forest_field": return _assets.BugForestGroundTiles;
+                case "arid_desert": return _assets.BufferVillageGroundTiles;
+                case "ancient_ruins": return _assets.DeadlockCityGroundTiles;
+                case "subterranean_cavern": return _assets.DataArchiveRockTiles;
+                case "frost_highland": return _assets.LegacyCitadelSnowTiles;
+                case "root_system": return _assets.RootSystemGroundTiles;
+                default: return _assets.GeneralFieldTiles;
+            }
         }
 
         private Sprite GroundSpriteForBiome(string biomeId)
