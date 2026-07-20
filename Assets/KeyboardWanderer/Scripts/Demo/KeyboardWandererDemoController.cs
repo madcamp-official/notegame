@@ -75,6 +75,7 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private AudioSource authoredSfxSource;
         [SerializeField] private KeyboardWandererAudioController authoredAudioController;
         [SerializeField] private KeyboardWandererInputController authoredInputController;
+        [SerializeField] private IcosahedronDice authoredDice;
 
         private LocalTurnService _service;
         private ITurnGateway _turnGateway;
@@ -211,6 +212,8 @@ namespace KeyboardWanderer.Demo
             _sceneUi = GetComponentInChildren<KeyboardWandererSceneUI>(true);
             _hudPresenter = new HudPresenter(_sceneUi);
             _sceneSequencePlayer = GetComponent<SceneSequencePlayer>();
+            if (authoredDice == null)
+                authoredDice = FindFirstObjectByType<IcosahedronDice>(FindObjectsInactive.Include);
             LoadSettings();
             LoadNinjaAdventureAssets();
             ConfigureCamera();
@@ -1136,6 +1139,7 @@ namespace KeyboardWanderer.Demo
             }
 
             _lastD20 = response.D20;
+            PresentDiceRoll(response.D20);
             SyncLocalEncounterState(response.Run);
             _lastModifier = response.Modifier;
             _lastDifficulty = response.Difficulty;
@@ -4893,10 +4897,21 @@ namespace KeyboardWanderer.Demo
             return text;
         }
 
+        /// <summary>
+        /// Spins the authored icosahedron die so it lands on the D20 value that already
+        /// decided the action's outcome, instead of drawing its own random face.
+        /// </summary>
+        private void PresentDiceRoll(int result)
+        {
+            if (authoredDice == null || result < 1 || result > 20) return;
+            authoredDice.RollTo(result);
+        }
+
         private void ApplyServerTurnPresentation(GameApiClient.TurnSnapshot turn)
         {
             GameApiClient.DiceSnapshot dice = turn.dice;
             _lastD20 = dice?.raw ?? 0;
+            PresentDiceRoll(_lastD20);
             _lastModifier = 0;
             var modifierParts = new List<string>();
             if (dice?.modifiers != null)
