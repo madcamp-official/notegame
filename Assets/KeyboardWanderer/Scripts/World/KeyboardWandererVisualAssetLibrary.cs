@@ -14,8 +14,11 @@ namespace KeyboardWanderer.World
     {
         [SerializeField] private NinjaAdventureAssetManifest manifest;
 
+        private const int CodriaAutotileCount = 16;
+
         private readonly List<Sprite> _runtimeSprites = new List<Sprite>();
         private readonly List<Texture2D> _runtimeTextures = new List<Texture2D>();
+        private readonly Dictionary<Texture2D, Sprite[]> _codriaTileCache = new Dictionary<Texture2D, Sprite[]>();
         private bool _initialized;
 
         public NinjaAdventureAssetManifest Manifest => manifest;
@@ -283,6 +286,31 @@ namespace KeyboardWanderer.World
             WhiteSprite = CreateSolidSprite(Color.white, "White Pixel");
         }
 
+        /// <summary>
+        /// 코드리아 타일셋은 4×4 오토타일 블롭이고, 타일 인덱스가 곧 이웃 비트마스크다
+        /// (N=1, E=2, S=4, W=8). 시트 좌상단이 인덱스 0이므로 Unity Rect 기준으로 y를 뒤집는다.
+        /// </summary>
+        public Sprite CodriaAutotileSprite(Texture2D sheet, int mask)
+        {
+            if (sheet == null)
+                return null;
+            if (!_codriaTileCache.TryGetValue(sheet, out Sprite[] tiles))
+            {
+                tiles = new Sprite[CodriaAutotileCount];
+                _codriaTileCache.Add(sheet, tiles);
+            }
+
+            mask &= CodriaAutotileCount - 1;
+            if (tiles[mask] != null)
+                return tiles[mask];
+
+            int size = manifest != null && manifest.CodriaTileSize > 0 ? manifest.CodriaTileSize : 16;
+            var rect = new Rect((mask % 4) * size, sheet.height - ((mask / 4) + 1) * size, size, size);
+            Sprite sprite = CreateAtlasSprite(sheet, rect, sheet.name + " " + mask, Color.magenta);
+            tiles[mask] = sprite;
+            return sprite;
+        }
+
         private Sprite CreateAtlasSprite(Texture2D texture, Rect requestedRect, string spriteName,
             Color fallbackColor, Vector2? requestedPivot = null)
         {
@@ -371,6 +399,7 @@ namespace KeyboardWanderer.World
                     Destroy(_runtimeTextures[i]);
             _runtimeSprites.Clear();
             _runtimeTextures.Clear();
+            _codriaTileCache.Clear();
             _initialized = false;
         }
 
