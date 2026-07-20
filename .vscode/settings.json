@@ -67,5 +67,5 @@
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "notegame.slnx"
+    "dotnet.defaultSolution": "notegame.sln"
 }
