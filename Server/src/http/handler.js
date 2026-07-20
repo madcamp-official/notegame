@@ -57,6 +57,8 @@ export function createRequestHandler({ service, config, logger = console }) {
         sendJson(response, 200, { run: await service.resumeRun(ownerId, decodeURIComponent(match[1]), await readJson(request)) });
       } else if (path === "/v1/gm/narrate" && request.method === "POST") {
         sendJson(response, 200, await service.narrate(await readJson(request)));
+      } else if (path === "/v1/gm/scene-transitions" && request.method === "POST") {
+        sendJson(response, 200, await service.planSceneTransition(await readJson(request)));
       } else {
         throw new AppError(404, "ROUTE_NOT_FOUND", "Route was not found.");
       }
