@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderSourceHash: oRFasMuyaWamQliGCLgm9+C4GZ1/AhZFu2+QLr0JLbM=
+  BuilderSourceHash: EdBfd1USgv07SzVKb75Uzg1wnadTRrp1DqxMeLVe0yk=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2

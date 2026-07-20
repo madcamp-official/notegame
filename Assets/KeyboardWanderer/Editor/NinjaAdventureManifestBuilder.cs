@@ -226,9 +226,9 @@ namespace KeyboardWanderer.Editor
             manifest.PixelFont = AssetDatabase.LoadAssetAtPath<Font>(
                 "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf");
 
-            manifest.AdventureMusic = LoadAudioClip("Assets/bgm/bgm_quest.ogg");
-            manifest.VillageMusic = LoadAudioClip("Assets/bgm/bgm_root.ogg");
-            manifest.BattleMusic = LoadAudioClip("Assets/bgm/boss_1.ogg");
+            manifest.AdventureMusic = LoadAudioClip("Assets/bgm/fixed_bgm_quest.ogg");
+            manifest.VillageMusic = LoadAudioClip("Assets/bgm/fixed_bgm_root.ogg");
+            manifest.BattleMusic = LoadAudioClip("Assets/bgm/fixed_boss_1.ogg");
             manifest.UiMoveSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Move1.wav");
             manifest.UiAcceptSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Accept.wav");
             manifest.UiCancelSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Cancel.wav");
