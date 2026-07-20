@@ -33,8 +33,8 @@ function adjacentWalkable(world, origin) {
 class FakeNarrator {
   async narrate(context) {
     return {
-      summary: `A bounded scene unfolds in ${context.area}`,
-      body: "The server applies the selected keyboard skill. The confirmed state remains inside the sealed Codria world.",
+      summary: `${context.area}에서 제한된 장면이 이어진다`,
+      body: "서버가 선택한 키보드 기술을 적용했다. 확정된 상태는 봉인된 코드리아 세계 안에 유지된다.",
       dialogue: [],
       proposedOps: [],
       fallbackUsed: false,

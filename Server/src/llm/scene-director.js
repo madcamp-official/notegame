@@ -81,6 +81,7 @@ export function validateScenePlan(input, contextInput) {
   assert(input && typeof input === "object" && !Array.isArray(input), 502, "SCENE_PLAN_INVALID", "Scene plan output must be an object.");
   exactKeys(input, ["sceneGoal", "selectedActionIds", "dialogue"], "SCENE_PLAN_INVALID", 502);
   const sceneGoal = boundedString(input.sceneGoal, "sceneGoal", 1, 180, 502);
+  assert(/[가-힣]/u.test(sceneGoal), 502, "SCENE_PLAN_LANGUAGE_INVALID", "sceneGoal must be written in Korean.");
   assert(Array.isArray(input.selectedActionIds) && input.selectedActionIds.length >= 1 && input.selectedActionIds.length <= MAX_SELECTED_ACTIONS, 502, "SCENE_PLAN_INVALID", "selectedActionIds must contain 1-4 IDs.");
   const allowedIds = new Set(context.candidates.map((candidate) => candidate.candidateId));
   const selectedActionIds = input.selectedActionIds.map((id) => {
@@ -94,7 +95,9 @@ export function validateScenePlan(input, contextInput) {
     assert(line && typeof line === "object" && !Array.isArray(line), 502, "SCENE_PLAN_INVALID", "Dialogue lines must be objects.");
     exactKeys(line, ["speakerId", "line"], "SCENE_PLAN_INVALID", 502);
     assert(typeof line.speakerId === "string" && allowedSpeakers.has(line.speakerId), 502, "SCENE_PLAN_ENTITY_FORBIDDEN", "Dialogue speaker is outside the scene.");
-    return { speakerId: line.speakerId, line: boundedString(line.line, "dialogue.line", 1, 220, 502) };
+    const dialogueLine = boundedString(line.line, "dialogue.line", 1, 220, 502);
+    assert(/[가-힣]/u.test(dialogueLine), 502, "SCENE_PLAN_LANGUAGE_INVALID", "dialogue.line must be written in Korean.");
+    return { speakerId: line.speakerId, line: dialogueLine };
   });
   return { sceneGoal, selectedActionIds, dialogue };
 }
