@@ -214,7 +214,13 @@ test("NPC investigation reveals one persistent clue and blocks repeated rewards"
     d20Source: new FixedD20Source(20)
   });
   const firstRelationship = first.run.npcRelationships.find((item) => item.npcId === npc.id);
-  assert.ok(first.turn.events.some((event) => event.type === "npc_clue_revealed" && event.line));
+  const clueEvent = first.turn.events.find((event) => event.type === "npc_clue_revealed");
+  assert.ok(clueEvent?.line);
+  assert.ok(clueEvent?.clueTitle);
+  assert.equal(clueEvent?.clueContent, npc.state.secret);
+  assert.match(clueEvent?.clueMeaning || "", /관리자|기록|붕괴|통제/);
+  assert.match(clueEvent?.storyConnection || "", /붕괴|관리자|통제/);
+  assert.ok(clueEvent?.nextObjective);
   assert.equal(first.run.entities.find((item) => item.id === npc.id).state.revealedClues.length, 1);
   assert.ok(first.run.canonicalFacts.some((fact) => fact.subject === npc.id && fact.predicate === "testimony"));
   assert.ok(first.run.npcMemories.some((memory) => memory.npcId === npc.id && memory.expired === false));

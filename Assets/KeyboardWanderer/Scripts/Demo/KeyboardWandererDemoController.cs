@@ -480,8 +480,7 @@ namespace KeyboardWanderer.Demo
             var pages = new List<string>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
             bool hasStoryDialogue = _lastDialogue != null && _lastDialogue.Length > 0 &&
-                                    _selectionController.Ability == AbilityKind.Search &&
-                                    (_lastStateChanges ?? string.Empty).IndexOf("NPC", StringComparison.OrdinalIgnoreCase) >= 0;
+                                    _selectionController.Ability == AbilityKind.Search;
             if (hasStoryDialogue)
             {
                 for (int i = 0; i < _lastDialogue.Length; i++)

@@ -831,6 +831,12 @@ namespace KeyboardWanderer.Networking
             public string motivation;
             public string clueId;
             public string clueTitle;
+            public string clueContent;
+            public string clueMeaning;
+            public string storyConnection;
+            public string nextObjective;
+            public string nextTargetId;
+            public string nextTargetName;
             public int delta;
             public int trust;
             public int fear;

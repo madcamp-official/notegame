@@ -1030,6 +1030,33 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
   if (inverseOps.length > 0) run.reversibleLedger.push({ turnNo, ability: request.ability, reversible: true, consumed: false, inverseOps });
 }
 
+function npcClueDetails(run, npc) {
+  const secret = String(npc.state?.secret || "말해지지 않은 증언").trim();
+  const otherNpcs = run.entities.filter((item) => item.active && item.kind === "npc" && item.id !== npc.id);
+  const nextTarget = otherNpcs.find((item) => (item.state?.roleTags || []).includes("ROOT_WITNESS"))
+    || otherNpcs.find((item) => (item.state?.roleTags || []).includes("AUDITOR"))
+    || otherNpcs[0]
+    || null;
+  let clueTitle = "붕괴 직전의 숨겨진 증언";
+  let meaning = "공식 기록과 실제 사건의 순서가 다르며, 누군가 붕괴 이전부터 진실을 감추고 있었다.";
+  const storyConnection = "코드리아의 붕괴가 우연한 외부 사고가 아니라 관리자 통제 계층 내부에서 시작됐을 가능성이 커졌다.";
+  if (secret.includes("접속 흔적")) {
+    clueTitle = "관리자 통로의 낯선 접속 흔적";
+    meaning = "붕괴가 시작되기 전에 권한 없는 누군가가 관리자 전용 통로를 사용했다.";
+  } else if (secret.includes("내부 통제 시스템의 서명")) {
+    clueTitle = "삭제 기록에 남은 내부 통제 서명";
+    meaning = "삭제된 기록은 외부 공격이 아니라 내부 통제 시스템이 직접 실행한 명령의 흔적이다.";
+  } else if (secret.includes("ROOT_SYSTEM")) {
+    clueTitle = "봉쇄된 안전 경로의 실제 목적지";
+    meaning = "안전 경로라는 안내는 거짓이며, 그 길은 사건의 중심인 ROOT_SYSTEM으로 이어진다.";
+  }
+  const nextObjective = nextTarget
+    ? `${nextTarget.name}에게 이 증언을 제시하고 서로 맞지 않는 기록을 확인한다.`
+    : "주변의 관리자 기록과 이 증언을 대조해 내부 통제 시스템의 개입을 확정한다.";
+  return { clueTitle, clueContent: secret, clueMeaning: meaning, storyConnection, nextObjective,
+    nextTargetId: nextTarget?.id || null, nextTargetName: nextTarget?.name || null };
+}
+
 function applyNpcInvestigation(run, request, preparation, outcome, turnNo, events) {
   if (request.ability !== "search" || preparation.target?.kind !== "npc") return;
   const npc = entityById(run, preparation.target.id);
@@ -1058,12 +1085,13 @@ function applyNpcInvestigation(run, request, preparation, outcome, turnNo, event
     relationship.affinity = Math.min(5, relationship.affinity + 1);
     relationship.lastChangedTurn = turnNo;
     npc.state.revealedClues.push(clueId);
-    const line = `${npc.name}은 잠시 주위를 살핀 뒤 털어놓았다. “${npc.state.secret}.”`;
+    const clue = npcClueDetails(run, npc);
+    const line = `${npc.name}은 잠시 주위를 살핀 뒤 털어놓았다. “${clue.clueContent}.”`;
     remember(line);
     if (!run.canonicalFacts.some((fact) => fact.subject === npc.id && fact.predicate === "testimony"))
       run.canonicalFacts.push({ id: deterministicUuid(`${run.id}:npc-clue:${npc.id}:${clueId}`), subject: npc.id,
         predicate: "testimony", value: npc.state.secret, type: "canonical", establishedTurn: turnNo });
-    events.push({ type: "npc_clue_revealed", ...eventBase, line, clueTitle: "숨겨 둔 증언", trustDelta,
+    events.push({ type: "npc_clue_revealed", ...eventBase, ...clue, line, trustDelta,
       trust: relationship.trust, affinityDelta: 1 });
     return;
   }
@@ -1072,11 +1100,12 @@ function applyNpcInvestigation(run, request, preparation, outcome, turnNo, event
     relationship.fear = Math.min(10, relationship.fear + 1);
     relationship.lastChangedTurn = turnNo;
     npc.state.revealedClues.push(clueId);
-    const line = `${npc.name}은 확신하지 못한 채 목소리를 낮췄다. “${npc.state.secret}… 직접 확인하기 전에는 믿지 마.”`;
+    const clue = npcClueDetails(run, npc);
+    const line = `${npc.name}은 확신하지 못한 채 목소리를 낮췄다. “${clue.clueContent}… 직접 확인하기 전에는 믿지 마.”`;
     remember(line, 0.65);
     run.rumors.push({ id: deterministicUuid(`${run.id}:npc-rumor:${npc.id}:${clueId}`), summary: npc.state.secret,
       status: "active", firstHeardTurn: turnNo, expiresTurn: Math.min(run.turnLimit, turnNo + 10), sourceNpcId: npc.id });
-    events.push({ type: "npc_rumor_revealed", ...eventBase, line, clueTitle: "불확실한 증언", trustDelta: 1,
+    events.push({ type: "npc_rumor_revealed", ...eventBase, ...clue, clueTitle: `미확인 · ${clue.clueTitle}`, line, trustDelta: 1,
       fearDelta: 1, trust: relationship.trust, fear: relationship.fear });
     return;
   }

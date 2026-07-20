@@ -170,7 +170,7 @@ namespace KeyboardWanderer.Networking
             if (!string.IsNullOrWhiteSpace(value.text)) return value.text;
             switch ((value.type ?? string.Empty).ToLowerInvariant())
             {
-                case "entity_investigated": return "대상의 단서를 조사함";
+                case "entity_investigated": return string.Empty;
                 case "search_completed": return "조사를 완료함";
                 case "resource_changed": return value.delta == 0 ? "자원을 사용함" : "자원 " + TurnPresentationText.Signed(value.delta);
                 case "health_changed": return value.delta < 0 ? "대상에게 " + (-value.delta) + " 피해" : "체력 " + TurnPresentationText.Signed(value.delta);
@@ -199,8 +199,12 @@ namespace KeyboardWanderer.Networking
                 case "defeat_reward_granted": return "처치 보상으로 XP와 Gold를 획득함";
                 case "npc_promise_made": return "동료와 ROOT_SYSTEM까지 함께 가기로 약속함";
                 case "npc_promise_fulfilled": return "동료와의 약속을 지켜 유대와 신뢰가 상승함";
-                case "npc_clue_revealed": return "NPC가 숨겨 둔 증언을 털어놓음 · 신뢰 상승";
-                case "npc_rumor_revealed": return "불확실한 증언을 확보함 · 신뢰와 두려움 상승";
+                case "npc_clue_revealed": return !string.IsNullOrWhiteSpace(value.clueTitle)
+                    ? "새 단서 · " + value.clueTitle
+                    : "NPC의 증언을 확보함";
+                case "npc_rumor_revealed": return !string.IsNullOrWhiteSpace(value.clueTitle)
+                    ? "확인이 필요한 단서 · " + value.clueTitle
+                    : "확인이 필요한 증언을 확보함";
                 case "npc_investigation_refused": return "NPC가 답변을 거부함 · 두려움 상승";
                 case "npc_investigation_repeat": return "이미 들은 이야기를 다시 확인함 · 새 단서 없음";
                 case "companion_support_applied": return "가까운 동료의 지원으로 판정 보정 +1";
@@ -224,8 +228,18 @@ namespace KeyboardWanderer.Networking
                 pages.Add(FirstNonEmpty(item.npcName, "NPC") + "\n지금 마음에 걸리는 일 · " +
                           FirstNonEmpty(item.concern, "쉽게 말할 수 없는 문제가 있다"));
                 if (!string.IsNullOrWhiteSpace(item.line)) pages.Add(item.line.Trim());
-                pages.Add("관계 변화 · 신뢰 " + TurnPresentationText.Signed(item.trust) + " / 두려움 " + item.fear +
-                          (!string.IsNullOrWhiteSpace(item.clueTitle) ? "\n단서 · " + item.clueTitle : "\n새 단서 없음"));
+                if (!string.IsNullOrWhiteSpace(item.clueContent))
+                    pages.Add("새 단서 · " + FirstNonEmpty(item.clueTitle, "이름 없는 증언") + "\n" + item.clueContent.Trim());
+                if (!string.IsNullOrWhiteSpace(item.clueMeaning) || !string.IsNullOrWhiteSpace(item.storyConnection))
+                    pages.Add("이 단서가 뜻하는 것\n" + FirstNonEmpty(item.clueMeaning, item.storyConnection) +
+                              (!string.IsNullOrWhiteSpace(item.storyConnection) && item.storyConnection != item.clueMeaning
+                                  ? "\n\n이야기 연결 · " + item.storyConnection.Trim()
+                                  : string.Empty));
+                if (!string.IsNullOrWhiteSpace(item.nextObjective))
+                    pages.Add("다음 조사\n" + item.nextObjective.Trim());
+                else
+                    pages.Add("관계 변화 · 신뢰 " + TurnPresentationText.Signed(item.trust) + " / 두려움 " + item.fear +
+                              "\n지금은 새로 확인된 단서가 없습니다.");
                 return pages.ToArray();
             }
             return Array.Empty<string>();

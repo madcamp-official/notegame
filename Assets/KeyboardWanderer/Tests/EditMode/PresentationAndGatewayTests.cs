@@ -180,6 +180,38 @@ namespace KeyboardWanderer.Tests.EditMode
             Assert.That(result.StateChanges, Does.Contain("조사를 완료함"));
         }
 
+        [Test]
+        public void ServerTurnPresentationAdapter_ShowsClueMeaningAndNextInvestigation()
+        {
+            var turn = new GameApiClient.TurnSnapshot
+            {
+                outcome = "success",
+                events = new[]
+                {
+                    new GameApiClient.EventSnapshot
+                    {
+                        type = "npc_clue_revealed", npcName = "인덱스",
+                        line = "인덱스가 삭제된 기록을 건넸다.",
+                        clueTitle = "삭제 기록에 남은 내부 통제 서명",
+                        clueContent = "삭제된 기록 조각에 내부 통제 시스템의 서명이 남아 있었다",
+                        clueMeaning = "외부 공격이 아니라 내부 통제 시스템이 실행한 명령의 흔적이다.",
+                        storyConnection = "붕괴가 관리자 통제 계층 내부에서 시작됐을 가능성이 커졌다.",
+                        nextObjective = "클린업에게 이 기록의 서명을 확인받는다.", trust = 3
+                    }
+                },
+                narrative = new GameApiClient.NarrativeSnapshot { body = "일반적인 조사 결과다." }
+            };
+
+            TurnPresentationResult result = ServerTurnPresentationAdapter.FromTurn(
+                turn, new GameApiClient.RunSnapshot(), true);
+
+            Assert.That(result.Dialogue, Has.Some.Contains("삭제된 기록 조각"));
+            Assert.That(result.Dialogue, Has.Some.Contains("내부 통제 시스템이 실행"));
+            Assert.That(result.Dialogue, Has.Some.Contains("클린업에게"));
+            Assert.That(result.StateChanges, Does.Contain("삭제 기록에 남은 내부 통제 서명"));
+            Assert.That(result.StateChanges, Does.Not.Contain("대상의 단서를 조사함"));
+        }
+
         private static RunPresentationState State(GridCoord player, GridCoord? selected, int page)
         {
             return new RunPresentationState(1, 1, "layout", player, selected, null, AbilityKind.Move,
