@@ -418,7 +418,9 @@ export class PostgresStore {
       const result = await client.query(
         `select tr.* from ${SCHEMA}.turn_records tr
           join ${SCHEMA}.runs r on r.id = tr.run_id and r.owner_id = tr.owner_id
-         where tr.run_id = $1 and tr.owner_id = $2 and tr.turn_no = $3 and tr.status = 'committed'`,
+         where tr.run_id = $1 and tr.owner_id = $2 and tr.turn_no = $3 and tr.status = 'committed'
+         order by tr.committed_run_version desc
+         limit 1`,
         [runId, ownerId, turnNo]
       );
       if (result.rowCount === 0) throw notFound("Turn");
@@ -431,9 +433,9 @@ export class PostgresStore {
       const run = await client.query(`select 1 from ${SCHEMA}.runs where id = $1 and owner_id = $2`, [runId, ownerId]);
       if (run.rowCount === 0) throw notFound("Run");
       const result = await client.query(
-        `select * from ${SCHEMA}.turn_records
+        `select distinct on (turn_no) * from ${SCHEMA}.turn_records
           where run_id = $1 and owner_id = $2 and status = 'committed'
-          order by turn_no`,
+          order by turn_no, committed_run_version desc`,
         [runId, ownerId]
       );
       return result.rows.map(rowToTurn);

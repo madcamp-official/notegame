@@ -132,6 +132,7 @@ namespace KeyboardWanderer.Gameplay
             public List<string> intentHistory = new List<string>();
             public List<RestorationData> restorationLedger = new List<RestorationData>();
             public UndoData lastReversibleTurn;
+            public List<UndoData> reversibleHistory = new List<UndoData>();
 
             public List<string> inventory = new List<string>();
             public List<string> connections = new List<string>();
@@ -213,6 +214,8 @@ namespace KeyboardWanderer.Gameplay
                 data.lastReversibleTurn = state.LastReversibleTurn == null
                     ? null
                     : UndoData.FromState(state.LastReversibleTurn);
+                for (int i = 0; i < state.ReversibleHistory.Count; i++)
+                    data.reversibleHistory.Add(UndoData.FromState(state.ReversibleHistory[i]));
                 foreach (EntityState entity in state.Spatial.Entities)
                     data.entities.Add(EntityData.FromEntity(entity));
                 return data;
@@ -284,6 +287,9 @@ namespace KeyboardWanderer.Gameplay
                 state.LastReversibleTurn = lastReversibleTurn == null
                     ? null
                     : lastReversibleTurn.ToState(region.RegionId);
+                if (reversibleHistory != null)
+                    for (int i = 0; i < reversibleHistory.Count; i++)
+                        state.ReversibleHistory.Add(reversibleHistory[i].ToState(region.RegionId));
                 state.Inventory.AddRange(inventory ?? new List<string>());
                 state.Connections.AddRange(connections ?? new List<string>());
                 state.GmLog.AddRange(gmLog ?? new List<string>());

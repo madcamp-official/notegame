@@ -581,14 +581,14 @@ namespace KeyboardWanderer.Core
                     "slot-catalyst", 0, 0, 0, string.Empty, Array.Empty<string>(), modes[0],
                     new[]
                     {
-                        CandidatePath("slot-catalyst", "copy")
+                        CandidatePath("slot-catalyst", "search")
                     }),
                 new ProgressionNode("admin-access-1", CampaignRoles[1], areas[roleArea[1]].Id,
                     "slot-admin-access-1", 1, 0, 1, AccessTokens[0], new[] { "keyboard-awakening" }, modes[1],
                     new[]
                     {
                         CandidatePath("slot-admin-access-1", "connect"),
-                        CandidatePath("slot-admin-access-1-alt", "copy")
+                        CandidatePath("slot-admin-access-1-alt", "search")
                     }),
                 new ProgressionNode("admin-access-2", CampaignRoles[2], areas[roleArea[2]].Id,
                     "slot-admin-access-2", 2, 1, 2, AccessTokens[1], new[] { "admin-access-1" }, modes[2],
@@ -601,15 +601,15 @@ namespace KeyboardWanderer.Core
                     "slot-internal-failure-primary", 3, 2, 0, string.Empty, new[] { "admin-access-2" }, modes[3],
                     new[]
                     {
-                        CandidatePath("slot-internal-failure-primary", "copy"),
-                        CandidatePath("slot-internal-failure-backup", "copy")
+                        CandidatePath("slot-internal-failure-primary", "search"),
+                        CandidatePath("slot-internal-failure-backup", "search")
                     }),
                 new ProgressionNode("admin-access-3", CampaignRoles[4], areas[roleArea[4]].Id,
                     "slot-admin-access-3", 4, 2, 3, AccessTokens[2], new[] { "internal-failure" }, modes[4],
                     new[]
                     {
                         CandidatePath("slot-admin-access-3", "restore"),
-                        CandidatePath("slot-admin-access-3-alt", "copy")
+                        CandidatePath("slot-admin-access-3-alt", "search")
                     }),
                 new ProgressionNode("root-system", CampaignRoles[5], areas[roleArea[5]].Id,
                     "slot-finale-anchor", 5, 3, 0, string.Empty, new[] { "admin-access-3" }, modes[5],

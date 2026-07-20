@@ -211,8 +211,8 @@ namespace KeyboardWanderer.Editor
             ImageRect(card, "Title D20", new Vector2(0.60f, 0.57f), new Vector2(0.69f, 0.66f), _assets != null ? _assets.D20 : null, new Color(1f, 0.88f, 0.58f, 1f));
             TextRect(card, "Title Seed", new Vector2(0.08f, 0.53f), new Vector2(0.92f, 0.58f), "NEXT SEED", 14, Muted, TextAnchor.MiddleCenter);
             TextRect(card, "Title Premise", new Vector2(0.10f, 0.35f), new Vector2(0.90f, 0.52f), "캠페인 미리보기", 17, Parchment, TextAnchor.UpperCenter);
-            ButtonRect(card, "New Run Button", "새 Seed 런", new Vector2(0.22f, 0.24f), new Vector2(0.78f, 0.31f), Gold, Ink, "New Run Label");
-            ButtonRect(card, "Continue Button", "권위 상태에서 이어하기", new Vector2(0.22f, 0.16f), new Vector2(0.78f, 0.22f), Raised, Parchment, "Continue Label");
+            ButtonRect(card, "New Run Button", "새 게임", new Vector2(0.22f, 0.24f), new Vector2(0.78f, 0.31f), Gold, Ink, "New Run Label");
+            ButtonRect(card, "Continue Button", "이어하기", new Vector2(0.22f, 0.16f), new Vector2(0.78f, 0.22f), Raised, Parchment, "Continue Label");
             ButtonRect(card, "Settings Button", "설정", new Vector2(0.22f, 0.09f), new Vector2(0.78f, 0.14f), Raised, Parchment, "Settings Label");
             TextRect(card, "Title Status", new Vector2(0.08f, 0.025f), new Vector2(0.92f, 0.075f), "권위 서버 확인 전", 13, Muted, TextAnchor.MiddleCenter);
         }
@@ -241,6 +241,23 @@ namespace KeyboardWanderer.Editor
             RectTransform objectiveText = TextRect(objective, "Objective Text", new Vector2(0.10f, 0.20f), new Vector2(0.90f, 0.60f),
                 "관리자 키보드로 길을 탐색하세요.", 14, Parchment, TextAnchor.MiddleLeft);
             EnableBestFit(objectiveText, 10, 14);
+
+            RectTransform selection = PanelRect(root, "Selection Status Panel", new Vector2(0.018f, 0.425f),
+                new Vector2(0.265f, 0.62f), Vector2.zero, Vector2.zero,
+                new Color(0.055f, 0.045f, 0.035f, 0.92f));
+            ApplyPanelSprite(selection, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
+            ImageRect(selection, "Selected Skill Icon", new Vector2(0.06f, 0.58f), new Vector2(0.23f, 0.91f),
+                _assets != null ? _assets.SearchIcon : null, Color.white);
+            RectTransform selectedTargetFrame = PanelRect(selection, "Selected Target Frame",
+                new Vector2(0.06f, 0.12f), new Vector2(0.23f, 0.48f), Vector2.zero, Vector2.zero, Color.white);
+            ApplyPanelSprite(selectedTargetFrame, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
+            Image selectedTarget = ImageRect(selectedTargetFrame, "Selected Target Icon", new Vector2(0.14f, 0.14f),
+                new Vector2(0.86f, 0.86f), null, Color.white).GetComponent<Image>();
+            selectedTarget.enabled = false;
+            TextRect(selection, "Selection Heading", new Vector2(0.27f, 0.54f), new Vector2(0.94f, 0.92f),
+                "Ctrl F 조사 · 대상 선택 필요", 15, Parchment, TextAnchor.MiddleLeft);
+            TextRect(selection, "Selection Detail", new Vector2(0.27f, 0.10f), new Vector2(0.94f, 0.54f),
+                "지도에서 조사할 대상을 클릭하세요.", 12, Muted, TextAnchor.MiddleLeft);
 
             RectTransform actions = PanelRect(root, "Action Bar", new Vector2(0.865f, 0.16f), new Vector2(0.982f, 0.88f),
                 Vector2.zero, Vector2.zero, new Color(0.055f, 0.036f, 0.022f, 0.94f));
@@ -272,6 +289,13 @@ namespace KeyboardWanderer.Editor
                 AddShortcutKeycaps(actions, "Search Skill Button", _assets.KeyCtrl, _assets.KeyF);
                 AddShortcutKeycaps(actions, "Select All Skill Button", _assets.KeyCtrl, _assets.KeyA);
             }
+            AddSelectionFrame(actions, "Copy Skill Button");
+            AddSelectionFrame(actions, "Delete Skill Button");
+            AddSelectionFrame(actions, "Connect Skill Button");
+            AddSelectionFrame(actions, "Restore Skill Button");
+            AddSelectionFrame(actions, "Undo Skill Button");
+            AddSelectionFrame(actions, "Search Skill Button");
+            AddSelectionFrame(actions, "Select All Skill Button");
 
             RectTransform menuHint = PanelRect(root, "Menu Hint", new Vector2(0.89f, 0.91f), new Vector2(0.982f, 0.97f),
                 Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.92f));
@@ -293,6 +317,9 @@ namespace KeyboardWanderer.Editor
             TextRect(minimap, "Minimap Heading", new Vector2(0.12f, 0.72f), new Vector2(0.88f, 0.84f), "WORLD MAP", 12, Parchment, TextAnchor.MiddleLeft);
             RectTransform minimapPreview = PanelRect(minimap, "Minimap Preview", new Vector2(0.12f, 0.22f), new Vector2(0.88f, 0.70f),
                 Vector2.zero, Vector2.zero, new Color(0.12f, 0.16f, 0.12f, 1f));
+            Image authoredMinimap = ImageRect(minimapPreview, "Authored Minimap", new Vector2(0.04f, 0.06f),
+                new Vector2(0.96f, 0.94f), null, Color.white).GetComponent<Image>();
+            authoredMinimap.enabled = false;
             TextRect(minimapPreview, "Minimap Placeholder", new Vector2(0.08f, 0.08f), new Vector2(0.92f, 0.92f),
                 "MAP\nPLACEHOLDER", 15, Muted, TextAnchor.MiddleCenter);
             TextRect(minimap, "Minimap Status", new Vector2(0.12f, 0.08f), new Vector2(0.88f, 0.19f), "탐사율 0%", 11, Muted, TextAnchor.MiddleLeft);
@@ -446,10 +473,36 @@ namespace KeyboardWanderer.Editor
         {
             Transform button = parent.Find(buttonName);
             if (button == null || sprite == null) return;
-            Image image = ImageRect(button, "Ninja UI Icon", new Vector2(0.68f, 0.54f),
-                new Vector2(0.96f, 0.92f), sprite, Color.white).GetComponent<Image>();
+            Image image = ImageRect(button, "Skill Icon", new Vector2(0.03f, 0.24f),
+                new Vector2(0.19f, 0.76f), sprite, Color.white).GetComponent<Image>();
             image.preserveAspect = true;
             image.raycastTarget = false;
+        }
+
+        private static void AddSelectionFrame(Transform parent, string buttonName)
+        {
+            Transform button = parent.Find(buttonName);
+            if (button == null) return;
+            Sprite focusFrame = _assets != null ? _assets.WoodPanelFocus : null;
+            RectTransform rect = ImageRect(button, "Selection Frame", Vector2.zero, Vector2.one,
+                focusFrame, focusFrame != null ? Color.white : new Color(1f, 1f, 1f, 0f));
+            if (focusFrame != null)
+            {
+                Image frame = rect.GetComponent<Image>();
+                frame.type = Image.Type.Sliced;
+                frame.preserveAspect = false;
+            }
+            rect.offsetMin = new Vector2(-3f, -3f);
+            rect.offsetMax = new Vector2(3f, 3f);
+            if (focusFrame == null)
+            {
+                Outline outline = rect.gameObject.AddComponent<Outline>();
+                outline.effectColor = new Color(1f, 0.78f, 0.22f, 1f);
+                outline.effectDistance = new Vector2(3f, -3f);
+                outline.useGraphicAlpha = false;
+            }
+            rect.gameObject.SetActive(false);
+            rect.SetAsFirstSibling();
         }
 
         private static void ApplyPanelSprite(RectTransform panel, Sprite sprite, Image.Type type)

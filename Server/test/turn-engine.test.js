@@ -43,15 +43,16 @@ function normalizeSkillRequest({ ability, targetEntityId = null, secondaryTarget
   });
 }
 
-test("Ctrl F search and Ctrl A area deployment reveal bounded nearby entities without targets", () => {
+test("Ctrl F investigates one target and Ctrl A damages every nearby enemy", () => {
   const run = runFixture(117);
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
-  const nearby = run.entities.find((entity) => entity.id !== player.id && entity.active);
+  const nearby = run.entities.find((entity) => entity.kind === "enemy" && entity.active);
   nearby.position = { x: player.position.x + 1, y: player.position.y };
+  const hpBefore = nearby.state.hp;
 
   const searched = resolveTurn({
     run,
-    request: normalizeSkillRequest({ ability: "search", idempotencyKey: "ctrl-f-search-0001", expectedRunVersion: 1 }),
+    request: normalizeSkillRequest({ ability: "search", targetEntityId: nearby.id, idempotencyKey: "ctrl-f-search-0001", expectedRunVersion: 1 }),
     d20Source: new FixedD20Source(20)
   });
   assert.equal(searched.run.entities.find((entity) => entity.id === nearby.id).state.revealed, true);
@@ -62,8 +63,8 @@ test("Ctrl F search and Ctrl A area deployment reveal bounded nearby entities wi
     request: normalizeSkillRequest({ ability: "select_all", idempotencyKey: "ctrl-a-area-0001", expectedRunVersion: 2 }),
     d20Source: new FixedD20Source(20)
   });
-  assert.equal(selected.run.entities.find((entity) => entity.id === nearby.id).state.selectedByArea, true);
-  assert.ok(selected.turn.events.some((event) => event.type === "administrator_area_deployed"));
+  assert.equal(selected.run.entities.find((entity) => entity.id === nearby.id).state.hp, hpBefore - 3);
+  assert.ok(selected.turn.events.some((event) => event.type === "area_attack_resolved"));
 });
 
 test("books and crates block travel and support bounded nearby interaction", () => {
@@ -150,7 +151,7 @@ test("protected entity rejection does not consume or mutate a turn", () => {
 
   assert.throws(
     () => resolveTurn({ run, request, d20Source: new FixedD20Source(20) }),
-    (error) => error instanceof AppError && error.code === "ENTITY_PROTECTED"
+    (error) => error instanceof AppError && error.code === "TARGET_NOT_HOSTILE"
   );
   assert.equal(run.currentTurn, 0);
   assert.equal(run.version, 1);
@@ -168,7 +169,7 @@ test("MOVE is rejected from the consuming action endpoint and blocked travel nev
   assert.equal(run.version, 1);
 });
 
-test("connect creates a temporary relation and Undo compensates without rewinding history or layout", () => {
+test("Undo rewinds the two most recent reversible turns and the turn counter", () => {
   const run = runFixture(47);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const targets = run.entities.filter((item) => item.kind === "prop").slice(0, 2);
@@ -176,11 +177,19 @@ test("connect creates a temporary relation and Undo compensates without rewindin
   targets[0].position = { x: 3, y: 2 };
   targets[1].position = { x: 4, y: 2 };
   const layoutHash = run.world.layoutHash;
-  const connected = resolveTurn({
+  const searched = resolveTurn({
     run,
     request: normalizeSkillRequest({
+      idempotencyKey: "search-before-connect-1", expectedRunVersion: 1,
+      ability: "search", targetEntityId: targets[0].id
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+  const connected = resolveTurn({
+    run: searched.run,
+    request: normalizeSkillRequest({
       idempotencyKey: "connect-0001",
-      expectedRunVersion: 1,
+      expectedRunVersion: 2,
       ability: "connect",
       targetEntityId: targets[0].id,
       secondaryTargetEntityId: targets[1].id,
@@ -192,80 +201,71 @@ test("connect creates a temporary relation and Undo compensates without rewindin
 
   const undone = resolveTurn({
     run: connected.run,
-    request: normalizeSkillRequest({ idempotencyKey: "undo-0000001", expectedRunVersion: 2, ability: "undo", intent: "직전 연결만 보상 사건으로 되돌린다" }),
+    request: normalizeSkillRequest({ idempotencyKey: "undo-0000001", expectedRunVersion: 3, ability: "undo", intent: "직전 두 턴을 시간 역행한다" }),
     d20Source: new FixedD20Source(20)
   });
   assert.equal(undone.run.connections.filter((item) => item.active).length, 0);
-  assert.equal(undone.run.currentTurn, 2);
+  assert.equal(undone.run.currentTurn, 0);
   assert.equal(undone.run.world.layoutHash, layoutHash);
-  assert.ok(undone.turn.events.some((event) => event.type === "reversible_reward_spent"));
+  assert.equal(undone.turn.events.filter((event) => event.type === "turn_rewound").length, 2);
+  assert.ok(undone.turn.events.some((event) => event.type === "time_rewind_completed"));
+
+  const replayed = resolveTurn({
+    run: undone.run,
+    request: normalizeSkillRequest({
+      idempotencyKey: "search-after-rewind-1", expectedRunVersion: 4,
+      ability: "search", targetEntityId: targets[0].id
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.equal(replayed.turn.turnNo, searched.turn.turnNo);
+  assert.notEqual(replayed.turn.id, searched.turn.id);
 });
 
-test("Restore revives a recently deleted entity from its authoritative snapshot", () => {
+test("Restore repairs the recent damage from a Delete single-target attack", () => {
   const run = runFixture(48);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
-  const target = run.entities.find((item) => item.kind === "prop" && !item.protected);
+  const target = run.entities.find((item) => item.kind === "enemy" && item.active);
   player.position = { x: 2, y: 2 };
   target.position = { x: 3, y: 2 };
-  const deleted = resolveTurn({
+  const hpBefore = target.state.hp;
+  const attacked = resolveTurn({
     run,
-    request: normalizeSkillRequest({ idempotencyKey: "delete-restore-1", expectedRunVersion: 1, ability: "delete", targetEntityId: target.id, intent: "임시 물체를 지운다" }),
+    request: normalizeSkillRequest({ idempotencyKey: "delete-restore-1", expectedRunVersion: 1, ability: "delete", targetEntityId: target.id, intent: "적 하나를 공격한다" }),
     d20Source: new FixedD20Source(20)
   });
-  assert.equal(deleted.run.entities.find((item) => item.id === target.id).active, false);
+  assert.equal(attacked.run.entities.find((item) => item.id === target.id).state.hp, Math.max(0, hpBefore - 5));
   const restored = resolveTurn({
-    run: deleted.run,
-    request: normalizeSkillRequest({ idempotencyKey: "restore-0001", expectedRunVersion: 2, ability: "restore", targetEntityId: target.id, intent: "방금 제거한 물체를 복구한다" }),
+    run: attacked.run,
+    request: normalizeSkillRequest({ idempotencyKey: "restore-0001", expectedRunVersion: 2, ability: "restore", targetEntityId: target.id, intent: "방금 받은 피해를 복구한다" }),
     d20Source: new FixedD20Source(20)
   });
-  assert.equal(restored.run.entities.find((item) => item.id === target.id).active, true);
+  assert.equal(restored.run.entities.find((item) => item.id === target.id).state.hp, hpBefore);
   assert.equal(restored.run.world.layoutHash, run.world.layoutHash);
-  assert.ok(restored.turn.events.some((event) => event.type === "entity_restored"));
+  assert.ok(restored.turn.events.some((event) => event.type === "entity_state_restored"));
 });
 
-test("Restore rejects a non-blocking ambient entity when its slot has been rebound", () => {
+test("Delete rejects ambient props because it is a combat-only single-target attack", () => {
   const run = runFixture(1);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const target = run.entities.find((item) => item.kind === "prop" && !item.protected && !item.blocking
     && run.world.placementSlots.some((slot) => slot.id === item.state?.slotId && slot.purpose === "ambient"));
-  assert.ok(target, "the fixture must contain a removable non-blocking ambient prop");
-  const slot = run.world.placementSlots.find((item) => item.id === target.state.slotId);
+  assert.ok(target, "the fixture must contain an ambient prop");
   player.position = { x: target.position.x - 1, y: target.position.y };
-
-  const deletedAndRebound = resolveTurn({
-    run,
-    request: normalizeSkillRequest({
-      idempotencyKey: "delete-rebind-1", expectedRunVersion: 1, ability: "delete",
-      targetEntityId: target.id, intent: "기존 주변 물체를 지우고 같은 슬롯에 새 물체를 배치한다"
-    }),
-    d20Source: new FixedD20Source(10),
-    directorOutput: {
-      summary: "빈 슬롯에 새 주변 물체가 놓였다.",
-      body: "미리 생성된 슬롯과 허용된 에셋 범위 안에서 새 물체가 활성화됐다.",
-      dialogue: [],
-      proposedOps: [{
-        op: "BIND_SLOT_ENTITY", summary: "같은 ambient 슬롯을 새 물체로 채운다.",
-        slotId: slot.id, assetId: slot.allowedAssetIds[0], budgetCost: 1
-      }],
-      fallbackUsed: false,
-      model: "memory-regression"
-    }
-  });
-  const replacement = deletedAndRebound.run.entities.find((item) => item.active && item.id !== target.id && item.state?.slotId === slot.id);
-  assert.ok(replacement, "the deleted ambient entity's slot must be rebound");
-  assert.deepEqual(replacement.position, target.position);
 
   assert.throws(
     () => resolveTurn({
-      run: deletedAndRebound.run,
+      run,
       request: normalizeSkillRequest({
-        idempotencyKey: "restore-rebound-2", expectedRunVersion: 2, ability: "restore",
-        targetEntityId: target.id, intent: "이미 다시 점유된 슬롯으로 기존 물체를 복원한다"
+        idempotencyKey: "delete-ambient-1", expectedRunVersion: 1, ability: "delete",
+        targetEntityId: target.id, intent: "주변 물체를 공격 대상으로 잘못 선택한다"
       }),
       d20Source: new FixedD20Source(20)
     }),
-    (error) => error instanceof AppError && error.code === "RESTORE_DESTINATION_OCCUPIED"
+    (error) => error instanceof AppError && error.code === "TARGET_NOT_HOSTILE"
   );
+  assert.equal(target.active, true);
+  assert.equal(run.currentTurn, 0);
 });
 
 test("Restore repairs recent active-target damage but never rewinds the roll, turn, or map", () => {
@@ -307,7 +307,7 @@ test("all five administrator keyboard skills expose explicit illegal paths", () 
   prop.position = { x: 4, y: 2 };
   const invalid = [
     { code: "ENTITY_NOT_CLONEABLE", body: { ability: "copy", targetEntityId: npc.id, destination: { x: 5, y: 2 } } },
-    { code: "ENTITY_PROTECTED", body: { ability: "delete", targetEntityId: npc.id } },
+    { code: "TARGET_NOT_HOSTILE", body: { ability: "delete", targetEntityId: npc.id } },
     { code: "TARGETS_IDENTICAL", body: { ability: "connect", targetEntityId: prop.id, secondaryTargetEntityId: prop.id } },
     { code: "RESTORE_NOT_AVAILABLE", body: { ability: "restore", targetEntityId: player.id } },
     { code: "UNDO_NOT_AVAILABLE", body: { ability: "undo" } }

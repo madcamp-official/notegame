@@ -281,14 +281,14 @@ MonoBehaviour:
   MoveIconDisabled: {fileID: 8259108488230064799, guid: 6da4219013c62425c9c312251d226150, type: 3}
   CopyIcon: {fileID: 897710771807637462, guid: 3d9ad5093b2954b5eb7126783a01ef6d, type: 3}
   CopyIconDisabled: {fileID: 132522856593005287, guid: 38935f7e89fb84e6ba04904ec35a414d, type: 3}
-  DeleteIcon: {fileID: -6607481912129624618, guid: 773d227a474084d9ba1c8c6d4fd1b146, type: 3}
-  DeleteIconDisabled: {fileID: -3899677564991089478, guid: 216ed81a4075c4725ac9aac3a75d386f, type: 3}
+  DeleteIcon: {fileID: -4335222134116007343, guid: 6ba6ef2ae289449b2a382b14718168b2, type: 3}
+  DeleteIconDisabled: {fileID: -2901649544164628132, guid: a6a2096a26b144cd2b9f14443db081ae, type: 3}
   InteractIcon: {fileID: 5682281752145333396, guid: 5424cacac472b470d9dcb022fe3d15ac, type: 3}
   ConnectIcon: {fileID: -5370881635111855658, guid: 9c3258a75a76b4205a4c79d4283e407c, type: 3}
   RestoreIcon: {fileID: -696002883184369294, guid: 09b8792d9397b40fb9e1b6b365bec448, type: 3}
-  UndoIcon: {fileID: 4952043566522609014, guid: ce97d6d62f9734073abfdecaa616246e, type: 3}
+  UndoIcon: {fileID: 6948327744988102790, guid: f81e52fb191b6444b97bdafdf6e37afb, type: 3}
   SearchIcon: {fileID: 1737981779093564301, guid: 85c3aebf94a674e03be62d60b1269510, type: 3}
-  SelectAllIcon: {fileID: 2952564868547622667, guid: 4b13449cc3a0a4a6283c08b211ac7b2c, type: 3}
+  SelectAllIcon: {fileID: 5986030973748356752, guid: 3f6c503afbd504a91b1dd630d0ab2101, type: 3}
   PixelFont: {fileID: 12800000, guid: 8d0b54f2b8b774cb69af90b3584a4e9a, type: 3}
   AdventureMusic: {fileID: 8300000, guid: 918125628d5f84d0fa83ebbbd2743e3f, type: 3}
   VillageMusic: {fileID: 8300000, guid: b37b85a1a4d0c4601995e2c28a21d1bd, type: 3}

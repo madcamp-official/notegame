@@ -32,15 +32,15 @@ namespace KeyboardWanderer.Gameplay
     public static class CampaignDirector
     {
         private static readonly AbilityKind[] InvestigationAbilities =
-            { AbilityKind.Copy };
+            { AbilityKind.Search };
         private static readonly AbilityKind[] AccessOneAbilities =
-            { AbilityKind.Connect, AbilityKind.Copy };
+            { AbilityKind.Connect, AbilityKind.Search };
         private static readonly AbilityKind[] AccessTwoAbilities =
             { AbilityKind.Delete, AbilityKind.Connect };
         private static readonly AbilityKind[] AccessThreeAbilities =
-            { AbilityKind.Restore, AbilityKind.Copy };
+            { AbilityKind.Restore, AbilityKind.Search };
         private static readonly AbilityKind[] DeploymentAbilities =
-            { AbilityKind.Connect, AbilityKind.Restore, AbilityKind.Undo, AbilityKind.Delete };
+            { AbilityKind.Copy, AbilityKind.Connect, AbilityKind.Restore, AbilityKind.Undo };
         private static readonly AbilityKind[] FinaleAbilities =
             { AbilityKind.Connect, AbilityKind.Delete };
 

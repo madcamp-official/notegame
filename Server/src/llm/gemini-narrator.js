@@ -14,8 +14,8 @@ const CAMPAIGN_SYSTEM_PROMPT = "You are a constrained, non-authoritative campaig
 const SCENE_SYSTEM_PROMPT = "You are the bounded scene director for the Korean-first game Ninja Adventure. The server has already enumerated every legal follow-up action. Select only candidateId values supplied in candidates; never invent an ID, entity, coordinate, asset, reward, damage, probability, skill effect, administrator access, story completion, or ending. Preserve every fixedCanon statement and the current macroPhase. Compose 1-4 selected actions into a coherent butterfly-effect response to the player's decision, prefer unresolved hooks and character continuity, avoid repeating recentSceneTypes, and keep one actor to one mechanical action unless a separate dialogue candidate exists. Dialogue may use only supplied actorId or targetId values and must not claim unconfirmed mechanics. Return only the requested JSON.";
 
 export const DEFAULT_MODEL_PROFILES = Object.freeze({
-  fast: Object.freeze({ model: "gemini-2.5-flash-lite", maxOutputTokens: 384 }),
-  quality: Object.freeze({ model: "gemini-2.5-flash-lite", maxOutputTokens: 640 })
+  fast: Object.freeze({ model: "gemini-3.1-flash-lite", maxOutputTokens: 1024 }),
+  quality: Object.freeze({ model: "gemini-3.1-flash-lite", maxOutputTokens: 1536 })
 });
 
 export class GeminiNarrator {
@@ -50,7 +50,7 @@ export class GeminiNarrator {
     if (!this.apiKey || typeof this.fetchImpl !== "function") return deterministicPlanFallback("api_key_unavailable");
     const profileName = "campaign-lite";
     const fastProfile = this.modelProfiles.fast || DEFAULT_MODEL_PROFILES.fast;
-    const profile = { model: fastProfile.model, maxOutputTokens: Math.min(640, Math.max(384, fastProfile.maxOutputTokens || 384)) };
+    const profile = { model: fastProfile.model, maxOutputTokens: Math.min(1536, Math.max(1024, fastProfile.maxOutputTokens || 1024)) };
     for (let attempt = 1; attempt <= CAMPAIGN_PLAN_MAX_ATTEMPTS; attempt += 1) {
       try {
         const raw = await this.generateCampaignPlanOnce(context, profile);
@@ -69,7 +69,7 @@ export class GeminiNarrator {
     if (!this.apiKey || typeof this.fetchImpl !== "function") return createFallbackScenePlan(context);
     const profileName = "scene-director";
     const fastProfile = this.modelProfiles.fast || DEFAULT_MODEL_PROFILES.fast;
-    const profile = { model: fastProfile.model, maxOutputTokens: Math.min(512, Math.max(256, fastProfile.maxOutputTokens || 384)) };
+    const profile = { model: fastProfile.model, maxOutputTokens: Math.min(1024, Math.max(768, fastProfile.maxOutputTokens || 1024)) };
     for (let attempt = 1; attempt <= SCENE_PLAN_MAX_ATTEMPTS; attempt += 1) {
       try {
         const raw = await this.generateScenePlanOnce(context, profile);
@@ -137,12 +137,14 @@ export class GeminiNarrator {
             maxOutputTokens: profile.maxOutputTokens,
             temperature,
             candidateCount: 1,
-            thinkingConfig: { thinkingBudget: 0, includeThoughts: false }
+            thinkingConfig: { thinkingLevel: "minimal", includeThoughts: false }
           }
         })
       });
       if (!response.ok) throw new AppError(502, "GEMINI_HTTP_ERROR", `Gemini ${errorLabel} request failed.`);
       const payload = await response.json();
+      const finishReason = payload?.candidates?.[0]?.finishReason;
+      if (finishReason === "MAX_TOKENS") throw new AppError(502, "GEMINI_OUTPUT_TRUNCATED", "Gemini output reached the configured token limit.");
       const parts = payload?.candidates?.[0]?.content?.parts;
       if (!Array.isArray(parts)) throw new AppError(502, "GEMINI_RESPONSE_EMPTY", "Gemini returned no candidate.");
       const text = parts.filter((part) => part?.thought !== true && typeof part?.text === "string").map((part) => part.text).join("").trim();

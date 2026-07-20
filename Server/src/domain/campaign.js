@@ -78,10 +78,10 @@ export function macroPhaseForBeat(beatOrId) {
 }
 
 const GENERATIVE_ALLOWED_ABILITIES = Object.freeze({
-  ARRIVAL_CATALYST: Object.freeze(["connect"]),
-  LOCAL_STAKES: Object.freeze(["copy", "restore"]),
+  ARRIVAL_CATALYST: Object.freeze(["search"]),
+  LOCAL_STAKES: Object.freeze(["search", "restore"]),
   RELATIONSHIP_CONFLICT: Object.freeze(["connect", "restore"]),
-  HIDDEN_TRUTH: Object.freeze(["copy", "connect"]),
+  HIDDEN_TRUTH: Object.freeze(["search", "connect"]),
   CONSEQUENCE_RETURN: Object.freeze(["restore", "undo"]),
   FINAL_CONVERGENCE: Object.freeze(["connect", "delete"])
 });
@@ -307,13 +307,13 @@ function createQuestSeeds(worldSeed, genome) {
 function createBeats(worldSeed, turnLimit, genome, tokens) {
   const targets = beatTurns(turnLimit);
   const definitions = [
-    { id: "beat.codria_crash", role: "ARRIVAL_CATALYST", evidence: "ARRIVAL_GUIDE", abilities: ["connect"], title: "코드리아 추락과 각성", description: `넙죽이가 코드리아에 추락해 ${genome.motif}에 반응하는 관리자 키보드를 각성한다.` },
-    { id: "beat.first_region_problem", role: "LOCAL_STAKES", evidence: "LOCAL_DEBUG_RECORD", abilities: ["copy"], title: "첫 지역의 붕괴", description: `${genome.crisis}으로 무너진 ${genome.community}의 생활과 첫 지역 문제를 확인한다.` },
-    { id: "beat.admin_access_1", role: "LOCAL_STAKES", evidence: "ADMIN_ACCESS_LEVEL_1", abilities: ["copy", "delete", "connect", "restore"], reward: tokens[0], title: "관리자 권한 I", description: "서로 다른 지역과 방식 중 하나를 선택해 첫 관리자 권한을 획득한다." },
-    { id: "beat.admin_access_2", role: "RELATIONSHIP_CONFLICT", evidence: "ADMIN_ACCESS_LEVEL_2", abilities: ["copy", "delete", "connect", "restore"], reward: tokens[1], title: "관리자 권한 II", description: "관계의 교착과 지역 선택을 통과해 둘째 관리자 권한을 획득한다." },
-    { id: "beat.internal_cause", role: "HIDDEN_TRUTH", evidence: "STORY_REVELATION", abilities: ["copy", "connect"], title: "통제 시스템 내부의 원인", description: `붕괴 원인이 관리자 통제 시스템 내부의 '${genome.hiddenCause}'와 연결됐음을 확인한다.` },
+    { id: "beat.codria_crash", role: "ARRIVAL_CATALYST", evidence: "ARRIVAL_GUIDE", abilities: ["search"], title: "코드리아 추락과 각성", description: `넙죽이가 코드리아에 추락해 ${genome.motif}에 반응하는 관리자 키보드를 조사한다.` },
+    { id: "beat.first_region_problem", role: "LOCAL_STAKES", evidence: "LOCAL_DEBUG_RECORD", abilities: ["search"], title: "첫 지역의 붕괴", description: `${genome.crisis}으로 무너진 ${genome.community}의 생활과 첫 지역 문제를 조사한다.` },
+    { id: "beat.admin_access_1", role: "LOCAL_STAKES", evidence: "ADMIN_ACCESS_LEVEL_1", abilities: ["search", "delete", "connect", "restore"], reward: tokens[0], title: "관리자 권한 I", description: "서로 다른 지역과 방식 중 하나를 선택해 첫 관리자 권한을 획득한다." },
+    { id: "beat.admin_access_2", role: "RELATIONSHIP_CONFLICT", evidence: "ADMIN_ACCESS_LEVEL_2", abilities: ["search", "delete", "connect", "restore"], reward: tokens[1], title: "관리자 권한 II", description: "관계의 교착과 지역 선택을 통과해 둘째 관리자 권한을 획득한다." },
+    { id: "beat.internal_cause", role: "HIDDEN_TRUTH", evidence: "STORY_REVELATION", abilities: ["search", "connect"], title: "통제 시스템 내부의 원인", description: `붕괴 원인이 관리자 통제 시스템 내부의 '${genome.hiddenCause}'와 연결됐음을 조사한다.` },
     { id: "beat.technical_debt_return", role: "CONSEQUENCE_RETURN", evidence: "LEGACY_RECOVERY_RECORD", abilities: ["connect"], title: "기술 부채의 역류", description: "관리자 키보드 편집이 남긴 기술 부채와 과거 선택의 결과를 주민 협력으로 회수한다." },
-    { id: "beat.admin_access_3", role: "CONSEQUENCE_RETURN", evidence: "ADMIN_ACCESS_LEVEL_3", abilities: ["copy", "delete", "connect", "restore"], reward: tokens[2], title: "관리자 권한 III", description: "대가를 감수한 해결 방식으로 마지막 관리자 권한을 획득한다." },
+    { id: "beat.admin_access_3", role: "CONSEQUENCE_RETURN", evidence: "ADMIN_ACCESS_LEVEL_3", abilities: ["search", "delete", "connect", "restore"], reward: tokens[2], title: "관리자 권한 III", description: "대가를 감수한 해결 방식으로 마지막 관리자 권한을 획득한다." },
     { id: "beat.root_system_entry", role: "FINAL_CONVERGENCE", evidence: "ROOT_SYSTEM_ENTERED", abilities: ["connect", "delete"], title: "루트 시스템 진입", description: "세 관리자 권한과 내부 원인 단서를 사용해 루트 시스템에 진입한다." },
     { id: "beat.final_deployment", role: "FINAL_CONVERGENCE", evidence: "FINALE_PUZZLE_RESOLVED", abilities: ["connect", "delete"], finale: true, title: "최종 배치와 결말", description: `루트 시스템에서 '${genome.dilemma}'라는 질문에 최종 배치로 답한다.` }
   ];

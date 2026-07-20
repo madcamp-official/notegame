@@ -58,26 +58,33 @@ namespace KeyboardWanderer.Tests
         }
 
         [Test]
-        public void ShortcutAreaSkills_AcceptNoTargetAndUseBoundedFocus()
+        public void SearchRequiresOneTarget_AndSelectAllIsBoundedCombat()
         {
             RunState searchState = LocalTurnService.CreateDemo(119).CreateSnapshot();
+            EntityState searchTarget = searchState.Spatial.Entities.First(entity =>
+                entity.AssetId == CampaignCatalog.AdministratorKeyboardId);
+            MovePlayerNear(searchState, searchTarget);
             var engine = new RuleEngine();
             RulePreparation search = engine.Prepare(searchState,
-                TurnRequest.UseSkill("ctrl-f-search", searchState.Version, AbilityKind.Search));
+                TurnRequest.UseSkill("ctrl-f-search", searchState.Version, AbilityKind.Search,
+                    searchTarget.EntityId));
             Assert.That(search.IsValid, Is.True);
             Assert.That(search.FocusCost, Is.EqualTo(1));
             Assert.That(RuleEngine.ClassifyAction(searchState,
-                TurnRequest.UseSkill("ctrl-f-context", searchState.Version, AbilityKind.Search)),
+                TurnRequest.UseSkill("ctrl-f-context", searchState.Version, AbilityKind.Search,
+                    searchTarget.EntityId)),
                 Is.EqualTo(ActionContext.Investigation));
 
             RunState areaState = LocalTurnService.CreateDemo(120).CreateSnapshot();
+            EntityState nearbyEnemy = areaState.Spatial.Entities.First(entity => entity.Kind == EntityKind.Enemy);
+            MovePlayerNear(areaState, nearbyEnemy);
             RulePreparation area = engine.Prepare(areaState,
                 TurnRequest.UseSkill("ctrl-a-area", areaState.Version, AbilityKind.SelectAll));
             Assert.That(area.IsValid, Is.True);
             Assert.That(area.FocusCost, Is.EqualTo(3));
             Assert.That(RuleEngine.ClassifyAction(areaState,
                 TurnRequest.UseSkill("ctrl-a-context", areaState.Version, AbilityKind.SelectAll)),
-                Is.EqualTo(ActionContext.Deployment));
+                Is.EqualTo(ActionContext.Combat));
         }
 
         [Test]
@@ -225,9 +232,9 @@ namespace KeyboardWanderer.Tests
             var engine = new RuleEngine();
 
             RulePreparation empty = engine.Prepare(state, new TurnRequest("note-empty", state.Version,
-                AbilityKind.Copy, keyboard.EntityId, null, string.Empty));
+                AbilityKind.Search, keyboard.EntityId, null, string.Empty));
             RulePreparation elaborate = engine.Prepare(state, new TurnRequest("note-long", state.Version,
-                AbilityKind.Copy, keyboard.EntityId, null,
+                AbilityKind.Search, keyboard.EntityId, null,
                 "이 문장은 분위기만 설명하며 주사위나 난이도를 바꾸지 않는다"));
 
             Assert.That(empty.IsValid, Is.True);
@@ -240,7 +247,7 @@ namespace KeyboardWanderer.Tests
         [Test]
         public void AdminAccess_AcquiresOnlyFromSelectedRegionContextSkillAndEvidence()
         {
-            long seed = FindSeedForAccessSkill(0, AbilityKind.Copy);
+            long seed = FindSeedForAccessSkill(0, AbilityKind.Search);
             RunState state = LocalTurnService.CreateDemo(seed).CreateSnapshot();
             CampaignBeatState beat = state.RequiredBeats[2];
             for (int i = 0; i < 2; i++) state.RequiredBeats[i].IsCompleted = true;
@@ -251,9 +258,9 @@ namespace KeyboardWanderer.Tests
             var service = new LocalTurnService(state, new SequenceD20Source(20));
 
             TurnResponse response = service.Submit(TurnRequest.UseSkill("access-one",
-                service.CurrentView.Version, AbilityKind.Copy, candidate.EntityId));
+                service.CurrentView.Version, AbilityKind.Search, candidate.EntityId));
 
-            Assert.That(beat.TriggerAbility, Is.EqualTo(AbilityKind.Copy));
+            Assert.That(beat.TriggerAbility, Is.EqualTo(AbilityKind.Search));
             Assert.That(response.IsSuccess, Is.True);
             Assert.That(response.Run.AdminAccess, Is.EqualTo(1));
             Assert.That(response.Run.Inventory, Does.Contain("ADMIN_ACCESS_LEVEL_1"));
@@ -268,19 +275,46 @@ namespace KeyboardWanderer.Tests
         public void TechnicalDebt_RecordsCausalEntryWithoutAutomaticResolution()
         {
             RunState state = LocalTurnService.CreateDemo(82).CreateSnapshot();
-            EntityState keyboard = state.Spatial.Entities.Single(entity =>
-                entity.AssetId == CampaignCatalog.AdministratorKeyboardId);
-            MovePlayerNear(state, keyboard);
+            EntityState source = state.Spatial.Entities.First(entity => entity.IsActive && entity.IsCloneable &&
+                !entity.IsProtected && entity.Kind != EntityKind.Player && entity.Kind != EntityKind.Npc);
+            MovePlayerNear(state, source);
+            GridCoord destination = EmptyCoordinateNear(state, source.Position, 4);
             var service = new LocalTurnService(state, new SequenceD20Source(20));
 
-            TurnResponse copied = service.Submit(TurnRequest.UseSkill("copy-keyboard",
-                service.CurrentView.Version, AbilityKind.Copy, keyboard.EntityId));
+            TurnResponse copied = service.Submit(TurnRequest.UseSkill("copy-object",
+                service.CurrentView.Version, AbilityKind.Copy, source.EntityId, null, destination));
 
             Assert.That(copied.IsSuccess, Is.True);
             Assert.That(copied.Run.TechnicalDebtEntries, Has.Count.EqualTo(1));
             Assert.That(copied.Run.TechnicalDebtEntries[0].OperationType, Is.EqualTo("COPY"));
             Assert.That(copied.Run.TechnicalDebtEntries[0].TargetId, Is.Not.Empty);
             Assert.That(copied.Run.TechnicalDebtEntries[0].IsResolved, Is.False);
+        }
+
+        [Test]
+        public void Undo_RewindsTwoMeaningfulTurnsAndTheirMechanicalState()
+        {
+            RunState state = LocalTurnService.CreateDemo(821).CreateSnapshot();
+            EntityState target = state.Spatial.Entities.Single(entity =>
+                entity.AssetId == CampaignCatalog.AdministratorKeyboardId);
+            MovePlayerNear(state, target);
+            var service = new LocalTurnService(state, new SequenceD20Source(20, 20, 20));
+
+            TurnResponse first = service.Submit(TurnRequest.UseSkill("search-one", service.CurrentView.Version,
+                AbilityKind.Search, target.EntityId));
+            TurnResponse second = service.Submit(TurnRequest.UseSkill("search-two", service.CurrentView.Version,
+                AbilityKind.Search, target.EntityId));
+            TurnResponse rewind = service.Submit(TurnRequest.UseSkill("rewind-two", service.CurrentView.Version,
+                AbilityKind.Undo));
+
+            Assert.That(first.IsSuccess && second.IsSuccess && rewind.IsSuccess, Is.True);
+            Assert.That(rewind.Run.CurrentTurn, Is.EqualTo(0));
+            Assert.That(rewind.Run.Focus, Is.EqualTo(state.Focus - 2),
+                "The skill costs 3 focus and this fixed natural 20 returns the normal +1 critical reward.");
+            Assert.That(rewind.Events.Count(value => value.StartsWith("TURN_REWOUND:", StringComparison.Ordinal)),
+                Is.EqualTo(2));
+            Assert.That(rewind.Events.Any(value => value.StartsWith("TIME_REWIND_COMPLETED:",
+                StringComparison.Ordinal)), Is.True);
         }
 
         [Test]
@@ -424,6 +458,21 @@ namespace KeyboardWanderer.Tests
                 destination, 0, (regionId, coord) =>
                     regionId == state.Region.RegionId && state.Region.IsWalkable(coord));
             Assert.That(moved.IsSuccess, Is.True, moved.ErrorCode);
+        }
+
+        private static GridCoord EmptyCoordinateNear(RunState state, GridCoord origin, int radius)
+        {
+            for (int distance = 1; distance <= radius; distance++)
+                for (int y = origin.Y - distance; y <= origin.Y + distance; y++)
+                    for (int x = origin.X - distance; x <= origin.X + distance; x++)
+                    {
+                        var candidate = new GridCoord(x, y);
+                        if (candidate.ManhattanDistance(origin) != distance || !state.Region.IsWalkable(candidate) ||
+                            state.Spatial.IsBlockingOccupied(state.Region.RegionId, candidate, 0)) continue;
+                        return candidate;
+                    }
+            Assert.Fail("No empty coordinate near " + origin);
+            return default;
         }
 
         private static void FindRootBoundaryPair(RegionMap map, out GridCoord outside, out GridCoord inside)

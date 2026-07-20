@@ -103,7 +103,7 @@ export function normalizeTurnRequest(input) {
   const destination = input.destination === undefined || input.destination === null ? null : point(input.destination, "destination");
   const skillId = String(input.skillId || "").toUpperCase();
   assert(ACTION_SKILLS.includes(skillId), 400, "SKILL_INVALID", `skillId must be one of: ${ACTION_SKILLS.join(", ")}.`);
-  const expectedTargets = skillId === "CONNECT" ? 2 : ["UNDO", "SEARCH", "SELECT_ALL"].includes(skillId) ? 0 : 1;
+  const expectedTargets = skillId === "CONNECT" ? 2 : ["UNDO", "SELECT_ALL"].includes(skillId) ? 0 : 1;
   assert([targetEntityId, secondaryTargetEntityId].filter(Boolean).length === expectedTargets, 400, "TARGET_INVALID", `${skillId} requires exactly ${expectedTargets} selected target(s).`);
   const playerNote = input.playerNote ?? null;
   assert(playerNote === null || (typeof playerNote === "string" && playerNote.trim().length <= 400), 400, "PLAYER_NOTE_INVALID", "playerNote must contain at most 400 characters.");
@@ -635,19 +635,21 @@ function prepare(run, request) {
     return { difficulty: 7, modifier: 3, focusCost: 0, focusRecovery: 3, healthRecovery: 2, normalizedAttempt: "Take one bounded rest turn to recover up to 3 focus and 2 health" };
   }
   if (request.ability === "undo") {
-    assert(!request.targetEntityId && !request.secondaryTargetEntityId && !request.destination, 422, "TARGET_FORBIDDEN", "Undo only compensates the immediately preceding reversible turn.");
+    assert(!request.targetEntityId && !request.secondaryTargetEntityId && !request.destination, 422, "TARGET_FORBIDDEN", "Undo rewinds the two most recent reversible turns and does not accept a target.");
     const specialCost = specialSkillPreparation(run, "UNDO", 3);
     assertSpecialSkillCost(run, specialCost, "UNDO");
-    const reversible = [...run.reversibleLedger].reverse().find((item) => item.turnNo === run.currentTurn && item.reversible && !item.consumed);
-    assert(reversible, 422, "UNDO_NOT_AVAILABLE", "The immediately preceding turn has no reversible mechanical result.");
-    return { difficulty: 15, modifier: 2 + specialCost.modifierBonus, ...specialCost, normalizedAttempt: `Compensate the reversible mechanical effects of turn ${reversible.turnNo}`, reversible };
+    const reversibles = [...run.reversibleLedger].reverse().filter((item) => item.reversible && !item.consumed).slice(0, 2);
+    assert(reversibles.length === 2, 422, "UNDO_NOT_AVAILABLE", "Ctrl Z requires two unconsumed reversible turns.");
+    return { difficulty: 15, modifier: 2 + specialCost.modifierBonus, ...specialCost, normalizedAttempt: `Rewind turns ${reversibles[1].turnNo}-${reversibles[0].turnNo}`, reversibles };
   }
-  if (["search", "select_all"].includes(request.ability)) {
+  if (request.ability === "select_all") {
     assert(!request.targetEntityId && !request.secondaryTargetEntityId && !request.destination, 422, "TARGET_FORBIDDEN", `${request.skillId} does not accept a target or destination.`);
-    const focusCost = request.ability === "select_all" ? 3 : 1;
+    const focusCost = 3;
     assert(run.focus >= focusCost, 422, "INSUFFICIENT_FOCUS", `${request.skillId} requires ${focusCost} focus.`);
-    const radius = request.ability === "select_all" ? 4 : 6;
-    return { difficulty: request.ability === "select_all" ? 14 : 9, modifier: request.ability === "select_all" ? 4 : 5, focusCost, radius, normalizedAttempt: `${request.skillId} scans the authoritative area within ${radius} tiles` };
+    const radius = 4;
+    const enemies = run.entities.filter((item) => item.active && item.kind === "enemy" && !item.state?.disabled && manhattan(item.position, player.position) <= radius);
+    assert(enemies.length > 0, 422, "NO_AREA_TARGETS", "Ctrl A requires at least one hostile enemy within 4 tiles.");
+    return { difficulty: 14, modifier: 4, focusCost, radius, enemies, normalizedAttempt: `Area attack ${enemies.length} hostile target(s) within 4 tiles` };
   }
   const target = request.targetEntityId ? entityAnyById(run, request.targetEntityId) : null;
   assert(target, 422, "ENTITY_NOT_FOUND", "A valid target entity is required.");
@@ -665,7 +667,7 @@ function prepare(run, request) {
       secondary = entityById(run, request.secondaryTargetEntityId);
       assert(secondary && secondary.id !== target.id && manhattan(player.position, secondary.position) <= 5, 422, "SECONDARY_TARGET_REQUIRED", "CONNECT requires a distinct nearby second target.");
     }
-    const specialCost = specialSkillPreparation(run, request.skillId, { COPY: 1, DELETE: 1, CONNECT: 2, RESTORE: 3, UNDO: 3 }[request.skillId]);
+    const specialCost = specialSkillPreparation(run, request.skillId, { COPY: 1, DELETE: 1, CONNECT: 2, RESTORE: 3, UNDO: 3, SEARCH: 1 }[request.skillId]);
     assertSpecialSkillCost(run, specialCost, request.skillId);
     return {
       difficulty: { COMBAT: 12, INVESTIGATION: 10, NEGOTIATION: 11, DEPLOYMENT: 13 }[candidate.actionContext],
@@ -702,7 +704,7 @@ function prepare(run, request) {
     assert(manhattan(player.position, target.position) <= 2, 422, "OUT_OF_RANGE", "Negotiation target must be within 2 tiles.");
     return { difficulty: 10, modifier: 3, focusCost: 0, target, relationship, normalizedAttempt: `Negotiate one bounded agreement with nearby NPC ${target.name}` };
   }
-  const specialCost = specialSkillPreparation(run, request.skillId, { copy: 1, delete: 1, connect: 2, restore: 3 }[request.ability]);
+  const specialCost = specialSkillPreparation(run, request.skillId, { copy: 1, delete: 1, connect: 2, restore: 3, search: 1 }[request.ability]);
   assertSpecialSkillCost(run, specialCost, request.skillId);
   if (request.ability === "copy") {
     assert(!request.secondaryTargetEntityId, 422, "TARGET_INVALID", "Copy accepts one source entity.");
@@ -713,12 +715,17 @@ function prepare(run, request) {
     assert(manhattan(player.position, target.position) <= 4 && manhattan(player.position, request.destination) <= 4, 422, "OUT_OF_RANGE", "Copy source and destination must be within 4 tiles.");
     return { difficulty: 11, modifier: 3 + specialCost.modifierBonus, ...specialCost, target, normalizedAttempt: `Copy ${target.name} into the legal tile (${request.destination.x},${request.destination.y})` };
   }
+  if (request.ability === "search") {
+    assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Search investigates exactly one target.");
+    assert(target.active && manhattan(player.position, target.position) <= 6, 422, "OUT_OF_RANGE", "Search target must be active and within 6 tiles.");
+    return { difficulty: 9, modifier: 5, focusCost: 1, target, normalizedAttempt: `Investigate ${target.name} with SEARCH` };
+  }
   if (request.ability === "delete") {
     assert(!request.secondaryTargetEntityId && !request.destination, 422, "TARGET_INVALID", "Delete accepts exactly one entity target.");
-    assert(target.active && target.id !== run.playerEntityId && !target.protected, 422, "ENTITY_PROTECTED", "The selected entity cannot be deleted.");
+    assert(target.active && target.kind === "enemy" && !target.state?.disabled, 422, "TARGET_NOT_HOSTILE", "Delete is a single-target attack and requires one active enemy.");
     if (target.state?.finaleComponent) assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all three administrator access levels, the essential clue, and physical Root System entry.");
     assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Delete target must be within 3 tiles.");
-    return { difficulty: 12, modifier: 3 + specialCost.modifierBonus, ...specialCost, target, normalizedAttempt: `Delete the removable entity ${target.name}` };
+    return { difficulty: 12, modifier: 3 + specialCost.modifierBonus, ...specialCost, target, damage: 5, normalizedAttempt: `Single-target attack on ${target.name}` };
   }
   if (request.ability === "connect") {
     assert(!request.destination, 422, "DESTINATION_INVALID", "Connect joins entities and does not accept a destination tile.");
@@ -746,6 +753,9 @@ function prepare(run, request) {
 
 function classifyActionContext(run, request, preparation) {
   if (preparation.actionContext) return preparation.actionContext;
+  if (["delete", "select_all"].includes(request.ability)) return "COMBAT";
+  if (request.ability === "search") return "INVESTIGATION";
+  if (["copy", "restore", "undo"].includes(request.ability)) return "DEPLOYMENT";
   const target = preparation.target || null;
   const relationship = target ? run.npcRelationships.find((item) => item.npcId === target.id) : null;
   if (run.activeEncounter?.status === "active" || target?.kind === "enemy" || relationship?.stance === "hostile") return "COMBAT";
@@ -800,7 +810,8 @@ function applyInverseOperation(run, operation, events) {
     if (!target || !target.active || !operation.stateSnapshot || !Array.isArray(operation.allowedFields)) return false;
     const restoredFields = [];
     for (const field of operation.allowedFields) {
-      if (!["hp", "temporaryDamage", "disabled"].includes(field) || !(field in operation.stateSnapshot)) continue;
+      if (!["hp", "temporaryDamage", "disabled", "revealed", "investigatedTurn"].includes(field)
+        || !(field in operation.stateSnapshot)) continue;
       target.state[field] = clone(operation.stateSnapshot[field]);
       restoredFields.push(field);
     }
@@ -868,9 +879,13 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
     inverseOps.push({ type: "remove_entity", entityId: copyEntity.id });
   } else if (request.ability === "delete") {
     const target = entityById(run, request.targetEntityId);
-    inverseOps.push({ type: "restore_entity", entity: clone(target) });
-    target.active = false;
-    events.push({ type: "entity_removed", entityId: target.id });
+    const priorHp = target.state.hp;
+    const priorDisabled = Boolean(target.state.disabled);
+    const damage = Math.min(preparation.damage, priorHp);
+    target.state.hp = Math.max(0, priorHp - damage);
+    target.state.disabled = target.state.hp === 0;
+    events.push({ type: "health_changed", entityId: target.id, delta: -damage, hp: target.state.hp, disabled: target.state.disabled, attackType: "single" });
+    inverseOps.push({ type: "restore_state", entityId: target.id, stateSnapshot: { hp: priorHp, disabled: priorDisabled }, allowedFields: ["hp", "disabled"] });
   } else if (request.ability === "connect") {
     const connection = { id: deterministicUuid(`${run.id}:${turnNo}:${request.idempotencyKey}:connection`), fromId: preparation.target.id, toId: preparation.secondary.id, relation: "temporary_link", createdTurn: turnNo, expiresTurn: Math.min(run.turnLimit, turnNo + 5), active: true };
     run.connections.push(connection);
@@ -904,21 +919,39 @@ function applyPrimaryEffect(run, request, preparation, turnNo, events) {
       }
     }
   } else if (request.ability === "undo") {
-    const reversible = run.reversibleLedger.find((item) => item.turnNo === preparation.reversible.turnNo && !item.consumed);
-    assert(reversible, 409, "UNDO_CONFLICT", "The previous result was already consumed.");
-    let applied = 0;
-    for (const operation of reversible.inverseOps) if (applyInverseOperation(run, operation, events)) applied += 1;
-    assert(applied > 0, 409, "UNDO_CONFLICT", "The previous result can no longer be compensated safely.");
-    reversible.consumed = true;
-    events.push({ type: "reversible_reward_spent", ability: "undo", sourceTurn: reversible.turnNo, focusCost: preparation.focusCost });
-  } else if (["search", "select_all"].includes(request.ability)) {
-    const player = entityById(run, run.playerEntityId);
-    const affected = run.entities.filter((item) => item.active && item.id !== player.id && manhattan(item.position, player.position) <= preparation.radius);
-    for (const target of affected) {
-      target.state = { ...(target.state || {}), revealed: true, revealedTurn: turnNo, selectedByArea: request.ability === "select_all" };
-      events.push({ type: request.ability === "select_all" ? "area_target_selected" : "entity_revealed", entityId: target.id, radius: preparation.radius });
+    const sourceTurns = [];
+    for (const prepared of preparation.reversibles) {
+      const reversible = run.reversibleLedger.find((item) => item.turnNo === prepared.turnNo && !item.consumed);
+      assert(reversible, 409, "UNDO_CONFLICT", "One of the two rewind results was already consumed.");
+      let applied = 0;
+      for (const operation of reversible.inverseOps) if (applyInverseOperation(run, operation, events)) applied += 1;
+      assert(applied > 0, 409, "UNDO_CONFLICT", "One of the two prior turns can no longer be rewound safely.");
+      reversible.consumed = true;
+      sourceTurns.push(reversible.turnNo);
+      events.push({ type: "turn_rewound", sourceTurn: reversible.turnNo, sourceAbility: reversible.ability });
     }
-    events.push({ type: request.ability === "select_all" ? "administrator_area_deployed" : "search_completed", radius: preparation.radius, affectedCount: affected.length });
+    events.push({ type: "time_rewind_completed", turns: 2, sourceTurns, focusCost: preparation.focusCost });
+  } else if (request.ability === "search") {
+    const target = entityById(run, preparation.target.id);
+    const priorRevealed = Boolean(target.state?.revealed);
+    const priorInvestigatedTurn = target.state?.investigatedTurn ?? null;
+    target.state = { ...(target.state || {}), revealed: true, investigatedTurn: turnNo };
+    events.push({ type: "entity_investigated", entityId: target.id, evidenceKey: target.state?.evidenceKey || null });
+    events.push({ type: "search_completed", entityId: target.id, affectedCount: 1 });
+    inverseOps.push({ type: "restore_state", entityId: target.id, stateSnapshot: { revealed: priorRevealed, investigatedTurn: priorInvestigatedTurn }, allowedFields: ["revealed", "investigatedTurn"] });
+  } else if (request.ability === "select_all") {
+    for (const target of preparation.enemies) {
+      const current = entityById(run, target.id);
+      if (!current) continue;
+      const priorHp = current.state.hp;
+      const priorDisabled = Boolean(current.state.disabled);
+      const damage = Math.min(3, priorHp);
+      current.state.hp = Math.max(0, priorHp - damage);
+      current.state.disabled = current.state.hp === 0;
+      events.push({ type: "health_changed", entityId: current.id, delta: -damage, hp: current.state.hp, disabled: current.state.disabled, attackType: "area" });
+      inverseOps.push({ type: "restore_state", entityId: current.id, stateSnapshot: { hp: priorHp, disabled: priorDisabled }, allowedFields: ["hp", "disabled"] });
+    }
+    events.push({ type: "area_attack_resolved", radius: preparation.radius, affectedCount: preparation.enemies.length });
   } else if (request.ability === "attack") {
     const target = entityById(run, request.targetEntityId);
     const priorHp = target.state.hp;
@@ -1196,9 +1229,9 @@ function updateCampaignMetrics(run, request, outcome, actionContext, turnNo, eve
   }
   if (debtDelta > 0) {
     const entry = {
-      id: deterministicUuid(`${run.id}:technical-debt:${turnNo}:${request.skillId}`),
+      id: deterministicUuid(`${run.id}:technical-debt:${turnNo}:${request.skillId}:v${request.expectedRunVersion}`),
       runId: run.id,
-      turnId: deterministicUuid(`${run.id}:turn:${turnNo}`),
+      turnId: deterministicUuid(`${run.id}:turn:${turnNo}:v${request.expectedRunVersion}`),
       turnNo,
       skillId: request.skillId,
       operationType: request.skillId,
@@ -1292,9 +1325,10 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     }
   }
 
-  run.currentTurn = turnNo;
+  const successfulRewind = events.some((event) => event.type === "time_rewind_completed");
+  run.currentTurn = successfulRewind ? Math.max(0, originalRun.currentTurn - 2) : turnNo;
   run.abilityUsageHistory.push({
-    id: deterministicUuid(`${run.id}:ability-usage:${turnNo}`),
+    id: deterministicUuid(`${run.id}:ability-usage:${turnNo}:v${request.expectedRunVersion}`),
     turnNo,
     skillId: request.skillId,
     actionContext,
@@ -1309,8 +1343,10 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     run.activeEncounter = null;
     events.push({ type: "encounter_resolved", encounterId: resolvedEncounter.id, action: request.ability, outcome, campaignTurnConsumed: true });
   }
-  updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events);
-  evaluateFinalePuzzle(run, turnNo, events);
+  if (!successfulRewind) {
+    updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events);
+    evaluateFinalePuzzle(run, turnNo, events);
+  }
   const campaignRole = areaAt(run.world, entityById(run, run.playerEntityId).position).campaignRole;
   const currentArea = areaAt(run.world, entityById(run, run.playerEntityId).position);
   const targetEvidenceKeys = [preparation.target, preparation.secondary]
@@ -1319,14 +1355,16 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     .filter(Boolean);
   if (run.finalePuzzle?.status === "resolved") targetEvidenceKeys.push("FINALE_PUZZLE_RESOLVED");
   if (currentArea.regionAxis === ROOT_SYSTEM) targetEvidenceKeys.push("ROOT_SYSTEM_ENTERED");
-  advanceStoryDirector(run, turnNo, events, {
-    ability: request.ability, outcome, contextualActions: [actionContext.toLowerCase()], campaignRole,
-    targetEvidenceKeys,
-    finalePuzzleResolved: run.finalePuzzle?.status === "resolved",
-    finaleEndingId: run.finalePuzzle?.matchedEndingId || null
-  });
-  const directorPlan = applyDirectorOperations(run, directorOutput || { proposedOps: [] }, turnNo, budget, events);
-  const sceneResolution = sceneDecision ? applyScenePlan(run, {
+  if (!successfulRewind) advanceStoryDirector(run, turnNo, events, {
+      ability: request.ability, outcome, contextualActions: [actionContext.toLowerCase()], campaignRole,
+      targetEvidenceKeys,
+      finalePuzzleResolved: run.finalePuzzle?.status === "resolved",
+      finaleEndingId: run.finalePuzzle?.matchedEndingId || null
+    });
+  const directorPlan = successfulRewind
+    ? { appliedOps: [], rejectedOps: [], notices: [] }
+    : applyDirectorOperations(run, directorOutput || { proposedOps: [] }, turnNo, budget, events);
+  const sceneResolution = !successfulRewind && sceneDecision ? applyScenePlan(run, {
     candidates: sceneDecision.candidates,
     plan: sceneDecision.plan,
     decisionType: "ACTION",
@@ -1337,13 +1375,15 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   const explicitFinaleReady = allRequiredBeatsCompleted
     && Boolean(run.selectedEndingId)
     && run.finalePuzzle?.status === "resolved"
-    && turnNo >= (run.endingWindow?.normalEligibleStart || Math.max(30, Math.min(38, run.turnLimit - 2)));
-  const forcedTurnLimitFallback = turnNo >= run.turnLimit;
-  expireNarrativeState(run, turnNo, events, explicitFinaleReady || forcedTurnLimitFallback);
+    && run.currentTurn >= (run.endingWindow?.normalEligibleStart || Math.max(30, Math.min(38, run.turnLimit - 2)));
+  const forcedTurnLimitFallback = run.currentTurn >= run.turnLimit;
+  if (!successfulRewind) expireNarrativeState(run, turnNo, events, explicitFinaleReady || forcedTurnLimitFallback);
   run.version += 1;
   run.updatedAt = now;
-  events.push({ type: "turn_committed", turnNo, runVersion: run.version });
-  if (explicitFinaleReady || forcedTurnLimitFallback) {
+  events.push(successfulRewind
+    ? { type: "turn_counter_rewound", fromTurn: originalRun.currentTurn, toTurn: run.currentTurn, runVersion: run.version }
+    : { type: "turn_committed", turnNo, runVersion: run.version });
+  if (!successfulRewind && (explicitFinaleReady || forcedTurnLimitFallback)) {
     const ending = chooseEnding(run);
     const playerAtEnding = entityById(run, run.playerEntityId);
     const endingArea = areaAt(run.world, playerAtEnding.position);
@@ -1368,7 +1408,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   const explanation = outcomeExplanation({ request, d20, score, outcome, preparation, intentAnalysis });
   const narrative = normalizeCommittedNarrative(directorOutput, directorPlan, explanation);
   const turn = {
-    id: deterministicUuid(`${run.id}:turn:${turnNo}`),
+    id: deterministicUuid(`${run.id}:turn:${turnNo}:v${request.expectedRunVersion}`),
     runId: run.id,
     ownerId: run.ownerId,
     turnNo,

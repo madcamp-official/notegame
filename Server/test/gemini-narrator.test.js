@@ -48,10 +48,12 @@ test("Gemini adapter retries one semantically invalid response and sends bounded
   assert.equal(result.model, DEFAULT_MODEL_PROFILES.fast.model);
   assert.equal(result.proposedOps[0].type, "ambient_cue");
   const requestBody = JSON.parse(requests[0].body);
-  assert.equal(requestBody.generationConfig.thinkingConfig.thinkingBudget, 0);
-  assert.equal(requestBody.generationConfig.maxOutputTokens, 384);
+  assert.equal(requestBody.generationConfig.thinkingConfig.thinkingLevel, "minimal");
+  assert.equal(requestBody.generationConfig.maxOutputTokens, 1024);
   assert.equal(requestBody.generationConfig.responseMimeType, "application/json");
   assert.equal(requestBody.generationConfig.responseJsonSchema.additionalProperties, false);
+  assert.deepEqual(requestBody.generationConfig.responseJsonSchema.properties.proposedOps.items.properties.type.enum,
+    ["ambient_cue", "fact_hint"]);
   assert.equal(requests[0].headers["x-goog-api-key"], "unit-test-token");
   assert.equal(requests[0].body.includes("unit-test-token"), false);
 });

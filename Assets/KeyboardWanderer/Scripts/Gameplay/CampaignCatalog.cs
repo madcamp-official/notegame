@@ -165,13 +165,13 @@ namespace KeyboardWanderer.Gameplay
             var beats = new List<CampaignBeatState>
             {
                 Beat("arrival", "코드리아 추락", "관리자 키보드를 조사해 편집 범위를 확인하세요.",
-                    AbilityKind.Copy, BugForestAxis, "", ActionContext.Investigation),
+                    AbilityKind.Search, BugForestAxis, "", ActionContext.Investigation),
                 Beat("collapse", "붕괴 징후", "현재 지역의 붕괴 원인을 조사하세요.",
-                    AbilityKind.Copy, bindings[0].SelectedRegionAxis, "", ActionContext.Investigation),
+                    AbilityKind.Search, bindings[0].SelectedRegionAxis, "", ActionContext.Investigation),
                 AccessBeat(bindings[0]),
                 AccessBeat(bindings[1]),
                 Beat("truth", "관리자 통제의 내부 오류", "데이터 대도서관의 기록으로 붕괴 원인을 확인하세요.",
-                    AbilityKind.Copy, DataGrandLibraryAxis, "", ActionContext.Investigation),
+                    AbilityKind.Search, DataGrandLibraryAxis, "", ActionContext.Investigation),
                 Beat("debt-backflow", "기술 부채의 역류", "레거시 성채 주민과 연결해 과거 편집의 책임을 회수하세요.",
                     AbilityKind.Connect, LegacyCitadelAxis, "", ActionContext.Negotiation),
                 AccessBeat(bindings[2]),
@@ -250,9 +250,9 @@ namespace KeyboardWanderer.Gameplay
             };
             AbilityKind[][] skills =
             {
-                new[] { AbilityKind.Connect, AbilityKind.Copy },
+                new[] { AbilityKind.Connect, AbilityKind.Search },
                 new[] { AbilityKind.Delete, AbilityKind.Connect },
-                new[] { AbilityKind.Restore, AbilityKind.Copy }
+                new[] { AbilityKind.Restore, AbilityKind.Search }
             };
             var result = new AdminAccessBinding[3];
             for (int i = 0; i < result.Length; i++)

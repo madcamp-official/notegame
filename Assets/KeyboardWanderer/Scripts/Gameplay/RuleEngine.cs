@@ -128,8 +128,8 @@ namespace KeyboardWanderer.Gameplay
                 case AbilityKind.Restore: preparation = PrepareRestore(state, request, player); break;
                 case AbilityKind.Undo: preparation = PrepareUndo(state); break;
                 case AbilityKind.Interact: preparation = PrepareInteract(state, request, player); break;
-                case AbilityKind.Search: preparation = PrepareAreaSkill(state, request, player, false); break;
-                case AbilityKind.SelectAll: preparation = PrepareAreaSkill(state, request, player, true); break;
+                case AbilityKind.Search: preparation = PrepareSearch(state, request, player); break;
+                case AbilityKind.SelectAll: preparation = PrepareAreaAttack(state, request, player); break;
                 default: preparation = RulePreparation.Invalid(TurnErrorCode.InvalidRequest, "Unknown ability."); break;
             }
             // Free text is never rules authority. Skill, targets, location, and scene state alone
@@ -144,7 +144,6 @@ namespace KeyboardWanderer.Gameplay
                 return ActionContext.SafeTravel;
             switch (request.Ability)
             {
-                case AbilityKind.Copy:
                 case AbilityKind.Search:
                     return ActionContext.Investigation;
                 case AbilityKind.Interact:
@@ -152,8 +151,9 @@ namespace KeyboardWanderer.Gameplay
                         interactTarget.Kind == EntityKind.Npc) return ActionContext.Negotiation;
                     return ActionContext.Investigation;
                 case AbilityKind.Restore:
-                case AbilityKind.SelectAll:
-                case AbilityKind.Undo: return ActionContext.Deployment;
+                case AbilityKind.Undo:
+                case AbilityKind.Copy: return ActionContext.Deployment;
+                case AbilityKind.SelectAll: return ActionContext.Combat;
                 case AbilityKind.Delete:
                     if (TryTarget(state, request.TargetEntityId, out EntityState deleteTarget) &&
                         deleteTarget.Kind == EntityKind.Enemy) return ActionContext.Combat;
@@ -223,8 +223,8 @@ namespace KeyboardWanderer.Gameplay
                     case AbilityKind.Restore: ApplyRestore(state, preparation, events); break;
                     case AbilityKind.Undo: ApplyUndo(state, preparation.FocusCost, events); break;
                     case AbilityKind.Interact: ApplyInteract(state, request, events); break;
-                    case AbilityKind.Search: ApplyAreaScan(state, 6, "SEARCH_REVEALED", events); break;
-                    case AbilityKind.SelectAll: ApplyAreaScan(state, 4, "AREA_SELECTED", events); break;
+                    case AbilityKind.Search: ApplySearch(state, request, events); break;
+                    case AbilityKind.SelectAll: ApplyAreaAttack(state, events); break;
                 }
             }
             else if (request.Ability == AbilityKind.Undo && preparation.FocusCost > 0)
@@ -296,21 +296,10 @@ namespace KeyboardWanderer.Gameplay
                 return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Copy requires 1 focus.");
             if (!TryTarget(state, request.TargetEntityId, out EntityState target))
                 return RulePreparation.Invalid(TurnErrorCode.EntityNotFound, "Choose an active source object.");
-            bool investigationCopy = target.AssetId == CampaignCatalog.AdministratorKeyboardId ||
-                                     target.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal) ||
-                                     target.AssetId.StartsWith("story.internal-failure", StringComparison.Ordinal);
-            if (target.IsProtected && !investigationCopy)
+            if (target.IsProtected)
                 return RulePreparation.Invalid(TurnErrorCode.ProtectedEntity, "Protected objects cannot be copied.");
-            if ((!target.IsCloneable && !investigationCopy) || target.Kind == EntityKind.Player || target.Kind == EntityKind.Npc)
+            if (!target.IsCloneable || target.Kind == EntityKind.Player || target.Kind == EntityKind.Npc)
                 return RulePreparation.Invalid(TurnErrorCode.NotCloneable, "This object is not cloneable.");
-            if (investigationCopy)
-            {
-                if (player.Position.ManhattanDistance(target.Position) > 4)
-                    return RulePreparation.Invalid(TurnErrorCode.OutOfRange,
-                        "Investigation target must be within 4 tiles.");
-                return RulePreparation.Valid("Inspect " + target.DisplayName + " with COPY without changing geometry",
-                    10, 4, 1, null, target.EntityId);
-            }
             if (!request.Destination.HasValue || !state.Region.IsWalkable(request.Destination.Value) ||
                 state.Spatial.IsBlockingOccupied(state.Region.RegionId, request.Destination.Value, target.Layer))
                 return RulePreparation.Invalid(TurnErrorCode.DestinationInvalid, "Choose an empty walkable destination.");
@@ -327,18 +316,16 @@ namespace KeyboardWanderer.Gameplay
                 return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Delete requires 1 focus.");
             if (!TryTarget(state, request.TargetEntityId, out EntityState target))
                 return RulePreparation.Invalid(TurnErrorCode.EntityNotFound, "Choose an active target.");
-            if (target.EntityId == state.PlayerEntityId || target.IsProtected || target.Kind == EntityKind.Npc)
-                return RulePreparation.Invalid(TurnErrorCode.ProtectedEntity, "Protected entities cannot be deleted.");
+            if (target.Kind != EntityKind.Enemy || !target.IsHostile)
+                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
+                    "Delete is a single-target attack and requires one hostile enemy.");
             if ((target.AssetId == "finale.threat" || target.AssetId == "finale.freedom") &&
                 state.AdminAccess < 3)
                 return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
                     "ROOT_SYSTEM components require administrator access 3/3 before removal.");
-            if (target.Kind == EntityKind.Prop && !target.IsCloneable && target.Health > 2)
-                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget, "Only temporary or weakened props can be deleted.");
             if (player.Position.ManhattanDistance(target.Position) > 3)
                 return RulePreparation.Invalid(TurnErrorCode.OutOfRange, "Delete target must be within 3 tiles.");
-            int difficulty = target.Kind == EntityKind.Enemy ? 13 : 12;
-            return RulePreparation.Valid("Delete " + target.DisplayName, difficulty, 4, 1, null,
+            return RulePreparation.Valid("Single-target attack on " + target.DisplayName, 13, 4, 1, null,
                 target.EntityId);
         }
 
@@ -404,42 +391,91 @@ namespace KeyboardWanderer.Gameplay
         {
             if (state.Focus < 3)
                 return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Undo requires 3 focus.");
-            ReversibleTurnRecord record = state.LastReversibleTurn;
-            if (record == null || record.IsConsumed || record.SourceTurn != state.CurrentTurn)
+            int available = 0;
+            int newestTurn = 0;
+            int oldestTurn = 0;
+            for (int i = state.ReversibleHistory.Count - 1; i >= 0 && available < 2; i--)
+            {
+                ReversibleTurnRecord candidate = state.ReversibleHistory[i];
+                if (candidate.IsConsumed) continue;
+                if (available == 0) newestTurn = candidate.SourceTurn;
+                oldestTurn = candidate.SourceTurn;
+                available++;
+            }
+            if (available < 2)
                 return RulePreparation.Invalid(TurnErrorCode.UndoUnavailable,
-                    "Only the immediately preceding unconsumed reversible turn can be compensated.");
-            return RulePreparation.Valid("Append compensation for turn " + record.SourceTurn +
-                " without rewinding time, rolls, layout, or story facts", 14, 5, 3);
+                    "Ctrl Z requires two unconsumed meaningful turns to rewind.");
+            return RulePreparation.Valid("Rewind turns " + oldestTurn + "-" + newestTurn +
+                " and restore their mechanical state", 14, 5, 3);
         }
 
-        private static RulePreparation PrepareAreaSkill(RunState state, TurnRequest request,
-            EntityState player, bool selectAll)
+        private static RulePreparation PrepareSearch(RunState state, TurnRequest request, EntityState player)
         {
-            int cost = selectAll ? 3 : 1;
-            if (state.Focus < cost)
-                return RulePreparation.Invalid(TurnErrorCode.InsufficientResource,
-                    (selectAll ? "Ctrl A" : "Ctrl F") + " requires " + cost + " focus.");
+            if (state.Focus < 1)
+                return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Search requires 1 focus.");
+            if (!TryTarget(state, request.TargetEntityId, out EntityState target))
+                return RulePreparation.Invalid(TurnErrorCode.EntityNotFound,
+                    "Choose one active object, enemy, or NPC to investigate.");
+            if (player.Position.ManhattanDistance(target.Position) > 6)
+                return RulePreparation.Invalid(TurnErrorCode.OutOfRange, "Search target must be within 6 tiles.");
+            return RulePreparation.Valid("Investigate " + target.DisplayName + " with SEARCH",
+                9, 5, 1, null, target.EntityId);
+        }
+
+        private static RulePreparation PrepareAreaAttack(RunState state, TurnRequest request, EntityState player)
+        {
+            if (state.Focus < 3)
+                return RulePreparation.Invalid(TurnErrorCode.InsufficientResource, "Ctrl A requires 3 focus.");
             if (request.TargetEntityId.HasValue || request.SecondaryTargetEntityId.HasValue || request.Destination.HasValue)
                 return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
-                    (selectAll ? "Ctrl A" : "Ctrl F") + " does not require a target.");
-            int radius = selectAll ? 4 : 6;
-            return RulePreparation.Valid((selectAll ? "Select administrator area" : "Search nearby entities") +
-                " within " + radius + " tiles of " + player.Position,
-                selectAll ? 14 : 9, selectAll ? 4 : 5, cost);
+                    "Ctrl A attacks every nearby enemy and does not take a selected target.");
+            bool found = false;
+            foreach (EntityState entity in state.Spatial.Entities)
+                if (entity.IsActive && entity.IsHostile && entity.Kind == EntityKind.Enemy &&
+                    player.Position.ManhattanDistance(entity.Position) <= 4) { found = true; break; }
+            if (!found)
+                return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
+                    "No hostile enemy is within the 4-tile attack area.");
+            return RulePreparation.Valid("Area attack within 4 tiles of " + player.Position, 14, 4, 3);
         }
 
-        private static void ApplyAreaScan(RunState state, int radius, string eventName, List<string> events)
+        private static void ApplySearch(RunState state, TurnRequest request, List<string> events)
+        {
+            if (!state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState target)) return;
+            events.Add("SEARCH_REVEALED:" + target.EntityId);
+            if (target.AssetId == CampaignCatalog.AdministratorKeyboardId)
+            {
+                state.AddCanonicalFact("관리자 키보드는 이미 존재하는 대상과 관계만 편집한다.");
+                events.Add("ADMIN_KEYBOARD_AWAKENED:" + target.EntityId);
+                events.Add("CATALYST_AWAKENED:" + target.EntityId);
+            }
+            if (target.AssetId.StartsWith("story.internal-failure", StringComparison.Ordinal))
+            {
+                state.AddCanonicalFact("붕괴 원인이 관리자 통제 시스템 내부에 있음을 확정했다.");
+                events.Add("INTERNAL_FAILURE_CONFIRMED:" + target.EntityId);
+            }
+            if (target.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal))
+                events.Add("ADMIN_ACCESS_CANDIDATE_INSPECTED:" + target.EntityId);
+        }
+
+        private static void ApplyAreaAttack(RunState state, List<string> events)
         {
             if (!state.Spatial.TryGetEntity(state.PlayerEntityId, out EntityState player)) return;
-            int count = 0;
+            var targets = new List<Guid>();
             foreach (EntityState entity in state.Spatial.Entities)
+                if (entity.IsActive && entity.IsHostile && entity.Kind == EntityKind.Enemy &&
+                    player.Position.ManhattanDistance(entity.Position) <= 4) targets.Add(entity.EntityId);
+            int defeated = 0;
+            for (int i = 0; i < targets.Count; i++)
             {
-                if (!entity.IsActive || entity.EntityId == state.PlayerEntityId ||
-                    player.Position.ManhattanDistance(entity.Position) > radius) continue;
-                events.Add(eventName + ":" + entity.EntityId);
-                count++;
+                if (state.Spatial.TryGetEntity(targets[i], out EntityState snapshotTarget))
+                    state.RecordRestorable(snapshotTarget, state.CurrentTurn + 1, "area_attack");
+                if (!state.Spatial.TryDamage(targets[i], 3, out int health, out bool wasDefeated, out string error))
+                    throw new InvalidOperationException("Validated area attack failed: " + error);
+                events.Add("ENTITY_DAMAGED:" + targets[i] + ":3:hp=" + health);
+                if (wasDefeated) { defeated++; state.EnemiesDefeated++; events.Add("ENEMY_DEFEATED:" + targets[i]); }
             }
-            events.Add(eventName + "_COUNT:" + count);
+            events.Add("AREA_ATTACK_HIT_COUNT:" + targets.Count + ":DEFEATED=" + defeated);
         }
 
         private static RulePreparation PrepareInteract(RunState state, TurnRequest request, EntityState player)
@@ -476,24 +512,6 @@ namespace KeyboardWanderer.Gameplay
         private static void ApplyCopy(RunState state, TurnRequest request, int turnNo, List<string> events)
         {
             state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState source);
-            if (source.AssetId == CampaignCatalog.AdministratorKeyboardId)
-            {
-                state.AddCanonicalFact("관리자 키보드는 이미 존재하는 대상과 관계만 편집한다.");
-                events.Add("ADMIN_KEYBOARD_AWAKENED:" + source.EntityId);
-                events.Add("CATALYST_AWAKENED:" + source.EntityId);
-                return;
-            }
-            if (source.AssetId.StartsWith("story.internal-failure", StringComparison.Ordinal))
-            {
-                state.AddCanonicalFact("붕괴 원인이 관리자 통제 시스템 내부에 있음을 확정했다.");
-                events.Add("INTERNAL_FAILURE_CONFIRMED:" + source.EntityId);
-                return;
-            }
-            if (source.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal))
-            {
-                events.Add("ADMIN_ACCESS_CANDIDATE_INSPECTED:" + source.EntityId);
-                return;
-            }
             Guid cloneId = DeterministicGuid.Create(state.RunId + ":" + turnNo + ":" + request.IdempotencyKey + ":copy");
             var clone = new EntityState(cloneId, source.Kind, source.AssetId, source.DisplayName + " Copy",
                 source.IsBlocking, false, source.IsCloneable, false, source.MaxHealth,
@@ -506,12 +524,15 @@ namespace KeyboardWanderer.Gameplay
         private static void ApplyDelete(RunState state, TurnRequest request, int turnNo, List<string> events)
         {
             state.Spatial.TryGetEntity(request.TargetEntityId.Value, out EntityState target);
-            state.RecordRestorable(target, turnNo, "deleted");
-            if (!state.Spatial.TryRemove(target.EntityId, out string error))
-                throw new InvalidOperationException("Validated delete failed during commit: " + error);
-            if (target.Kind == EntityKind.Enemy)
+            state.RecordRestorable(target, turnNo, "single_target_attack");
+            if (!state.Spatial.TryDamage(target.EntityId, 5, out int health, out bool defeated, out string error))
+                throw new InvalidOperationException("Validated single-target attack failed during commit: " + error);
+            events.Add("ENTITY_DAMAGED:" + target.EntityId + ":5:hp=" + health);
+            if (defeated)
+            {
                 RewardEnemy(state, target, events);
-            events.Add("ENTITY_REMOVED:" + target.EntityId);
+                events.Add("ENEMY_DEFEATED:" + target.EntityId);
+            }
         }
 
         private static void ApplyConnect(RunState state, TurnRequest request, List<string> events)
@@ -561,9 +582,23 @@ namespace KeyboardWanderer.Gameplay
 
         private static void ApplyUndo(RunState state, int focusCost, List<string> events)
         {
-            ReversibleTurnRecord record = state.LastReversibleTurn;
-            if (record == null)
-                throw new InvalidOperationException("Validated undo record disappeared during commit.");
+            var records = new List<ReversibleTurnRecord>();
+            for (int i = state.ReversibleHistory.Count - 1; i >= 0 && records.Count < 2; i--)
+                if (!state.ReversibleHistory[i].IsConsumed) records.Add(state.ReversibleHistory[i]);
+            if (records.Count < 2)
+                throw new InvalidOperationException("Validated two-turn rewind history disappeared during commit.");
+
+            for (int i = 0; i < records.Count; i++)
+                ApplyReversibleRecord(state, records[i], events);
+
+            ReversibleTurnRecord oldest = records[records.Count - 1];
+            state.Focus = Math.Max(0, oldest.FocusBefore - focusCost);
+            events.Add("TIME_REWIND_COMPLETED:turns=2:from=" + records[0].SourceTurn + ":to=" + oldest.SourceTurn);
+            events.Add("RESOURCE_CHANGED:focus:-" + focusCost);
+        }
+
+        private static void ApplyReversibleRecord(RunState state, ReversibleTurnRecord record, List<string> events)
+        {
 
             var snapshotsById = new Dictionary<Guid, EntityRuntimeSnapshot>();
             for (int i = 0; i < record.EntitySnapshots.Count; i++)
@@ -596,7 +631,7 @@ namespace KeyboardWanderer.Gameplay
                     throw new InvalidOperationException("Undo compensation failed: " + restoreError);
             }
 
-            state.Focus = Math.Max(0, record.FocusBefore - focusCost);
+            state.Focus = record.FocusBefore;
             state.IsExposed = record.WasExposedBefore;
             if (record.RestoreEconomy)
             {
@@ -614,8 +649,7 @@ namespace KeyboardWanderer.Gameplay
                 state.Connections.AddRange(record.ConnectionsBefore);
             }
             record.IsConsumed = true;
-            events.Add("UNDO_COMPENSATION:source-turn=" + record.SourceTurn + ":ability=" + record.SourceAbility);
-            events.Add("RESOURCE_CHANGED:focus:-" + focusCost);
+            events.Add("TURN_REWOUND:source-turn=" + record.SourceTurn + ":ability=" + record.SourceAbility);
         }
 
         private static void RewardEnemy(RunState state, EntityState enemy, List<string> events)

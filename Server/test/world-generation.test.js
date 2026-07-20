@@ -17,7 +17,7 @@ import {
 
 const ADMIN_ACCESS_LEVELS = ["ADMIN_ACCESS_LEVEL_1", "ADMIN_ACCESS_LEVEL_2", "ADMIN_ACCESS_LEVEL_3"];
 const BATCH_SEEDS = [0, 1, 2, 7, 13, 31, 67, 101, 257, 991, 4093, 20260717, -17, 2147483647];
-const SUPPORTED_ACQUISITION_MODES = new Set(["copy", "delete", "connect", "restore", "undo"]);
+const SUPPORTED_ACQUISITION_MODES = new Set(["copy", "delete", "connect", "restore", "undo", "search"]);
 
 function decodeRle(rle) {
   const values = [];

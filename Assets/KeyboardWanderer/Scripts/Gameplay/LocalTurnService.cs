@@ -116,12 +116,17 @@ namespace KeyboardWanderer.Gameplay
 
             working.RecordIntent(nextTurn, request.Ability, preparation.NormalizedAttempt);
             List<string> events = _ruleEngine.Apply(working, request, preparation, outcome, nextTurn);
-            ApplyHazard(working, events);
-            ApplyEnemyPhase(working, nextTurn, events);
+            bool rewound = events.Exists(entry => entry.StartsWith("TIME_REWIND_COMPLETED:", StringComparison.Ordinal));
+            if (!rewound)
+            {
+                ApplyHazard(working, events);
+                ApplyEnemyPhase(working, nextTurn, events);
+            }
 
-            working.CurrentTurn = nextTurn;
+            working.CurrentTurn = rewound ? Math.Max(0, _state.CurrentTurn - 2) : nextTurn;
             working.Version++;
-            CampaignDirector.ProcessCommittedTurn(working, request, actionContext, outcome, nextTurn, events);
+            if (!rewound)
+                CampaignDirector.ProcessCommittedTurn(working, request, actionContext, outcome, nextTurn, events);
             if (working.HasActiveEncounter && RuleEngine.ConsumesCampaignTurn(actionContext))
             {
                 working.HasActiveEncounter = false;
@@ -132,8 +137,11 @@ namespace KeyboardWanderer.Gameplay
             {
                 FinalizeReversibleRecord(reversible, events);
                 working.LastReversibleTurn = reversible;
+                working.ReversibleHistory.Add(reversible);
+                while (working.ReversibleHistory.Count > 6)
+                    working.ReversibleHistory.RemoveAt(0);
             }
-            events.Add("TURN_COMMITTED:" + nextTurn);
+            events.Add(rewound ? "TURN_COUNTER_REWOUND:" + working.CurrentTurn : "TURN_COMMITTED:" + nextTurn);
 
             working.LastNormalizedAttempt = preparation.NormalizedAttempt;
             working.LastRollRaw = rawD20;
@@ -188,7 +196,7 @@ namespace KeyboardWanderer.Gameplay
                     string.Join(",", integrityErrors));
 
             _state = working;
-            var response = TurnResponse.Success(nextTurn, rawD20, preparation.Modifier, preparation.Difficulty,
+            var response = TurnResponse.Success(working.CurrentTurn, rawD20, preparation.Modifier, preparation.Difficulty,
                 mechanicalScore, preparation.IntentAlignment, outcome, outcomeExplanation,
                 preparation.NormalizedAttempt, narrative, RuleEngine.ConsequenceBudget(rawD20), events, CurrentView,
                 true, actionContext);

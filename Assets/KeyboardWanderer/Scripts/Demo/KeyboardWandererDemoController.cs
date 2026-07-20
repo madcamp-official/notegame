@@ -17,6 +17,7 @@ namespace KeyboardWanderer.Demo
         private const string SfxVolumeKey = "keyboard-wanderer.sfx-volume";
         private const string GmEnabledKey = "keyboard-wanderer.gm-enabled";
         private const string ServerRunIdKey = "keyboard-wanderer.server-run-id";
+        private const string TutorialCompletedKey = "keyboard-wanderer.tutorial-v1-complete";
 
         private enum ScreenMode
         {
@@ -58,6 +59,8 @@ namespace KeyboardWanderer.Demo
         private readonly List<Texture2D> _runtimeTextures = new List<Texture2D>();
         private readonly List<Tile> _runtimeTiles = new List<Tile>();
         private readonly List<string> _sessionLog = new List<string>();
+        private readonly Dictionary<SpriteRenderer, Color> _decorationBaseColors =
+            new Dictionary<SpriteRenderer, Color>();
 
         [Header("Authored content")]
         [SerializeField] private KeyboardWandererAuthoringSettings authoringSettings;
@@ -100,9 +103,13 @@ namespace KeyboardWanderer.Demo
         private string _lastOutcome = "READY";
         private string _lastExplanation = "서버는 입력을 가장 가까운 합법적 시도로 정규화합니다.";
         private string[] _lastDialogue = Array.Empty<string>();
+        private bool _lastNarrativeFallbackUsed = true;
+        private string _lastNarrativeModel = "deterministic";
         private string _authoredDialogueSignature = string.Empty;
         private int _authoredDialoguePage;
         private bool _authoredDialogueDismissed;
+        private bool _tutorialActive;
+        private int _tutorialPage;
         private bool _gmPending;
         private bool _gmEnabled = true;
         private bool _serverOnline;
@@ -270,6 +277,7 @@ namespace KeyboardWanderer.Demo
 
             UpdateAnimatedVisuals();
             UpdateCameraFollow();
+            UpdateDecorationOcclusion();
         }
 
         private void UpdateAuthoredUi()
@@ -287,11 +295,12 @@ namespace KeyboardWanderer.Demo
 
             int nextCounter = PlayerPrefs.GetInt("keyboard-wanderer.run-counter", 0) + 1;
             long nextSeed = 20260717L + nextCounter;
-            CampaignBlueprint preview = CampaignCatalog.Create(nextSeed);
             _sceneUi.SetText(KeyboardWandererUiText.TitleHeading, CampaignCatalog.CampaignTitle);
-            _sceneUi.SetText(KeyboardWandererUiText.TitleSubtitle, "코드리아 × 관리자 키보드 × 선택 회수");
+            _sceneUi.SetText(KeyboardWandererUiText.TitleSubtitle, "관리자 키보드로 붕괴한 코드리아를 복구하는 탐험 RPG");
             _sceneUi.SetText(KeyboardWandererUiText.TitleSeed, "NEXT SEED  " + nextSeed);
-            _sceneUi.SetText(KeyboardWandererUiText.TitlePremise, preview.Title + "\n\n" + preview.Premise);
+            _sceneUi.SetText(KeyboardWandererUiText.TitlePremise,
+                "넙죽이가 되어 여섯 지역을 탐험하세요.\n" +
+                "대상을 조사하고 적과 싸워 관리자 권한 3개를 되찾으면 루트 시스템의 결말이 열립니다.");
             _sceneUi.SetText(KeyboardWandererUiText.TitleStatus, _serverStatus + " · Ninja Adventure CC0");
             _sceneUi.SetButtonState(KeyboardWandererUiButton.NewRun, !_serverPending);
             _sceneUi.SetButtonState(KeyboardWandererUiButton.Continue, !_serverPending &&
@@ -305,31 +314,59 @@ namespace KeyboardWanderer.Demo
             string narrative = _lastOutcome == "READY" || _lastOutcome == "RESTORED"
                 ? CampaignPremise(view)
                 : ShortNarrative(_lastNarrative);
-            string[] dialoguePages = BuildDialoguePages(narrative);
-            string dialogueSignature = string.Join("\u001f", dialoguePages);
-            if (!string.Equals(_authoredDialogueSignature, dialogueSignature, StringComparison.Ordinal))
+            if (_tutorialActive)
             {
-                _authoredDialogueSignature = dialogueSignature;
-                _authoredDialoguePage = 0;
-                if (_playerWalking)
-                    _reopenDialogueAfterWalk = true;
-                else
-                    _authoredDialogueDismissed = false;
+                string[] tutorialPages = TutorialPages(view);
+                _tutorialPage = Mathf.Clamp(_tutorialPage, 0, tutorialPages.Length - 1);
+                _sceneUi.SetStoryVisible(true);
+                _sceneUi.SetText(KeyboardWandererUiText.DialogueSpeaker,
+                    "게임 방법 " + (_tutorialPage + 1) + "/" + tutorialPages.Length);
+                _sceneUi.SetText(KeyboardWandererUiText.Story, tutorialPages[_tutorialPage]);
+                _sceneUi.SetText(KeyboardWandererUiText.NextDialogueLabel,
+                    _tutorialPage < tutorialPages.Length - 1 ? "다음 ▶" : "게임 시작");
+                _sceneUi.SetButtonState(KeyboardWandererUiButton.NextDialogue, true);
             }
-            _sceneUi.SetStoryVisible(!_authoredDialogueDismissed);
-            _authoredDialoguePage = Mathf.Clamp(_authoredDialoguePage, 0, Mathf.Max(0, dialoguePages.Length - 1));
-            bool showingResult = HasActionResultPage() && _authoredDialoguePage == 0;
-            bool showingNarration = !showingResult && _authoredDialoguePage == 0;
+            else
+            {
+                string[] dialoguePages = BuildDialoguePages(narrative);
+                string dialogueSignature = string.Join("\u001f", dialoguePages);
+                if (!string.Equals(_authoredDialogueSignature, dialogueSignature, StringComparison.Ordinal))
+                {
+                    _authoredDialogueSignature = dialogueSignature;
+                    _authoredDialoguePage = 0;
+                    if (_playerWalking)
+                        _reopenDialogueAfterWalk = true;
+                    else
+                        _authoredDialogueDismissed = false;
+                }
+                _sceneUi.SetStoryVisible(!_authoredDialogueDismissed);
+                _authoredDialoguePage = Mathf.Clamp(_authoredDialoguePage, 0, Mathf.Max(0, dialoguePages.Length - 1));
+                bool showingResult = HasActionResultPage() && _authoredDialoguePage == 0;
+                int narrationPage = HasActionResultPage() ? 1 : 0;
+                bool showingNarration = _authoredDialoguePage == narrationPage;
+                _sceneUi.SetText(KeyboardWandererUiText.DialogueSpeaker,
+                    showingResult ? "행동 결과" : showingNarration ? NarrativeSourceLabel() : "코드리아 주민");
+                _sceneUi.SetText(KeyboardWandererUiText.Story, dialoguePages[_authoredDialoguePage]);
+                bool hasNextDialogue = _authoredDialoguePage < dialoguePages.Length - 1;
+                _sceneUi.SetText(KeyboardWandererUiText.NextDialogueLabel, hasNextDialogue ? "다음 ▶" : "대화 끝");
+                _sceneUi.SetButtonState(KeyboardWandererUiButton.NextDialogue, true);
+            }
             _sceneUi.SetText(KeyboardWandererUiText.SceneLocation, CurrentAreaName(view) + " · " + CurrentBiomeLabel(view));
             _sceneUi.SetText(KeyboardWandererUiText.SceneTitle, StoryBeat(view));
-            _sceneUi.SetText(KeyboardWandererUiText.DialogueSpeaker,
-                showingResult ? "행동 결과" : showingNarration ? "이야기" : "코드리아 주민");
-            _sceneUi.SetText(KeyboardWandererUiText.Story, dialoguePages[_authoredDialoguePage]);
-            bool hasNextDialogue = _authoredDialoguePage < dialoguePages.Length - 1;
-            _sceneUi.SetText(KeyboardWandererUiText.NextDialogueLabel, hasNextDialogue ? "다음 ▶" : "대화 끝");
-            _sceneUi.SetButtonState(KeyboardWandererUiButton.NextDialogue, true);
+            _sceneUi.SetText(KeyboardWandererUiText.CurrentObjective, ObjectiveHudText(view));
             _sceneUi.SetText(KeyboardWandererUiText.ActionHint,
-                _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : NarrativeSelectionHint());
+                _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : ActionGuidanceText(view));
+            bool selectionReady = CanSubmitCurrentSelection();
+            _sceneUi.SetText(KeyboardWandererUiText.SelectionHeading,
+                AbilityPlayerLabel(_ability) + " · " + (selectionReady ? "사용 가능" : "준비 필요"));
+            _sceneUi.SetText(KeyboardWandererUiText.SelectionDetail, SelectionStatusDetail(view));
+            EntityView selectedEntity = SelectedEntity(view, _selectedTarget);
+            Sprite selectedTargetSprite = selectedEntity == null ? null : SpriteForEntity(selectedEntity);
+            if (selectedTargetSprite == null && TryGetServerEntity(_selectedTarget, out GameApiClient.EntitySnapshot serverSelected))
+                selectedTargetSprite = SpriteForServerEntity(serverSelected,
+                    string.Equals(serverSelected.id, _serverRun.playerEntityId, StringComparison.OrdinalIgnoreCase));
+            _sceneUi.SetSelectionVisual(_ability,
+                selectedTargetSprite, selectionReady);
 
             SetAbilityButton(KeyboardWandererUiButton.Move, AbilityKind.Move);
             SetAbilityButton(KeyboardWandererUiButton.Copy, AbilityKind.Copy);
@@ -365,13 +402,32 @@ namespace KeyboardWanderer.Demo
                 return;
             }
             SetAbility(ability);
-            if ((ability == AbilityKind.Search || ability == AbilityKind.SelectAll || ability == AbilityKind.Undo) &&
+            if ((ability == AbilityKind.SelectAll || ability == AbilityKind.Undo) &&
                 IsSkillEnabledForCurrentTarget(ability))
                 Submit();
         }
         public void UiSubmit() => Submit();
         public void UiAdvanceDialogue()
         {
+            if (_tutorialActive)
+            {
+                string[] tutorialPages = TutorialPages(_service?.CurrentView);
+                if (_tutorialPage < tutorialPages.Length - 1)
+                {
+                    _tutorialPage++;
+                }
+                else
+                {
+                    _tutorialActive = false;
+                    _tutorialPage = 0;
+                    _authoredDialogueSignature = string.Empty;
+                    _authoredDialogueDismissed = false;
+                    PlayerPrefs.SetInt(TutorialCompletedKey, 1);
+                    PlayerPrefs.Save();
+                }
+                PlaySfx(AssetClip("UiAcceptSound"));
+                return;
+            }
             string[] pages = BuildDialoguePages(_service == null ? _lastNarrative :
                 (_lastOutcome == "READY" || _lastOutcome == "RESTORED" ? CampaignPremise(_service.CurrentView) : ShortNarrative(_lastNarrative)));
             if (_authoredDialoguePage < pages.Length - 1)
@@ -390,8 +446,8 @@ namespace KeyboardWanderer.Demo
 
         private void SetAbilityButton(KeyboardWandererUiButton button, AbilityKind ability)
         {
-            _sceneUi.SetButtonState(button,
-                !_playerWalking && IsSkillEnabledForCurrentTarget(ability), _ability == ability);
+            bool available = IsSkillEnabledForCurrentTarget(ability);
+            _sceneUi.SetButtonState(button, CanHandleGameplayInput(), _ability == ability, available);
         }
 
         private string[] BuildDialoguePages(string narrative)
@@ -419,6 +475,25 @@ namespace KeyboardWanderer.Demo
             return pages.ToArray();
         }
 
+        private string[] TutorialPages(RunView view)
+        {
+            string objective = view == null ? "좌측 상단의 현재 목표" : StoryBeatObjective(view);
+            return new[]
+            {
+                "당신은 넙죽이입니다. 붕괴한 코드리아를 탐험해 관리자 권한 3개를 되찾고, 루트 시스템까지 도달하는 것이 최종 목표입니다.\n지금 할 일은 좌측 상단의 ‘현재 목표’에서 확인할 수 있습니다.",
+                "이동: W 버튼을 선택하고 지도에서 빈 타일을 누른 뒤, 우측 아래 실행 버튼을 누르세요.\n이동은 의미 턴과 D20을 사용하지 않습니다. 분홍 미니맵 표식이 현재 목표입니다.",
+                "조사: Ctrl F를 선택하고 목표 인물이나 물건을 누른 뒤 실행하세요.\n조사·공격·연결 같은 키보드 기술은 의미 턴 1회와 D20 판정을 사용하며, 성공과 실패가 세계에 남습니다.",
+                "주요 기술: Delete는 적 1명 공격, Ctrl A는 주변 적 전체 공격, Ctrl K는 두 대상 연결·대화, Ctrl Z는 최근 의미 턴 2개 되돌리기입니다.\n사용할 수 없을 때는 좌측 선택 패널에 필요한 대상·거리·조건이 표시됩니다.",
+                "첫 목표: " + objective + "\n행동 결과는 서버 규칙이 확정하고, 그 뒤의 짧은 장면과 대사는 AI가 표현합니다. AI가 응답하지 않아도 기본 이야기로 게임은 계속됩니다."
+            };
+        }
+
+        private string NarrativeSourceLabel()
+        {
+            if (!_gmEnabled) return "규칙 결과";
+            return _lastNarrativeFallbackUsed ? "기본 이야기" : "AI 이야기";
+        }
+
         private bool HasActionResultPage()
         {
             return !string.IsNullOrWhiteSpace(_lastOutcome) &&
@@ -434,12 +509,12 @@ namespace KeyboardWanderer.Demo
             {
                 case AbilityKind.Move: return "이동할 타일을 고른 뒤 실행을 누르세요. 캐릭터는 길을 따라 걷습니다.";
                 case AbilityKind.Connect: return "이어 주고 싶은 두 대상을 지도에서 차례로 고르세요.";
-                case AbilityKind.Delete: return "삭제할 적 또는 오브젝트의 모습을 직접 클릭한 뒤 실행을 누르세요.";
+                case AbilityKind.Delete: return "단일 공격할 적을 클릭한 뒤 실행을 누르세요.";
                 case AbilityKind.Restore: return "복구 가능한 대상이 생기면 대상이 자동 선택됩니다.";
                 case AbilityKind.Interact: return "가까운 대상과 상호작용하려면 실행을 누르세요.";
-                case AbilityKind.Undo: return "직전 선택을 되돌립니다.";
-                case AbilityKind.Search: return "Ctrl F로 주변 6칸의 단서와 약점을 검색합니다.";
-                case AbilityKind.SelectAll: return "Ctrl A로 주변 4칸에 관리자 영역을 전개합니다.";
+                case AbilityKind.Undo: return "Ctrl Z로 최근 의미 턴 2회의 상태를 시간 역행합니다.";
+                case AbilityKind.Search: return "조사할 대상 하나를 클릭한 뒤 Ctrl F를 실행하세요.";
+                case AbilityKind.SelectAll: return "Ctrl A로 주변 4칸의 모든 적을 광범위 공격합니다.";
                 case AbilityKind.Copy: return _copySourceCaptured
                     ? "Ctrl V 상태입니다. 복제본을 놓을 빈 타일을 고른 뒤 실행하세요."
                     : "Ctrl C 상태입니다. 복제할 대상을 먼저 고르세요.";
@@ -497,10 +572,14 @@ namespace KeyboardWanderer.Demo
         private bool CanSubmitCurrentSelection()
         {
             if (_ability == AbilityKind.Move) return _selectedCoord.HasValue;
-            if (_ability == AbilityKind.Undo || _ability == AbilityKind.Search || _ability == AbilityKind.SelectAll)
+            if (_ability == AbilityKind.Undo || _ability == AbilityKind.SelectAll)
                 return IsSkillEnabledForCurrentTarget(_ability);
+            if (_ability == AbilityKind.Copy)
+                return _selectedTarget.HasValue && _selectedCoord.HasValue &&
+                       IsSkillEnabledForCurrentTarget(_ability);
             if (_ability == AbilityKind.Connect)
-                return _selectedTarget.HasValue && _selectedSecondaryTarget.HasValue;
+                return _selectedTarget.HasValue && _selectedSecondaryTarget.HasValue &&
+                       IsSkillEnabledForCurrentTarget(_ability);
             return _selectedTarget.HasValue && IsSkillEnabledForCurrentTarget(_ability);
         }
 
@@ -517,25 +596,115 @@ namespace KeyboardWanderer.Demo
             if (focus < focusCost) return false;
             if (skill == AbilityKind.Undo)
             {
-                if (_serverOnline) return _serverRun != null && _serverRun.currentTurn > 0;
+                if (_serverOnline) return _serverRun != null && _serverRun.currentTurn >= 2;
                 RunState state = _service.CreateSnapshot();
-                return state.LastReversibleTurn != null && !state.LastReversibleTurn.IsConsumed &&
-                       state.LastReversibleTurn.SourceTurn == state.CurrentTurn;
+                int available = 0;
+                for (int i = state.ReversibleHistory.Count - 1; i >= 0 && available < 2; i--)
+                    if (!state.ReversibleHistory[i].IsConsumed) available++;
+                return available >= 2;
+            }
+            if (skill == AbilityKind.SelectAll)
+            {
+                if (!TryGetPlayerPosition(view, out GridCoord playerPosition)) return false;
+                if (_serverOnline && _serverRun?.entities != null)
+                {
+                    for (int i = 0; i < _serverRun.entities.Length; i++)
+                    {
+                        GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                        if (entity?.position == null || !string.Equals(entity.kind, "enemy", StringComparison.OrdinalIgnoreCase) ||
+                            entity.state == null || entity.state.hp <= 0 || entity.state.disabled ||
+                            entity.state.defeated || entity.state.fled)
+                            continue;
+                        var position = new GridCoord(entity.position.x, entity.position.y);
+                        if (playerPosition.ManhattanDistance(position) <= 4) return true;
+                    }
+                    return false;
+                }
+                for (int i = 0; i < view.Entities.Count; i++)
+                    if (view.Entities[i].IsHostile && view.Entities[i].Kind == EntityKind.Enemy &&
+                        view.Entities[i].Health > 0 && playerPosition.ManhattanDistance(view.Entities[i].Position) <= 4)
+                        return true;
+                return false;
             }
             if (!_selectedTarget.HasValue)
                 return true;
+            if (TryGetServerEntity(_selectedTarget, out GameApiClient.EntitySnapshot serverTarget))
+            {
+                bool isPlayer = string.Equals(serverTarget.id, _serverRun.playerEntityId, StringComparison.OrdinalIgnoreCase);
+                bool isEnemy = string.Equals(serverTarget.kind, "enemy", StringComparison.OrdinalIgnoreCase);
+                bool active = serverTarget.state == null ||
+                              (!serverTarget.state.disabled && !serverTarget.state.defeated && !serverTarget.state.fled);
+                if (skill == AbilityKind.Copy)
+                    return !isPlayer && !string.Equals(serverTarget.kind, "npc", StringComparison.OrdinalIgnoreCase) &&
+                           serverTarget.cloneable && !serverTarget.@protected && serverTarget.position != null &&
+                           TryGetPlayerPosition(view, out GridCoord copyPosition) &&
+                           copyPosition.ManhattanDistance(new GridCoord(serverTarget.position.x, serverTarget.position.y)) <= 4 &&
+                           (!_selectedCoord.HasValue || copyPosition.ManhattanDistance(_selectedCoord.Value) <= 4);
+                if (skill == AbilityKind.Delete)
+                    return isEnemy && active && (serverTarget.state == null || serverTarget.state.hp > 0) &&
+                           serverTarget.position != null && TryGetPlayerPosition(view, out GridCoord deletePosition) &&
+                           deletePosition.ManhattanDistance(new GridCoord(serverTarget.position.x, serverTarget.position.y)) <= 3;
+                if (skill == AbilityKind.Search)
+                    return serverTarget.position != null && TryGetPlayerPosition(view, out GridCoord searchPosition) &&
+                           searchPosition.ManhattanDistance(new GridCoord(serverTarget.position.x, serverTarget.position.y)) <= 6;
+                if (skill == AbilityKind.Connect)
+                {
+                    if (isEnemy || serverTarget.position == null) return false;
+                    if (!_selectedSecondaryTarget.HasValue) return true;
+                    if (!TryGetServerEntity(_selectedSecondaryTarget, out GameApiClient.EntitySnapshot serverSecondary) ||
+                        serverSecondary.position == null || string.Equals(serverSecondary.kind, "enemy", StringComparison.OrdinalIgnoreCase))
+                        return false;
+                    var firstPosition = new GridCoord(serverTarget.position.x, serverTarget.position.y);
+                    var secondPosition = new GridCoord(serverSecondary.position.x, serverSecondary.position.y);
+                    return TryGetPlayerPosition(view, out GridCoord connectPosition) &&
+                           (connectPosition.ManhattanDistance(firstPosition) <= 4 ||
+                            connectPosition.ManhattanDistance(secondPosition) <= 4) &&
+                           firstPosition.ManhattanDistance(secondPosition) <= 12;
+                }
+                if (skill == AbilityKind.Restore)
+                    return serverTarget.position != null && TryGetPlayerPosition(view, out GridCoord restorePosition) &&
+                           restorePosition.ManhattanDistance(new GridCoord(serverTarget.position.x, serverTarget.position.y)) <= 4 &&
+                           (_lastRestorableTarget == _selectedTarget ||
+                            (serverTarget.assetId ?? string.Empty).StartsWith("story.admin-access", StringComparison.Ordinal));
+                if (skill == AbilityKind.Interact)
+                    return !isEnemy && !isPlayer && serverTarget.position != null &&
+                           (string.Equals(serverTarget.kind, "prop", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(serverTarget.kind, "npc", StringComparison.OrdinalIgnoreCase)) &&
+                           TryGetPlayerPosition(view, out GridCoord interactPosition) &&
+                           interactPosition.ManhattanDistance(new GridCoord(serverTarget.position.x, serverTarget.position.y)) <= 2;
+            }
             for (int i = 0; i < view.Entities.Count; i++)
             {
                 EntityView target = view.Entities[i];
                 if (target.EntityId != _selectedTarget.Value) continue;
                 if (skill == AbilityKind.Copy)
-                    return target.Kind != EntityKind.Player && target.Kind != EntityKind.Npc;
+                    return target.Kind != EntityKind.Player && target.Kind != EntityKind.Npc &&
+                           target.IsCloneable && !target.IsProtected &&
+                           TryGetPlayerPosition(view, out GridCoord copyPosition) &&
+                           copyPosition.ManhattanDistance(target.Position) <= 4 &&
+                           (!_selectedCoord.HasValue || copyPosition.ManhattanDistance(_selectedCoord.Value) <= 4);
                 if (skill == AbilityKind.Delete)
-                    return !target.IsProtected && target.Kind != EntityKind.Player && target.Kind != EntityKind.Npc;
-                if (skill == AbilityKind.Connect) return !target.IsHostile;
+                    return target.Kind == EntityKind.Enemy && target.IsHostile && target.Health > 0 &&
+                           TryGetPlayerPosition(view, out GridCoord deletePosition) &&
+                           deletePosition.ManhattanDistance(target.Position) <= 3;
+                if (skill == AbilityKind.Search)
+                    return TryGetPlayerPosition(view, out GridCoord searchPosition) &&
+                           searchPosition.ManhattanDistance(target.Position) <= 6;
+                if (skill == AbilityKind.Connect)
+                {
+                    if (target.IsHostile) return false;
+                    EntityView secondary = SelectedEntity(view, _selectedSecondaryTarget);
+                    if (secondary == null) return true;
+                    return !secondary.IsHostile && TryGetPlayerPosition(view, out GridCoord connectPosition) &&
+                           (connectPosition.ManhattanDistance(target.Position) <= 4 ||
+                            connectPosition.ManhattanDistance(secondary.Position) <= 4) &&
+                           target.Position.ManhattanDistance(secondary.Position) <= 12;
+                }
                 if (skill == AbilityKind.Restore)
-                    return _lastRestorableTarget == target.EntityId ||
-                           target.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal);
+                    return TryGetPlayerPosition(view, out GridCoord restorePosition) &&
+                           restorePosition.ManhattanDistance(target.Position) <= 4 &&
+                           (_lastRestorableTarget == target.EntityId ||
+                            target.AssetId.StartsWith("story.admin-access", StringComparison.Ordinal));
                 if (skill == AbilityKind.Interact)
                 {
                     if ((target.Kind != EntityKind.Prop && target.Kind != EntityKind.Npc) || target.IsHostile)
@@ -545,6 +714,104 @@ namespace KeyboardWanderer.Demo
                 }
             }
             return true;
+        }
+
+        private string SelectionStatusDetail(RunView view)
+        {
+            int focus = _serverOnline && _serverRun != null ? _serverRun.focus : view.Focus;
+            int cost = _ability == AbilityKind.Copy || _ability == AbilityKind.Delete || _ability == AbilityKind.Search ? 1
+                : _ability == AbilityKind.Connect || _ability == AbilityKind.Restore ? 2
+                : _ability == AbilityKind.Undo || _ability == AbilityKind.SelectAll ? 3 : 0;
+            if (focus < cost) return "사용 불가 · 포커스 " + cost + " 필요 (현재 " + focus + ")";
+            if (_ability == AbilityKind.Undo)
+                return IsSkillEnabledForCurrentTarget(_ability)
+                    ? "직전 의미 턴 2개를 역순으로 복구합니다.\n" + SelectionExecutionSummary()
+                    : "사용 불가 · 되돌릴 수 있는 의미 턴이 2개 필요합니다.";
+            if (_ability == AbilityKind.SelectAll)
+                return IsSkillEnabledForCurrentTarget(_ability)
+                    ? "사용 가능 · 반경 4칸의 모든 적에게 피해 3\n" + SelectionExecutionSummary()
+                    : "사용 불가 · 반경 4칸 안에 적이 없습니다.";
+            if (_ability == AbilityKind.Move)
+                return _selectedCoord.HasValue
+                    ? "목적지 " + _selectedCoord.Value + "\n" + SelectionExecutionSummary()
+                    : "지도에서 이동할 빈 타일을 선택하세요.";
+
+            EntityView target = SelectedEntity(view, _selectedTarget);
+            if (target == null && TryGetServerEntity(_selectedTarget, out GameApiClient.EntitySnapshot serverTarget))
+                return ServerSelectionStatusDetail(view, serverTarget);
+            if (target == null)
+                return _ability == AbilityKind.Connect ? "첫 번째와 두 번째 대상을 차례로 선택하세요."
+                    : _ability == AbilityKind.Copy ? "복제할 오브젝트를 선택하세요. 조사 효과는 없습니다."
+                    : _ability == AbilityKind.Search ? "조사할 대상 하나를 선택하세요."
+                    : _ability == AbilityKind.Delete ? "공격할 적 하나를 선택하세요."
+                    : "대상을 선택하세요.";
+
+            int distance = TryGetPlayerPosition(view, out GridCoord playerPosition)
+                ? playerPosition.ManhattanDistance(target.Position) : -1;
+            string targetLine = target.DisplayName + " · " + target.Kind +
+                                (target.MaxHealth > 0 ? " · HP " + target.Health + "/" + target.MaxHealth : string.Empty) +
+                                (distance >= 0 ? " · 거리 " + distance : string.Empty);
+            if (_ability == AbilityKind.Connect && _selectedSecondaryTarget.HasValue)
+                targetLine += "\n연결 대상 · " + DisplayEntityName(view, _selectedSecondaryTarget.Value);
+            if (!IsSkillEnabledForCurrentTarget(_ability)) return "사용 불가 · " + targetLine;
+            if (_ability == AbilityKind.Copy && !_selectedCoord.HasValue)
+                return targetLine + "\n원본은 유지됩니다. 복제본을 놓을 빈 타일을 선택하세요.";
+            if (_ability == AbilityKind.Connect && !_selectedSecondaryTarget.HasValue)
+                return targetLine + "\n두 번째 연결 대상을 선택하세요.";
+            return "선택됨 · " + targetLine + "\n" + SelectionExecutionSummary();
+        }
+
+        private string ObjectiveSelectionContext(RunView view, GameApiClient.EntitySnapshot selected)
+        {
+            if (_ability != AbilityKind.Search || selected == null ||
+                !TryGetServerObjectiveTarget(view, out GameApiClient.EntitySnapshot objective, out _))
+                return string.Empty;
+            if (string.Equals(selected.id, objective.id, StringComparison.OrdinalIgnoreCase))
+                return "\n현재 이야기 목표";
+            return "\n조사 가능 · 현재 이야기 목표는 " +
+                   FirstNonEmpty(objective.name, objective.assetId, "표시된 대상") + "입니다.";
+        }
+
+        private string ServerSelectionStatusDetail(RunView view, GameApiClient.EntitySnapshot target)
+        {
+            int distance = target.position != null && TryGetPlayerPosition(view, out GridCoord playerPosition)
+                ? playerPosition.ManhattanDistance(new GridCoord(target.position.x, target.position.y)) : -1;
+            int health = target.state?.hp ?? 0;
+            int maxHealth = target.state?.maxHp ?? 0;
+            string kind = string.Equals(target.kind, "npc", StringComparison.OrdinalIgnoreCase) ? "NPC"
+                : string.Equals(target.kind, "enemy", StringComparison.OrdinalIgnoreCase) ? "적"
+                : string.Equals(target.kind, "prop", StringComparison.OrdinalIgnoreCase) ? "오브젝트"
+                : string.IsNullOrWhiteSpace(target.kind) ? "대상" : target.kind;
+            string targetLine = FirstNonEmpty(target.name, target.assetId, "이름 없는 대상") + " · " + kind +
+                                (maxHealth > 0 ? " · HP " + health + "/" + maxHealth : string.Empty) +
+                                (distance >= 0 ? " · 거리 " + distance : string.Empty);
+            if (_ability == AbilityKind.Connect && _selectedSecondaryTarget.HasValue)
+                targetLine += "\n연결 대상 · " + DisplayEntityName(view, _selectedSecondaryTarget.Value);
+            if (!IsSkillEnabledForCurrentTarget(_ability)) return "사용 불가 · " + targetLine;
+            if (_ability == AbilityKind.Copy && !_selectedCoord.HasValue)
+                return targetLine + "\n원본은 유지됩니다. 복제본을 놓을 빈 타일을 선택하세요.";
+            if (_ability == AbilityKind.Connect && !_selectedSecondaryTarget.HasValue)
+                return targetLine + "\n두 번째 연결 대상을 선택하세요.";
+            string objectiveContext = ObjectiveSelectionContext(view, target);
+            return "선택됨 · " + targetLine + objectiveContext + "\n" + SelectionExecutionSummary();
+        }
+
+        private string SelectionExecutionSummary()
+        {
+            if (_ability == AbilityKind.Move)
+                return "실행 · 의미 턴 소비 없음 · 이동 중 사건 발생 가능";
+            string risk = _ability == AbilityKind.Delete || _ability == AbilityKind.Undo
+                ? "높은 위험"
+                : _ability == AbilityKind.Connect ? "관계 변화 가능" : "판정 결과 적용";
+            return "실행 · 의미 턴 1 + D20 · " + risk;
+        }
+
+        private static EntityView SelectedEntity(RunView view, Guid? entityId)
+        {
+            if (view == null || !entityId.HasValue) return null;
+            for (int i = 0; i < view.Entities.Count; i++)
+                if (view.Entities[i].EntityId == entityId.Value) return view.Entities[i];
+            return null;
         }
 
         private void ConfigureInput()
@@ -708,6 +975,12 @@ namespace KeyboardWanderer.Demo
             if (_service == null) return;
             var coordinates = new List<GridCoord>();
             var labels = new List<string>();
+            if (TryGetServerObjectiveTarget(_service.CurrentView,
+                    out GameApiClient.EntitySnapshot objectiveTarget, out GridCoord objectiveCoord))
+            {
+                coordinates.Add(objectiveCoord);
+                labels.Add("현재 목표 · " + objectiveTarget.name);
+            }
             GameApiClient.PointSnapshot[] serverPoints = _serverOnline
                 ? (_serverRun?.world?.points ?? _serverRun?.world?.pois)
                 : null;
@@ -720,6 +993,7 @@ namespace KeyboardWanderer.Demo
                         continue;
                     var coord = new GridCoord(point.x, point.y);
                     if (!ContainsWorldCoord(_service.CurrentView, coord)) continue;
+                    if (coordinates.Contains(coord)) continue;
                     coordinates.Add(coord);
                     labels.Add(FirstNonEmpty(point.nameKo, point.name, point.id, "POI"));
                 }
@@ -761,6 +1035,16 @@ namespace KeyboardWanderer.Demo
             RunView view = _service.CurrentView;
             if (!RunIsPlaying(view))
                 return;
+            if (!CanSubmitCurrentSelection())
+            {
+                _lastOutcome = "SELECTION REQUIRED";
+                _lastAttempt = NarrativeSelectionHint();
+                _lastExplanation = "목적지 또는 유효한 대상을 선택하기 전에는 턴을 소비하지 않습니다.";
+                _lastNarrative = "먼저 지도에서 이동할 타일이나 스킬을 적용할 대상을 선택하세요.";
+                AddLog("실행 대기 · " + _lastAttempt);
+                PlaySfx(AssetClip("UiCancelSound"));
+                return;
+            }
 
             if (_serverOnline && _serverRun != null && _gameApi != null)
             {
@@ -783,7 +1067,7 @@ namespace KeyboardWanderer.Demo
             GridCoord? destination = abilityName == "Move" || abilityName == "Copy" || abilityName == "Connect"
                 ? _selectedCoord
                 : null;
-            Guid? target = abilityName == "Move" || abilityName == "Undo" || abilityName == "Search" || abilityName == "SelectAll" ? null : _selectedTarget;
+            Guid? target = abilityName == "Move" || abilityName == "Undo" || abilityName == "SelectAll" ? null : _selectedTarget;
             Guid? secondary = abilityName == "Connect" ? _selectedSecondaryTarget : null;
             TurnRequest request = _ability == AbilityKind.Move && destination.HasValue
                 ? TurnRequest.Move(Guid.NewGuid().ToString("N"), view.Version, destination.Value)
@@ -886,7 +1170,7 @@ namespace KeyboardWanderer.Demo
                 ? new GameApiClient.PositionSnapshot { x = destinationCoord.Value.X, y = destinationCoord.Value.Y }
                 : null;
             var targetIds = new List<string>();
-            if (_ability != AbilityKind.Undo && _ability != AbilityKind.Search && _ability != AbilityKind.SelectAll && _selectedTarget.HasValue)
+            if (_ability != AbilityKind.Undo && _ability != AbilityKind.SelectAll && _selectedTarget.HasValue)
                 targetIds.Add(_selectedTarget.Value.ToString());
             if (_ability == AbilityKind.Connect && _selectedSecondaryTarget.HasValue)
                 targetIds.Add(_selectedSecondaryTarget.Value.ToString());
@@ -1014,8 +1298,7 @@ namespace KeyboardWanderer.Demo
             GameApiClient.NavigationSnapshot navigation = committed.Navigation;
             _serverRun = committed.Run;
             bool encounterOpened = (navigation != null && navigation.encounterOpened) ||
-                                   (_serverRun.activeEncounter != null &&
-                                    !string.Equals(_serverRun.activeEncounter.status, "resolved", StringComparison.OrdinalIgnoreCase));
+                                   IsOpenServerEncounter(_serverRun.activeEncounter);
             GameApiClient.PositionSnapshot encounterStaging = navigation?.encounter?.stagingPosition ??
                                                                 navigation?.stagingPosition ??
                                                                 navigation?.activeEncounter?.stagingPosition ??
@@ -1051,6 +1334,8 @@ namespace KeyboardWanderer.Demo
                 : encounterOpened
                     ? actorName + "는(은) 안전 구간 끝에서 " + EncounterReasonLabel(_encounterReason) + " 사건과 마주쳤다. 이제 배치·전투·조사·협상 중 하나로 해결해야 한다."
                     : actorName + "는(은) 이미 생성된 월드 안에서 안전 경로를 따라 이동했다. 사건이 시작되기 전까지 세계 지형은 바뀌지 않는다.";
+            _lastNarrativeFallbackUsed = navigation?.narrative == null || navigation.narrative.fallbackUsed;
+            _lastNarrativeModel = navigation?.narrative?.model ?? "deterministic";
             _lastStateChanges = navigation?.events != null && navigation.events.Length > 0
                 ? StateChangeSummary(navigation.events)
                 : encounterOpened
@@ -1222,9 +1507,15 @@ namespace KeyboardWanderer.Demo
         private void StartRun(LocalTurnService service, bool resumed)
         {
             _runGeneration++;
-            StopAllCoroutines();
+            if (_scenePlaybackCoroutine != null)
+            {
+                StopCoroutine(_scenePlaybackCoroutine);
+                _scenePlaybackCoroutine = null;
+            }
             _gmPending = false;
             _showPause = false;
+            _playerWalking = false;
+            _reopenDialogueAfterWalk = false;
             _service = service;
             _worldSeed = _service.CurrentView.WorldSeed;
             _sessionLog.Clear();
@@ -1241,6 +1532,10 @@ namespace KeyboardWanderer.Demo
             _lastActionContext = "--";
             _lastStateChanges = "아직 확정된 상태 변화가 없습니다.";
             _lastDialogue = Array.Empty<string>();
+            _lastNarrativeFallbackUsed = true;
+            _lastNarrativeModel = "deterministic";
+            _tutorialActive = PlayerPrefs.GetInt(TutorialCompletedKey, 0) == 0;
+            _tutorialPage = 0;
 
             if (resumed)
             {
@@ -1265,7 +1560,7 @@ namespace KeyboardWanderer.Demo
                 AddLog("고정 월드 1회 생성 완료 · seed " + _worldSeed + " · " + ShortHash(LayoutHash(_service.CurrentView)));
             }
 
-            _ability = AbilityKind.Move;
+            _ability = resumed ? AbilityKind.Move : FirstObjectiveAbility(_service.CurrentView);
             _selectedCoord = null;
             _selectedTarget = null;
             _selectedSecondaryTarget = null;
@@ -1287,6 +1582,20 @@ namespace KeyboardWanderer.Demo
             SetMusic(_assets != null ? _assets.VillageMusic ?? _assets.AdventureMusic : null);
             if (!_serverOnline)
                 LocalRunSaveService.Save(_service);
+        }
+
+        private static AbilityKind FirstObjectiveAbility(RunView view)
+        {
+            if (view != null)
+            {
+                for (int i = 0; i < view.RequiredBeats.Count; i++)
+                {
+                    CampaignBeatState beat = view.RequiredBeats[i];
+                    if (!beat.IsCompleted && !beat.IsSkipped)
+                        return beat.TriggerAbility;
+                }
+            }
+            return AbilityKind.Move;
         }
 
         private void ShowTitle()
@@ -1327,6 +1636,7 @@ namespace KeyboardWanderer.Demo
             // sole geometry authority; the local map remains only an offline continuity fallback.
             _worldRoot = authoredWorld.gameObject;
             _worldRoot.name = "Authored World · " + ShortHash(layoutHash);
+            _decorationBaseColors.Clear();
             authoredWorld.ResetRuntimeContent();
             Tilemap tilemap = authoredWorld.TerrainTilemap;
             tilemap.transform.position = new Vector3(origin.x, origin.y, 0f);
@@ -1669,6 +1979,9 @@ namespace KeyboardWanderer.Demo
                 {
                     visual.Root.transform.position = Vector3.Lerp(visual.Root.transform.position, visual.TargetPosition, smoothing);
                 }
+                Vector2 mapOrigin = MapOrigin(_service.CurrentView);
+                int visualY = Mathf.FloorToInt((visual.Root.transform.position.y - mapOrigin.y) / TileSize);
+                visual.Renderer.sortingOrder = 500 - visualY * 4;
                 bool playerAction = visual.IsPlayer && Time.unscaledTime < _playerActionUntil;
                 Sprite[] frames = visual.IsPlayer && walkingThisFrame
                     ? DirectionalPlayerFrames(visual.Facing, false, visual.WalkFrames)
@@ -1751,7 +2064,7 @@ namespace KeyboardWanderer.Demo
                 return;
             visual.TargetPosition = visual.MovementPath.Dequeue();
             _playerWalking = true;
-            _reopenDialogueAfterWalk = true;
+            _reopenDialogueAfterWalk = !_authoredDialogueDismissed;
             _authoredDialogueDismissed = true;
             _sceneUi?.SetStoryVisible(false);
             _cameraInspectCoord = null;
@@ -2179,12 +2492,15 @@ namespace KeyboardWanderer.Demo
             if (_selectedCoord.HasValue)
             {
                 _selectionRenderer.transform.position = WorldPosition(MapOrigin(view), _selectedCoord.Value);
+                // Keep the authored tile cursor behind actors. The cursor is deliberately a little
+                // larger than one cell, so only its perimeter remains visible around a selected entity.
+                _selectionRenderer.sortingOrder = 499 - _selectedCoord.Value.Y * 4;
                 _selectionRenderer.color = _ability == AbilityKind.Delete
-                    ? new Color(1f, 0.12f, 0.08f, 0.76f)
+                    ? new Color(1f, 0.12f, 0.08f, 0.58f)
                     : _ability == AbilityKind.Restore
-                        ? new Color(0.2f, 0.95f, 1f, 0.68f)
-                        : new Color(1f, 0.85f, 0.25f, 0.62f);
-                ScaleSprite(_selectionRenderer.transform, _selectionRenderer.sprite, 1.2f);
+                        ? new Color(0.2f, 0.95f, 1f, 0.54f)
+                        : new Color(1f, 0.85f, 0.25f, 0.48f);
+                ScaleSprite(_selectionRenderer.transform, _selectionRenderer.sprite, 1.28f);
             }
         }
 
@@ -2570,8 +2886,11 @@ namespace KeyboardWanderer.Demo
             int width = useServerWorld ? serverWorld.width : view.Region.Width;
             int height = useServerWorld ? serverWorld.height : view.Region.Height;
             string layoutHash = useServerWorld ? serverWorld.layoutHash : view.Region.LayoutHash;
+            bool hasObjective = TryGetServerObjectiveTarget(view, out GameApiClient.EntitySnapshot objectiveTarget,
+                out GridCoord objectiveCoord);
             string signature = layoutHash + ":" + player.X + ":" + player.Y + ":" +
-                               (_selectedCoord.HasValue ? _selectedCoord.Value.ToString() : "none");
+                               (_selectedCoord.HasValue ? _selectedCoord.Value.ToString() : "none") + ":" +
+                               (hasObjective ? objectiveTarget.id + "@" + objectiveCoord : "no-objective");
             if (!string.Equals(_minimapSignature, signature, StringComparison.Ordinal))
             {
                 _minimapSignature = signature;
@@ -2627,12 +2946,18 @@ namespace KeyboardWanderer.Demo
                 if (_selectedCoord.HasValue)
                     PaintMinimapMarker(_selectedCoord.Value.X, _selectedCoord.Value.Y, width, height,
                         new Color(1f, 0.86f, 0.2f), 2);
+                if (hasObjective)
+                    PaintMinimapMarker(objectiveCoord.X, objectiveCoord.Y, width, height,
+                        new Color(1f, 0.2f, 0.62f), 2);
                 PaintMinimapMarker(player.X, player.Y, width, height, new Color(0.2f, 0.95f, 1f), 2);
                 _minimapTexture.Apply(false, false);
             }
 
             string status = "턴 " + CurrentTurn(view) + " · 나 " + player;
-            if (_selectedCoord.HasValue) status += " · 목표 " + _selectedCoord.Value;
+            if (hasObjective)
+                status += " · " + objectiveTarget.name + " " + DirectionLabel(player, objectiveCoord) + " " +
+                          player.ManhattanDistance(objectiveCoord) + "칸";
+            else if (_selectedCoord.HasValue) status += " · 선택 " + _selectedCoord.Value;
             _sceneUi.SetMinimap(_minimapSprite, status);
         }
 
@@ -2767,6 +3092,7 @@ namespace KeyboardWanderer.Demo
                     TileKind tileKind = WorldTileKind(view, coord, useServerWorld);
                     if (routeTiles.Contains(coord) || !SupportsDecorationTerrain(biomeId, tileKind) ||
                         IsNearWorldPoint(view, coord, useServerWorld, 4) ||
+                        IsNearEntity(view, coord, useServerWorld, 2) ||
                         StableVisualHash(layoutHash, x, y, 17) % 100 >= DecorationDensity(biomeId))
                         continue;
                     float scale = 0.62f + (StableVisualHash(layoutHash, x, y, 31) % 44) / 100f;
@@ -2854,7 +3180,8 @@ namespace KeyboardWanderer.Demo
                         if (coord.X < 2 || coord.Y < 2 || coord.X >= width - 2 || coord.Y >= height - 2 ||
                             !string.Equals(BiomeIdAt(view, coord), biomeId, StringComparison.OrdinalIgnoreCase) ||
                             !SupportsDecorationTerrain(biomeId, WorldTileKind(view, coord, useServerWorld)) ||
-                            IsNearWorldPoint(view, coord, useServerWorld, 4))
+                            IsNearWorldPoint(view, coord, useServerWorld, 4) ||
+                            IsNearEntity(view, coord, useServerWorld, 2))
                             continue;
                         result = coord;
                         return true;
@@ -2892,6 +3219,24 @@ namespace KeyboardWanderer.Demo
             return false;
         }
 
+        private bool IsNearEntity(RunView view, GridCoord coord, bool useServerWorld, int clearance)
+        {
+            if (useServerWorld && _serverRun?.entities != null)
+            {
+                for (int i = 0; i < _serverRun.entities.Length; i++)
+                {
+                    GameApiClient.PositionSnapshot position = _serverRun.entities[i]?.position;
+                    if (position != null && Math.Abs(coord.X - position.x) + Math.Abs(coord.Y - position.y) <= clearance)
+                        return true;
+                }
+                return false;
+            }
+            for (int i = 0; i < view.Entities.Count; i++)
+                if (coord.ManhattanDistance(view.Entities[i].Position) <= clearance)
+                    return true;
+            return false;
+        }
+
         private void CreateDecoration(string prefix, Sprite sprite, GridCoord coord, Vector2 origin, Color tint,
             float scale)
         {
@@ -2902,8 +3247,30 @@ namespace KeyboardWanderer.Demo
             var renderer = decoration.AddComponent<SpriteRenderer>();
             renderer.sprite = sprite;
             renderer.color = tint;
-            renderer.sortingOrder = 20;
+            renderer.sortingOrder = 499 - coord.Y * 4;
             decoration.transform.localScale = Vector3.one * scale;
+            _decorationBaseColors[renderer] = tint;
+        }
+
+        private void UpdateDecorationOcclusion()
+        {
+            if (_service == null || !TryGetPlayerVisual(_service.CurrentView, out EntityVisual player) ||
+                player.Renderer == null)
+                return;
+            Vector2 playerPosition = player.Root.transform.position;
+            float blend = 1f - Mathf.Exp(-12f * Time.unscaledDeltaTime);
+            foreach (KeyValuePair<SpriteRenderer, Color> pair in _decorationBaseColors)
+            {
+                SpriteRenderer renderer = pair.Key;
+                if (renderer == null) continue;
+                Bounds bounds = renderer.bounds;
+                float clearance = Mathf.Max(bounds.extents.x, bounds.extents.y) + 0.75f;
+                bool coversPlayer = renderer.sortingOrder >= player.Renderer.sortingOrder &&
+                                    Vector2.Distance(renderer.transform.position, playerPosition) <= clearance;
+                Color target = pair.Value;
+                if (coversPlayer) target.a = Mathf.Min(target.a, 0.16f);
+                renderer.color = Color.Lerp(renderer.color, target, blend);
+            }
         }
 
         private Sprite DecorationSpriteForBiome(string biomeId, int variantHash)
@@ -3400,22 +3767,165 @@ namespace KeyboardWanderer.Demo
         private AbilityKind[] RecommendedActions(RunView view)
         {
             var values = new List<AbilityKind>();
-            if (!_encounterMoveRequired) values.Add(AbilityKind.Move);
-            AbilityKind objectiveSkill = AbilityKind.Copy;
-            for (int i = 0; i < view.RequiredBeats.Count; i++)
+            AbilityKind objectiveSkill;
+            if (!TryGetServerObjectiveAbility(out objectiveSkill))
             {
-                CampaignBeatState beat = view.RequiredBeats[i];
-                if (!beat.IsCompleted && !beat.IsSkipped)
+                objectiveSkill = AbilityKind.Copy;
+                for (int i = 0; i < view.RequiredBeats.Count; i++)
                 {
-                    objectiveSkill = beat.TriggerAbility;
-                    break;
+                    CampaignBeatState beat = view.RequiredBeats[i];
+                    if (!beat.IsCompleted && !beat.IsSkipped)
+                    {
+                        objectiveSkill = beat.TriggerAbility;
+                        break;
+                    }
                 }
             }
-            if (objectiveSkill != AbilityKind.Move && !values.Contains(objectiveSkill)) values.Add(objectiveSkill);
+            bool objectiveOutOfRange = TryGetServerObjectiveTarget(view, out _, out GridCoord objectiveCoord) &&
+                                       TryGetPlayerPosition(view, out GridCoord playerCoord) &&
+                                       playerCoord.ManhattanDistance(objectiveCoord) > ObjectiveAbilityRange(objectiveSkill);
+            if (!_encounterMoveRequired && objectiveOutOfRange && !values.Contains(AbilityKind.Move))
+                values.Add(AbilityKind.Move);
+            if (!values.Contains(objectiveSkill)) values.Add(objectiveSkill);
+            if (!_encounterMoveRequired && !values.Contains(AbilityKind.Move)) values.Add(AbilityKind.Move);
             AbilityKind contextual = _encounterMoveRequired ? AbilityKind.Delete : AbilityKind.Connect;
             if (!values.Contains(contextual)) values.Add(contextual);
             if (values.Count < 2) values.Add(AbilityKind.Restore);
             return values.ToArray();
+        }
+
+        private bool TryGetServerObjectiveAbility(out AbilityKind ability)
+        {
+            ability = AbilityKind.Copy;
+            if (!_serverOnline || string.IsNullOrWhiteSpace(_serverRun?.currentStoryBeat?.requiredAbility))
+                return false;
+            if (!Enum.TryParse(_serverRun.currentStoryBeat.requiredAbility, true, out ability))
+                return false;
+            return ability == AbilityKind.Move || TurnRequest.IsPublicKeyboardSkill(ability);
+        }
+
+        private string ObjectiveHudText(RunView view)
+        {
+            AbilityKind[] recommendations = RecommendedActions(view);
+            string[] labels = new string[recommendations.Length];
+            for (int i = 0; i < recommendations.Length; i++)
+                labels[i] = AbilityPlayerLabel(recommendations[i]);
+            string objective = StoryBeatObjective(view);
+            if (TryGetServerObjectiveTarget(view, out GameApiClient.EntitySnapshot target, out GridCoord targetCoord) &&
+                TryGetPlayerPosition(view, out GridCoord player))
+            {
+                int distance = player.ManhattanDistance(targetCoord);
+                AbilityKind ability = AbilityFromServerName(_serverRun.currentStoryBeat.requiredAbility);
+                objective = ObjectiveActionText(target.name, ability) + "\n위치  " +
+                            DirectionLabel(player, targetCoord) + " " + distance + "칸 · 미니맵 분홍 표식";
+            }
+            return objective + "\n추천  " + string.Join(" → ", labels) +
+                   "\n진행  권한 " + AdminAccessLevel(view) + "/3 · 의미 턴 " +
+                   CurrentTurn(view) + "/" + TurnLimit(view);
+        }
+
+        private string ActionGuidanceText(RunView view)
+        {
+            if (CanSubmitCurrentSelection())
+                return ExecutionPreview(view);
+            string route = string.Empty;
+            if (TryGetServerObjectiveTarget(view, out GameApiClient.EntitySnapshot target, out GridCoord targetCoord) &&
+                TryGetPlayerPosition(view, out GridCoord player))
+            {
+                AbilityKind ability = AbilityFromServerName(_serverRun.currentStoryBeat.requiredAbility);
+                int distance = player.ManhattanDistance(targetCoord);
+                if (distance > ObjectiveAbilityRange(ability))
+                    route = "현재 목표 " + target.name + " · " + DirectionLabel(player, targetCoord) + " " + distance + "칸\n";
+            }
+            return route + NarrativeSelectionHint() +
+                   "\nMOVE는 턴을 쓰지 않고, 키보드 기술은 D20과 의미 턴 1회를 사용합니다.";
+        }
+
+        private bool TryGetServerObjectiveTarget(RunView view, out GameApiClient.EntitySnapshot target,
+            out GridCoord targetCoord)
+        {
+            target = null;
+            targetCoord = default;
+            GameApiClient.StoryBeatSnapshot beat = _serverOnline ? _serverRun?.currentStoryBeat : null;
+            if (beat == null || _serverRun?.entities == null)
+                return false;
+            TryGetPlayerPosition(view, out GridCoord player);
+            int bestDistance = int.MaxValue;
+            for (int i = 0; i < _serverRun.entities.Length; i++)
+            {
+                GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                if (entity?.position == null || entity.state == null)
+                    continue;
+                bool evidenceMatches = !string.IsNullOrWhiteSpace(beat.requiredEvidenceKey) &&
+                                       string.Equals(entity.state.evidenceKey, beat.requiredEvidenceKey,
+                                           StringComparison.OrdinalIgnoreCase);
+                bool roleMatches = string.IsNullOrWhiteSpace(beat.requiredEvidenceKey) &&
+                                   !string.IsNullOrWhiteSpace(beat.requiredCampaignRole) &&
+                                   string.Equals(entity.state.campaignRole, beat.requiredCampaignRole,
+                                       StringComparison.OrdinalIgnoreCase);
+                if (!evidenceMatches && !roleMatches)
+                    continue;
+                var coord = new GridCoord(entity.position.x, entity.position.y);
+                int distance = player.ManhattanDistance(coord);
+                if (target != null && distance >= bestDistance)
+                    continue;
+                target = entity;
+                targetCoord = coord;
+                bestDistance = distance;
+            }
+            return target != null;
+        }
+
+        private static int ObjectiveAbilityRange(AbilityKind ability)
+        {
+            switch (ability)
+            {
+                case AbilityKind.Search: return 6;
+                case AbilityKind.Delete: return 3;
+                case AbilityKind.Copy:
+                case AbilityKind.Connect:
+                case AbilityKind.Restore: return 4;
+                default: return 0;
+            }
+        }
+
+        private static string ObjectiveActionText(string targetName, AbilityKind ability)
+        {
+            switch (ability)
+            {
+                case AbilityKind.Search: return WithObjectParticle(targetName) + " 찾아 Ctrl F로 조사하세요.";
+                case AbilityKind.Delete: return WithObjectParticle(targetName) + " 찾아 Delete로 공격하세요.";
+                case AbilityKind.Copy: return WithObjectParticle(targetName) + " 찾아 Ctrl C로 복제하세요.";
+                case AbilityKind.Connect: return targetName + "와 연결할 대상을 찾아 Ctrl K로 연결하세요.";
+                case AbilityKind.Restore: return WithObjectParticle(targetName) + " Ctrl R로 복구하세요.";
+                default: return targetName + "에게 이동하세요.";
+            }
+        }
+
+        private static string DirectionLabel(GridCoord from, GridCoord to)
+        {
+            int dx = to.X - from.X;
+            int dy = to.Y - from.Y;
+            string vertical = dy > 0 ? "북" : dy < 0 ? "남" : string.Empty;
+            string horizontal = dx > 0 ? "동" : dx < 0 ? "서" : string.Empty;
+            string direction = vertical + horizontal;
+            return string.IsNullOrEmpty(direction) ? "현재 위치" : direction + "쪽";
+        }
+
+        private static string AbilityPlayerLabel(AbilityKind ability)
+        {
+            switch (ability)
+            {
+                case AbilityKind.Move: return "W 이동";
+                case AbilityKind.Copy: return "Ctrl C 복제";
+                case AbilityKind.Delete: return "Delete 단일 공격";
+                case AbilityKind.Connect: return "Ctrl K 연결";
+                case AbilityKind.Restore: return "Ctrl R 복구";
+                case AbilityKind.Undo: return "Ctrl Z 2턴 역행";
+                case AbilityKind.Search: return "Ctrl F 조사";
+                case AbilityKind.SelectAll: return "Ctrl A 범위 공격";
+                default: return ability.ToString();
+            }
         }
 
         private string ExecutionPreview(RunView view)
@@ -3440,22 +3950,29 @@ namespace KeyboardWanderer.Demo
         private string ContextPreview(AbilityKind ability, RunView view)
         {
             if (ability == AbilityKind.Move) return "안전 이동";
-            if (ability == AbilityKind.Copy) return "조사";
+            if (ability == AbilityKind.Copy) return "배치";
+            if (ability == AbilityKind.Search) return "조사";
             if (ability == AbilityKind.Interact)
             {
                 if (_selectedTarget.HasValue)
                 {
+                    if (TryGetServerEntity(_selectedTarget, out GameApiClient.EntitySnapshot serverEntity) &&
+                        string.Equals(serverEntity.kind, "npc", StringComparison.OrdinalIgnoreCase))
+                        return "협상";
                     for (int i = 0; i < view.Entities.Count; i++)
                         if (view.Entities[i].EntityId == _selectedTarget.Value && view.Entities[i].Kind == EntityKind.Npc)
                             return "협상";
                 }
                 return "조사";
             }
-            if (ability == AbilityKind.Delete) return "전투/배치";
+            if (ability == AbilityKind.Delete || ability == AbilityKind.SelectAll) return "전투";
             if (ability == AbilityKind.Connect)
             {
                 if (_selectedTarget.HasValue)
                 {
+                    if (TryGetServerEntity(_selectedTarget, out GameApiClient.EntitySnapshot serverEntity) &&
+                        string.Equals(serverEntity.kind, "npc", StringComparison.OrdinalIgnoreCase))
+                        return "협상";
                     for (int i = 0; i < view.Entities.Count; i++)
                         if (view.Entities[i].EntityId == _selectedTarget.Value && view.Entities[i].Kind == EntityKind.Npc)
                             return "협상";
@@ -3521,7 +4038,7 @@ namespace KeyboardWanderer.Demo
         private string SelectionHint(RunView view)
         {
             string ability = _ability.ToString();
-            if (ability == "Undo") return "직전 가역 턴을 보상 이벤트로 되돌립니다. 턴 번호와 맵은 되감지 않습니다.";
+            if (ability == "Undo") return "직전 의미 턴 2개의 기계 상태와 턴 카운터를 되돌립니다.";
             if (ability == "Move")
             {
                 if (_encounterMoveRequired)
@@ -3749,6 +4266,22 @@ namespace KeyboardWanderer.Demo
                 }
             }
             return EntityName(view, id);
+        }
+
+        private bool TryGetServerEntity(Guid? id, out GameApiClient.EntitySnapshot result)
+        {
+            result = null;
+            if (!_serverOnline || !id.HasValue || _serverRun?.entities == null)
+                return false;
+            string key = id.Value.ToString();
+            for (int i = 0; i < _serverRun.entities.Length; i++)
+            {
+                GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                if (entity == null || !string.Equals(entity.id, key, StringComparison.OrdinalIgnoreCase)) continue;
+                result = entity;
+                return true;
+            }
+            return false;
         }
 
         private Guid? FindServerTarget(GridCoord coord, bool allowPlayer)
@@ -4190,27 +4723,32 @@ namespace KeyboardWanderer.Demo
                     if (modifier == null) continue;
                     _lastModifier += modifier.value;
                     if (modifierParts.Count < 3)
-                        modifierParts.Add((string.IsNullOrWhiteSpace(modifier.source) ? "modifier" : modifier.source) + " " + Signed(modifier.value));
+                        modifierParts.Add(ModifierSourceLabel(modifier.source) + " " + Signed(modifier.value));
                 }
             }
             if (modifierParts.Count == 0 && dice != null && dice.modifier != 0)
             {
                 _lastModifier = dice.modifier;
-                modifierParts.Add("server modifier " + Signed(dice.modifier));
+                modifierParts.Add("기본 수정치 " + Signed(dice.modifier));
             }
             _lastModifierBreakdown = modifierParts.Count == 0 ? "수정치 없음" : string.Join(", ", modifierParts);
             _lastDifficulty = dice?.difficulty ?? 0;
             _lastMechanicalScore = dice?.mechanicalScore ?? turn.mechanicalScore;
             _lastActionContext = ActionContextLabel(turn.actionContext);
             _lastOutcome = KoreanOutcome(turn.outcome);
-            _lastAttempt = string.IsNullOrWhiteSpace(turn.normalizedAttempt) ? "서버가 정규화한 시도 없음" : turn.normalizedAttempt;
+            _lastAttempt = PlayerFacingAttempt(turn);
             _lastExplanation = ExplainResultDifference(turn);
+            string serverNarrative = !string.IsNullOrWhiteSpace(turn.narrative?.body)
+                ? turn.narrative.body
+                : turn.narrative?.summary;
             _lastNarrative = !_gmEnabled
                 ? "생성형 장면·대사 표시가 꺼져 있습니다. 권위 규칙 이벤트와 세계 기억은 그대로 적용되었습니다."
-                : !string.IsNullOrWhiteSpace(turn.narrative?.body)
-                    ? turn.narrative.body
-                    : !string.IsNullOrWhiteSpace(turn.narrative?.summary) ? turn.narrative.summary : "규칙 결과가 상태에 반영되었습니다.";
+                : IsTechnicalNarrative(serverNarrative)
+                    ? PlayerFacingFallbackNarrative(turn)
+                    : serverNarrative.Trim();
             _lastDialogue = _gmEnabled ? turn.narrative?.dialogue ?? Array.Empty<string>() : Array.Empty<string>();
+            _lastNarrativeFallbackUsed = turn.narrative == null || turn.narrative.fallbackUsed;
+            _lastNarrativeModel = turn.narrative?.model ?? "deterministic";
             _playerActionUntil = Time.unscaledTime + 0.28f;
             AddLog("D20 " + _lastD20 + Signed(_lastModifier) + " vs " + _lastDifficulty + " · " + _lastOutcome);
             AddLog("실제 시도 · " + _lastAttempt);
@@ -4223,8 +4761,7 @@ namespace KeyboardWanderer.Demo
         private void SyncEncounterStateFromServer()
         {
             GameApiClient.ActiveEncounterSnapshot encounter = _serverRun?.activeEncounter;
-            bool open = encounter != null && !string.Equals(encounter.status, "resolved", StringComparison.OrdinalIgnoreCase) &&
-                        !string.Equals(encounter.status, "closed", StringComparison.OrdinalIgnoreCase);
+            bool open = IsOpenServerEncounter(encounter);
             _encounterMoveRequired = open;
             if (!open)
             {
@@ -4235,6 +4772,13 @@ namespace KeyboardWanderer.Demo
             _encounterReason = encounter.reason;
             GameApiClient.PositionSnapshot staging = encounter.stagingPosition ?? encounter.position;
             _encounterStagingCoord = staging == null ? (GridCoord?)null : new GridCoord(staging.x, staging.y);
+        }
+
+        private static bool IsOpenServerEncounter(GameApiClient.ActiveEncounterSnapshot encounter)
+        {
+            return encounter != null &&
+                   string.Equals(encounter.status, "active", StringComparison.OrdinalIgnoreCase) &&
+                   !string.IsNullOrWhiteSpace(encounter.id);
         }
 
         private void SyncLocalEncounterState(RunView view)
@@ -4402,22 +4946,131 @@ namespace KeyboardWanderer.Demo
 
         private string ExplainResultDifference(GameApiClient.TurnSnapshot turn)
         {
-            string cost = turn.consequenceBudget > 0 ? "합병증 예산 " + turn.consequenceBudget + "이 적용되었습니다." : "추가 합병증 예산은 없습니다.";
-            string normalized = string.IsNullOrWhiteSpace(turn.normalizedAttempt)
-                ? "서버가 별도의 실제 시도 문장을 반환하지 않았습니다."
-                : "서버가 선택된 스킬·대상·현재 위치와 장면 상태를 검증해 실제 시도를 확정했습니다.";
-            string serverExplanation = string.IsNullOrWhiteSpace(turn.dice?.outcomeExplanation)
-                ? string.Empty
-                : " 서버 결과 설명: " + turn.dice.outcomeExplanation.Trim();
-            return normalized + " 자연어 메모는 규칙 판정에 사용되지 않습니다. " + cost +
-                   " 문맥: " + _lastActionContext + " · 수정: " + _lastModifierBreakdown + "." + serverExplanation;
+            string roll = _lastD20 > 0
+                ? "D20 " + _lastD20 + " " + Signed(_lastModifier) + " / 난이도 " + _lastDifficulty
+                : "주사위 판정 없음";
+            string cost = turn.consequenceBudget > 0
+                ? " · 결과에 따른 합병증 " + turn.consequenceBudget
+                : string.Empty;
+            return "판정 · " + _lastActionContext + " · " + roll + " · " + _lastModifierBreakdown + cost;
         }
 
         private static string HumanizeServerEvent(GameApiClient.EventSnapshot value)
         {
             if (value == null) return string.Empty;
             if (!string.IsNullOrWhiteSpace(value.text)) return value.text;
-            return HumanizeEvent(value.type);
+            switch ((value.type ?? string.Empty).ToLowerInvariant())
+            {
+                case "entity_investigated": return "대상의 단서를 조사함";
+                case "search_completed": return "조사를 완료함";
+                case "resource_changed": return value.delta == 0 ? "자원을 사용함" : "자원 " + Signed(value.delta);
+                case "health_changed": return value.delta < 0 ? "대상에게 " + (-value.delta) + " 피해" : "체력 " + Signed(value.delta);
+                case "area_attack_resolved": return "주변 적 광범위 공격 완료";
+                case "turn_rewound": return "이전 턴의 변화를 되돌림";
+                case "time_rewind_completed": return "최근 2턴 시간 역행 완료";
+                case "turn_counter_rewound": return "턴 카운터를 2턴 되돌림";
+                case "entity_restored":
+                case "entity_state_restored": return "대상 상태 복구 완료";
+                case "entity_removed": return "대상 제거 완료";
+                case "turn_committed": return string.Empty;
+                default: return HumanizeEvent(value.type);
+            }
+        }
+
+        private string PlayerFacingAttempt(GameApiClient.TurnSnapshot turn)
+        {
+            string skill = AbilityPlayerLabel(AbilityFromServerName(TurnSkillId(turn)));
+            string firstId = TurnTargetId(turn, false);
+            string secondId = TurnTargetId(turn, true);
+            string first = string.IsNullOrWhiteSpace(firstId) ? string.Empty : ServerEntityDisplayName(firstId);
+            string second = string.IsNullOrWhiteSpace(secondId) ? string.Empty : ServerEntityDisplayName(secondId);
+            if (!string.IsNullOrWhiteSpace(first) && !string.IsNullOrWhiteSpace(second))
+                return first + "와(과) " + second + "에 " + skill + " 사용";
+            if (!string.IsNullOrWhiteSpace(first))
+                return first + "에 " + skill + " 사용";
+            return skill + " 사용";
+        }
+
+        private string PlayerFacingFallbackNarrative(GameApiClient.TurnSnapshot turn)
+        {
+            AbilityKind ability = AbilityFromServerName(TurnSkillId(turn));
+            string targetId = TurnTargetId(turn, false);
+            string target = !string.IsNullOrWhiteSpace(targetId)
+                ? ServerEntityDisplayName(targetId)
+                : "주변 상황";
+            string outcome = KoreanOutcome(turn?.outcome);
+            switch (ability)
+            {
+                case AbilityKind.Search:
+                    return "넙죽이는 " + WithObjectParticle(target) + " 자세히 조사했다. " + outcome +
+                           "으로 숨겨진 단서가 세계 기록에 남았다.";
+                case AbilityKind.Delete:
+                    return "넙죽이는 " + target + "에게 단일 공격을 가했다. 전투 판정은 " + outcome + "으로 끝났다.";
+                case AbilityKind.SelectAll:
+                    return "넙죽이는 주변의 적들을 한꺼번에 공격했다. 광범위 공격은 " + outcome + "으로 끝났다.";
+                case AbilityKind.Undo:
+                    return "넙죽이가 시간을 되감자 최근 두 턴의 변화가 차례로 사라졌다.";
+                case AbilityKind.Copy:
+                    return "넙죽이는 " + target + "의 복제본을 선택한 위치에 배치했다.";
+                case AbilityKind.Connect:
+                    return "넙죽이는 선택한 두 대상 사이에 새로운 연결을 만들었다.";
+                case AbilityKind.Restore:
+                    return "넙죽이는 " + target + "의 이전 상태를 복구했다.";
+                default:
+                    return "선택한 행동의 결과가 코드리아의 현재 상태에 반영되었다.";
+            }
+        }
+
+        private string ServerEntityDisplayName(string id)
+        {
+            GameApiClient.EntitySnapshot entity = FindServerEntity(_serverRun, id);
+            return FirstNonEmpty(entity?.name, entity?.assetId, "선택한 대상");
+        }
+
+        private static string TurnSkillId(GameApiClient.TurnSnapshot turn)
+        {
+            return FirstNonEmpty(turn?.skillId, turn?.request?.skillId, turn?.request?.ability);
+        }
+
+        private static string TurnTargetId(GameApiClient.TurnSnapshot turn, bool secondary)
+        {
+            if (secondary)
+                return FirstNonEmpty(turn?.targetIds != null && turn.targetIds.Length > 1 ? turn.targetIds[1] : null,
+                    turn?.request?.secondaryTargetEntityId);
+            return FirstNonEmpty(turn?.targetIds != null && turn.targetIds.Length > 0 ? turn.targetIds[0] : null,
+                turn?.request?.targetEntityId);
+        }
+
+        private static bool IsTechnicalNarrative(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return true;
+            string text = value.Trim();
+            return text.StartsWith("Stated goal:", StringComparison.OrdinalIgnoreCase) ||
+                   text.IndexOf("Server-authorized execution:", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("Intent fit:", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string ModifierSourceLabel(string source)
+        {
+            switch ((source ?? string.Empty).ToLowerInvariant())
+            {
+                case "keyboard_affinity": return "키보드 친화도";
+                case "focus": return "집중력";
+                case "admin_access": return "관리자 권한";
+                case "special_skill": return "특수 스킬";
+                case "encounter": return "사건 효과";
+                default: return string.IsNullOrWhiteSpace(source) ? "수정치" : source.Replace('_', ' ');
+            }
+        }
+
+        private static string WithObjectParticle(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "대상을";
+            string text = value.Trim();
+            char last = text[text.Length - 1];
+            if (last >= '\uAC00' && last <= '\uD7A3')
+                return text + ((last - '\uAC00') % 28 == 0 ? "를" : "을");
+            return text + "을(를)";
         }
 
         private static string EncounterReasonLabel(string reason)
@@ -4445,6 +5098,22 @@ namespace KeyboardWanderer.Demo
                 case AbilityKind.Search: return "search";
                 case AbilityKind.SelectAll: return "select_all";
                 default: return "move";
+            }
+        }
+
+        private static AbilityKind AbilityFromServerName(string value)
+        {
+            switch ((value ?? string.Empty).Trim().ToUpperInvariant())
+            {
+                case "COPY": return AbilityKind.Copy;
+                case "DELETE": return AbilityKind.Delete;
+                case "CONNECT": return AbilityKind.Connect;
+                case "RESTORE": return AbilityKind.Restore;
+                case "UNDO": return AbilityKind.Undo;
+                case "INTERACT": return AbilityKind.Interact;
+                case "SEARCH": return AbilityKind.Search;
+                case "SELECT_ALL": return AbilityKind.SelectAll;
+                default: return AbilityKind.Move;
             }
         }
 
