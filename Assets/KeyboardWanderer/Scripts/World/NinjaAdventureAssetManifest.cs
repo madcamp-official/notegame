@@ -15,7 +15,7 @@ namespace KeyboardWanderer.Demo
     public sealed class NinjaAdventureAssetManifest : ScriptableObject
     {
         [HideInInspector]
-        public int BuilderVersion;
+        public string BuilderSourceHash;
 
         [Header("Tile atlas")]
         public Texture2D InteriorFloorAtlas;

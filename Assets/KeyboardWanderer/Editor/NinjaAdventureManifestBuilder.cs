@@ -1,4 +1,6 @@
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using KeyboardWanderer.Demo;
 using UnityEditor;
 using UnityEngine;
@@ -8,7 +10,7 @@ namespace KeyboardWanderer.Editor
     public static class NinjaAdventureManifestBuilder
     {
         private const string ManifestPath = "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset";
-        private const int CurrentManifestVersion = 4;
+        private const string BuilderScriptPath = "Assets/KeyboardWanderer/Editor/NinjaAdventureManifestBuilder.cs";
         private const string NeopjukiAtlasPath =
             "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
 
@@ -224,9 +226,9 @@ namespace KeyboardWanderer.Editor
             manifest.PixelFont = AssetDatabase.LoadAssetAtPath<Font>(
                 "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf");
 
-            manifest.AdventureMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/1 - Adventure Begin.ogg");
-            manifest.VillageMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/33 - Calm Village.ogg");
-            manifest.BattleMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/17 - Fight.ogg");
+            manifest.AdventureMusic = LoadAudioClip("Assets/bgm/bgm_quest.ogg");
+            manifest.VillageMusic = LoadAudioClip("Assets/bgm/bgm_root.ogg");
+            manifest.BattleMusic = LoadAudioClip("Assets/bgm/boss_1.ogg");
             manifest.UiMoveSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Move1.wav");
             manifest.UiAcceptSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Accept.wav");
             manifest.UiCancelSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Cancel.wav");
@@ -234,7 +236,7 @@ namespace KeyboardWanderer.Editor
             manifest.HitSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Hit & Impact/Hit1.wav");
             manifest.CoinSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Bonus/Coin.wav");
             manifest.SuccessJingle = LoadAudioClip("Assets/NinjaAdventure/Audio/Jingles/Success1.wav");
-            manifest.BuilderVersion = CurrentManifestVersion;
+            manifest.BuilderSourceHash = ComputeBuilderSourceHash();
 
             EditorUtility.SetDirty(manifest);
             AssetDatabase.SaveAssets();
@@ -243,8 +245,22 @@ namespace KeyboardWanderer.Editor
         private static void EnsureManifest()
         {
             NinjaAdventureAssetManifest manifest = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(ManifestPath);
-            if (manifest == null || manifest.BuilderVersion < CurrentManifestVersion)
+            if (manifest == null || manifest.BuilderSourceHash != ComputeBuilderSourceHash())
                 RebuildManifest();
+        }
+
+        /// <summary>
+        /// Hashes this file's own source so any edit here (a changed asset path, a new field)
+        /// invalidates the cached manifest automatically, with no version constant to remember to bump.
+        /// </summary>
+        private static string ComputeBuilderSourceHash()
+        {
+            MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(BuilderScriptPath);
+            if (script == null)
+                throw new System.IO.FileNotFoundException("Manifest builder script not found: " + BuilderScriptPath);
+            using SHA256 sha256 = SHA256.Create();
+            byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(script.text));
+            return System.Convert.ToBase64String(hash);
         }
 
         private static Sprite LoadSprite(string path, string spriteName)

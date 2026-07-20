@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderVersion: 4
+  BuilderSourceHash: oRFasMuyaWamQliGCLgm9+C4GZ1/AhZFu2+QLr0JLbM=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -289,10 +289,10 @@ MonoBehaviour:
   UndoIcon: {fileID: 6948327744988102790, guid: f81e52fb191b6444b97bdafdf6e37afb, type: 3}
   SearchIcon: {fileID: 1737981779093564301, guid: 85c3aebf94a674e03be62d60b1269510, type: 3}
   SelectAllIcon: {fileID: 5986030973748356752, guid: 3f6c503afbd504a91b1dd630d0ab2101, type: 3}
-  PixelFont: {fileID: 12800000, guid: 8d0b54f2b8b774cb69af90b3584a4e9a, type: 3}
-  AdventureMusic: {fileID: 8300000, guid: 918125628d5f84d0fa83ebbbd2743e3f, type: 3}
-  VillageMusic: {fileID: 8300000, guid: b37b85a1a4d0c4601995e2c28a21d1bd, type: 3}
-  BattleMusic: {fileID: 8300000, guid: 90613ea4eba6947b3b5fdaa2b1fbc0c6, type: 3}
+  PixelFont: {fileID: 12800000, guid: 49b2d673e4ad84191a097b7436cd7742, type: 3}
+  AdventureMusic: {fileID: 0}
+  VillageMusic: {fileID: 0}
+  BattleMusic: {fileID: 0}
   UiMoveSound: {fileID: 8300000, guid: abcd64c94256f4bf39dad98f611f2c3b, type: 3}
   UiAcceptSound: {fileID: 8300000, guid: 6f68444b693e344c88d586ee6093a47d, type: 3}
   UiCancelSound: {fileID: 8300000, guid: 52a3b4ea3a320477ebc52626d0e11987, type: 3}
