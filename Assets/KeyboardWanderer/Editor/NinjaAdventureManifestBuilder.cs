@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -14,6 +15,8 @@ namespace KeyboardWanderer.Editor
         private const string NeopjukiAtlasPath =
             "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
 
+        private static readonly List<string> _missingAssetPaths = new();
+
         [InitializeOnLoadMethod]
         private static void ScheduleEnsureManifest()
         {
@@ -23,6 +26,7 @@ namespace KeyboardWanderer.Editor
         [MenuItem("Keyboard Wanderer/Rebuild Ninja Adventure Manifest")]
         public static void RebuildManifest()
         {
+            _missingAssetPaths.Clear();
             NinjaAdventureAssetManifest manifest = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(ManifestPath);
             if (manifest == null)
             {
@@ -226,9 +230,9 @@ namespace KeyboardWanderer.Editor
             manifest.PixelFont = AssetDatabase.LoadAssetAtPath<Font>(
                 "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf");
 
-            manifest.AdventureMusic = LoadAudioClip("Assets/bgm/fixed_bgm_quest.ogg");
-            manifest.VillageMusic = LoadAudioClip("Assets/bgm/fixed_bgm_root.ogg");
-            manifest.BattleMusic = LoadAudioClip("Assets/bgm/fixed_boss_1.ogg");
+            manifest.AdventureMusic = LoadAudioClip("Assets/bgm/bgm_quest.ogg");
+            manifest.VillageMusic = LoadAudioClip("Assets/bgm/bgm_root.ogg");
+            manifest.BattleMusic = LoadAudioClip("Assets/bgm/bgm_boss_1.ogg");
             manifest.UiMoveSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Move1.wav");
             manifest.UiAcceptSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Accept.wav");
             manifest.UiCancelSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Cancel.wav");
@@ -236,7 +240,20 @@ namespace KeyboardWanderer.Editor
             manifest.HitSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Hit & Impact/Hit1.wav");
             manifest.CoinSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Bonus/Coin.wav");
             manifest.SuccessJingle = LoadAudioClip("Assets/NinjaAdventure/Audio/Jingles/Success1.wav");
-            manifest.BuilderSourceHash = ComputeBuilderSourceHash();
+            // Only remember this build as successful if every path above actually resolved;
+            // otherwise a transient/broken asset would be cached as "done" forever (it happened).
+            if (_missingAssetPaths.Count == 0)
+            {
+                manifest.BuilderSourceHash = ComputeBuilderSourceHash();
+            }
+            else
+            {
+                manifest.BuilderSourceHash = string.Empty;
+                Debug.LogWarning(
+                    "Ninja Adventure manifest rebuilt with " + _missingAssetPaths.Count +
+                    " unresolved asset path(s); it will retry on the next Editor load:\n- " +
+                    string.Join("\n- ", _missingAssetPaths));
+            }
 
             EditorUtility.SetDirty(manifest);
             AssetDatabase.SaveAssets();
@@ -273,18 +290,24 @@ namespace KeyboardWanderer.Editor
         private static Sprite LoadFirstSprite(string path)
         {
             ConfigurePixelTexture(path);
-            return AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
+            Sprite sprite = AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
+            if (sprite == null) _missingAssetPaths.Add(path);
+            return sprite;
         }
 
         private static Texture2D LoadPixelTexture(string path)
         {
             ConfigurePixelTexture(path);
-            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (texture == null) _missingAssetPaths.Add(path);
+            return texture;
         }
 
         private static AudioClip LoadAudioClip(string path)
         {
-            return AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+            AudioClip clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+            if (clip == null) _missingAssetPaths.Add(path);
+            return clip;
         }
 
         private static ActorAnimationEntry Actor(string assetId, string sourcePath, string spriteName,

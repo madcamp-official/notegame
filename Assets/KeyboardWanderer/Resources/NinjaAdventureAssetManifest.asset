@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderSourceHash: EdBfd1USgv07SzVKb75Uzg1wnadTRrp1DqxMeLVe0yk=
+  BuilderSourceHash: NNF0z8g8z9aCCSIyAx4d5SFMIUqWjgVTl/MdkBJmGjs=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -290,9 +290,9 @@ MonoBehaviour:
   SearchIcon: {fileID: 1737981779093564301, guid: 85c3aebf94a674e03be62d60b1269510, type: 3}
   SelectAllIcon: {fileID: 5986030973748356752, guid: 3f6c503afbd504a91b1dd630d0ab2101, type: 3}
   PixelFont: {fileID: 12800000, guid: 49b2d673e4ad84191a097b7436cd7742, type: 3}
-  AdventureMusic: {fileID: 0}
-  VillageMusic: {fileID: 0}
-  BattleMusic: {fileID: 0}
+  AdventureMusic: {fileID: 8300000, guid: 5f3b554996b60c14a837b42c0872e529, type: 3}
+  VillageMusic: {fileID: 8300000, guid: bfcbc7c25a8d90c47a259df60329e908, type: 3}
+  BattleMusic: {fileID: 8300000, guid: 9ea3307a8807c4245917ef342ea5b711, type: 3}
   UiMoveSound: {fileID: 8300000, guid: abcd64c94256f4bf39dad98f611f2c3b, type: 3}
   UiAcceptSound: {fileID: 8300000, guid: 6f68444b693e344c88d586ee6093a47d, type: 3}
   UiCancelSound: {fileID: 8300000, guid: 52a3b4ea3a320477ebc52626d0e11987, type: 3}
