@@ -112,6 +112,12 @@ namespace KeyboardWanderer.Editor
                 errors.Add("Authoring Settings Landmark Prefab is missing.");
             else if (landmark.GetComponent<SpriteRenderer>() == null)
                 errors.Add("Landmark Prefab root SpriteRenderer is missing.");
+
+            KeyboardWandererWorldVisualProfile profile = settings.WorldVisualProfile;
+            if (profile == null)
+                errors.Add("Authoring Settings World Visual Profile is missing.");
+            else if (profile.Biomes == null || profile.Biomes.Length == 0)
+                errors.Add("World Visual Profile contains no biome definitions.");
         }
 
         private static void ValidateWorld(KeyboardWandererWorldView world, List<string> errors)

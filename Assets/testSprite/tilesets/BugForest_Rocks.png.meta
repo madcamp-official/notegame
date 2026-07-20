@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: d0721522d0e6e4e2fb575fde3da05c3c
+guid: 5ffb2b99967138745a81aec966acb987
 TextureImporter:
   internalIDToNameTable:
   - first:
@@ -102,19 +102,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -124,8 +111,8 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 16
-        height: 19
+        width: 17
+        height: 15
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -166,10 +153,10 @@ TextureImporter:
       name: BugForest_Rocks_2
       rect:
         serializedVersion: 2
-        x: 31
+        x: 32
         y: 0
-        width: 13
-        height: 13
+        width: 16
+        height: 14
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}

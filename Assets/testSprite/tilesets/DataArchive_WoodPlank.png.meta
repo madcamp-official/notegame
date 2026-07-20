@@ -1,40 +1,10 @@
 fileFormatVersion: 2
-guid: 856c986c232ad42c2b78f962e2f51309
+guid: 66e53de37a9d86940bb2589919dab50a
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: -8455280497060667689
     second: DataArchive_WoodPlank_0
-  - first:
-      213: 6060398927622979803
-    second: DataArchive_WoodPlank_1
-  - first:
-      213: -5662610495385881229
-    second: DataArchive_WoodPlank_2
-  - first:
-      213: -4845775058676820049
-    second: DataArchive_WoodPlank_3
-  - first:
-      213: 999468086879658884
-    second: DataArchive_WoodPlank_4
-  - first:
-      213: 7792147224844985643
-    second: DataArchive_WoodPlank_5
-  - first:
-      213: 7217828031600742589
-    second: DataArchive_WoodPlank_6
-  - first:
-      213: 7487521309590705653
-    second: DataArchive_WoodPlank_7
-  - first:
-      213: -1145337576096445042
-    second: DataArchive_WoodPlank_8
-  - first:
-      213: 8081495871037045903
-    second: DataArchive_WoodPlank_9
-  - first:
-      213: 1471621740254155632
-    second: DataArchive_WoodPlank_10
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -126,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -147,9 +104,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 48
-        width: 16
-        height: 16
+        y: 0
+        width: 64
+        height: 64
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -160,226 +117,6 @@ TextureImporter:
       bones: []
       spriteID: 7de19689f2fc8aa80800000000000000
       internalID: -8455280497060667689
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_1
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 31
-        width: 16
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: bd0402e17bcda1450800000000000000
-      internalID: 6060398927622979803
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_2
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 16
-        width: 17
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 375302991cd5a61b0800000000000000
-      internalID: -5662610495385881229
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_3
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: fa7de16124950ccb0800000000000000
-      internalID: -4845775058676820049
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_4
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 16
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 4832dcafde2dedd00800000000000000
-      internalID: 999468086879658884
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_5
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 48
-        width: 17
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: b256e6ecd94432c60800000000000000
-      internalID: 7792147224844985643
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: db05b616a50ea2460800000000000000
-      internalID: 7217828031600742589
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_7
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 16
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 5f55252e5f409e760800000000000000
-      internalID: 7487521309590705653
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_8
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: e8d4dd4fa81fa10f0800000000000000
-      internalID: -1145337576096445042
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_9
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 0
-        width: 17
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: f8cf2f65dad372070800000000000000
-      internalID: 8081495871037045903
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_WoodPlank_10
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 0
-        width: 33
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 073579ffc204c6410800000000000000
-      internalID: 1471621740254155632
       vertices: []
       indices: 
       edges: []
@@ -399,16 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       DataArchive_WoodPlank_0: -8455280497060667689
-      DataArchive_WoodPlank_1: 6060398927622979803
-      DataArchive_WoodPlank_10: 1471621740254155632
-      DataArchive_WoodPlank_2: -5662610495385881229
-      DataArchive_WoodPlank_3: -4845775058676820049
-      DataArchive_WoodPlank_4: 999468086879658884
-      DataArchive_WoodPlank_5: 7792147224844985643
-      DataArchive_WoodPlank_6: 7217828031600742589
-      DataArchive_WoodPlank_7: 7487521309590705653
-      DataArchive_WoodPlank_8: -1145337576096445042
-      DataArchive_WoodPlank_9: 8081495871037045903
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

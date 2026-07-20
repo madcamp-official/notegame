@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using KeyboardWanderer.Gameplay;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -61,7 +62,7 @@ namespace KeyboardWanderer.Demo
         private struct TextBinding
         {
             public KeyboardWandererUiText Id;
-            public Text Target;
+            public TMP_Text Target;
         }
 
         [Serializable]
@@ -69,7 +70,7 @@ namespace KeyboardWanderer.Demo
         {
             public KeyboardWandererUiButton Id;
             public Button Target;
-            public GameObject SelectedIndicator;
+            public KeyboardWandererButtonStateView StateView;
         }
 
         [Header("Screens")]
@@ -95,15 +96,15 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private Image selectedSkillIcon;
         [SerializeField] private Image selectedTargetIcon;
         [SerializeField] private Image minimapMap;
-        [SerializeField] private Text minimapPlaceholder;
-        [SerializeField] private Text minimapStatus;
+        [SerializeField] private TMP_Text minimapPlaceholder;
+        [SerializeField] private TMP_Text minimapStatus;
 
-        private readonly Dictionary<KeyboardWandererUiText, Text> _texts =
-            new Dictionary<KeyboardWandererUiText, Text>();
+        private readonly Dictionary<KeyboardWandererUiText, TMP_Text> _texts =
+            new Dictionary<KeyboardWandererUiText, TMP_Text>();
         private readonly Dictionary<KeyboardWandererUiButton, Button> _buttons =
             new Dictionary<KeyboardWandererUiButton, Button>();
-        private readonly Dictionary<KeyboardWandererUiButton, ColorBlock> _authoredButtonColors =
-            new Dictionary<KeyboardWandererUiButton, ColorBlock>();
+        private readonly Dictionary<KeyboardWandererUiButton, KeyboardWandererButtonStateView> _buttonStateViews =
+            new Dictionary<KeyboardWandererUiButton, KeyboardWandererButtonStateView>();
         private readonly Dictionary<KeyboardWandererUiButton, bool> _buttonInteractable =
             new Dictionary<KeyboardWandererUiButton, bool>();
         private readonly Dictionary<KeyboardWandererUiButton, bool> _buttonSelected =
@@ -172,7 +173,7 @@ namespace KeyboardWanderer.Demo
 
         public void SetText(KeyboardWandererUiText id, string value)
         {
-            if (_texts.TryGetValue(id, out Text text) && text != null && text.text != value)
+            if (_texts.TryGetValue(id, out TMP_Text text) && text != null && text.text != value)
                 text.text = value ?? string.Empty;
         }
 
@@ -191,28 +192,8 @@ namespace KeyboardWanderer.Demo
             _buttonSelected[id] = selected;
             _buttonAvailable[id] = available;
             button.interactable = interactable;
-            ColorBlock colors = _authoredButtonColors.TryGetValue(id, out ColorBlock authored)
-                ? authored
-                : button.colors;
-            colors.fadeDuration = 0.055f;
-            colors.highlightedColor = new Color(1f, 0.84f, 0.42f, 1f);
-            colors.pressedColor = new Color(0.94f, 0.49f, 0.16f, 1f);
-            colors.selectedColor = new Color(1f, 0.75f, 0.25f, 1f);
-            colors.disabledColor = new Color(0.38f, 0.35f, 0.32f, 0.42f);
-            if (!available && interactable)
-                colors.normalColor = new Color(0.34f, 0.32f, 0.29f, 0.82f);
-            if (selected)
-            {
-                colors.normalColor = available
-                    ? new Color(1f, 0.72f, 0.2f, 1f)
-                    : new Color(0.68f, 0.47f, 0.18f, 1f);
-                colors.highlightedColor = new Color(1f, 0.9f, 0.55f, 1f);
-                colors.pressedColor = new Color(0.86f, 0.38f, 0.12f, 1f);
-            }
-            button.colors = colors;
-            for (int i = 0; i < buttonBindings.Length; i++)
-                if (buttonBindings[i].Id == id)
-                    SetActive(buttonBindings[i].SelectedIndicator, selected);
+            if (_buttonStateViews.TryGetValue(id, out KeyboardWandererButtonStateView stateView))
+                stateView.SetSelected(selected);
         }
 
         public void SetMinimap(Sprite sprite, string status)
@@ -266,16 +247,6 @@ namespace KeyboardWanderer.Demo
 
         public void SetTitleCharacter(Sprite sprite)
         {
-            if (titleCharacter == null)
-            {
-                Image[] images = GetComponentsInChildren<Image>(true);
-                for (int i = 0; i < images.Length; i++)
-                {
-                    if (!string.Equals(images[i].name, "Title Character", StringComparison.Ordinal)) continue;
-                    titleCharacter = images[i];
-                    break;
-                }
-            }
             if (titleCharacter != null && sprite != null && titleCharacter.sprite != sprite)
                 titleCharacter.sprite = sprite;
         }
@@ -328,7 +299,7 @@ namespace KeyboardWanderer.Demo
         {
             _texts.Clear();
             _buttons.Clear();
-            _authoredButtonColors.Clear();
+            _buttonStateViews.Clear();
             _buttonInteractable.Clear();
             _buttonSelected.Clear();
             _buttonAvailable.Clear();
@@ -340,21 +311,8 @@ namespace KeyboardWanderer.Demo
             {
                 if (buttonBindings[i].Target == null) continue;
                 _buttons[buttonBindings[i].Id] = buttonBindings[i].Target;
-                _authoredButtonColors[buttonBindings[i].Id] = buttonBindings[i].Target.colors;
-                GameObject indicator = buttonBindings[i].SelectedIndicator;
-                if (indicator != null && assetManifest != null && assetManifest.WoodPanelFocus != null)
-                {
-                    Image frame = indicator.GetComponent<Image>();
-                    if (frame != null)
-                    {
-                        frame.sprite = assetManifest.WoodPanelFocus;
-                        frame.color = Color.white;
-                        frame.type = Image.Type.Sliced;
-                        frame.preserveAspect = false;
-                    }
-                    Outline legacyOutline = indicator.GetComponent<Outline>();
-                    if (legacyOutline != null) legacyOutline.enabled = false;
-                }
+                if (buttonBindings[i].StateView != null)
+                    _buttonStateViews[buttonBindings[i].Id] = buttonBindings[i].StateView;
             }
         }
 
@@ -380,9 +338,9 @@ namespace KeyboardWanderer.Demo
             outcomeEmote = FindComponent<Image>("Speaker Emote");
             selectedSkillIcon = FindComponent<Image>("Selected Skill Icon");
             selectedTargetIcon = FindComponent<Image>("Selected Target Icon");
-            minimapMap = FindComponent<Image>("Authored Minimap");
-            minimapPlaceholder = FindComponent<Text>("Minimap Placeholder");
-            minimapStatus = FindComponent<Text>("Minimap Status");
+            minimapMap = FindComponent<Image>("Minimap Map");
+            minimapPlaceholder = FindComponent<TMP_Text>("Minimap Placeholder");
+            minimapStatus = FindComponent<TMP_Text>("Minimap Status");
             assetManifest = UnityEditor.AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(
                 "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset");
 
@@ -400,7 +358,7 @@ namespace KeyboardWanderer.Demo
             for (int i = 0; i < ids.Length; i++)
             {
                 var id = (KeyboardWandererUiText)ids.GetValue(i);
-                result[i] = new TextBinding { Id = id, Target = FindComponent<Text>(TextObjectName(id)) };
+                result[i] = new TextBinding { Id = id, Target = FindComponent<TMP_Text>(TextObjectName(id)) };
             }
             return result;
         }
@@ -413,12 +371,11 @@ namespace KeyboardWanderer.Demo
             {
                 var id = (KeyboardWandererUiButton)ids.GetValue(i);
                 Button button = FindComponent<Button>(ButtonObjectName(id));
-                Transform indicator = button != null ? button.transform.Find("Selection Frame") : null;
                 result[i] = new ButtonBinding
                 {
                     Id = id,
                     Target = button,
-                    SelectedIndicator = indicator != null ? indicator.gameObject : null
+                    StateView = button != null ? button.GetComponent<KeyboardWandererButtonStateView>() : null
                 };
             }
             return result;

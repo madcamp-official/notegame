@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: cf8df7b010f754b0b862baeb13c1aa30
+guid: 6a4a29343c0954542a3d8f94a63afbbd
 TextureImporter:
   internalIDToNameTable:
   - first:
@@ -11,24 +11,6 @@ TextureImporter:
   - first:
       213: -2390373484451613252
     second: General_Field_2
-  - first:
-      213: -5028182133175359890
-    second: General_Field_3
-  - first:
-      213: -4780028802783083539
-    second: General_Field_4
-  - first:
-      213: 8090386862331188645
-    second: General_Field_5
-  - first:
-      213: -5893343640464861230
-    second: General_Field_6
-  - first:
-      213: 8147035698221132508
-    second: General_Field_7
-  - first:
-      213: -1395562407140887520
-    second: General_Field_8
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -120,19 +102,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -141,9 +110,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 64
-        width: 16
-        height: 16
+        y: 0
+        width: 64
+        height: 80
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -162,10 +131,10 @@ TextureImporter:
       name: General_Field_1
       rect:
         serializedVersion: 2
-        x: 0
-        y: 47
-        width: 16
-        height: 17
+        x: 5
+        y: 0
+        width: 7
+        height: 11
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -184,10 +153,10 @@ TextureImporter:
       name: General_Field_2
       rect:
         serializedVersion: 2
-        x: 15
-        y: 32
-        width: 17
-        height: 33
+        x: 32
+        y: 1
+        width: 16
+        height: 10
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -198,138 +167,6 @@ TextureImporter:
       bones: []
       spriteID: cb5bfba0bffa3ded0800000000000000
       internalID: -2390373484451613252
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: General_Field_3
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 64
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: e66ed168dfe483ab0800000000000000
-      internalID: -5028182133175359890
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: General_Field_4
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 32
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: de38af9212de9adb0800000000000000
-      internalID: -4780028802783083539
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: General_Field_5
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 64
-        width: 17
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 5a5dcb09cf3d64070800000000000000
-      internalID: 8090386862331188645
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: General_Field_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 64
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 2d7d8caee23a63ea0800000000000000
-      internalID: -5893343640464861230
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: General_Field_7
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 32
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: cdaa5ec7dc5101170800000000000000
-      internalID: 8147035698221132508
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: General_Field_8
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 64
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 0247a7c7267f1ace0800000000000000
-      internalID: -1395562407140887520
       vertices: []
       indices: 
       edges: []
@@ -351,12 +188,6 @@ TextureImporter:
       General_Field_0: 597870338227781007
       General_Field_1: -9189578443851500292
       General_Field_2: -2390373484451613252
-      General_Field_3: -5028182133175359890
-      General_Field_4: -4780028802783083539
-      General_Field_5: 8090386862331188645
-      General_Field_6: -5893343640464861230
-      General_Field_7: 8147035698221132508
-      General_Field_8: -1395562407140887520
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

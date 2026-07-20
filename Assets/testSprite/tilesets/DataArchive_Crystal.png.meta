@@ -1,13 +1,10 @@
 fileFormatVersion: 2
-guid: 52740db1c776e415f9e13a6510037988
+guid: baae3bce1b1161c4db84cc7b16bb2e35
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: 4163418404556624077
     second: DataArchive_Crystal_0
-  - first:
-      213: 16910980067079256
-    second: DataArchive_Crystal_1
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -99,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -119,10 +103,10 @@ TextureImporter:
       name: DataArchive_Crystal_0
       rect:
         serializedVersion: 2
-        x: 1
+        x: 0
         y: 0
-        width: 21
-        height: 23
+        width: 48
+        height: 21
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -133,28 +117,6 @@ TextureImporter:
       bones: []
       spriteID: dc0dbeeeafe67c930800000000000000
       internalID: 4163418404556624077
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Crystal_1
-      rect:
-        serializedVersion: 2
-        x: 21
-        y: 0
-        width: 27
-        height: 19
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 854b3bf52741c3000800000000000000
-      internalID: 16910980067079256
       vertices: []
       indices: 
       edges: []
@@ -174,7 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       DataArchive_Crystal_0: 4163418404556624077
-      DataArchive_Crystal_1: 16910980067079256
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

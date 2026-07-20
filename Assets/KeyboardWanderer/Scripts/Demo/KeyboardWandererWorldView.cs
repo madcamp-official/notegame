@@ -39,15 +39,21 @@ namespace KeyboardWanderer.Demo
 
         public void ResetRuntimeContent()
         {
+            ResetRuntimeContent(true);
+        }
+
+        public void ResetRuntimeContent(bool clearStaticRuntimeContent)
+        {
             gameObject.SetActive(true);
-            if (terrainTilemap != null)
+            if (clearStaticRuntimeContent && terrainTilemap != null)
                 terrainTilemap.ClearAllTiles();
             if (selectionCursor != null)
                 selectionCursor.enabled = false;
 
             var cleared = new HashSet<Transform>();
             ClearRuntimeRoot(RuntimeEntities, cleared);
-            ClearRuntimeRoot(RuntimeLandmarks, cleared);
+            if (clearStaticRuntimeContent)
+                ClearRuntimeRoot(RuntimeLandmarks, cleared);
             ClearRuntimeRoot(RuntimeEffects, cleared);
         }
 

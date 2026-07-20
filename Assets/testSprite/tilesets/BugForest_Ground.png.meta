@@ -1,34 +1,10 @@
 fileFormatVersion: 2
-guid: 716fb4b0e5f164996b0d76a5220b8154
+guid: a7dcdf513a0f4cc44a4cdbbd81a18afa
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: 3893056700054394877
     second: BugForest_Ground_0
-  - first:
-      213: -7699287996842725994
-    second: BugForest_Ground_1
-  - first:
-      213: 1381792565834117823
-    second: BugForest_Ground_2
-  - first:
-      213: -663238298881797908
-    second: BugForest_Ground_3
-  - first:
-      213: 8029583361035532902
-    second: BugForest_Ground_4
-  - first:
-      213: 1076834533624847125
-    second: BugForest_Ground_5
-  - first:
-      213: 3388073789804181071
-    second: BugForest_Ground_6
-  - first:
-      213: 4088387404229435500
-    second: BugForest_Ground_7
-  - first:
-      213: 8312222001259119399
-    second: BugForest_Ground_8
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -120,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -141,9 +104,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 80
-        width: 16
-        height: 16
+        y: 15
+        width: 64
+        height: 81
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -154,182 +117,6 @@ TextureImporter:
       bones: []
       spriteID: df75231417ae60630800000000000000
       internalID: 3893056700054394877
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Ground_1
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 63
-        width: 16
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 69da2c40c52a62590800000000000000
-      internalID: -7699287996842725994
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Ground_2
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 48
-        width: 17
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: fb271df740d1d2310800000000000000
-      internalID: 1381792565834117823
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Ground_3
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 80
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: ce057b9f744bbc6f0800000000000000
-      internalID: -663238298881797908
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Ground_4
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 48
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 66af8e8368fce6f60800000000000000
-      internalID: 8029583361035532902
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Ground_5
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 80
-        width: 17
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 51b15929d4fa1fe00800000000000000
-      internalID: 1076834533624847125
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Ground_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 80
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: f46f61a392bd40f20800000000000000
-      internalID: 3388073789804181071
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Ground_7
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: c60e645deaedcb830800000000000000
-      internalID: 4088387404229435500
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Ground_8
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 64
-        height: 49
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 7238c3fbed1fa5370800000000000000
-      internalID: 8312222001259119399
       vertices: []
       indices: 
       edges: []
@@ -349,14 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       BugForest_Ground_0: 3893056700054394877
-      BugForest_Ground_1: -7699287996842725994
-      BugForest_Ground_2: 1381792565834117823
-      BugForest_Ground_3: -663238298881797908
-      BugForest_Ground_4: 8029583361035532902
-      BugForest_Ground_5: 1076834533624847125
-      BugForest_Ground_6: 3388073789804181071
-      BugForest_Ground_7: 4088387404229435500
-      BugForest_Ground_8: 8312222001259119399
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

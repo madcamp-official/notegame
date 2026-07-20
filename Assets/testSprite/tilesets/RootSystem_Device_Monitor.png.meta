@@ -1,16 +1,10 @@
 fileFormatVersion: 2
-guid: a9a7f0d163e5a4bd3b83a733035ecdaa
+guid: a0d7c839df8f28e4489232b58cdf83ec
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: -8283123772875300815
     second: RootSystem_Device_Monitor_0
-  - first:
-      213: 1594629271721010268
-    second: RootSystem_Device_Monitor_1
-  - first:
-      213: -358707077264453612
-    second: RootSystem_Device_Monitor_2
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -102,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -122,10 +103,10 @@ TextureImporter:
       name: RootSystem_Device_Monitor_0
       rect:
         serializedVersion: 2
-        x: 1
-        y: 4
-        width: 30
-        height: 48
+        x: 0
+        y: 0
+        width: 96
+        height: 46
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -136,50 +117,6 @@ TextureImporter:
       bones: []
       spriteID: 130ac2f70de6c0d80800000000000000
       internalID: -8283123772875300815
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Device_Monitor_1
-      rect:
-        serializedVersion: 2
-        x: 33
-        y: 4
-        width: 30
-        height: 48
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: c54ee59bfd2412610800000000000000
-      internalID: 1594629271721010268
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Device_Monitor_2
-      rect:
-        serializedVersion: 2
-        x: 65
-        y: 4
-        width: 30
-        height: 48
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 410db3150dd950bf0800000000000000
-      internalID: -358707077264453612
       vertices: []
       indices: 
       edges: []
@@ -199,8 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       RootSystem_Device_Monitor_0: -8283123772875300815
-      RootSystem_Device_Monitor_1: 1594629271721010268
-      RootSystem_Device_Monitor_2: -358707077264453612
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

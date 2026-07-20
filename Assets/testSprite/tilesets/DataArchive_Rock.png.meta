@@ -1,40 +1,10 @@
 fileFormatVersion: 2
-guid: 9f6833c10562a481384a3493c1469cef
+guid: 834ce6ffea0c7834eb2de3957039b61c
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: -7250605723080339609
     second: DataArchive_Rock_0
-  - first:
-      213: -4511733079914513428
-    second: DataArchive_Rock_1
-  - first:
-      213: -929081371011584505
-    second: DataArchive_Rock_2
-  - first:
-      213: -3476905876531562687
-    second: DataArchive_Rock_3
-  - first:
-      213: -8538856931857850553
-    second: DataArchive_Rock_4
-  - first:
-      213: -3676388912296386264
-    second: DataArchive_Rock_5
-  - first:
-      213: 949516076006854301
-    second: DataArchive_Rock_6
-  - first:
-      213: -6289254926646192479
-    second: DataArchive_Rock_7
-  - first:
-      213: 703082978564176902
-    second: DataArchive_Rock_8
-  - first:
-      213: 8291173223852532806
-    second: DataArchive_Rock_9
-  - first:
-      213: -1207597809490301693
-    second: DataArchive_Rock_10
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -126,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -147,9 +104,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 48
-        width: 16
-        height: 16
+        y: 0
+        width: 64
+        height: 64
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -160,226 +117,6 @@ TextureImporter:
       bones: []
       spriteID: 76fc16d928ca06b90800000000000000
       internalID: -7250605723080339609
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_1
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 31
-        width: 16
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: cebf0520baa1361c0800000000000000
-      internalID: -4511733079914513428
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_2
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 16
-        width: 17
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 70eeb616a6d3b13f0800000000000000
-      internalID: -929081371011584505
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_3
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 1473ed7d68c8fbfc0800000000000000
-      internalID: -3476905876531562687
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_4
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 16
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 74f1bbc7cd2ef7980800000000000000
-      internalID: -8538856931857850553
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_5
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 48
-        width: 17
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 821a36a33c7dafcc0800000000000000
-      internalID: -3676388912296386264
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: d9e49e227db5d2d00800000000000000
-      internalID: 949516076006854301
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_7
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 16
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 1a6d06357f318b8a0800000000000000
-      internalID: -6289254926646192479
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_8
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 60cf0f07e3ad1c900800000000000000
-      internalID: 703082978564176902
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_9
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 0
-        width: 17
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 644e5fa5e1a201370800000000000000
-      internalID: 8291173223852532806
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: DataArchive_Rock_10
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 0
-        width: 33
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 30d6acdb030cd3fe0800000000000000
-      internalID: -1207597809490301693
       vertices: []
       indices: 
       edges: []
@@ -399,16 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       DataArchive_Rock_0: -7250605723080339609
-      DataArchive_Rock_1: -4511733079914513428
-      DataArchive_Rock_10: -1207597809490301693
-      DataArchive_Rock_2: -929081371011584505
-      DataArchive_Rock_3: -3476905876531562687
-      DataArchive_Rock_4: -8538856931857850553
-      DataArchive_Rock_5: -3676388912296386264
-      DataArchive_Rock_6: 949516076006854301
-      DataArchive_Rock_7: -6289254926646192479
-      DataArchive_Rock_8: 703082978564176902
-      DataArchive_Rock_9: 8291173223852532806
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

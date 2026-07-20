@@ -1,40 +1,10 @@
 fileFormatVersion: 2
-guid: 6377da4861f2345afb255879d3e2f617
+guid: 786c760fcfed8c4409a8b63652f1a958
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: 369654410909810277
     second: RootSystem_Ground_0
-  - first:
-      213: 2451392230603982693
-    second: RootSystem_Ground_1
-  - first:
-      213: -5034300797132832557
-    second: RootSystem_Ground_2
-  - first:
-      213: 5171122921618090732
-    second: RootSystem_Ground_3
-  - first:
-      213: 4979584175226184196
-    second: RootSystem_Ground_4
-  - first:
-      213: -5341044207393744656
-    second: RootSystem_Ground_5
-  - first:
-      213: -929615659153494471
-    second: RootSystem_Ground_6
-  - first:
-      213: 2533597673789159384
-    second: RootSystem_Ground_7
-  - first:
-      213: -2021505535267901716
-    second: RootSystem_Ground_8
-  - first:
-      213: -338703747505235426
-    second: RootSystem_Ground_9
-  - first:
-      213: -7638357636209312482
-    second: RootSystem_Ground_10
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -126,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -147,9 +104,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 48
-        width: 16
-        height: 16
+        y: 0
+        width: 64
+        height: 64
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -160,226 +117,6 @@ TextureImporter:
       bones: []
       spriteID: 56e7feb6ab6412500800000000000000
       internalID: 369654410909810277
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_1
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 31
-        width: 16
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 5678d46ee38150220800000000000000
-      internalID: 2451392230603982693
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_2
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 16
-        width: 17
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 3d08e6e0912922ab0800000000000000
-      internalID: -5034300797132832557
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_3
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: cea2de046e483c740800000000000000
-      internalID: 5171122921618090732
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_4
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 16
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 4026385ac690b1540800000000000000
-      internalID: 4979584175226184196
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_5
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 48
-        width: 17
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 0f853a8679cc0e5b0800000000000000
-      internalID: -5341044207393744656
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 93ee38abb775913f0800000000000000
-      internalID: -929615659153494471
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_7
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 16
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 8d775f529a5292320800000000000000
-      internalID: 2533597673789159384
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_8
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: ceeeed21d6b22f3e0800000000000000
-      internalID: -2021505535267901716
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_9
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 0
-        width: 17
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: e1a5bd57cbeac4bf0800000000000000
-      internalID: -338703747505235426
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: RootSystem_Ground_10
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 0
-        width: 33
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: e1df95a133a1ff590800000000000000
-      internalID: -7638357636209312482
       vertices: []
       indices: 
       edges: []
@@ -399,16 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       RootSystem_Ground_0: 369654410909810277
-      RootSystem_Ground_1: 2451392230603982693
-      RootSystem_Ground_10: -7638357636209312482
-      RootSystem_Ground_2: -5034300797132832557
-      RootSystem_Ground_3: 5171122921618090732
-      RootSystem_Ground_4: 4979584175226184196
-      RootSystem_Ground_5: -5341044207393744656
-      RootSystem_Ground_6: -929615659153494471
-      RootSystem_Ground_7: 2533597673789159384
-      RootSystem_Ground_8: -2021505535267901716
-      RootSystem_Ground_9: -338703747505235426
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

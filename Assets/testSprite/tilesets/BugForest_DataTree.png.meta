@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: baed6f3d47ebc4152ade7a2d237ea443
+guid: cb733cc9584e5564c833e426081eb428
 TextureImporter:
   internalIDToNameTable:
   - first:
@@ -11,9 +11,6 @@ TextureImporter:
   - first:
       213: 7996017467488604391
     second: BugForest_DataTree_2
-  - first:
-      213: 4164393846395051712
-    second: BugForest_DataTree_3
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -105,19 +102,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -125,10 +109,10 @@ TextureImporter:
       name: BugForest_DataTree_0
       rect:
         serializedVersion: 2
-        x: 1
-        y: 12
-        width: 30
-        height: 32
+        x: 0
+        y: 15
+        width: 58
+        height: 29
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -147,10 +131,10 @@ TextureImporter:
       name: BugForest_DataTree_1
       rect:
         serializedVersion: 2
-        x: 12
+        x: 2
         y: 0
-        width: 8
-        height: 13
+        width: 22
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -169,10 +153,10 @@ TextureImporter:
       name: BugForest_DataTree_2
       rect:
         serializedVersion: 2
-        x: 33
-        y: 12
-        width: 30
-        height: 32
+        x: 30
+        y: 0
+        width: 22
+        height: 16
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -183,28 +167,6 @@ TextureImporter:
       bones: []
       spriteID: 7e01a7f958f87fe60800000000000000
       internalID: 7996017467488604391
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_DataTree_3
-      rect:
-        serializedVersion: 2
-        x: 44
-        y: 0
-        width: 8
-        height: 13
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 0ce133fa326eac930800000000000000
-      internalID: 4164393846395051712
       vertices: []
       indices: 
       edges: []
@@ -226,7 +188,6 @@ TextureImporter:
       BugForest_DataTree_0: 1494035366633354790
       BugForest_DataTree_1: -6945290277340423686
       BugForest_DataTree_2: 7996017467488604391
-      BugForest_DataTree_3: 4164393846395051712
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

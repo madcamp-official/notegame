@@ -1,40 +1,10 @@
 fileFormatVersion: 2
-guid: 506aa6106726c44948f8bebad5f1bc4f
+guid: 86c98e4a9075d8a46b704e2b89533af2
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: 1385215701236995708
     second: LegacyCitadel_Snow_0
-  - first:
-      213: -561094658026804869
-    second: LegacyCitadel_Snow_1
-  - first:
-      213: 816215661377218176
-    second: LegacyCitadel_Snow_2
-  - first:
-      213: -7579242142629304256
-    second: LegacyCitadel_Snow_3
-  - first:
-      213: -3785174872508109627
-    second: LegacyCitadel_Snow_4
-  - first:
-      213: -6518248198477689132
-    second: LegacyCitadel_Snow_5
-  - first:
-      213: 7961106670268771960
-    second: LegacyCitadel_Snow_6
-  - first:
-      213: 7415295723363542161
-    second: LegacyCitadel_Snow_7
-  - first:
-      213: -1004428312882581079
-    second: LegacyCitadel_Snow_8
-  - first:
-      213: 4928755656766704877
-    second: LegacyCitadel_Snow_9
-  - first:
-      213: -3534000811935390760
-    second: LegacyCitadel_Snow_10
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -126,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -147,9 +104,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 48
-        width: 16
-        height: 16
+        y: 0
+        width: 64
+        height: 64
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -160,226 +117,6 @@ TextureImporter:
       bones: []
       spriteID: c7656815756493310800000000000000
       internalID: 1385215701236995708
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_1
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 31
-        width: 16
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: b7961fe91679638f0800000000000000
-      internalID: -561094658026804869
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_2
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 16
-        width: 17
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 086ef7cc1d7c35b00800000000000000
-      internalID: 816215661377218176
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_3
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 048e8e58d6f11d690800000000000000
-      internalID: -7579242142629304256
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_4
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 16
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 5cc6b67128b587bc0800000000000000
-      internalID: -3785174872508109627
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_5
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 48
-        width: 17
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 4de48e37cc78a85a0800000000000000
-      internalID: -6518248198477689132
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 87eec5c36588b7e60800000000000000
-      internalID: 7961106670268771960
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_7
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 16
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 194ae872c2c68e660800000000000000
-      internalID: 7415295723363542161
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_8
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 9a1f94865cd8f02f0800000000000000
-      internalID: -1004428312882581079
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_9
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 0
-        width: 17
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: decc64af725766440800000000000000
-      internalID: 4928755656766704877
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: LegacyCitadel_Snow_10
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 0
-        width: 33
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 8d326a84cf4b4fec0800000000000000
-      internalID: -3534000811935390760
       vertices: []
       indices: 
       edges: []
@@ -399,16 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       LegacyCitadel_Snow_0: 1385215701236995708
-      LegacyCitadel_Snow_1: -561094658026804869
-      LegacyCitadel_Snow_10: -3534000811935390760
-      LegacyCitadel_Snow_2: 816215661377218176
-      LegacyCitadel_Snow_3: -7579242142629304256
-      LegacyCitadel_Snow_4: -3785174872508109627
-      LegacyCitadel_Snow_5: -6518248198477689132
-      LegacyCitadel_Snow_6: 7961106670268771960
-      LegacyCitadel_Snow_7: 7415295723363542161
-      LegacyCitadel_Snow_8: -1004428312882581079
-      LegacyCitadel_Snow_9: 4928755656766704877
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

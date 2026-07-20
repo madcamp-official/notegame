@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: b56db7dcd619343c8a47591b3f6c1d6b
+guid: aa9b8f3435db04b4e9b9f23003641519
 TextureImporter:
   internalIDToNameTable:
   - first:
@@ -11,6 +11,15 @@ TextureImporter:
   - first:
       213: -1064093580906113737
     second: BufferVillage_Buildings_2
+  - first:
+      213: -7402142635149398407
+    second: BufferVillage_Buildings_3
+  - first:
+      213: 262200666682773878
+    second: BufferVillage_Buildings_4
+  - first:
+      213: 1475796065173366663
+    second: BufferVillage_Buildings_5
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -102,19 +111,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -123,9 +119,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 0
-        width: 49
-        height: 64
+        y: 11
+        width: 42
+        height: 53
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -144,10 +140,10 @@ TextureImporter:
       name: BufferVillage_Buildings_1
       rect:
         serializedVersion: 2
-        x: 55
+        x: 0
         y: 0
-        width: 50
-        height: 64
+        width: 39
+        height: 12
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -166,10 +162,10 @@ TextureImporter:
       name: BufferVillage_Buildings_2
       rect:
         serializedVersion: 2
-        x: 111
-        y: 0
-        width: 49
-        height: 64
+        x: 41
+        y: 11
+        width: 43
+        height: 61
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -180,6 +176,72 @@ TextureImporter:
       bones: []
       spriteID: 7355156a6849b31f0800000000000000
       internalID: -1064093580906113737
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: BufferVillage_Buildings_3
+      rect:
+        serializedVersion: 2
+        x: 41
+        y: 0
+        width: 42
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 97e6527dd7e464990800000000000000
+      internalID: -7402142635149398407
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: BufferVillage_Buildings_4
+      rect:
+        serializedVersion: 2
+        x: 85
+        y: 2
+        width: 42
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6715f7dfd1683a300800000000000000
+      internalID: 262200666682773878
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: BufferVillage_Buildings_5
+      rect:
+        serializedVersion: 2
+        x: 87
+        y: 12
+        width: 38
+        height: 43
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 787e391c3b41b7410800000000000000
+      internalID: 1475796065173366663
       vertices: []
       indices: 
       edges: []
@@ -201,6 +263,9 @@ TextureImporter:
       BufferVillage_Buildings_0: 7462981737468197991
       BufferVillage_Buildings_1: 6112201559511375659
       BufferVillage_Buildings_2: -1064093580906113737
+      BufferVillage_Buildings_3: -7402142635149398407
+      BufferVillage_Buildings_4: 262200666682773878
+      BufferVillage_Buildings_5: 1475796065173366663
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

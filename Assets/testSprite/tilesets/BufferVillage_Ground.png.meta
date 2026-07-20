@@ -1,34 +1,10 @@
 fileFormatVersion: 2
-guid: a2a12ec5fdb134c38a1a05bc259a5ed3
+guid: ad93d238703bbb14488d9317773b9413
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: 2027746421812489598
     second: BufferVillage_Ground_0
-  - first:
-      213: 466805211309353911
-    second: BufferVillage_Ground_1
-  - first:
-      213: -7025840615108548449
-    second: BufferVillage_Ground_2
-  - first:
-      213: 6003873491415281505
-    second: BufferVillage_Ground_3
-  - first:
-      213: -5383980692751518280
-    second: BufferVillage_Ground_4
-  - first:
-      213: 4190070167568184312
-    second: BufferVillage_Ground_5
-  - first:
-      213: -3381742837515712108
-    second: BufferVillage_Ground_6
-  - first:
-      213: 1919441100374183819
-    second: BufferVillage_Ground_7
-  - first:
-      213: -3568956423596914138
-    second: BufferVillage_Ground_8
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -120,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -141,9 +104,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 80
-        width: 16
-        height: 16
+        y: 15
+        width: 64
+        height: 81
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -154,182 +117,6 @@ TextureImporter:
       bones: []
       spriteID: e7de3be80a0042c10800000000000000
       internalID: 2027746421812489598
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BufferVillage_Ground_1
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 63
-        width: 16
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 7bb256fcddc6a7600800000000000000
-      internalID: 466805211309353911
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BufferVillage_Ground_2
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 48
-        width: 17
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: f9861ff5f233f7e90800000000000000
-      internalID: -7025840615108548449
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BufferVillage_Ground_3
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 80
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 16f213c612b025350800000000000000
-      internalID: 6003873491415281505
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BufferVillage_Ground_4
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 48
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 8b5fbf2e5124845b0800000000000000
-      internalID: -5383980692751518280
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BufferVillage_Ground_5
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 80
-        width: 17
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 8f3fcd11e9e162a30800000000000000
-      internalID: 4190070167568184312
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BufferVillage_Ground_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 80
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 49987287ec2a111d0800000000000000
-      internalID: -3381742837515712108
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BufferVillage_Ground_7
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: b8f861bd28933aa10800000000000000
-      internalID: 1919441100374183819
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BufferVillage_Ground_8
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 64
-        height: 49
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 62a48a8ba05887ec0800000000000000
-      internalID: -3568956423596914138
       vertices: []
       indices: 
       edges: []
@@ -349,14 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       BufferVillage_Ground_0: 2027746421812489598
-      BufferVillage_Ground_1: 466805211309353911
-      BufferVillage_Ground_2: -7025840615108548449
-      BufferVillage_Ground_3: 6003873491415281505
-      BufferVillage_Ground_4: -5383980692751518280
-      BufferVillage_Ground_5: 4190070167568184312
-      BufferVillage_Ground_6: -3381742837515712108
-      BufferVillage_Ground_7: 1919441100374183819
-      BufferVillage_Ground_8: -3568956423596914138
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

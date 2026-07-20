@@ -1,34 +1,10 @@
 fileFormatVersion: 2
-guid: 5c5b05f8911434f028f91e694cc47f3a
+guid: 25252b947d10d004aa91f71fca4e5144
 TextureImporter:
   internalIDToNameTable:
   - first:
       213: -9196522231040630596
     second: BugForest_Camp_0
-  - first:
-      213: 22802387702349385
-    second: BugForest_Camp_1
-  - first:
-      213: -1898757295540159014
-    second: BugForest_Camp_2
-  - first:
-      213: -1844310644606420118
-    second: BugForest_Camp_3
-  - first:
-      213: 7556220355800557915
-    second: BugForest_Camp_4
-  - first:
-      213: 146377606469101557
-    second: BugForest_Camp_5
-  - first:
-      213: -7158388956311025354
-    second: BugForest_Camp_6
-  - first:
-      213: -4897733867131280354
-    second: BugForest_Camp_7
-  - first:
-      213: -358317015209923079
-    second: BugForest_Camp_8
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -120,19 +96,6 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
@@ -141,9 +104,9 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 80
-        width: 16
-        height: 16
+        y: 15
+        width: 64
+        height: 81
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -154,182 +117,6 @@ TextureImporter:
       bones: []
       spriteID: cb027d191c36f5080800000000000000
       internalID: -9196522231040630596
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Camp_1
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 63
-        width: 16
-        height: 17
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 94e770b96a2015000800000000000000
-      internalID: 22802387702349385
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Camp_2
-      rect:
-        serializedVersion: 2
-        x: 15
-        y: 48
-        width: 17
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: addb5acbc4246a5e0800000000000000
-      internalID: -1898757295540159014
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Camp_3
-      rect:
-        serializedVersion: 2
-        x: 16
-        y: 80
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: a6b33c48d31b766e0800000000000000
-      internalID: -1844310644606420118
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Camp_4
-      rect:
-        serializedVersion: 2
-        x: 31
-        y: 48
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: b59611801661dd860800000000000000
-      internalID: 7556220355800557915
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Camp_5
-      rect:
-        serializedVersion: 2
-        x: 32
-        y: 80
-        width: 17
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 5f7a9a458a9080200800000000000000
-      internalID: 146377606469101557
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Camp_6
-      rect:
-        serializedVersion: 2
-        x: 48
-        y: 80
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 6398007cb2b48ac90800000000000000
-      internalID: -7158388956311025354
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Camp_7
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 48
-        width: 16
-        height: 16
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: e146d354ff0c70cb0800000000000000
-      internalID: -4897733867131280354
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: BugForest_Camp_8
-      rect:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 64
-        height: 49
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 9fd2f67b290070bf0800000000000000
-      internalID: -358317015209923079
       vertices: []
       indices: 
       edges: []
@@ -349,14 +136,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       BugForest_Camp_0: -9196522231040630596
-      BugForest_Camp_1: 22802387702349385
-      BugForest_Camp_2: -1898757295540159014
-      BugForest_Camp_3: -1844310644606420118
-      BugForest_Camp_4: 7556220355800557915
-      BugForest_Camp_5: 146377606469101557
-      BugForest_Camp_6: -7158388956311025354
-      BugForest_Camp_7: -4897733867131280354
-      BugForest_Camp_8: -358317015209923079
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
