@@ -1094,7 +1094,7 @@ namespace KeyboardWanderer.Demo
             if (response.ActionContext == ActionContext.Combat)
                 PlaySfx(AssetClip("SlashSound"));
             else if (response.Outcome == RuleOutcome.CriticalSuccess)
-                PlaySfx(AssetClip("SuccessJingle"));
+                PlaySfx(AssetClip("SuccessJingle"), cutOffPrevious: false);
             else
                 PlaySfx(AssetClip("UiAcceptSound"));
 
@@ -1125,7 +1125,7 @@ namespace KeyboardWanderer.Demo
             if (_service.CurrentView.Status != RunStatus.Playing)
             {
                 _gmPending = false;
-                PlaySfx(AssetClip("SuccessJingle"));
+                PlaySfx(AssetClip("SuccessJingle"), cutOffPrevious: false);
             }
             PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue |
                                      PresentationChange.Minimap | PresentationChange.Selection);
@@ -1211,7 +1211,7 @@ namespace KeyboardWanderer.Demo
             _selectionController.ClearAfterAction(_selectionController.SelectedCoord, _selectionController.Ability == AbilityKind.Move);
             UpdateSelectionVisual(_service.CurrentView);
             _serverStatus = committed.FromIdempotencyCache ? "멱등 응답 재생" : "권위 상태 커밋 완료";
-            PlaySfx(_lastD20 == 20 ? AssetClip("SuccessJingle") : AssetClip("UiAcceptSound"));
+            PlaySfx(_lastD20 == 20 ? AssetClip("SuccessJingle") : AssetClip("UiAcceptSound"), cutOffPrevious: _lastD20 != 20);
         }
 
         private void PresentActionRejection(string errorCode, string technicalMessage)
@@ -2159,7 +2159,7 @@ namespace KeyboardWanderer.Demo
                 if (defeated) visual.Root.SetActive(false);
             }
             if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
-            if (!defeated) PlaySfx(AssetClip("HitSound"));
+            if (!defeated) PlaySfx(AssetClip("HitSound"), cutOffPrevious: false);
         }
 
         private void CompletePlayerPathAnimation()
@@ -2306,9 +2306,9 @@ namespace KeyboardWanderer.Demo
             _audioController?.SetMusic(clip);
         }
 
-        private void PlaySfx(AudioClip clip)
+        private void PlaySfx(AudioClip clip, bool cutOffPrevious = true)
         {
-            _audioController?.PlaySfx(clip);
+            _audioController?.PlaySfx(clip, cutOffPrevious);
         }
 
         private AudioClip AssetClip(string fieldName)
