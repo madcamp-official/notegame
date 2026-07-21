@@ -59,7 +59,58 @@ namespace KeyboardWanderer.Presentation
             return values.ToArray();
         }
 
-        public static string ObjectiveHud(RunPresentationModel run, bool encounterMoveRequired)
+        private const string QuestNumberColor = "#F2C14E";
+        private const string QuestDetailColor = "#B8A382";
+
+        /// <summary>
+        /// 퀘스트 패널 본문을 번호 목록으로 만든다. 1번은 주 목표와 위치 세부 항목,
+        /// 이후 번호는 보조 목표, ◆는 가장 가까운 결말 진행도다. 진행·자원 수치는 상태 패널이 맡는다.
+        /// </summary>
+        public static string ObjectiveHud(RunPresentationModel run)
+        {
+            if (run == null)
+                return string.Empty;
+            var lines = new List<string>();
+            string title = string.IsNullOrWhiteSpace(run.StoryObjective)
+                ? "다음 이야기를 기다리는 중"
+                : run.StoryObjective.Trim();
+            lines.Add("<color=" + QuestNumberColor + ">1</color>  " + title);
+            if (run.ObjectiveTargetPosition.HasValue)
+            {
+                GridCoord target = run.ObjectiveTargetPosition.Value;
+                int distance = run.Core.PlayerPosition.ManhattanDistance(target);
+                string name = string.IsNullOrWhiteSpace(run.ObjectiveTargetName)
+                    ? "표시된 대상"
+                    : run.ObjectiveTargetName.Trim();
+                lines.Add("<color=" + QuestDetailColor + ">     • " + name + " · " +
+                          DirectionLabel(run.Core.PlayerPosition, target) + " " + distance + "칸</color>");
+                lines.Add("<color=" + QuestDetailColor + ">     • 미니맵 분홍 표식을 따라가세요</color>");
+            }
+            int number = 2;
+            if (run.OpenLoops != null)
+            {
+                for (int i = 0; i < run.OpenLoops.Count && number <= 3; i++)
+                {
+                    string value = run.OpenLoops[i];
+                    if (string.IsNullOrWhiteSpace(value) ||
+                        string.Equals(value, run.StoryObjective, StringComparison.Ordinal))
+                        continue;
+                    lines.Add("<color=" + QuestNumberColor + ">" + number + "</color>  " + value.Trim());
+                    number++;
+                }
+            }
+            if (run.EndingBoard != null && run.EndingBoard.Count > 0)
+            {
+                RunPresentationEnding nearest = run.EndingBoard[0];
+                lines.Add("<color=" + QuestNumberColor + ">◆</color>  결말 · " + nearest.Title +
+                          "  <color=" + QuestDetailColor + ">" + nearest.SatisfiedCount + "/" +
+                          nearest.TotalCount + "</color>");
+            }
+            return string.Join("\n", lines);
+        }
+
+        /// <summary>퀘스트 패널 하단의 추천 행동 한 줄.</summary>
+        public static string QuestActionHint(RunPresentationModel run, bool encounterMoveRequired)
         {
             if (run == null)
                 return string.Empty;
@@ -67,21 +118,25 @@ namespace KeyboardWanderer.Presentation
             var labels = new string[recommendations.Length];
             for (int i = 0; i < recommendations.Length; i++)
                 labels[i] = AbilityPlayerLabel(recommendations[i]);
+            return "추천  " + string.Join(" > ", labels);
+        }
 
-            string objective = run.StoryObjective;
-            if (run.ObjectiveTargetPosition.HasValue)
-            {
-                GridCoord target = run.ObjectiveTargetPosition.Value;
-                int distance = run.Core.PlayerPosition.ManhattanDistance(target);
-                objective = ObjectiveActionText(run.ObjectiveTargetName, run.ObjectiveAbility) +
-                            "\n위치  " + DirectionLabel(run.Core.PlayerPosition, target) + " " + distance +
-                            "칸 · 미니맵 분홍 표식";
-            }
-            return objective + "\n추천  " + string.Join(" > ", labels) +
-                   "\n진행  권한 " + run.AdminAccess + "/3 · 의미 턴 " +
-                   run.Core.Turn + "/" + run.TurnLimit +
-                   "\n자원  Focus " + run.Focus + "/" + run.MaxFocus + " · XP " +
-                   run.Experience + " · Gold " + run.Gold;
+        /// <summary>상태 패널 왼쪽 컬럼. <see cref="StatusValues"/>와 줄 순서가 일치해야 한다.</summary>
+        public static string StatusLabels()
+        {
+            return "권한\n의미 턴\nFOCUS\nXP\nGOLD";
+        }
+
+        /// <summary>상태 패널 오른쪽 컬럼. <see cref="StatusLabels"/>와 줄 순서가 일치해야 한다.</summary>
+        public static string StatusValues(RunPresentationModel run)
+        {
+            if (run == null)
+                return string.Empty;
+            return run.AdminAccess + " / 3\n" +
+                   run.Core.Turn + " / " + run.TurnLimit + "\n" +
+                   run.Focus + " / " + run.MaxFocus + "\n" +
+                   run.Experience + "\n" +
+                   run.Gold;
         }
 
         /// <summary>현재 목표가 스킬 사거리 밖일 때 이동 방향을 한 줄로 안내한다.</summary>
