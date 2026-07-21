@@ -7,6 +7,7 @@ import {
   macroPhaseForBeat
 } from "../src/domain/campaign.js";
 import { buildConsequenceCandidates } from "../src/domain/consequence-candidates.js";
+import { planDecisionScene } from "../src/domain/decision-orchestrator.js";
 import { applyScenePlan } from "../src/domain/consequence-resolver.js";
 import {
   BOSS_CATALOG,
@@ -15,7 +16,7 @@ import {
   NPC_CATALOG,
   SPECIAL_SKILL_TEMPLATES
 } from "../src/domain/content-catalog.js";
-import { FixedD20Source, createRunState, normalizeTurnRequest, resolveTurn } from "../src/domain/turn-engine.js";
+import { FixedD20Source, createRunState, normalizeTurnRequest, publicRun, resolveTurn } from "../src/domain/turn-engine.js";
 import { generateWorld, isWalkable } from "../src/domain/world.js";
 import {
   createFallbackScenePlan,
@@ -71,6 +72,7 @@ test("scene plans can select only server-issued candidate IDs", () => {
   const run = runFixture(212);
   const built = buildConsequenceCandidates(run, { decisionType: "TRAVEL" });
   const context = validateSceneDirectorContext(built.context);
+  assert.ok(!context.candidates.some((candidate) => ["START_QUEST", "ADVANCE_QUEST"].includes(candidate.type)));
   const fallback = createFallbackScenePlan(context);
   const validated = validateScenePlan({
     sceneGoal: fallback.sceneGoal,
@@ -96,6 +98,73 @@ test("the deterministic fallback returns the same bounded legal scene", () => {
   assert.ok(first.selectedActionIds.every((id) => allowed.has(id)));
   const cost = first.selectedActionIds.reduce((sum, id) => sum + context.candidates.find((item) => item.candidateId === id).cost, 0);
   assert.ok(cost <= 4);
+});
+
+test("an assertive dialogue can legally escalate into a server-confirmed attack animation action", () => {
+  const run = runFixture(219);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const enemy = run.entities.find((entity) => entity.kind === "enemy");
+  enemy.position = { x: player.position.x + 1, y: player.position.y };
+  const built = buildConsequenceCandidates(run, {
+    decisionType: "ACTION",
+    turn: { outcome: "narrative", actionContext: "NARRATIVE", selectedChoice: { intentTag: "ASSERTIVE" } }
+  });
+  const attack = built.candidates.find((item) => item.type === "ATTACK_ENTITY" && item.actorId === enemy.id && item.targetId === player.id);
+  assert.ok(attack);
+  const result = applyScenePlan(run, {
+    candidates: built.candidates,
+    plan: { sceneGoal: "대화가 결렬되자 오류 개체가 먼저 덤벼든다.", selectedActionIds: [attack.candidateId], dialogue: [] },
+    decisionType: "ACTION"
+  });
+  assert.equal(result.sceneSequence[0].type, "ATTACK");
+  assert.equal(result.sceneSequence[0].actionStyle, "DIALOGUE_BREAKDOWN");
+  assert.match(result.sceneSequence[0].actionId, /^[0-9a-f-]{36}$/i);
+});
+
+test("the model may propose a coherent action that was not in the recommendation list", async () => {
+  const run = runFixture(220);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const enemy = run.entities.find((entity) => entity.kind === "enemy");
+  enemy.position = { x: player.position.x + 1, y: player.position.y };
+  const narrator = {
+    async planScene(context) {
+      assert.equal(context.candidates.some((item) => item.type === "ATTACK_ENTITY"), false);
+      return {
+        sceneGoal: "설득이 끝내 통하지 않자 오류 개체가 먼저 공격한다.",
+        selectedActionIds: [],
+        proposedActions: [{
+          type: "ATTACK_ENTITY", actorId: enemy.id, targetId: player.id,
+          actionStyle: "FAILED_NEGOTIATION", text: "대화가 결렬되자 오류 개체가 칼을 뽑아 달려든다.", displayName: null
+        }],
+        dialogue: []
+      };
+    }
+  };
+  const decision = await planDecisionScene({
+    narrator, run, decisionType: "ACTION",
+    turn: { outcome: "narrative", actionContext: "NARRATIVE", selectedChoice: { intentTag: "CAUTIOUS" } },
+    logger: { warn() {} }
+  });
+  const result = applyScenePlan(run, { candidates: decision.candidates, plan: decision.plan, decisionType: "ACTION" });
+  assert.equal(result.sceneSequence[0].type, "ATTACK");
+  assert.equal(result.sceneSequence[0].actionStyle, "FAILED_NEGOTIATION");
+});
+
+test("free proposals still reject unknown actors and protected action types", () => {
+  const run = runFixture(221);
+  const context = buildConsequenceCandidates(run, { decisionType: "ACTION" }).context;
+  assert.throws(() => validateScenePlan({
+    sceneGoal: "존재하지 않는 인물이 결말을 강제로 바꾼다.", selectedActionIds: [], dialogue: [],
+    proposedActions: [{ type: "CHANGE_ENDING", actorId: randomUUID(), targetId: null, actionStyle: null, text: "결말을 즉시 확정한다.", displayName: null }]
+  }, context), (error) => ["SCENE_PLAN_ACTION_FORBIDDEN", "SCENE_PLAN_ENTITY_FORBIDDEN"].includes(error.code));
+  assert.throws(() => validateScenePlan({
+    sceneGoal: "사소한 대화가 세계의 결말을 바꾼다.", selectedActionIds: [], dialogue: [],
+    proposedActions: [{ type: "NARRATIVE_EVENT", actorId: null, targetId: null, actionStyle: null, text: "대화 한 번으로 관리자 권한을 획득하고 최종 결말을 확정한다.", displayName: null }]
+  }, context), (error) => error.code === "SCENE_PLAN_PROTECTED_RESULT");
+  assert.throws(() => validateScenePlan({
+    sceneGoal: "모델이 서버의 등장 규칙을 건너뛰어 새 인물을 만든다.", selectedActionIds: [], dialogue: [],
+    proposedActions: [{ type: "INTRODUCE_NPC", actorId: null, targetId: null, actionStyle: "ARRIVAL", text: "새 인물이 갑자기 나타난다.", displayName: "임의 인물" }]
+  }, context), (error) => error.code === "SCENE_PLAN_ACTION_FORBIDDEN");
 });
 
 test("scene resolution is deterministic, bounded per actor, and never changes world geometry", () => {
@@ -129,6 +198,7 @@ test("scene resolution is deterministic, bounded per actor, and never changes wo
   assert.equal(leftResult.appliedActionIds.length, 1);
   assert.equal(leftResult.rejectedActions[0].reason, "ACTOR_ACTION_BUDGET_EXCEEDED");
   assert.equal(leftResult.sceneSequence[0].type, "ATTACK");
+  assert.match(leftResult.sceneSequence[0].actionId, /^[0-9a-f-]{36}$/i);
   assert.equal(left.directorState.decisionNo, 1);
   assert.equal(left.world.layoutHash, source.world.layoutHash);
   assert.deepEqual(left.world.tiles, source.world.tiles);
@@ -149,7 +219,7 @@ test("scene resolution is deterministic, bounded per actor, and never changes wo
   assert.equal(left.directorState.pendingConsequences.find((item) => item.id === pending.id).status, "resolved", JSON.stringify(callbackResult.rejectedActions));
 });
 
-test("low-health monster traits produce a legal flee action resolved on the fixed grid", () => {
+test("monster HP never forces a combat exit and a nearby monster can speak as a relationship actor", () => {
   const run = runFixture(216);
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
   const enemy = run.entities.find((entity) => entity.kind === "enemy");
@@ -168,18 +238,24 @@ test("low-health monster traits produce a legal flee action resolved on the fixe
   enemy.state.hp = 1;
   enemy.state.maxHp = 5;
   enemy.state.traits = ["FLEE_AT_LOW_HP"];
+  const hpBefore = enemy.state.hp;
   const { candidates } = buildConsequenceCandidates(run, { decisionType: "ACTION" });
-  const flee = candidates.find((candidate) => candidate.type === "FLEE_ENTITY" && candidate.actorId === enemy.id);
-  assert.ok(flee);
-  const beforeDistance = Math.abs(enemy.position.x - player.position.x) + Math.abs(enemy.position.y - player.position.y);
+  assert.equal(candidates.some((candidate) => candidate.type === "FLEE_ENTITY" && candidate.actorId === enemy.id), false);
+  const dialogue = candidates.find((candidate) => candidate.type === "START_DIALOGUE" && candidate.actorId === enemy.id);
+  assert.ok(dialogue);
   const result = applyScenePlan(run, {
     candidates,
-    plan: { sceneGoal: "손상된 오류 개체가 생존을 택한다.", selectedActionIds: [flee.candidateId], dialogue: [] },
+    plan: {
+      sceneGoal: "경계하던 오류 개체가 먼저 자신의 입장을 말한다.",
+      selectedActionIds: [dialogue.candidateId],
+      dialogue: [{ speakerId: enemy.id, line: "나를 지워야만 이 길을 지날 수 있다고 생각해?" }]
+    },
     decisionType: "ACTION"
   });
-  const afterDistance = Math.abs(enemy.position.x - player.position.x) + Math.abs(enemy.position.y - player.position.y);
-  assert.equal(result.sceneSequence[0].type, "FLEE");
-  assert.ok(afterDistance > beforeDistance);
+  assert.equal(result.sceneSequence[0].type, "DIALOGUE");
+  assert.equal(result.sceneSequence[0].speakerId, enemy.id);
+  assert.equal(enemy.state.hp, hpBefore);
+  assert.ok(run.npcMemories.some((memory) => memory.npcId === enemy.id));
 });
 
 test("boss spawning and special-skill rewards are resolved from server catalogs only", () => {
@@ -187,14 +263,15 @@ test("boss spawning and special-skill rewards are resolved from server catalogs 
   run.currentMacroPhase = { ...CAMPAIGN_MACRO_PHASES[6] };
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
   const npc = run.entities.find((entity) => entity.kind === "npc");
-  const freeSlot = run.world.placementSlots.find((slot) => slot.kind === "enemy" &&
-    !run.entities.some((entity) => entity.active && (entity.state?.slotId === slot.id || (entity.position.x === slot.x && entity.position.y === slot.y))));
-  assert.ok(freeSlot);
-  const boss = BOSS_CATALOG.find((entry) => entry.minMacroOrder <= 7);
+  const dormantBoss = run.entities.find((entity) => entity.active === false && entity.state?.activationState === "DORMANT" && entity.state?.boss === true
+    && !run.entities.some((other) => other.active && (other.state?.slotId === entity.state.activationSlotId || (other.position.x === entity.position.x && other.position.y === entity.position.y))));
+  assert.ok(dormantBoss);
+  const boss = BOSS_CATALOG.find((entry) => entry.assetId === dormantBoss.assetId);
+  const entityCountBeforeBoss = run.entities.length;
   const bossCandidate = {
     candidateId: randomUUID(), type: "SPAWN_FROM_SLOT", actorId: null, targetId: player.id,
     priority: 90, cost: 3, reason: "서버 카탈로그의 보스 조우", actionStyle: "ENCOUNTER",
-    slotId: freeSlot.id, assetId: boss.assetId, traitIds: [...boss.traits]
+    entityId: dormantBoss.id, slotId: dormantBoss.state.activationSlotId, assetId: boss.assetId, traitIds: [...boss.traits]
   };
   const reward = SPECIAL_SKILL_TEMPLATES.find((entry) => entry.id === "RUN_SKILL_LIGHTWEIGHT_COPY");
   const rewardCandidate = {
@@ -207,6 +284,10 @@ test("boss spawning and special-skill rewards are resolved from server catalogs 
     decisionType: "TRAVEL"
   });
   assert.equal(bossResult.sceneSequence[0].type, "SPAWN");
+  assert.match(bossResult.sceneSequence[0].actionId, /^[0-9a-f-]{36}$/i);
+  assert.equal(run.entities.length, entityCountBeforeBoss);
+  assert.equal(dormantBoss.active, true);
+  assert.equal(bossResult.events[0].type, "entity_activated");
   assert.ok(run.entities.some((entity) => entity.assetId === boss.assetId && entity.state?.boss));
 
   const rewardResult = applyScenePlan(run, {
@@ -215,15 +296,17 @@ test("boss spawning and special-skill rewards are resolved from server catalogs 
     decisionType: "ACTION"
   });
   assert.equal(rewardResult.sceneSequence[0].type, "REWARD");
+  assert.match(rewardResult.sceneSequence[0].text, /특수 스킬을 얻었다/);
   assert.equal(run.directorState.specialSkills[0].templateId, reward.id);
+  assert.equal(publicRun(run).specialSkills[0].name, "경량 복제");
 
-  const freeNpcSlot = run.world.placementSlots.find((slot) => slot.kind === "npc" &&
-    !run.entities.some((entity) => entity.active && (entity.state?.slotId === slot.id || (entity.position.x === slot.x && entity.position.y === slot.y))));
-  assert.ok(freeNpcSlot);
+  const dormantNpc = run.entities.find((entity) => entity.active === false && entity.kind === "npc" && entity.state?.activationState === "DORMANT"
+    && !run.entities.some((other) => other.active && (other.state?.slotId === entity.state.activationSlotId || (other.position.x === entity.position.x && other.position.y === entity.position.y))));
+  assert.ok(dormantNpc);
   const generatedNpcCandidate = {
     candidateId: randomUUID(), type: "SPAWN_FROM_SLOT", actorId: null, targetId: player.id,
     priority: 50, cost: 2, reason: "서버 NPC 카탈로그의 런 전용 인물", actionStyle: "ARRIVAL",
-    slotId: freeNpcSlot.id, assetId: NPC_CATALOG[0].assetId, spawnKind: "npc", displayName: "포인터", traitIds: ["WITNESS"]
+    entityId: dormantNpc.id, slotId: dormantNpc.state.activationSlotId, assetId: dormantNpc.assetId, spawnKind: "npc", displayName: dormantNpc.name, traitIds: dormantNpc.state.roleTags
   };
   applyScenePlan(run, {
     candidates: [generatedNpcCandidate],

@@ -8,7 +8,10 @@ export function capabilitiesFor(entity) {
   return {
     canCopy: active && Boolean(entity.cloneable) && !entity.protected && !["player", "npc"].includes(entity.kind),
     canDelete: active && ((hostile && !entity.state?.disabled) || removableFinale),
-    canConnect: active && !hostile,
+    // Encounters are conversations, not a combat-only gate. A hostile actor may
+    // still be contacted; the authoritative relationship result decides whether
+    // it listens, withdraws, or becomes more guarded.
+    canConnect: active && entity.kind !== "prop",
     canRestore: !entity.protected && entity.kind !== "player",
     canInteract: active && !hostile && ["npc", "prop"].includes(entity.kind),
     requiredAdminAccess: removableFinale ? 3 : 0,

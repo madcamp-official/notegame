@@ -6,7 +6,8 @@ const ACTION_PATTERNS = Object.freeze({
   restore: [/(?:\b(?:restore|recover|repair|revive|heal)\b)/i, /(?:복구|복원|수리|고치|되살|회복|살려)/],
   undo: [/(?:\b(?:undo|revert|rollback|rewind)\b)/i, /(?:실행\s*취소|되돌리|되돌려|롤백|무르기)/],
   attack: [/(?:\b(?:attack|strike|hit|fight|damage|kill)\b)/i, /(?:공격|타격|때리|싸우|피해|죽이)/],
-  interact: [/(?:\b(?:interact|investigate|inspect|examine|search|study)\b)/i, /(?:상호작용|조사|살펴|확인|탐색|검토)/],
+  search: [/(?:\b(?:investigate|inspect|examine|search|study)\b)/i, /(?:조사|살펴|확인|탐색|수색|찾아|찾는|찾기|검토)/],
+  interact: [/(?:\b(?:interact|activate|open|touch|use)\b)/i, /(?:상호작용|작동|활성화|열어|만져|사용)/],
   negotiate: [/(?:\b(?:negotiate|mediate|persuade|bargain|parley|talk|speak|ask|question)\b)/i, /(?:협상|중재|설득|흥정|담판|대화|말하|말을|묻|질문)/],
   rest: [/(?:\b(?:rest|sleep|camp|recover|recuperate)\b)/i, /(?:휴식|쉬어|쉬기|잠자|야영|숨을\s*고르)/]
 });

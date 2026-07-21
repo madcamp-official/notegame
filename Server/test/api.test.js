@@ -43,13 +43,134 @@ class FakeNarrator {
   }
 }
 
-async function startServer() {
+class StructuredActionNarrator extends FakeNarrator {
+  async planPlayerAction(context) {
+    return {
+      kind: "ACQUIRE",
+      targetEntityIds: [],
+      itemIds: [],
+      destinationRef: null,
+      resultItem: {
+        name: "마을의 등불 조각",
+        kind: "material",
+        description: "고향의 온기를 희미하게 머금은 차가운 금속성 파편."
+      },
+      reason: `전체 문맥상 ${context.playerText.length}자의 입력은 균열 속 물체를 확보하려는 시도다.`
+    };
+  }
+}
+
+class FalseAcquisitionNarrator extends StructuredActionNarrator {
+  async narrate() {
+    return {
+      summary: "거짓 획득 결과",
+      body: "균열에서 마을의 등불 조각을 꺼냈다. 차가운 파편이 손에 잡혔다.",
+      dialogue: [], proposedOps: [], fallbackUsed: false, model: "false-acquisition-narrator"
+    };
+  }
+}
+
+class MoveActionNarrator extends FakeNarrator {
+  async planPlayerAction(context) {
+    const destination = context.destinations.find((item) => item.ref.startsWith("step."));
+    return {
+      kind: "MOVE", targetEntityIds: [], itemIds: [], destinationRef: destination.ref,
+      resultItem: null, reason: "입력 전체가 가까운 방향으로 이동하려는 시도다."
+    };
+  }
+}
+
+class ProtectedCombinationNarrator extends FakeNarrator {
+  constructor() {
+    super();
+    this.contexts = [];
+  }
+
+  async planPlayerAction(context) {
+    if (context.inventory.length === 1) {
+      return {
+        kind: "ACQUIRE", targetEntityIds: [], itemIds: [], destinationRef: null,
+        resultItem: { name: "빛나는 파편", kind: "material", description: "땅에서 발견한 빛나는 파편." },
+        reason: "빛나는 파편을 확보하려는 시도다."
+      };
+    }
+    return {
+      kind: "COMBINE", targetEntityIds: [], itemIds: context.inventory.map((item) => item.id).slice(0, 2), destinationRef: null,
+      resultItem: { name: "개조된 관리자 키보드", kind: "key_item", description: "파편을 결합한 관리자 키보드." },
+      reason: "관리자 키보드에 빛나는 파편을 결합하려는 시도다."
+    };
+  }
+
+  async narrate(context) {
+    this.contexts.push(structuredClone(context));
+    const rejected = context.confirmedEffects?.find((event) => event.type === "player_action_rejected");
+    if (!rejected) return super.narrate(context);
+    return {
+      summary: "키보드와 파편의 조합이 성립하지 않았다",
+      body: `파편을 키보드에 맞춰 봤지만 결합되지 않는다. ${rejected.reason}`,
+      dialogue: [], proposedOps: [], fallbackUsed: false, model: "protected-combination-narrator"
+    };
+  }
+}
+
+class ContinuityNarrator {
+  constructor() {
+    this.contexts = [];
+  }
+
+  async narrate(context) {
+    this.contexts.push(structuredClone(context));
+    const sceneNo = this.contexts.length;
+    return {
+      summary: `연속성 요약 표식 ${sceneNo}이 기록된다`,
+      body: `연속성 본문 표식 ${sceneNo}이 장면에 남았다. 다음 반응은 이 기억을 바탕으로 이어진다.`,
+      dialogue: [],
+      storySequence: [{
+        type: "NARRATION",
+        speakerId: null,
+        actionId: null,
+        text: `청록 종소리 장면 표식 ${sceneNo}이 폐허에 울렸다.`
+      }],
+      nextIntervention: {
+        reason: "방금 들은 종소리에 어떻게 반응할지 선택한다.",
+        choices: [
+          {
+            choiceId: "continuity.listen",
+            text: "종소리가 남긴 의미를 조용히 되짚어 본다.",
+            choiceKind: "DIALOGUE",
+            intentTag: "CURIOUS",
+            resolutionMode: "NONE",
+            skillId: null,
+            targetEntityId: null,
+            destinationRef: null
+          },
+          {
+            choiceId: "continuity.wait",
+            text: "성급히 판단하지 않고 다음 울림을 기다린다.",
+            choiceKind: "ATTITUDE",
+            intentTag: "CAUTIOUS",
+            resolutionMode: "NONE",
+            skillId: null,
+            targetEntityId: null,
+            destinationRef: null
+          }
+        ]
+      },
+      elementalEffectId: null,
+      proposedOps: [],
+      fallbackUsed: false,
+      model: "continuity-narrator"
+    };
+  }
+}
+
+async function startServer({ d20Source = new FixedD20Source(20), narrator = new FakeNarrator() } = {}) {
   const config = loadConfig({ AUTH_MODE: "required", STORAGE: "memory", LOG_LEVEL: "silent" });
   const application = await createApplication({
     config,
     store: new MemoryStore(),
-    narrator: new FakeNarrator(),
-    d20Source: new FixedD20Source(20),
+    narrator,
+    d20Source,
     logger: silentLogger
   });
   await new Promise((resolve) => application.server.listen(0, "127.0.0.1", resolve));
@@ -131,7 +252,10 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.equal(runCreated.payload.run.maxHealth, 12);
   assert.equal(runCreated.payload.run.maxFocus, 10);
   assert.deepEqual(runCreated.payload.run.abilities, ["copy", "delete", "connect", "restore", "undo", "search", "select_all"]);
-  assert.deepEqual(runCreated.payload.run.inputTypes, ["MOVE", "USE_SKILL"]);
+  assert.deepEqual(runCreated.payload.run.inputTypes, ["MOVE", "USE_SKILL", "NARRATIVE_CHOICE"]);
+  assert.match(runCreated.payload.run.pendingChoiceSet.choiceSetId, /^[0-9a-f-]{36}$/i);
+  assert.ok(runCreated.payload.run.pendingChoiceSet.choices.length >= 2);
+  assert.ok(runCreated.payload.run.pendingChoiceSet.choices.some((choice) => choice.choiceKind !== "SKILL"));
 
   const hidden = await jsonRequest(baseUrl, `/v1/campaigns/${campaignId}`, { userId: OTHER_USER_ID });
   assert.equal(hidden.response.status, 404);
@@ -177,8 +301,25 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   const stored = application.store.runs.get(run.id);
   const target = stored.entities.find((entity) => entity.kind === "enemy" && entity.active &&
     !entity.state?.adminAccessLevelId);
-  target.position = { ...stored.entities.find((entity) => entity.id === stored.playerEntityId).position };
+  target.assetId = "enemy.slime.v1";
+  const storedPlayer = stored.entities.find((entity) => entity.id === stored.playerEntityId);
+  for (const entity of stored.entities) {
+    if (entity.id !== target.id && entity.id !== storedPlayer.id
+      && entity.position.x === storedPlayer.position.x && entity.position.y === storedPlayer.position.y) entity.active = false;
+  }
+  target.position = { ...storedPlayer.position };
   target.state.hp = 5;
+  stored.pendingChoiceSet.choices[2] = {
+    choiceId: "test.delete",
+    text: "지금 길을 막는 존재에게 삭제 명령으로 경계를 분명히 한다.",
+    choiceKind: "SKILL",
+    intentTag: "ASSERTIVE",
+    resolutionMode: "D20",
+    skillId: "DELETE",
+    targetEntityId: target.id,
+    destinationRef: null
+  };
+  stored.pendingChoiceSet.suggestedSkillIds = ["DELETE"];
   application.store.runs.set(run.id, stored);
   const legacyAction = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, {
     method: "POST",
@@ -199,7 +340,16 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
     skillId: "DELETE",
     targetIds: [target.id]
   };
-  const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, { method: "POST", body: request });
+  const bypassed = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, { method: "POST", body: request });
+  assert.equal(bypassed.response.status, 409);
+  assert.equal(bypassed.payload.error.code, "CHOICE_REQUIRED");
+  const choiceRequest = {
+    choiceSetId: stored.pendingChoiceSet.choiceSetId,
+    choiceId: "test.delete",
+    idempotencyKey: "turn-0001",
+    expectedRunVersion: run.version
+  };
+  const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, { method: "POST", body: choiceRequest });
   assert.equal(first.response.status, 201);
   assert.equal(first.payload.turn.d20, 20);
   assert.equal(first.payload.turn.outcome, "critical_success");
@@ -212,33 +362,49 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   assert.ok(Array.isArray(first.payload.turn.narrative.dialogue));
   assert.ok(Array.isArray(first.payload.turn.narrative.dialogueDetails));
   assert.ok(Array.isArray(first.payload.turn.sceneSequence));
+  assert.equal(first.payload.turn.runtime.resolution.required, true);
+  assert.equal(first.payload.turn.runtime.resolution.roll.resultTier, "STRONG_SUCCESS");
+  assert.equal(first.payload.turn.runtime.resolution.roll.total, 23);
+  assert.equal(first.payload.turn.runtime.resolution.roll.mechanicalScore, first.payload.turn.mechanicalScore);
+  assert.equal(first.payload.turn.runtime.unity.renderRequired, true);
+  assert.equal(first.payload.turn.runtime.unity.events[0].type, "DELETE");
+  assert.equal(first.payload.turn.runtime.unity.events[0].actorId, "PROTAGONIST_NUPJUKYI");
+  assert.equal(first.payload.turn.runtime.gameplayResult.schemaVersion, "1.0");
+  assert.equal(first.payload.turn.runtime.gameplayResult.actionType, "DELETE");
+  assert.equal(first.payload.turn.runtime.gameplayResult.context, "COMBAT");
+  assert.equal(first.payload.turn.runtime.gameplayResult.outcome, "STRONG_SUCCESS");
+  assert.equal(first.payload.turn.runtime.gameplayResult.fx.scaleTier, "SCREEN");
+  assert.equal(first.payload.turn.runtime.gameplayResult.fx.element, "ROCK_SPIKE");
+  assert.equal(first.payload.turn.runtime.gameplayResult.fx.effectId, "ELEMENTAL_ROCK_SPIKE");
+  assert.equal(first.payload.turn.runtime.unity.events[0].payload.gameplayResult.rollId, first.payload.turn.runtime.resolution.roll.rollId);
   assert.equal(first.payload.turn.sceneDecision.decisionNo, 1);
   assert.equal(first.payload.run.version, 2);
   assert.equal(first.payload.run.currentTurn, 1);
   assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
   assert.equal(first.payload.turn.actionContext, "COMBAT");
   const attackedTarget = first.payload.run.entities.find((entity) => entity.id === target.id);
-  assert.equal(attackedTarget.state.hp, 0);
-  assert.equal(attackedTarget.state.disabled, true);
+  assert.equal(attackedTarget.state.hp, 5);
+  assert.notEqual(attackedTarget.state.disabled, true);
+  assert.ok(first.payload.turn.events.some((event) => ["encounter_intervention", "ambient_fallback_applied"].includes(event.type)));
   assert.equal(first.payload.run.abilityUsageHistory.length, 1);
   assert.equal(first.payload.run.directorState.decisionNo, 1);
 
-  const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, { method: "POST", body: request });
+  const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, { method: "POST", body: choiceRequest });
   assert.equal(replay.response.status, 200);
   assert.equal(replay.payload.fromIdempotencyCache, true);
   assert.equal(replay.payload.run.currentTurn, 1);
   assert.equal(replay.payload.turn.id, first.payload.turn.id);
 
-  const conflict = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, {
+  const conflict = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
     method: "POST",
-    body: { ...request, playerNote: "A different optional note" }
+    body: { ...choiceRequest, choiceId: "opening.listen" }
   });
   assert.equal(conflict.response.status, 409);
   assert.equal(conflict.payload.error.code, "IDEMPOTENCY_CONFLICT");
 
-  const stale = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, {
+  const stale = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
     method: "POST",
-    body: { ...request, idempotencyKey: "turn-0002" }
+    body: { ...choiceRequest, idempotencyKey: "turn-0002" }
   });
   assert.equal(stale.response.status, 409);
   assert.equal(stale.payload.error.code, "RUN_VERSION_CONFLICT");
@@ -247,6 +413,230 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   const fetched = await jsonRequest(baseUrl, `/v1/runs/${run.id}/turns/1`);
   assert.equal(fetched.response.status, 200);
   assert.equal(fetched.payload.turn.narrative.model, "fake-narrator");
+});
+
+test("sealed dialogue choices prepare but do not expose or apply D20 and survive ambient wander version changes", async (t) => {
+  let preparedRolls = 0;
+  const { application, baseUrl } = await startServer({
+    d20Source: { roll() { preparedRolls += 1; return 20; } }
+  });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Dialogue choices", worldSeed: 777, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const stored = application.store.runs.get(run.id);
+  const player = stored.entities.find((entity) => entity.id === stored.playerEntityId);
+  const npc = stored.entities.find((entity) => entity.kind === "npc" && entity.active);
+  npc.position = { x: player.position.x + 1, y: player.position.y };
+  application.store.runs.set(run.id, stored);
+
+  const wandered = await jsonRequest(baseUrl, `/v1/runs/${run.id}/ambient-wander`, {
+    method: "POST",
+    body: { expectedRunVersion: 1, minX: 0, minY: 0, maxX: 159, maxY: 159 }
+  });
+  assert.equal(wandered.response.status, 200);
+  assert.equal(wandered.payload.run.version, 2);
+  assert.equal(wandered.payload.run.pendingChoiceSet.choiceSetId, run.pendingChoiceSet.choiceSetId);
+
+  const request = {
+    choiceSetId: run.pendingChoiceSet.choiceSetId,
+    choiceId: "opening.listen",
+    idempotencyKey: "dialogue-choice-0001",
+    expectedRunVersion: 2
+  };
+  const selected = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, { method: "POST", body: request });
+  assert.equal(selected.response.status, 201, JSON.stringify(selected.payload));
+  assert.equal(selected.payload.turn.resolutionMode, "NONE");
+  assert.equal(selected.payload.turn.d20, null);
+  assert.equal(selected.payload.turn.dice, null);
+  assert.equal(preparedRolls, 1);
+  assert.equal(selected.payload.turn.outcome, "narrative");
+  assert.equal(selected.payload.turn.runtime.resolution.required, false);
+  assert.equal(selected.payload.turn.runtime.resolution.roll, null);
+  assert.equal(selected.payload.turn.runtime.unity.renderRequired, false);
+  assert.deepEqual(selected.payload.turn.runtime.unity.events, []);
+  assert.equal(selected.payload.run.currentTurn, 1);
+  assert.equal(selected.payload.run.version, 3);
+  assert.equal(selected.payload.run.choiceHistory.length, 1);
+  assert.equal(selected.payload.run.choiceHistory[0].text, run.pendingChoiceSet.choices[0].text);
+  assert.ok(selected.payload.run.npcMemories.some((memory) => memory.sourceChoiceId === selected.payload.run.choiceHistory[0].id));
+  assert.ok(selected.payload.run.npcRelationships.find((relationship) => relationship.npcId === npc.id).trust >= 1);
+  assert.notEqual(selected.payload.run.pendingChoiceSet.choiceSetId, run.pendingChoiceSet.choiceSetId);
+  assert.equal(selected.payload.turn.narrative.nextIntervention.choiceSetId, selected.payload.run.pendingChoiceSet.choiceSetId);
+  assert.ok(selected.payload.turn.narrative.nextIntervention.choices.length >= 2);
+
+  const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, { method: "POST", body: request });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.payload.fromIdempotencyCache, true);
+  assert.equal(replay.payload.turn.id, selected.payload.turn.id);
+  assert.equal(preparedRolls, 1);
+
+  const stale = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
+    method: "POST",
+    body: { ...request, idempotencyKey: "dialogue-choice-0002", expectedRunVersion: 3 }
+  });
+  assert.equal(stale.response.status, 409);
+  assert.equal(stale.payload.error.code, "CHOICE_SET_STALE");
+});
+
+test("a freeform item search uses SEARCH resolution and commits the discovered inventory item", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Natural search", worldSeed: 1701, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: {
+      text: "주변을 둘러보다 쓸 만한 아이템을 찾아본다",
+      idempotencyKey: "freeform-search-item-0001",
+      expectedRunVersion: run.version
+    }
+  });
+  assert.equal(result.response.status, 201, JSON.stringify(result.payload));
+  assert.equal(result.payload.turn.request.skillId, "SEARCH");
+  assert.equal(result.payload.turn.runtime.resolution.required, true);
+  assert.equal(result.payload.turn.runtime.unity.events[0].type, "SEARCH");
+  assert.equal(result.payload.turn.runtime.gameplayResult.actionType, "SEARCH");
+  assert.equal(result.payload.turn.runtime.gameplayResult.result.newInformation, true);
+  assert.ok(result.payload.turn.runtime.resolution.inventoryChanges.some((event) => event.type === "inventory_item_acquired"));
+  assert.ok(result.payload.run.inventory.some((item) => item.source === "search_discovery"));
+});
+
+test("a structured action proposal, not an input keyword, commits the exact narrated acquisition candidate", async (t) => {
+  const { application, baseUrl } = await startServer({ narrator: new StructuredActionNarrator(), d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Context acquisition", worldSeed: 1702, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: {
+      text: "불안정한 균열 안으로 손을 뻗어 닿은 것을 안전하게 확보하려 한다",
+      idempotencyKey: "context-acquire-0001",
+      expectedRunVersion: run.version
+    }
+  });
+  assert.equal(result.response.status, 201, JSON.stringify(result.payload));
+  assert.equal(result.payload.turn.request.actionProposal.kind, "ACQUIRE");
+  assert.equal(result.payload.turn.request.actionProposal.source, "llm_structured_proposal");
+  assert.ok(result.payload.run.inventory.some((item) => item.name === "마을의 등불 조각"));
+  assert.ok(result.payload.turn.runtime.resolution.confirmedEffects.some((event) => event.type === "inventory_item_acquired" && event.itemName === "마을의 등불 조각"));
+});
+
+test("failed acquisition rejects false success prose and leaves inventory unchanged", async (t) => {
+  const { application, baseUrl } = await startServer({ narrator: new FalseAcquisitionNarrator(), d20Source: new FixedD20Source(1) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Failed acquisition", worldSeed: 1703, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: { text: "균열 속에 손을 넣어 닿은 것을 꺼낸다", idempotencyKey: "failed-acquire-0001", expectedRunVersion: run.version }
+  });
+  assert.equal(result.response.status, 201, JSON.stringify(result.payload));
+  assert.equal(result.payload.turn.outcome, "failure");
+  assert.equal(result.payload.turn.narrative.fallbackUsed, true);
+  assert.ok(!result.payload.turn.runtime.resolution.inventoryChanges.some((event) => event.type === "inventory_item_acquired"));
+  assert.deepEqual(result.payload.run.inventory.map((item) => item.name), ["관리자 키보드"]);
+  assert.doesNotMatch(result.payload.turn.narrative.body, /등불 조각|손에 잡혔다|꺼냈다/u);
+});
+
+test("a free-form one-step destination resolves as an authoritative D20 MOVE", async (t) => {
+  const { application, baseUrl } = await startServer({ narrator: new MoveActionNarrator(), d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Natural move", worldSeed: 1704, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: { text: "가까운 안전한 방향으로 한 걸음 이동한다", idempotencyKey: "freeform-move-0001", expectedRunVersion: run.version }
+  });
+  assert.equal(result.response.status, 201, JSON.stringify(result.payload));
+  assert.equal(result.payload.turn.request.skillId, "MOVE");
+  assert.equal(result.payload.turn.runtime.resolution.required, true);
+  assert.ok(result.payload.turn.runtime.resolution.movementChanges.some((event) => event.type === "entity_moved"));
+  assert.equal(result.payload.turn.runtime.unity.events[0].type, "MOVE");
+});
+
+test("an impossible protected-item combination returns narrated failure instead of HTTP 422", async (t) => {
+  const narrator = new ProtectedCombinationNarrator();
+  const { application, baseUrl } = await startServer({ narrator, d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Narrated rejection", worldSeed: 1705, turnLimit: 40 }
+  })).payload.campaign;
+  let run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const acquired = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: { text: "땅의 빛나는 파편을 줍는다", idempotencyKey: "protected-combine-acquire", expectedRunVersion: run.version }
+  });
+  assert.equal(acquired.response.status, 201, JSON.stringify(acquired.payload));
+  run = acquired.payload.run;
+
+  const combined = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: { text: "관리자 키보드에 빛나는 파편을 조합한다", idempotencyKey: "protected-combine-attempt", expectedRunVersion: run.version }
+  });
+  assert.equal(combined.response.status, 201, JSON.stringify(combined.payload));
+  assert.equal(combined.payload.turn.runtime.resolution.required, false);
+  assert.equal(combined.payload.turn.runtime.unity.renderRequired, false);
+  assert.ok(combined.payload.turn.events.some((event) => event.type === "player_action_rejected" && event.code === "INVENTORY_ITEM_PROTECTED"));
+  assert.match(combined.payload.turn.narrative.body, /결합되지 않는다|소모할 수 없다/u);
+  assert.deepEqual(combined.payload.run.inventory.map((item) => item.name), ["관리자 키보드", "빛나는 파편"]);
+  assert.ok(!combined.payload.turn.events.some((event) => event.type === "relationship_changed" || event.type === "npc_memory_added"));
+  assert.ok(narrator.contexts.at(-1).confirmedEffects.some((event) => event.type === "player_action_rejected"));
+});
+
+test("committed LLM scene text remains in the bounded ledger supplied to the following turn", async (t) => {
+  const narrator = new ContinuityNarrator();
+  const { application, baseUrl } = await startServer({
+    narrator,
+    d20Source: new FixedD20Source(20)
+  });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Narrative continuity", worldSeed: 1777, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+
+  const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
+    method: "POST",
+    body: {
+      choiceSetId: run.pendingChoiceSet.choiceSetId,
+      choiceId: "opening.listen",
+      idempotencyKey: "continuity-choice-0001",
+      expectedRunVersion: run.version
+    }
+  });
+  assert.equal(first.response.status, 201, JSON.stringify(first.payload));
+  const firstLedger = first.payload.run.storyLedger.find((entry) => entry.turnNo === 1);
+  assert.match(firstLedger.narrativeDigest, /연속성 요약 표식 1/);
+  assert.match(firstLedger.narrativeDigest, /연속성 본문 표식 1/);
+  assert.ok(firstLedger.narrativeFragments.some((fragment) => fragment.includes("청록 종소리 장면 표식 1")));
+  assert.ok(firstLedger.narrativeDigest.length <= 900);
+  assert.ok(firstLedger.narrativeFragments.length <= 8);
+  assert.ok(firstLedger.narrativeFragments.every((fragment) => fragment.length <= 320));
+
+  const second = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
+    method: "POST",
+    body: {
+      choiceSetId: first.payload.run.pendingChoiceSet.choiceSetId,
+      choiceId: "continuity.listen",
+      idempotencyKey: "continuity-choice-0002",
+      expectedRunVersion: first.payload.run.version
+    }
+  });
+  assert.equal(second.response.status, 201, JSON.stringify(second.payload));
+  assert.equal(narrator.contexts.length, 2);
+  const suppliedPriorLedger = narrator.contexts[1].storyLedger.find((entry) => entry.turnNo === 1);
+  assert.match(suppliedPriorLedger.narrativeDigest, /연속성 본문 표식 1/);
+  assert.ok(suppliedPriorLedger.narrativeFragments.some((fragment) => fragment.includes("청록 종소리 장면 표식 1")));
 });
 
 test("safe travel commits one butterfly-effect scene without consuming a campaign turn", async (t) => {
@@ -275,10 +665,24 @@ test("safe travel commits one butterfly-effect scene without consuming a campaig
     expectedRunVersion: run.version,
     destination
   };
+  const blocked = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, { method: "POST", body: request });
+  assert.equal(blocked.response.status, 409);
+  assert.equal(blocked.payload.error.code, "CHOICE_REQUIRED");
+  assert.equal(blocked.payload.error.details.choiceSetId, run.pendingChoiceSet.choiceSetId);
+  const unchanged = (await jsonRequest(baseUrl, `/v1/runs/${run.id}`)).payload.run;
+  assert.equal(unchanged.version, run.version);
+  assert.equal(unchanged.pendingChoiceSet.choiceSetId, run.pendingChoiceSet.choiceSetId);
+  assert.deepEqual(unchanged.entities.find((entity) => entity.id === unchanged.playerEntityId).position, player.position);
+
+  const legacyRun = application.store.runs.get(run.id);
+  legacyRun.pendingChoiceSet = null;
+  application.store.runs.set(run.id, legacyRun);
   const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, { method: "POST", body: request });
   assert.equal(first.response.status, 201);
   assert.equal(first.payload.navigation.campaignTurnConsumed, false);
   assert.equal(first.payload.run.currentTurn, 0);
+  assert.equal(first.payload.navigation.campaignTurnBefore, 0);
+  assert.equal(first.payload.navigation.campaignTurnAfter, 0);
   assert.equal(first.payload.run.version, 2);
   assert.equal(first.payload.navigation.sceneDecision.decisionNo, 1);
   assert.ok(first.payload.navigation.sceneSequence.length >= 1);

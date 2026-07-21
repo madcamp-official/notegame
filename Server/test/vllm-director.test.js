@@ -30,8 +30,8 @@ function responseWith(value, finishReason = "stop") {
 test("vLLM adapter retries one semantically invalid response and sends OpenAI structured config", async () => {
   const requests = [];
   const outputs = [
-    { summary: "Unsafe", body: "Bad op", dialogue: null, proposedOps: [{ type: "delete_entity", text: "Delete it" }] },
-    { summary: "Lantern found", body: "Rain beads on the lantern's cracked glass.", dialogue: null, proposedOps: [{ type: "ambient_cue", text: "Play a soft rain cue." }] }
+    { summary: "위험한 제안", body: "허용되지 않은 조작을 시도한다.", dialogue: null, proposedOps: [{ type: "delete_entity", text: "등불을 지운다." }] },
+    { summary: "금이 간 등불을 찾았다", body: "빗방울이 등불의 갈라진 유리 위로 맺힌다.", dialogue: null, proposedOps: [{ type: "ambient_cue", text: "잔잔한 빗소리가 이어진다." }] }
   ];
   const narrator = new VllmNarrator({
     baseUrl: "http://127.0.0.1:8000/v1",
