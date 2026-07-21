@@ -19,6 +19,7 @@ function boolean(value, fallback) {
 export function loadConfig(env = process.env) {
   const storage = env.STORAGE || "memory";
   const authMode = env.AUTH_MODE || "local";
+  const environment = env.NODE_ENV || "development";
   if (!["memory", "postgres"].includes(storage)) {
     throw new AppError(500, "CONFIG_INVALID", "STORAGE must be memory or postgres.");
   }
@@ -36,7 +37,7 @@ export function loadConfig(env = process.env) {
   return Object.freeze({
     host: env.HOST || "127.0.0.1",
     port: integer(env.PORT, 8787, 1, 65535, "PORT"),
-    environment: env.NODE_ENV || "development",
+    environment,
     logLevel: env.LOG_LEVEL || "info",
     storage,
     databaseUrl: env.DATABASE_URL || "",
@@ -44,11 +45,11 @@ export function loadConfig(env = process.env) {
     authMode,
     defaultUserId: env.DEFAULT_USER_ID || LOCAL_USER_ID,
     geminiApiKey: env.GEMINI_API_KEY || "",
-    geminiTimeoutMs: integer(env.GEMINI_TIMEOUT_MS, 4000, 250, 15000, "GEMINI_TIMEOUT_MS"),
-    geminiFastModel: env.GEMINI_FAST_MODEL || "gemini-2.5-flash-lite",
-    geminiQualityModel: env.GEMINI_QUALITY_MODEL || env.GEMINI_FAST_MODEL || "gemini-2.5-flash-lite",
-    geminiFastOutputTokens: integer(env.GEMINI_FAST_OUTPUT_TOKENS, 384, 128, 1024, "GEMINI_FAST_OUTPUT_TOKENS"),
-    geminiQualityOutputTokens: integer(env.GEMINI_QUALITY_OUTPUT_TOKENS, 640, 256, 1536, "GEMINI_QUALITY_OUTPUT_TOKENS"),
+    geminiTimeoutMs: integer(env.GEMINI_TIMEOUT_MS, 15000, 250, 15000, "GEMINI_TIMEOUT_MS"),
+    geminiFastModel: env.GEMINI_FAST_MODEL || "gemini-3.1-flash-lite",
+    geminiQualityModel: env.GEMINI_QUALITY_MODEL || env.GEMINI_FAST_MODEL || "gemini-3.1-flash-lite",
+    geminiFastOutputTokens: integer(env.GEMINI_FAST_OUTPUT_TOKENS, 1024, 256, 2048, "GEMINI_FAST_OUTPUT_TOKENS"),
+    geminiQualityOutputTokens: integer(env.GEMINI_QUALITY_OUTPUT_TOKENS, 1536, 512, 3072, "GEMINI_QUALITY_OUTPUT_TOKENS"),
     llmProvider,
     vllmBaseUrl: env.VLLM_BASE_URL || "",
     vllmApiKey: env.VLLM_API_KEY || "",
@@ -56,6 +57,8 @@ export function loadConfig(env = process.env) {
     vllmTimeoutMs: integer(env.VLLM_TIMEOUT_MS, 8000, 250, 30000, "VLLM_TIMEOUT_MS"),
     vllmFastOutputTokens: integer(env.VLLM_FAST_OUTPUT_TOKENS, 768, 128, 2048, "VLLM_FAST_OUTPUT_TOKENS"),
     vllmQualityOutputTokens: integer(env.VLLM_QUALITY_OUTPUT_TOKENS, 1024, 256, 2048, "VLLM_QUALITY_OUTPUT_TOKENS"),
+    llmResponseTrace: boolean(env.LLM_RESPONSE_TRACE, environment === "development"),
+    llmResponseTraceFile: env.LLM_RESPONSE_TRACE_FILE || "logs/llm-responses.jsonl",
     corsOrigins: (env.CORS_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean)
   });
 }

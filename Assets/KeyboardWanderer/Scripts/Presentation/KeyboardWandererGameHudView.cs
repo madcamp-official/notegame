@@ -21,6 +21,11 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private Button confirmButton;
         [SerializeField] private Image outcomeEmote;
 
+        [Header("퀘스트·상태 패널(선택)")]
+        [SerializeField] private TMP_Text questHint;
+        [SerializeField] private TMP_Text statusLabels;
+        [SerializeField] private TMP_Text statusValues;
+
         private bool _bound;
 
         public bool IsReady => assetManifest != null && location != null && sceneTitle != null &&
@@ -43,6 +48,14 @@ namespace KeyboardWanderer.Demo
             SetText(sceneTitle, title);
             SetText(objective, currentObjective);
             SetText(actionHint, guidance);
+        }
+
+        /// <summary>퀘스트 추천 행동과 상태 2컬럼. 리스타일 전 프리팹에서는 필드가 비어 있어도 안전하다.</summary>
+        public void PresentQuestStatus(string questActionHint, string labels, string values)
+        {
+            SetText(questHint, questActionHint);
+            SetText(statusLabels, labels);
+            SetText(statusValues, values);
         }
 
         public void PresentConfirm(string label, bool interactable)
@@ -88,12 +101,20 @@ namespace KeyboardWanderer.Demo
             outcomeEmote = emote;
             UnityEditor.EditorUtility.SetDirty(this);
         }
+
+        public void ConfigureQuestStatus(TMP_Text questActionHint, TMP_Text labels, TMP_Text values)
+        {
+            questHint = questActionHint;
+            statusLabels = labels;
+            statusValues = values;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
 #endif
 
         private static void SetText(TMP_Text target, string value)
         {
             value ??= string.Empty;
-            if (target.text != value)
+            if (target != null && target.text != value)
                 target.text = value;
         }
     }

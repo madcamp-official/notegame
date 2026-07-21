@@ -1,4 +1,4 @@
-import { buildConsequenceCandidates } from "./consequence-candidates.js";
+import { buildConsequenceCandidates, materializeProposedSceneActions } from "./consequence-candidates.js";
 import { applyScenePlan } from "./consequence-resolver.js";
 import { resolveSafeTravel } from "./turn-engine.js";
 import { createFallbackScenePlan, validateScenePlan } from "../llm/scene-director.js";
@@ -16,8 +16,10 @@ export async function planDecisionScene({ narrator, run, decisionType, navigatio
   }
   let plan;
   try {
-    const validated = validateScenePlan({ sceneGoal: rawPlan.sceneGoal, selectedActionIds: rawPlan.selectedActionIds, dialogue: rawPlan.dialogue || [] }, bundle.context);
-    plan = { ...validated, fallbackUsed: rawPlan.fallbackUsed === true, model: rawPlan.model || "validated-scene-director" };
+    const validated = validateScenePlan({ sceneGoal: rawPlan.sceneGoal, selectedActionIds: rawPlan.selectedActionIds || [], proposedActions: rawPlan.proposedActions || [], dialogue: rawPlan.dialogue || [] }, bundle.context);
+    const proposedCandidates = materializeProposedSceneActions(run, validated.proposedActions);
+    bundle.candidates.push(...proposedCandidates);
+    plan = { ...validated, selectedActionIds: [...validated.selectedActionIds, ...proposedCandidates.map((item) => item.candidateId)].slice(0, 4), fallbackUsed: rawPlan.fallbackUsed === true, model: rawPlan.model || "validated-scene-director" };
   } catch (error) {
     logger?.warn?.({ event: "scene_plan_validation_fallback", category: error?.code || "unexpected" });
     plan = createFallbackScenePlan(bundle.context);
@@ -25,8 +27,8 @@ export async function planDecisionScene({ narrator, run, decisionType, navigatio
   return { context: bundle.context, candidates: bundle.candidates, plan };
 }
 
-export function resolveTravelDecision({ run, request, sceneDecision, now = new Date().toISOString() }) {
-  const committed = resolveSafeTravel({ run, request, now });
+export function resolveTravelDecision({ run, request, d20Source, sceneDecision, now = new Date().toISOString() }) {
+  const committed = resolveSafeTravel({ run, request, d20Source, now });
   const scene = applyScenePlan(committed.run, {
     candidates: sceneDecision.candidates,
     plan: sceneDecision.plan,
@@ -35,7 +37,7 @@ export function resolveTravelDecision({ run, request, sceneDecision, now = new D
   });
   committed.navigation.sceneDecision = scene;
   committed.navigation.sceneSequence = scene.sceneSequence;
-  committed.navigation.events = [...(committed.navigation.events || []), ...scene.events];
+  committed.navigation.events = [...(committed.navigation.events || []), ...(committed.events || []), ...scene.events];
   committed.navigation.narrative = {
     summary: scene.sceneGoal,
     body: scene.sceneSequence.map((item) => item.text).filter(Boolean).join(" ") || scene.sceneGoal,

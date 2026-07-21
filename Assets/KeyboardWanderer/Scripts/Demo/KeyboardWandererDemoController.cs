@@ -80,6 +80,9 @@ namespace KeyboardWanderer.Demo
         private string _lastOutcome = "READY";
         private string _lastExplanation = "서버는 입력을 가장 가까운 합법적 시도로 정규화합니다.";
         private string[] _lastDialogue = Array.Empty<string>();
+        // 대화 줄(trim) → 화자 이름·스프라이트. 서버 DIALOGUE 씬 액션에서 채워지고 런 리셋 때 비운다.
+        private readonly Dictionary<string, string> _dialogueSpeakerNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Sprite> _dialogueSpeakerSprites = new Dictionary<string, Sprite>(StringComparer.Ordinal);
         private bool _lastNarrativeFallbackUsed = true;
         private string _lastNarrativeModel = "deterministic";
         private bool _gmPending;
@@ -116,6 +119,14 @@ namespace KeyboardWanderer.Demo
         private KeyboardWandererEntityVisualFactory _entityVisualFactory;
         private KeyboardWandererEntityAnimationDriver _entityAnimationDriver;
         private float _playerActionUntil;
+        // 현재 스킬 시전 모션 프레임. null이면 방향별 기본 공격 모션을 쓴다(DELETE 등).
+        private Sprite[] _playerActionFrames;
+
+        [Header("Skill effects (temp)")]
+        [SerializeField, Tooltip("플레이 중 좌상단에 스킬 이펙트 테스터 패널을 띄운다. 출시 전 끄면 된다.")]
+        private bool enableSkillEffectTester = true;
+        private SkillEffectDirector _skillEffectDirector;
+        private SkillEffectTester _skillEffectTester;
 
         private float PlayerWalkSpeed => authoringSettings != null ? authoringSettings.PlayerWalkSpeed : 4.2f;
         private float MusicVolume => _settingsController != null ? _settingsController.MusicVolume : 0.65f;
@@ -219,6 +230,10 @@ namespace KeyboardWanderer.Demo
                 UpdateAuthoredUi();
             }
             PlayIntroIfNeeded();
+            /// <summary>
+            /// 스킬 테스터(개발자용)
+            /// </summary>
+            // EnsureSkillEffectTester();
         }
 
         /// <summary>
@@ -239,6 +254,7 @@ namespace KeyboardWanderer.Demo
                 PlayerPrefs.SetInt(IntroCompletedKey, 1);
                 PlayerPrefs.Save();
             });
+            
         }
 
         public void ConfigureAuthoredContent(
@@ -404,17 +420,34 @@ namespace KeyboardWanderer.Demo
                         _reopenDialogueAfterWalk = true;
                 }
                 int dialoguePage = Mathf.Clamp(_dialoguePresenter.Page, 0, Mathf.Max(0, dialoguePages.Length - 1));
-                bool showingResult = HasActionResultPage() && dialoguePage == 0;
+                // 스토리 대화 페이지가 활성일 때는 결과·서사 페이지가 목록에 없으므로 화자 판정에서 제외한다.
+                bool storyDialoguePages = _lastDialogue != null && _lastDialogue.Length > 0 &&
+                                          _selectionController.Ability == AbilityKind.Search;
+                bool showingResult = !storyDialoguePages && HasActionResultPage() && dialoguePage == 0;
                 int narrationPage = HasActionResultPage() ? 1 : 0;
-                bool showingNarration = dialoguePage == narrationPage;
+                bool showingNarration = !storyDialoguePages && dialoguePage == narrationPage;
                 bool hasNextDialogue = dialoguePage < dialoguePages.Length - 1;
-                _sceneUi.PresentDialogue(!_dialoguePresenter.IsDismissed,
-                    showingResult ? "행동 결과" : showingNarration ? NarrativeSourceLabel() : "코드리아 주민",
-                    dialoguePages[dialoguePage], hasNextDialogue ? "다음 ▶" : "대화 끝", true);
+                string pageText = dialoguePages[dialoguePage];
+                string speaker = showingResult ? "행동 결과"
+                    : showingNarration ? NarrativeSourceLabel() : "코드리아 주민";
+                Sprite speakerSprite = null;
+                if (!showingResult && !showingNarration)
+                {
+                    if (_dialogueSpeakerNames.TryGetValue(pageText, out string recordedSpeaker))
+                        speaker = recordedSpeaker;
+                    _dialogueSpeakerSprites.TryGetValue(pageText, out speakerSprite);
+                }
+                // 화자를 모르는 페이지도 이야기의 주인공인 넙죽이를 컷인으로 세운다.
+                if (speakerSprite == null && _visualAssetLibrary != null)
+                    speakerSprite = _playerSprite;
+                _sceneUi.PresentDialogue(!_dialoguePresenter.IsDismissed, speaker,
+                    pageText, hasNextDialogue ? "다음 ▶" : "대화 끝", true, speakerSprite);
             }
             _sceneUi.PresentHud(CurrentAreaName(view) + " · " + CurrentBiomeLabel(view), StoryBeat(view),
                 ObjectiveHudText(view),
                 _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : ActionGuidanceText(view));
+            _sceneUi.PresentQuestStatus(QuestActionHintText(view),
+                KeyboardWandererHudTextComposer.StatusLabels(), StatusHudValues(view));
             bool selectionReady = CanSubmitCurrentSelection();
             string selectionHeading = AbilityPlayerLabel(_selectionController.Ability) + " · " +
                                       (selectionReady ? "사용 가능" : "준비 필요");
@@ -1043,6 +1076,7 @@ namespace KeyboardWanderer.Demo
 
             SyncLocalEncounterState(response.Run);
             ApplyTurnPresentation(LocalTurnPresentationAdapter.Create(response));
+            PlaySkillEffectsForLocalTurn(request.Ability, response.Outcome, response.Run ?? _service.CurrentView);
             CaptureLocalRestorableTarget(response, view);
 
             RunView committedView = response.Run ?? _service.CurrentView;
@@ -1168,6 +1202,7 @@ namespace KeyboardWanderer.Demo
             SyncRestorableCandidateFromServer();
             ApplyServerTurnPresentation(committed.Turn);
             SyncServerEntityVisuals(_serverRun);
+            PlaySkillEffectsForServerTurn(committed.Turn);
             QueueServerSceneSequence(committed.Turn.sceneSequence);
             UpdateSelectionVisual(_service.CurrentView);
             _runSessionController?.RememberServerRun(_serverRun.id);
@@ -1416,6 +1451,8 @@ namespace KeyboardWanderer.Demo
             _lastActionContext = "--";
             _lastStateChanges = "아직 확정된 상태 변화가 없습니다.";
             _lastDialogue = Array.Empty<string>();
+            _dialogueSpeakerNames.Clear();
+            _dialogueSpeakerSprites.Clear();
             _lastNarrativeFallbackUsed = true;
             _lastNarrativeModel = "deterministic";
             _tutorialPresenter.Start(PlayerPrefs.GetInt(TutorialCompletedKey, 0) == 0);
@@ -1885,7 +1922,8 @@ namespace KeyboardWanderer.Demo
                 _playerAttackFrames,
                 _playerAttackLeftFrames,
                 _playerAttackUpFrames,
-                _playerAttackDownFrames);
+                _playerAttackDownFrames,
+                _playerActionFrames);
         }
 
         private void BeginPlayerPathAnimation(IReadOnlyList<GridCoord> path, RunView view)
@@ -1957,6 +1995,9 @@ namespace KeyboardWanderer.Demo
                     if (dialogue.Count < 8 && !dialogue.Contains(action.line))
                         dialogue.Add(action.line);
                     _lastDialogue = dialogue.ToArray();
+                    string dialogueKey = action.line.Trim();
+                    _dialogueSpeakerNames[dialogueKey] = actorName;
+                    _dialogueSpeakerSprites[dialogueKey] = ServerEntitySprite(action.actorId);
                     AddLog(actorName + " · “" + action.line.Trim() + "”");
                     _dialoguePresenter.Show();
                     _sceneUi?.SetStoryVisible(true);
@@ -2073,7 +2114,10 @@ namespace KeyboardWanderer.Demo
                     visual.Facing = new Vector2(0f, Mathf.Sign(direction.y));
             }
             if (visual.IsPlayer)
+            {
+                _playerActionFrames = null; // 후속 장면 공격은 방향별 기본 공격 모션 사용
                 _playerActionUntil = Time.unscaledTime + 0.38f;
+            }
             PlaySfx(AssetClip(action.hit ? "SlashSound" : "UiCancelSound"));
             float started = Time.unscaledTime;
             const float duration = 0.34f;
@@ -2408,7 +2452,8 @@ namespace KeyboardWanderer.Demo
 
             Func<GridCoord, Color> tileColorAt = coord =>
             {
-                if (!useServerWorld && OutsideLocalWorldDisc(coord, width, height))
+                // 서버 월드도 실제로는 정사각 그리드지만, 미니맵은 항상 원형 실루엣으로 보여준다.
+                if (OutsideLocalWorldDisc(coord, width, height))
                     return Color.clear;
                 TileKind kind = WorldTileKind(view, coord, useServerWorld);
                 return MinimapTileColor(BiomeIdAt(view, coord), kind);
@@ -3156,8 +3201,18 @@ namespace KeyboardWanderer.Demo
 
         private string ObjectiveHudText(RunView view)
         {
-            return KeyboardWandererHudTextComposer.ObjectiveHud(PresentationModel(view),
+            return KeyboardWandererHudTextComposer.ObjectiveHud(PresentationModel(view));
+        }
+
+        private string QuestActionHintText(RunView view)
+        {
+            return KeyboardWandererHudTextComposer.QuestActionHint(PresentationModel(view),
                 _encounterMoveRequired);
+        }
+
+        private string StatusHudValues(RunView view)
+        {
+            return KeyboardWandererHudTextComposer.StatusValues(PresentationModel(view));
         }
 
         private string ActionGuidanceText(RunView view)
@@ -3519,6 +3574,49 @@ namespace KeyboardWanderer.Demo
             return _runPresentationModel;
         }
 
+        /// <summary>화자 이름으로 서버·로컬 엔티티를 차례로 찾아 버스트 스프라이트를 결정한다.</summary>
+        private Sprite SpriteForSpeakerName(string speakerName)
+        {
+            if (string.IsNullOrWhiteSpace(speakerName))
+                return null;
+            string name = speakerName.Trim();
+            if (_serverRun?.entities != null)
+            {
+                for (int i = 0; i < _serverRun.entities.Length; i++)
+                {
+                    GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                    if (entity == null || !string.Equals(entity.name?.Trim(), name, StringComparison.Ordinal))
+                        continue;
+                    return SpriteForServerEntity(entity,
+                        string.Equals(entity.id, _serverRun.playerEntityId, StringComparison.OrdinalIgnoreCase));
+                }
+            }
+            if (_service != null)
+            {
+                IReadOnlyList<EntityView> entities = _service.CurrentView.Entities;
+                for (int i = 0; i < entities.Count; i++)
+                    if (string.Equals(entities[i].DisplayName?.Trim(), name, StringComparison.Ordinal))
+                        return SpriteForEntity(entities[i]);
+            }
+            return null;
+        }
+
+        /// <summary>서버 엔티티 id로 대화창 버스트에 쓸 스프라이트를 찾는다. 미확인 화자는 null.</summary>
+        private Sprite ServerEntitySprite(string entityId)
+        {
+            if (_serverRun?.entities == null || string.IsNullOrWhiteSpace(entityId))
+                return null;
+            for (int i = 0; i < _serverRun.entities.Length; i++)
+            {
+                GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                if (entity == null || !string.Equals(entity.id, entityId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return SpriteForServerEntity(entity,
+                    string.Equals(entity.id, _serverRun.playerEntityId, StringComparison.OrdinalIgnoreCase));
+            }
+            return null;
+        }
+
         private string ServerEntityName(string entityId, string fallback)
         {
             if (_serverRun?.entities != null && !string.IsNullOrWhiteSpace(entityId))
@@ -3541,6 +3639,255 @@ namespace KeyboardWanderer.Demo
             ApplyTurnPresentation(ServerTurnPresentationAdapter.FromTurn(turn, _serverRun, GmEnabled));
         }
 
+        // ── 스킬 이펙트 ─────────────────────────────────────────────────────────────
+
+        private void EnsureSkillEffectTester()
+        {
+            if (!enableSkillEffectTester || _skillEffectTester != null)
+                return;
+            var go = new GameObject("SkillEffectTester");
+            go.transform.SetParent(transform, false);
+            _skillEffectTester = go.AddComponent<SkillEffectTester>();
+            _skillEffectTester.Bind(this);
+        }
+
+        private SkillEffectDirector EnsureSkillEffectDirector()
+        {
+            if (_skillEffectDirector != null)
+                return _skillEffectDirector;
+            Transform effectsRoot = WorldEffectsRoot;
+            // 디렉터는 컨트롤러에 붙여 런 리셋(RuntimeEffects 정리)에도 살아남게 하고,
+            // 실제 이펙트 인스턴스만 effectsRoot 밑에 스폰한다.
+            var go = new GameObject("SkillEffectDirector");
+            go.transform.SetParent(transform, false);
+            _skillEffectDirector = go.AddComponent<SkillEffectDirector>();
+            SkillEffectCatalog catalog = Resources.Load<SkillEffectCatalog>("SkillEffectCatalog");
+            _skillEffectDirector.Initialize(catalog, effectsRoot);
+            if (catalog == null)
+                Debug.LogWarning("[SkillEffect] SkillEffectCatalog.asset을 Resources에서 찾지 못했습니다. " +
+                                 "메뉴 Keyboard Wanderer > Rebuild Skill Effect Catalog를 실행하세요.");
+            return _skillEffectDirector;
+        }
+
+        /// <summary>확정된 스킬·크기·속성·대상 위치로 이펙트를 재생하고, 공격 스킬이면 시전자를 대상 쪽으로 돌린다.</summary>
+        private void PlaySkillEffects(AbilityKind skill, SkillFxSize size, List<Vector3> targets,
+            SkillFxType fxType = SkillFxType.Physical)
+        {
+            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
+                return;
+            SetPlayerSkillMotion(skill, targets);
+            SkillEffectDirector director = EnsureSkillEffectDirector();
+            if (director == null || !director.IsReady)
+                return;
+            director.Play(SkillEffectMapping.ForTarget(skill, size, fxType), targets);
+        }
+
+        /// <summary>스킬에 어울리는 넙죽이 모션을 골라 시전 창을 연다. 공격 스킬은 대상 쪽을 바라본다.</summary>
+        private void SetPlayerSkillMotion(AbilityKind skill, List<Vector3> targets)
+        {
+            _playerActionFrames = SkillMotionFrames(skill);
+            if ((skill == AbilityKind.Delete || skill == AbilityKind.SelectAll) && targets != null && targets.Count > 0)
+                FacePlayerToward(targets[0]);
+            bool hasMotion = _playerActionFrames != null && _playerActionFrames.Length > 0;
+            float duration = hasMotion ? 0.9f : 0.55f;
+            _playerActionUntil = Mathf.Max(_playerActionUntil, Time.unscaledTime + duration);
+        }
+
+        /// <summary>스킬 → 넙죽이 시전 모션. null이면 방향별 기본 공격 모션(DELETE)을 사용한다.</summary>
+        private Sprite[] SkillMotionFrames(AbilityKind skill)
+        {
+            if (_visualAssetLibrary == null)
+                return null;
+            switch (skill)
+            {
+                // 물리 공격은 방향이 있는 keyboard-attack 모션을 그대로 쓴다.
+                case AbilityKind.Delete: return null;
+                // 복제·연결·복원·영역전개는 마법 시전 모션.
+                case AbilityKind.Copy:
+                case AbilityKind.Connect:
+                case AbilityKind.Restore:
+                case AbilityKind.SelectAll: return _visualAssetLibrary.PlayerMagicFrames;
+                // 시간 역행은 디버그(되감기) 모션.
+                case AbilityKind.Undo: return _visualAssetLibrary.PlayerDebugFrames;
+                // 조사는 리뷰(살펴보기) 모션.
+                case AbilityKind.Search: return _visualAssetLibrary.PlayerReviewFrames;
+                default: return null;
+            }
+        }
+
+        private void PlaySkillEffectsForLocalTurn(AbilityKind skill, RuleOutcome outcome, RunView view)
+        {
+            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
+                return;
+            // 서버 payload의 fx_type이 아직 없으므로 실제 턴은 PHYSICAL(기본 폭발)로 재생한다.
+            PlaySkillEffects(skill, SkillEffectMapping.SizeFromOutcome(outcome), ResolveTargetsLocal(skill, view));
+        }
+
+        private void PlaySkillEffectsForServerTurn(GameApiClient.TurnSnapshot turn)
+        {
+            if (turn == null)
+                return;
+            AbilityKind skill = AbilityFromSkillId(turn.skillId);
+            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
+                return;
+            PlaySkillEffects(skill, SkillEffectMapping.SizeFromOutcome(turn.outcome), ResolveTargetsServer(skill, turn));
+        }
+
+        /// <summary>테스터 전용. 근처 적(없으면 시전자) 위에 스킬 이펙트를 미리보기 재생하고, 맞힌 대상 수를 돌려준다.</summary>
+        public int DebugPreviewSkillEffect(AbilityKind skill, SkillFxSize size, SkillFxType fxType)
+        {
+            var targets = new List<Vector3>();
+            if (skill == AbilityKind.Undo || skill == AbilityKind.Search)
+            {
+                if (TryGetPlayerWorldPosition(out Vector3 selfPosition))
+                    targets.Add(selfPosition);
+            }
+            else
+            {
+                CollectHostilesNearPlayer(targets, 6f);
+                if (skill == AbilityKind.Connect && targets.Count > 2)
+                    targets = targets.GetRange(0, 2);
+            }
+            if (targets.Count == 0 && TryGetPlayerWorldPosition(out Vector3 fallback))
+                targets.Add(fallback);
+            PlaySkillEffects(skill, size, targets, fxType);
+            return targets.Count;
+        }
+
+        private List<Vector3> ResolveTargetsLocal(AbilityKind skill, RunView view)
+        {
+            var targets = new List<Vector3>();
+            if (skill == AbilityKind.Undo)
+            {
+                targets.Add(PlayerWorldPosition(view));
+                return targets;
+            }
+            if (skill == AbilityKind.SelectAll)
+            {
+                CollectHostilesNearPlayer(targets, 4f);
+                if (targets.Count == 0)
+                    targets.Add(PlayerWorldPosition(view));
+                return targets;
+            }
+            if (_selectionController.SelectedTarget.HasValue)
+                targets.Add(EntityWorldPosition(_selectionController.SelectedTarget.Value, view));
+            if (skill == AbilityKind.Connect && _selectionController.SelectedSecondaryTarget.HasValue)
+                targets.Add(EntityWorldPosition(_selectionController.SelectedSecondaryTarget.Value, view));
+            if (targets.Count == 0)
+                targets.Add(PlayerWorldPosition(view));
+            return targets;
+        }
+
+        private List<Vector3> ResolveTargetsServer(AbilityKind skill, GameApiClient.TurnSnapshot turn)
+        {
+            var targets = new List<Vector3>();
+            if (skill == AbilityKind.Undo)
+            {
+                if (TryGetPlayerWorldPosition(out Vector3 selfPosition))
+                    targets.Add(selfPosition);
+                return targets;
+            }
+            if (skill == AbilityKind.SelectAll)
+            {
+                CollectHostilesNearPlayer(targets, 4f);
+                if (targets.Count == 0 && TryGetPlayerWorldPosition(out Vector3 center))
+                    targets.Add(center);
+                return targets;
+            }
+            if (turn.targetIds != null)
+                for (int i = 0; i < turn.targetIds.Length; i++)
+                    if (Guid.TryParse(turn.targetIds[i], out Guid id) &&
+                        _entityVisuals.TryGetValue(id, out KeyboardWandererEntityVisualState visual) &&
+                        visual?.Root != null)
+                        targets.Add(visual.Root.transform.position);
+            if (targets.Count == 0 && TryGetPlayerWorldPosition(out Vector3 fallback))
+                targets.Add(fallback);
+            return targets;
+        }
+
+        private void CollectHostilesNearPlayer(List<Vector3> into, float radiusTiles)
+        {
+            if (!TryGetPlayerWorldPosition(out Vector3 playerPosition))
+                return;
+            float limit = radiusTiles * TileSize + 0.1f;
+            foreach (KeyValuePair<Guid, KeyboardWandererEntityVisualState> pair in _entityVisuals)
+            {
+                KeyboardWandererEntityVisualState visual = pair.Value;
+                if (visual == null || visual.Root == null || visual.IsPlayer || !visual.IsHostile)
+                    continue;
+                if (Vector3.Distance(visual.Root.transform.position, playerPosition) <= limit)
+                    into.Add(visual.Root.transform.position);
+            }
+        }
+
+        private void FacePlayerToward(Vector3 worldTarget)
+        {
+            foreach (KeyValuePair<Guid, KeyboardWandererEntityVisualState> pair in _entityVisuals)
+            {
+                KeyboardWandererEntityVisualState visual = pair.Value;
+                if (visual == null || visual.Root == null || !visual.IsPlayer)
+                    continue;
+                Vector3 delta = worldTarget - visual.Root.transform.position;
+                visual.Facing = Mathf.Abs(delta.x) >= Mathf.Abs(delta.y)
+                    ? new Vector2(delta.x >= 0f ? 1f : -1f, 0f)
+                    : new Vector2(0f, delta.y >= 0f ? 1f : -1f);
+                return;
+            }
+        }
+
+        private bool TryGetPlayerWorldPosition(out Vector3 position)
+        {
+            foreach (KeyValuePair<Guid, KeyboardWandererEntityVisualState> pair in _entityVisuals)
+            {
+                KeyboardWandererEntityVisualState visual = pair.Value;
+                if (visual != null && visual.Root != null && visual.IsPlayer)
+                {
+                    position = visual.Root.transform.position;
+                    return true;
+                }
+            }
+            position = Vector3.zero;
+            return false;
+        }
+
+        private Vector3 PlayerWorldPosition(RunView view)
+        {
+            if (TryGetPlayerWorldPosition(out Vector3 live))
+                return live;
+            return view != null ? WorldPosition(MapOrigin(view), view.PlayerPosition) : Vector3.zero;
+        }
+
+        private Vector3 EntityWorldPosition(Guid entityId, RunView view)
+        {
+            if (_entityVisuals.TryGetValue(entityId, out KeyboardWandererEntityVisualState visual) &&
+                visual?.Root != null)
+                return visual.Root.transform.position;
+            if (view != null)
+            {
+                Vector2 origin = MapOrigin(view);
+                for (int i = 0; i < view.Entities.Count; i++)
+                    if (view.Entities[i].EntityId == entityId)
+                        return WorldPosition(origin, view.Entities[i].Position);
+            }
+            return PlayerWorldPosition(view);
+        }
+
+        private static AbilityKind AbilityFromSkillId(string skillId)
+        {
+            switch ((skillId ?? string.Empty).Trim().ToUpperInvariant())
+            {
+                case "COPY": return AbilityKind.Copy;
+                case "DELETE": return AbilityKind.Delete;
+                case "CONNECT": return AbilityKind.Connect;
+                case "RESTORE": return AbilityKind.Restore;
+                case "UNDO": return AbilityKind.Undo;
+                case "SEARCH": return AbilityKind.Search;
+                case "SELECT_ALL": return AbilityKind.SelectAll;
+                case "INTERACT": return AbilityKind.Interact;
+                default: return AbilityKind.Move;
+            }
+        }
+
         /// <summary>응답 출처를 구분하지 않고 정규화된 결과를 현재 화면 상태에 반영한다.</summary>
         private void ApplyTurnPresentation(TurnPresentationResult presentation)
         {
@@ -3558,6 +3905,18 @@ namespace KeyboardWanderer.Demo
             _lastNarrative = presentation.Narrative;
             _lastStateChanges = presentation.StateChanges;
             _lastDialogue = presentation.Dialogue;
+            if (!string.IsNullOrWhiteSpace(presentation.DialogueSpeaker))
+            {
+                Sprite speakerSprite = SpriteForSpeakerName(presentation.DialogueSpeaker);
+                for (int i = 0; i < _lastDialogue.Length; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(_lastDialogue[i]))
+                        continue;
+                    string key = _lastDialogue[i].Trim();
+                    _dialogueSpeakerNames[key] = presentation.DialogueSpeaker;
+                    _dialogueSpeakerSprites[key] = speakerSprite;
+                }
+            }
             _lastNarrativeFallbackUsed = presentation.NarrativeFallbackUsed;
             _lastNarrativeModel = presentation.NarrativeModel;
             _playerActionUntil = Time.unscaledTime + presentation.ActionDuration;

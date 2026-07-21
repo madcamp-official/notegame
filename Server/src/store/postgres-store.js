@@ -253,6 +253,20 @@ export class PostgresStore {
     });
   }
 
+  async commitRunMutation({ ownerId, runId, expectedRunVersion, resolve }) {
+    return this.withOwner(ownerId, async (client) => {
+      const result = await client.query(`select * from ${SCHEMA}.runs where id = $1 and owner_id = $2 for update`, [runId, ownerId]);
+      if (result.rowCount === 0) throw notFound("Run");
+      const current = rowToRun(result.rows[0]);
+      if (current.version !== expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: current.version });
+      const committed = resolve(clone(current));
+      if (!committed?.run || committed.run.version !== current.version + 1 || committed.run.currentTurn !== current.currentTurn)
+        throw new AppError(500, "RUN_MUTATION_INVARIANT_FAILED", "Run mutation violated version or turn invariants.");
+      await updateRunRow(client, committed.run);
+      return committed;
+    });
+  }
+
   async findTurnByIdempotency(ownerId, runId, idempotencyKey) {
     return this.withOwner(ownerId, async (client) => {
       const run = await client.query(`select 1 from ${SCHEMA}.runs where id = $1 and owner_id = $2`, [runId, ownerId]);
@@ -286,7 +300,7 @@ export class PostgresStore {
       if (currentRun.status !== "active") throw new AppError(409, "RUN_NOT_ACTIVE", "The run does not accept travel.");
       if (currentRun.version !== expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: currentRun.version });
       const committed = resolve(clone(currentRun));
-      if (!committed || committed.run.version !== currentRun.version + 1 || committed.run.currentTurn !== currentRun.currentTurn || committed.navigation.campaignTurnConsumed !== false) throw new AppError(500, "TRAVEL_INVARIANT_FAILED", "Safe travel violated campaign-turn or version invariants.");
+      if (!committed || committed.run.version !== currentRun.version + 1 || committed.run.currentTurn !== currentRun.currentTurn || committed.navigation.campaignTurnConsumed !== false || committed.navigation.campaignTurnBefore !== currentRun.currentTurn || committed.navigation.campaignTurnAfter !== currentRun.currentTurn) throw new AppError(500, "TRAVEL_INVARIANT_FAILED", "Safe travel consumed a campaign turn or violated versioning.");
       const activePlacement = await synchronizeActiveArea(client, committed.run);
       await updateRunRow(client, committed.run);
       await client.query(`update ${SCHEMA}.entity_positions set area_id = $4, x = $5, y = $6, revision = revision + 1, updated_at = $7 where entity_id = $1 and owner_id = $2 and run_id = $3 and removed_at is null`, [committed.run.playerEntityId, ownerId, runId, activePlacement.placement.areaId, activePlacement.placement.localPosition.x, activePlacement.placement.localPosition.y, committed.run.updatedAt]);
@@ -379,12 +393,15 @@ export class PostgresStore {
         committed.run.entities.find((item) => item.id === committed.run.playerEntityId).position
       );
       const targetIds = [committed.turn.request.targetEntityId, committed.turn.request.secondaryTargetEntityId].filter(Boolean);
+      const isNarrativeChoice = committed.turn.request.inputType === "NARRATIVE_CHOICE" || committed.turn.resolutionMode === "NONE";
       const turnContext = {
         regionAxis: committedArea.regionAxis,
         domainAreaId: committedArea.id,
         encounterResolved: committed.turn.events.some((event) => event.type === "encounter_resolved"),
         playerNotePresent: Boolean(committed.turn.request.playerNote),
-        rulesAuthority: "server"
+        rulesAuthority: "server",
+        resolutionMode: committed.turn.resolutionMode || "D20",
+        selectedChoice: committed.turn.selectedChoice || null
       };
       await client.query(
         `insert into ${SCHEMA}.turn_records
@@ -400,11 +417,12 @@ export class PostgresStore {
           requestFingerprint, expectedRunVersion, committed.turn.committedRunVersion,
           JSON.stringify(committed.turn.request), JSON.stringify(committed.turn),
           JSON.stringify(narrative), narrative.fallbackUsed, narrative.model, committed.turn.createdAt,
-          "codria-action.v4", "USE_SKILL", committed.turn.request.skillId,
-          JSON.stringify(targetIds), committed.turn.actionContext, JSON.stringify(turnContext),
+          "codria-action.v4", isNarrativeChoice ? "NARRATIVE_CHOICE" : "USE_SKILL",
+          isNarrativeChoice ? null : committed.turn.request.skillId,
+          JSON.stringify(isNarrativeChoice ? [] : targetIds), isNarrativeChoice ? "NARRATIVE" : committed.turn.actionContext, JSON.stringify(turnContext),
           currentRun.currentTurn, committed.run.currentTurn, true]
       );
-      await insertTurnRuleResolution(client, committed.turn);
+      if (!isNarrativeChoice) await insertTurnRuleResolution(client, committed.turn);
       for (let index = 0; index < committed.turn.events.length; index += 1) {
         const event = committed.turn.events[index];
         await client.query(
@@ -414,7 +432,7 @@ export class PostgresStore {
           [committed.turn.id, runId, ownerId, index, eventCatalogCode(event.type), JSON.stringify(event)]
         );
       }
-      await persistCodriaTurnHistory(client, currentRun, committed.run, committed.turn);
+      await persistCodriaTurnHistory(client, currentRun, committed.run, committed.turn, { persistAbility: !isNarrativeChoice });
       await synchronizeReversibleActions(client, committed.run, committed.turn);
       await client.query(
         `insert into ${SCHEMA}.llm_logs
@@ -1523,17 +1541,27 @@ function choiceKeyPart(value) {
 
 async function persistMajorChoices(client, run, turn) {
   for (const choice of turn.stateDelta?.majorChoices || []) {
-    const choiceKey = `choice.${choiceKeyPart(choice.type)}.${choiceKeyPart(choice.accessLevelId || choice.id)}`;
-    const optionKey = `path.${choiceKeyPart(choice.regionAxis)}.${choiceKeyPart(choice.skillId)}.${choiceKeyPart(choice.actionContext)}`;
+    const narrativeChoice = choice.type === "NARRATIVE_CHOICE";
+    const choiceKey = narrativeChoice
+      ? `choice.narrative.${choiceKeyPart(choice.id)}`
+      : `choice.${choiceKeyPart(choice.type)}.${choiceKeyPart(choice.accessLevelId || choice.id)}`;
+    const optionKey = narrativeChoice
+      ? `option.${choiceKeyPart(choice.choiceId)}`
+      : `path.${choiceKeyPart(choice.regionAxis)}.${choiceKeyPart(choice.skillId)}.${choiceKeyPart(choice.actionContext)}`;
+    const immediateEffects = narrativeChoice
+      ? { choiceSetId: choice.choiceSetId, choiceId: choice.choiceId, text: choice.text, intentTag: choice.intentTag, choiceKind: choice.choiceKind, targetEntityId: choice.targetEntityId || null }
+      : { adminAccessCode: choice.accessLevelId || null, skillId: choice.skillId || turn.request.skillId };
+    const longTermTags = narrativeChoice
+      ? ["narrative_choice", choice.choiceKind, choice.intentTag].filter(Boolean)
+      : ["admin_access_path", choice.regionAxis, choice.accessLevelId].filter(Boolean);
     await client.query(
       `insert into ${SCHEMA}.major_choices
          (id, run_id, owner_id, turn_id, turn_no, choice_key, option_key,
           region_axis_code, action_context, immediate_effects, long_term_tags, created_at)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12)`,
       [choice.id, run.id, run.ownerId, turn.id, turn.turnNo, choiceKey, optionKey,
-        choice.regionAxis || null, choice.actionContext || turn.actionContext,
-        JSON.stringify({ adminAccessCode: choice.accessLevelId || null, skillId: choice.skillId || turn.request.skillId }),
-        JSON.stringify(["admin_access_path", choice.regionAxis, choice.accessLevelId].filter(Boolean)), turn.createdAt]
+        choice.regionAxis || null, narrativeChoice ? "NARRATIVE" : choice.actionContext || turn.actionContext,
+        JSON.stringify(immediateEffects), JSON.stringify(longTermTags), turn.createdAt]
     );
   }
 }
@@ -1634,14 +1662,14 @@ async function persistTechnicalDebt(client, run, turn) {
   }
 }
 
-async function persistCodriaTurnHistory(client, beforeRun, run, turn) {
+async function persistCodriaTurnHistory(client, beforeRun, run, turn, { persistAbility = true } = {}) {
   const areaRows = await loadDatabaseAreas(client, run);
   const areaIds = new Map(areaRows.map((row) => [row.area_key, row.id]));
   for (const fact of turn.stateDelta?.facts || []) {
     await persistWorldFact(client, run, fact, turn.createdAt);
   }
   await persistRelationshipHistory(client, beforeRun, run, turn);
-  await persistAbilityUsage(client, run, turn);
+  if (persistAbility) await persistAbilityUsage(client, run, turn);
   await persistAdminAccessHistory(client, run, turn, areaIds);
   await persistMajorChoices(client, run, turn);
   await persistRegionOutcomes(client, run, turn);
@@ -1733,6 +1761,8 @@ function eventCatalogCode(type) {
     progress_level_changed: "PROGRESS_STATE_CHANGED",
     admin_access_acquired: "ADMIN_ACCESS_ACQUIRED",
     major_choice_recorded: "MAJOR_CHOICE_RECORDED",
+    narrative_choice_selected: "MAJOR_CHOICE_RECORDED",
+    narrative_choice_resolved: "TURN_COMMITTED",
     canonical_fact_confirmed: "FACT_ESTABLISHED",
     technical_debt_recorded: "TECHNICAL_DEBT_CHANGED",
     technical_debt_resolved: "DEFERRED_CONSEQUENCE_RESOLVED",

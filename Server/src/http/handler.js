@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { AppError } from "../errors.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -22,6 +24,31 @@ export function createRequestHandler({ service, config, logger = console }) {
 
       const url = new URL(request.url || "/", "http://localhost");
       const path = url.pathname.replace(/\/+$/, "") || "/";
+
+      // Serve static files in public directory
+      if (request.method === "GET" && path.startsWith("/public/")) {
+        const relativePath = path.substring(8); // remove "/public/"
+        const safePath = relativePath.replace(/\.\./g, ""); // basic path traversal protection
+        let filePath = join(process.cwd(), "public", safePath);
+        if (!existsSync(filePath)) {
+          filePath = join(process.cwd(), "..", "public", safePath);
+        }
+        if (existsSync(filePath)) {
+          const content = readFileSync(filePath);
+          let contentType = "text/plain";
+          if (filePath.endsWith(".html")) contentType = "text/html";
+          else if (filePath.endsWith(".css")) contentType = "text/css";
+          else if (filePath.endsWith(".js")) contentType = "application/javascript";
+          else if (filePath.endsWith(".png")) contentType = "image/png";
+
+          response.writeHead(200, { "content-type": contentType });
+          response.end(content);
+          return;
+        } else {
+          throw new AppError(404, "FILE_NOT_FOUND", "Static file not found.");
+        }
+      }
+
       if (request.method === "GET" && path === "/health") {
         sendJson(response, 200, await service.health());
         return;
@@ -39,10 +66,20 @@ export function createRequestHandler({ service, config, logger = console }) {
         sendJson(response, 201, { run: await service.createRun(ownerId, decodeURIComponent(match[1]), await readJson(request)) });
       } else if ((match = path.match(/^\/v1\/runs\/([^/]+)$/)) && request.method === "GET") {
         sendJson(response, 200, { run: await service.getRun(ownerId, decodeURIComponent(match[1])) });
+      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/debug$/)) && request.method === "GET") {
+        sendJson(response, 200, await service.getRunDebug(ownerId, decodeURIComponent(match[1])));
+      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/inventory$/)) && request.method === "POST") {
+        sendJson(response, 200, await service.mutateInventory(ownerId, decodeURIComponent(match[1]), await readJson(request)));
       } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/ambient-wander$/)) && request.method === "POST") {
         sendJson(response, 200, await service.ambientWander(ownerId, decodeURIComponent(match[1]), await readJson(request)));
       } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/(?:actions|turns)$/)) && request.method === "POST") {
         const result = await service.submitTurn(ownerId, decodeURIComponent(match[1]), await readJson(request));
+        sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
+      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/choices$/)) && request.method === "POST") {
+        const result = await service.submitChoice(ownerId, decodeURIComponent(match[1]), await readJson(request));
+        sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
+      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/messages$/)) && request.method === "POST") {
+        const result = await service.submitPlayerMessage(ownerId, decodeURIComponent(match[1]), await readJson(request));
         sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
       } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/(?:travel|navigation)$/)) && request.method === "POST") {
         const result = await service.travel(ownerId, decodeURIComponent(match[1]), await readJson(request));
@@ -100,9 +137,11 @@ function applyCors(request, response, config) {
 }
 
 function isOriginAllowed(origin, configuredOrigins) {
+  if (origin === "null" || origin === "") return true;
   if (configuredOrigins.includes(origin)) return true;
   try {
     const parsed = new URL(origin);
+    if (parsed.protocol === "file:") return true;
     return ["http:", "https:"].includes(parsed.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
   } catch {
     return false;

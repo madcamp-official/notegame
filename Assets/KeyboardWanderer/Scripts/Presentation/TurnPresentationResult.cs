@@ -22,6 +22,8 @@ namespace KeyboardWanderer.Presentation
         public string Narrative { get; }
         public string StateChanges { get; }
         public string[] Dialogue { get; }
+        /// <summary>대화 페이지 전체를 말하는 화자 이름. NPC 조사처럼 화자가 확정된 경우에만 채워진다.</summary>
+        public string DialogueSpeaker { get; }
         public bool NarrativeFallbackUsed { get; }
         public string NarrativeModel { get; }
         public float ActionDuration { get; }
@@ -43,7 +45,8 @@ namespace KeyboardWanderer.Presentation
             bool narrativeFallbackUsed,
             string narrativeModel,
             float actionDuration,
-            string[] logEntries)
+            string[] logEntries,
+            string dialogueSpeaker = null)
         {
             D20 = d20;
             Modifier = modifier;
@@ -57,6 +60,7 @@ namespace KeyboardWanderer.Presentation
             Narrative = narrative ?? string.Empty;
             StateChanges = stateChanges ?? "상태 변화 없음";
             Dialogue = dialogue ?? Array.Empty<string>();
+            DialogueSpeaker = string.IsNullOrWhiteSpace(dialogueSpeaker) ? null : dialogueSpeaker.Trim();
             NarrativeFallbackUsed = narrativeFallbackUsed;
             NarrativeModel = narrativeModel ?? "deterministic";
             ActionDuration = Math.Max(0f, actionDuration);
@@ -75,7 +79,7 @@ namespace KeyboardWanderer.Presentation
             string modifierBreakdown = "로컬 능력·상태 합계 " + TurnPresentationText.Signed(response.Modifier);
             string outcome = TurnPresentationText.KoreanOutcome(response.Outcome);
             string stateChanges = TurnPresentationText.StateChangeSummary(response.Events);
-            string[] dialogue = BuildNpcDialogue(response);
+            string[] dialogue = BuildNpcDialogue(response, out string dialogueSpeaker);
             var logs = new List<string>
             {
                 "D20 " + response.D20 + " · " + outcome + " · " + response.NormalizedAttempt
@@ -99,11 +103,13 @@ namespace KeyboardWanderer.Presentation
                 true,
                 "deterministic",
                 response.ActionContext == ActionContext.Combat ? 0.5f : 0.22f,
-                logs.ToArray());
+                logs.ToArray(),
+                dialogueSpeaker);
         }
 
-        private static string[] BuildNpcDialogue(TurnResponse response)
+        private static string[] BuildNpcDialogue(TurnResponse response, out string speaker)
         {
+            speaker = null;
             Guid npcId = Guid.Empty;
             bool hasNpcScene = false;
             for (int i = 0; i < response.Events.Count; i++)
@@ -122,6 +128,7 @@ namespace KeyboardWanderer.Presentation
             {
                 NpcMemoryView npc = response.Run.NpcMemories[i];
                 if (npc.EntityId != npcId) continue;
+                speaker = npc.NpcName;
                 var pages = new List<string>();
                 pages.Add(npc.NpcName + " · " + npc.Role + "\n" +
                           (string.IsNullOrWhiteSpace(npc.CurrentConcern)

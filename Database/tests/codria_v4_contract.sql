@@ -35,7 +35,8 @@ begin
       from ability_catalog
      where is_enabled;
     if actual_columns is distinct from array[
-        'MOVE', 'COPY', 'DELETE', 'CONNECT', 'RESTORE', 'UNDO'
+        'MOVE', 'COPY', 'DELETE', 'CONNECT', 'RESTORE', 'UNDO',
+        'SEARCH', 'SELECT_ALL'
     ]::text[] then
         raise exception 'enabled Codria input/skill catalog mismatch: %', actual_columns;
     end if;
@@ -119,7 +120,7 @@ begin
         'action_context', 'turn_context', 'campaign_turn_before',
         'campaign_turn_after', 'campaign_turn_consumed', 'idempotency_key'
     ]::text[] <@ actual_columns then
-        raise exception 'turn_records is missing structured USE_SKILL authority: %', actual_columns;
+        raise exception 'turn_records is missing structured campaign-action authority: %', actual_columns;
     end if;
 
     select array_agg(column_name order by column_name)
@@ -171,8 +172,59 @@ begin
          where conrelid = 'keyboard_wanderer.turn_records'::regclass
            and conname = 'turn_records_v4_command_shape'
            and pg_get_constraintdef(oid) like '%USE_SKILL%'
+           and pg_get_constraintdef(oid) like '%NARRATIVE_CHOICE%'
+           and pg_get_constraintdef(oid) like '%SEARCH%'
+           and pg_get_constraintdef(oid) like '%SELECT_ALL%'
+           and pg_get_constraintdef(oid) like '%skill_id IS NULL%'
+           and pg_get_constraintdef(oid) like '%target_ids = ''[]''::jsonb%'
+           and pg_get_constraintdef(oid) like '%action_context = ''NARRATIVE''%'
     ) then
-        raise exception 'canonical MOVE/USE_SKILL database constraints are missing';
+        raise exception 'canonical MOVE/USE_SKILL/NARRATIVE_CHOICE database constraints are missing';
+    end if;
+
+    if not exists (
+        select 1 from pg_catalog.pg_constraint
+         where conrelid = 'keyboard_wanderer.ability_usage_history'::regclass
+           and conname = 'ability_usage_history_skill'
+           and pg_get_constraintdef(oid) like '%SEARCH%'
+           and pg_get_constraintdef(oid) like '%SELECT_ALL%'
+    ) then
+        raise exception 'ability history does not accept every canonical keyboard skill';
+    end if;
+
+    if not exists (
+        select 1 from pg_catalog.pg_constraint
+         where conrelid = 'keyboard_wanderer.major_choices'::regclass
+           and conname = 'major_choices_context'
+           and pg_get_constraintdef(oid) like '%NARRATIVE%'
+    ) then
+        raise exception 'major choice history does not accept pure NARRATIVE context';
+    end if;
+
+    if to_regprocedure(
+        'keyboard_wanderer.assert_committed_v4_skill_action(uuid,uuid,uuid,smallint)'
+    ) is null or not exists (
+        select 1
+          from pg_catalog.pg_proc p
+         where p.oid = 'keyboard_wanderer.assert_committed_v4_action(uuid,uuid,uuid,smallint)'::regprocedure
+           and pg_get_functiondef(p.oid) like '%NARRATIVE_CHOICE%'
+    ) or not exists (
+        select 1
+          from pg_catalog.pg_proc p
+         where p.oid = 'keyboard_wanderer.validate_ability_usage_history()'::regprocedure
+           and pg_get_functiondef(p.oid) like '%assert_committed_v4_skill_action%'
+    ) or not exists (
+        select 1
+          from pg_catalog.pg_proc p
+         where p.oid = 'keyboard_wanderer.validate_admin_access_acquisition()'::regprocedure
+           and pg_get_functiondef(p.oid) like '%assert_committed_v4_skill_action%'
+    ) or not exists (
+        select 1
+          from pg_catalog.pg_proc p
+         where p.oid = 'keyboard_wanderer.validate_turn_rule_resolution()'::regprocedure
+           and pg_get_functiondef(p.oid) like '%assert_committed_v4_skill_action%'
+    ) then
+        raise exception 'generic narrative and strict skill-action validators are not separated';
     end if;
 
     select count(*)

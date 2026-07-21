@@ -100,7 +100,7 @@ npm install
 npm start
 ```
 
-외부 서비스 없이 시작하려면 `STORAGE=memory`와 빈 `GEMINI_API_KEY`를 유지합니다. PostgreSQL을 사용하려면 migration 001→008과 seed를 적용한 뒤 다음을 설정합니다.
+외부 서비스 없이 시작하려면 `STORAGE=memory`와 빈 `GEMINI_API_KEY`를 유지합니다. PostgreSQL을 사용하려면 migration 001→009와 seed를 적용한 뒤 다음을 설정합니다.
 
 ```dotenv
 STORAGE=postgres

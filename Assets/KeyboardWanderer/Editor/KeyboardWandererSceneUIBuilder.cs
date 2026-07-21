@@ -13,6 +13,8 @@ namespace KeyboardWanderer.Editor
     public static class KeyboardWandererSceneUIBuilder
     {
         private const string UiPrefabPath = "Assets/KeyboardWanderer/Prefabs/UI/AuthoredUI.prefab";
+        private const string GameHudPrefabPath = "Assets/KeyboardWanderer/Prefabs/UI/Screens/GameHUD.prefab";
+        private const string DialoguePanelPrefabPath = "Assets/KeyboardWanderer/Prefabs/UI/Screens/DialoguePanel.prefab";
         private static readonly Color Ink = Hex("160f0a");
         private static readonly Color Panel = Hex("281a11");
         private static readonly Color Raised = Hex("352419");
@@ -177,6 +179,285 @@ namespace KeyboardWanderer.Editor
             EditorSceneManager.MarkAllScenesDirty();
             EditorSceneManager.SaveOpenScenes();
             Debug.Log("Applied editable edge-HUD layout without rebuilding the title screen.");
+        }
+
+        /// <summary>프레임 스프라이트를 유지한 채 슬라이스 배율만 올려 테두리를 얇게 만든다.</summary>
+        private const float ThinBorderMultiplier = 2.1f;
+
+        /// <summary>
+        /// 기존 프리팹을 다시 만들지 않고 퀘스트 배너·상태 패널·대화 화자 버스트만 덧입힌다.
+        /// 여러 번 실행해도 같은 결과가 나오도록 이전 실행이 만든 오브젝트는 먼저 지운다.
+        /// </summary>
+        [MenuItem("Keyboard Wanderer/Restyle HUD (Quest + Status + Dialogue Bust)")]
+        public static void RestyleQuestStatusDialogue()
+        {
+            _font = LoadDefaultFont();
+            _assets = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(
+                "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset");
+            RestyleGameHudPrefab();
+            RestyleDialoguePanelPrefab();
+            RestyleMinimapPanelPrefab();
+            RestyleSelectionPanelPrefab();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("Restyled HUD prefabs: thin frames, larger text, quest list, status panel, left dialogue bust.");
+        }
+
+        private static void ThinBorder(Transform panel)
+        {
+            Image image = panel != null ? panel.GetComponent<Image>() : null;
+            if (image != null && image.sprite != null && image.type == Image.Type.Sliced)
+                image.pixelsPerUnitMultiplier = ThinBorderMultiplier;
+        }
+
+        private static void BumpText(Transform root, string childName, int size, int bestFitMin = 0)
+        {
+            Transform child = root != null ? root.Find(childName) : null;
+            TMP_Text text = child != null ? child.GetComponent<TMP_Text>() : null;
+            if (text == null)
+                return;
+            text.fontSize = size;
+            if (bestFitMin > 0)
+            {
+                text.enableAutoSizing = true;
+                text.fontSizeMin = bestFitMin;
+                text.fontSizeMax = size;
+            }
+        }
+
+        private static void RestyleGameHudPrefab()
+        {
+            GameObject root = PrefabUtility.LoadPrefabContents(GameHudPrefabPath);
+            try
+            {
+                Transform hud = root.transform;
+                RectTransform objectivePanel = hud.Find("Objective Panel") as RectTransform;
+                if (objectivePanel == null)
+                    throw new UnityException("GameHUD.prefab is missing its Objective Panel.");
+
+                // 청록 프레임: 디자인은 유지하고 두께만 얇게. 헤더 글자는 키운다.
+                ThinBorder(objectivePanel);
+                Transform storyHeader = hud.Find("Story Header");
+                ThinBorder(storyHeader);
+                BumpText(storyHeader, "Scene Location", 18, 14);
+                BumpText(storyHeader, "Scene Title", 23, 17);
+
+                // 퀘스트 패널: 더 크게, 배너 + 번호 목록 본문 + 추천 한 줄.
+                objectivePanel.anchorMin = new Vector2(0.018f, 0.52f);
+                objectivePanel.anchorMax = new Vector2(0.265f, 0.795f);
+                DestroyChild(objectivePanel, "Quest Banner");
+                DestroyChild(objectivePanel, "Quest Hint");
+                RectTransform banner = PanelRect(objectivePanel, "Quest Banner", new Vector2(0.03f, 0.86f),
+                    new Vector2(0.97f, 0.985f), Vector2.zero, Vector2.zero, new Color(Gold.r, Gold.g, Gold.b, 0.92f));
+                banner.SetAsFirstSibling();
+                RectTransform heading = objectivePanel.Find("Objective Heading") as RectTransform;
+                if (heading != null)
+                {
+                    heading.anchorMin = new Vector2(0.09f, 0.86f);
+                    heading.anchorMax = new Vector2(0.97f, 0.985f);
+                    TMP_Text headingText = heading.GetComponent<TMP_Text>();
+                    headingText.text = "!  QUEST";
+                    headingText.fontSize = 16;
+                    headingText.color = Ink;
+                    headingText.fontStyle = FontStyles.Bold;
+                    heading.SetAsLastSibling();
+                }
+                RectTransform objectiveText = objectivePanel.Find("Objective Text") as RectTransform;
+                if (objectiveText != null)
+                {
+                    objectiveText.anchorMin = new Vector2(0.07f, 0.16f);
+                    objectiveText.anchorMax = new Vector2(0.93f, 0.82f);
+                    TMP_Text bodyText = objectiveText.GetComponent<TMP_Text>();
+                    bodyText.alignment = TextAlignmentOptions.TopLeft;
+                    bodyText.lineSpacing = 8f;
+                    EnableBestFit(objectiveText, 12, 17);
+                }
+                RectTransform questHint = TextRect(objectivePanel, "Quest Hint", new Vector2(0.07f, 0.035f),
+                    new Vector2(0.93f, 0.14f), "추천  --", 13, Muted, TextAnchor.MiddleLeft);
+                EnableBestFit(questHint, 10, 14);
+
+                // 상태 패널: 라벨·값 2컬럼으로 진행과 자원을 정리한다.
+                DestroyChild(hud, "Status Panel");
+                RectTransform status = PanelRect(hud, "Status Panel", new Vector2(0.018f, 0.315f),
+                    new Vector2(0.265f, 0.50f), Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.92f));
+                ApplyPanelSprite(status, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
+                ThinBorder(status);
+                status.SetSiblingIndex(objectivePanel.GetSiblingIndex() + 1);
+                RectTransform statusBanner = PanelRect(status, "Status Banner", new Vector2(0.03f, 0.845f),
+                    new Vector2(0.97f, 0.985f), Vector2.zero, Vector2.zero, new Color(Gold.r, Gold.g, Gold.b, 0.92f));
+                statusBanner.SetAsFirstSibling();
+                RectTransform statusHeading = TextRect(status, "Status Heading", new Vector2(0.09f, 0.845f),
+                    new Vector2(0.97f, 0.985f), "◆  STATUS", 16, Ink, TextAnchor.MiddleLeft);
+                statusHeading.GetComponent<TMP_Text>().fontStyle = FontStyles.Bold;
+                // 두 컬럼이 서로 다른 크기로 오토사이즈되면 줄이 어긋나므로 고정 크기를 쓴다.
+                RectTransform statusLabels = TextRect(status, "Status Labels", new Vector2(0.08f, 0.08f),
+                    new Vector2(0.52f, 0.80f), "권한\n의미 턴\nFOCUS\nXP\nGOLD", 15, Muted, TextAnchor.MiddleLeft);
+                RectTransform statusValues = TextRect(status, "Status Values", new Vector2(0.52f, 0.08f),
+                    new Vector2(0.92f, 0.80f), "--", 15, Parchment, TextAnchor.MiddleRight);
+
+                KeyboardWandererGameHudView hudView = root.GetComponent<KeyboardWandererGameHudView>();
+                if (hudView == null)
+                    throw new UnityException("GameHUD.prefab is missing KeyboardWandererGameHudView.");
+                hudView.ConfigureQuestStatus(questHint.GetComponent<TMP_Text>(),
+                    statusLabels.GetComponent<TMP_Text>(), statusValues.GetComponent<TMP_Text>());
+                PrefabUtility.SaveAsPrefabAsset(root, GameHudPrefabPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void RestyleDialoguePanelPrefab()
+        {
+            GameObject root = PrefabUtility.LoadPrefabContents(DialoguePanelPrefabPath);
+            try
+            {
+                Transform panel = root.transform;
+                DestroyChild(panel, "Speaker Bust");
+                DestroyChild(panel, "Speaker Name Plate");
+                DestroyChild(panel, "Speaker Cutin Backdrop");
+
+                // 초상 슬롯이 그려진 페이스셋 상자 대신 슬롯 없는 일반 대화 상자를 쓴다.
+                if (_assets != null && _assets.DialogBox != null)
+                {
+                    Image panelImage = panel.GetComponent<Image>();
+                    panelImage.sprite = _assets.DialogBox;
+                    panelImage.type = Image.Type.Simple;
+                    panelImage.color = Color.white;
+                }
+
+                // 화자 컷인: 이벤트 연출처럼 화면 한가운데에 큼직하게 띄운다.
+                // 패널(0.245~0.82 × 0.025~0.19) 기준 앵커 (0.443, 2.6)이 화면 중앙 부근이다.
+                // 카메라가 항상 플레이어를 화면 중앙에 두므로, 인 게임 캐릭터와 겹쳐 보이지 않도록
+                // 컷인은 확실히 더 크게(380px) 만들고 그 뒤에 스포트라이트 배경을 깔아 도드라지게 한다.
+                Vector2 cutinAnchor = new Vector2(0.443f, 2.6f);
+                RectTransform backdrop = PanelRect(panel, "Speaker Cutin Backdrop", cutinAnchor, cutinAnchor,
+                    new Vector2(-230f, -230f), new Vector2(230f, 230f), new Color(0.11f, 0.19f, 0.21f, 0.55f));
+                AddOutline(backdrop.gameObject, new Color(Gold.r, Gold.g, Gold.b, 0.55f), 2f);
+                backdrop.gameObject.SetActive(false);
+
+                RectTransform portraitFrame = panel.Find("Speaker Portrait Frame") as RectTransform;
+                if (portraitFrame != null)
+                {
+                    portraitFrame.anchorMin = cutinAnchor;
+                    portraitFrame.anchorMax = cutinAnchor;
+                    portraitFrame.offsetMin = new Vector2(-190f, -190f);
+                    portraitFrame.offsetMax = new Vector2(190f, 190f);
+                    RectTransform portrait = portraitFrame.Find("Speaker Portrait") as RectTransform;
+                    if (portrait != null)
+                    {
+                        portrait.anchorMin = Vector2.zero;
+                        portrait.anchorMax = Vector2.one;
+                        portrait.offsetMin = Vector2.zero;
+                        portrait.offsetMax = Vector2.zero;
+                        // 기본 초상(배경이 박힌 페이스셋)은 쓰지 않는다. 화자 스프라이트가 매 프레임 지정된다.
+                        portrait.GetComponent<Image>().sprite = null;
+                    }
+                    // 배경이 컷인 바로 뒤에서 렌더링되도록 형제 순서를 붙여 넣는다.
+                    backdrop.SetSiblingIndex(portraitFrame.GetSiblingIndex());
+                    portraitFrame.gameObject.SetActive(false);
+                }
+
+                // 이름표: 대화 상자 스프라이트의 왼쪽 위 탭 위에 금색 명판으로 얹는다.
+                RectTransform namePlate = PanelRect(panel, "Speaker Name Plate", new Vector2(0f, 1f), new Vector2(0f, 1f),
+                    new Vector2(28f, -34f), new Vector2(170f, -4f), new Color(Gold.r, Gold.g, Gold.b, 0.96f));
+                AddOutline(namePlate.gameObject, new Color(0.25f, 0.15f, 0.08f, 0.9f), 1f);
+                RectTransform speakerName = panel.Find("Dialogue Speaker") as RectTransform;
+                if (speakerName != null)
+                {
+                    speakerName.anchorMin = new Vector2(0f, 1f);
+                    speakerName.anchorMax = new Vector2(0f, 1f);
+                    speakerName.offsetMin = new Vector2(28f, -34f);
+                    speakerName.offsetMax = new Vector2(170f, -4f);
+                    TMP_Text nameText = speakerName.GetComponent<TMP_Text>();
+                    nameText.alignment = TextAlignmentOptions.Center;
+                    nameText.color = Ink;
+                    nameText.fontStyle = FontStyles.Bold;
+                    nameText.enableAutoSizing = true;
+                    nameText.fontSizeMin = 11;
+                    nameText.fontSizeMax = 15;
+                    namePlate.SetSiblingIndex(speakerName.GetSiblingIndex());
+                }
+
+                // 물음표 등 감정 말풍선은 대화창에서 쓰지 않는다. 참조는 유지한 채 꺼 둔다.
+                RectTransform emote = panel.Find("Speaker Emote") as RectTransform;
+                if (emote != null)
+                    emote.gameObject.SetActive(false);
+
+                // 컷인이 중앙으로 옮겨졌으니 대사는 상자 전체 폭을 쓴다. 하단 안내문은 크게.
+                RectTransform speech = panel.Find("Speech Bubble") as RectTransform;
+                if (speech != null)
+                {
+                    speech.anchorMin = new Vector2(0.045f, 0.10f);
+                    speech.anchorMax = new Vector2(0.975f, 0.90f);
+                    RectTransform storyText = speech.Find("Story Text") as RectTransform;
+                    if (storyText != null)
+                        EnableBestFit(storyText, 12, 16);
+                    RectTransform actionHint = speech.Find("Action Hint") as RectTransform;
+                    if (actionHint != null)
+                    {
+                        actionHint.anchorMin = new Vector2(0.055f, 0.04f);
+                        actionHint.anchorMax = new Vector2(0.84f, 0.36f);
+                        EnableBestFit(actionHint, 14, 18);
+                    }
+                }
+
+                Transform bigPortrait = panel.Find("Speaker Portrait Frame/Speaker Portrait");
+                KeyboardWandererDialogueView dialogueView = root.GetComponent<KeyboardWandererDialogueView>();
+                if (dialogueView == null)
+                    throw new UnityException("DialoguePanel.prefab is missing KeyboardWandererDialogueView.");
+                // 중앙 대형 컷인 하나가 화자 표시를 전담한다. 화자 스프라이트가 있을 때만 배경과 함께 켜진다.
+                dialogueView.ConfigureSpeakerVisuals(
+                    bigPortrait != null ? bigPortrait.GetComponent<Image>() : null,
+                    backdrop.GetComponent<Image>());
+                PrefabUtility.SaveAsPrefabAsset(root, DialoguePanelPrefabPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void RestyleMinimapPanelPrefab()
+        {
+            GameObject root = PrefabUtility.LoadPrefabContents(
+                "Assets/KeyboardWanderer/Prefabs/UI/Screens/MinimapPanel.prefab");
+            try
+            {
+                ThinBorder(root.transform);
+                BumpText(root.transform, "Minimap Heading", 14);
+                BumpText(root.transform, "Minimap Status", 13, 11);
+                PrefabUtility.SaveAsPrefabAsset(root, "Assets/KeyboardWanderer/Prefabs/UI/Screens/MinimapPanel.prefab");
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void RestyleSelectionPanelPrefab()
+        {
+            GameObject root = PrefabUtility.LoadPrefabContents(
+                "Assets/KeyboardWanderer/Prefabs/UI/Screens/SelectionPanel.prefab");
+            try
+            {
+                ThinBorder(root.transform);
+                BumpText(root.transform, "Selection Heading", 18, 14);
+                BumpText(root.transform, "Selection Detail", 14, 11);
+                PrefabUtility.SaveAsPrefabAsset(root, "Assets/KeyboardWanderer/Prefabs/UI/Screens/SelectionPanel.prefab");
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void DestroyChild(Transform parent, string childName)
+        {
+            Transform child = parent.Find(childName);
+            if (child != null)
+                Object.DestroyImmediate(child.gameObject);
         }
 
         private static void EnsureEventSystem()
