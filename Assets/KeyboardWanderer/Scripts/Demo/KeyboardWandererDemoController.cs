@@ -118,6 +118,14 @@ namespace KeyboardWanderer.Demo
         private KeyboardWandererEntityVisualFactory _entityVisualFactory;
         private KeyboardWandererEntityAnimationDriver _entityAnimationDriver;
         private float _playerActionUntil;
+        // 현재 스킬 시전 모션 프레임. null이면 방향별 기본 공격 모션을 쓴다(DELETE 등).
+        private Sprite[] _playerActionFrames;
+
+        [Header("Skill effects (temp)")]
+        [SerializeField, Tooltip("플레이 중 좌상단에 스킬 이펙트 테스터 패널을 띄운다. 출시 전 끄면 된다.")]
+        private bool enableSkillEffectTester = true;
+        private SkillEffectDirector _skillEffectDirector;
+        private SkillEffectTester _skillEffectTester;
 
         private float PlayerWalkSpeed => authoringSettings != null ? authoringSettings.PlayerWalkSpeed : 4.2f;
         private float MusicVolume => _settingsController != null ? _settingsController.MusicVolume : 0.65f;
@@ -220,6 +228,7 @@ namespace KeyboardWanderer.Demo
                 _sceneUi.Bind(this);
                 UpdateAuthoredUi();
             }
+            EnsureSkillEffectTester();
         }
 
         public void ConfigureAuthoredContent(
@@ -1041,6 +1050,7 @@ namespace KeyboardWanderer.Demo
 
             SyncLocalEncounterState(response.Run);
             ApplyTurnPresentation(LocalTurnPresentationAdapter.Create(response));
+            PlaySkillEffectsForLocalTurn(request.Ability, response.Outcome, response.Run ?? _service.CurrentView);
             CaptureLocalRestorableTarget(response, view);
 
             RunView committedView = response.Run ?? _service.CurrentView;
@@ -1166,6 +1176,7 @@ namespace KeyboardWanderer.Demo
             SyncRestorableCandidateFromServer();
             ApplyServerTurnPresentation(committed.Turn);
             SyncServerEntityVisuals(_serverRun);
+            PlaySkillEffectsForServerTurn(committed.Turn);
             QueueServerSceneSequence(committed.Turn.sceneSequence);
             UpdateSelectionVisual(_service.CurrentView);
             _runSessionController?.RememberServerRun(_serverRun.id);
@@ -1885,7 +1896,8 @@ namespace KeyboardWanderer.Demo
                 _playerAttackFrames,
                 _playerAttackLeftFrames,
                 _playerAttackUpFrames,
-                _playerAttackDownFrames);
+                _playerAttackDownFrames,
+                _playerActionFrames);
         }
 
         private void BeginPlayerPathAnimation(IReadOnlyList<GridCoord> path, RunView view)
@@ -2076,7 +2088,10 @@ namespace KeyboardWanderer.Demo
                     visual.Facing = new Vector2(0f, Mathf.Sign(direction.y));
             }
             if (visual.IsPlayer)
+            {
+                _playerActionFrames = null; // 후속 장면 공격은 방향별 기본 공격 모션 사용
                 _playerActionUntil = Time.unscaledTime + 0.38f;
+            }
             PlaySfx(AssetClip(action.hit ? "SlashSound" : "UiCancelSound"));
             float started = Time.unscaledTime;
             const float duration = 0.34f;
@@ -3596,6 +3611,255 @@ namespace KeyboardWanderer.Demo
         private void ApplyServerTurnPresentation(GameApiClient.TurnSnapshot turn)
         {
             ApplyTurnPresentation(ServerTurnPresentationAdapter.FromTurn(turn, _serverRun, GmEnabled));
+        }
+
+        // ── 스킬 이펙트 ─────────────────────────────────────────────────────────────
+
+        private void EnsureSkillEffectTester()
+        {
+            if (!enableSkillEffectTester || _skillEffectTester != null)
+                return;
+            var go = new GameObject("SkillEffectTester");
+            go.transform.SetParent(transform, false);
+            _skillEffectTester = go.AddComponent<SkillEffectTester>();
+            _skillEffectTester.Bind(this);
+        }
+
+        private SkillEffectDirector EnsureSkillEffectDirector()
+        {
+            if (_skillEffectDirector != null)
+                return _skillEffectDirector;
+            Transform effectsRoot = WorldEffectsRoot;
+            // 디렉터는 컨트롤러에 붙여 런 리셋(RuntimeEffects 정리)에도 살아남게 하고,
+            // 실제 이펙트 인스턴스만 effectsRoot 밑에 스폰한다.
+            var go = new GameObject("SkillEffectDirector");
+            go.transform.SetParent(transform, false);
+            _skillEffectDirector = go.AddComponent<SkillEffectDirector>();
+            SkillEffectCatalog catalog = Resources.Load<SkillEffectCatalog>("SkillEffectCatalog");
+            _skillEffectDirector.Initialize(catalog, effectsRoot);
+            if (catalog == null)
+                Debug.LogWarning("[SkillEffect] SkillEffectCatalog.asset을 Resources에서 찾지 못했습니다. " +
+                                 "메뉴 Keyboard Wanderer > Rebuild Skill Effect Catalog를 실행하세요.");
+            return _skillEffectDirector;
+        }
+
+        /// <summary>확정된 스킬·크기·속성·대상 위치로 이펙트를 재생하고, 공격 스킬이면 시전자를 대상 쪽으로 돌린다.</summary>
+        private void PlaySkillEffects(AbilityKind skill, SkillFxSize size, List<Vector3> targets,
+            SkillFxType fxType = SkillFxType.Physical)
+        {
+            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
+                return;
+            SetPlayerSkillMotion(skill, targets);
+            SkillEffectDirector director = EnsureSkillEffectDirector();
+            if (director == null || !director.IsReady)
+                return;
+            director.Play(SkillEffectMapping.ForTarget(skill, size, fxType), targets);
+        }
+
+        /// <summary>스킬에 어울리는 넙죽이 모션을 골라 시전 창을 연다. 공격 스킬은 대상 쪽을 바라본다.</summary>
+        private void SetPlayerSkillMotion(AbilityKind skill, List<Vector3> targets)
+        {
+            _playerActionFrames = SkillMotionFrames(skill);
+            if ((skill == AbilityKind.Delete || skill == AbilityKind.SelectAll) && targets != null && targets.Count > 0)
+                FacePlayerToward(targets[0]);
+            bool hasMotion = _playerActionFrames != null && _playerActionFrames.Length > 0;
+            float duration = hasMotion ? 0.9f : 0.55f;
+            _playerActionUntil = Mathf.Max(_playerActionUntil, Time.unscaledTime + duration);
+        }
+
+        /// <summary>스킬 → 넙죽이 시전 모션. null이면 방향별 기본 공격 모션(DELETE)을 사용한다.</summary>
+        private Sprite[] SkillMotionFrames(AbilityKind skill)
+        {
+            if (_visualAssetLibrary == null)
+                return null;
+            switch (skill)
+            {
+                // 물리 공격은 방향이 있는 keyboard-attack 모션을 그대로 쓴다.
+                case AbilityKind.Delete: return null;
+                // 복제·연결·복원·영역전개는 마법 시전 모션.
+                case AbilityKind.Copy:
+                case AbilityKind.Connect:
+                case AbilityKind.Restore:
+                case AbilityKind.SelectAll: return _visualAssetLibrary.PlayerMagicFrames;
+                // 시간 역행은 디버그(되감기) 모션.
+                case AbilityKind.Undo: return _visualAssetLibrary.PlayerDebugFrames;
+                // 조사는 리뷰(살펴보기) 모션.
+                case AbilityKind.Search: return _visualAssetLibrary.PlayerReviewFrames;
+                default: return null;
+            }
+        }
+
+        private void PlaySkillEffectsForLocalTurn(AbilityKind skill, RuleOutcome outcome, RunView view)
+        {
+            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
+                return;
+            // 서버 payload의 fx_type이 아직 없으므로 실제 턴은 PHYSICAL(기본 폭발)로 재생한다.
+            PlaySkillEffects(skill, SkillEffectMapping.SizeFromOutcome(outcome), ResolveTargetsLocal(skill, view));
+        }
+
+        private void PlaySkillEffectsForServerTurn(GameApiClient.TurnSnapshot turn)
+        {
+            if (turn == null)
+                return;
+            AbilityKind skill = AbilityFromSkillId(turn.skillId);
+            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
+                return;
+            PlaySkillEffects(skill, SkillEffectMapping.SizeFromOutcome(turn.outcome), ResolveTargetsServer(skill, turn));
+        }
+
+        /// <summary>테스터 전용. 근처 적(없으면 시전자) 위에 스킬 이펙트를 미리보기 재생하고, 맞힌 대상 수를 돌려준다.</summary>
+        public int DebugPreviewSkillEffect(AbilityKind skill, SkillFxSize size, SkillFxType fxType)
+        {
+            var targets = new List<Vector3>();
+            if (skill == AbilityKind.Undo || skill == AbilityKind.Search)
+            {
+                if (TryGetPlayerWorldPosition(out Vector3 selfPosition))
+                    targets.Add(selfPosition);
+            }
+            else
+            {
+                CollectHostilesNearPlayer(targets, 6f);
+                if (skill == AbilityKind.Connect && targets.Count > 2)
+                    targets = targets.GetRange(0, 2);
+            }
+            if (targets.Count == 0 && TryGetPlayerWorldPosition(out Vector3 fallback))
+                targets.Add(fallback);
+            PlaySkillEffects(skill, size, targets, fxType);
+            return targets.Count;
+        }
+
+        private List<Vector3> ResolveTargetsLocal(AbilityKind skill, RunView view)
+        {
+            var targets = new List<Vector3>();
+            if (skill == AbilityKind.Undo)
+            {
+                targets.Add(PlayerWorldPosition(view));
+                return targets;
+            }
+            if (skill == AbilityKind.SelectAll)
+            {
+                CollectHostilesNearPlayer(targets, 4f);
+                if (targets.Count == 0)
+                    targets.Add(PlayerWorldPosition(view));
+                return targets;
+            }
+            if (_selectionController.SelectedTarget.HasValue)
+                targets.Add(EntityWorldPosition(_selectionController.SelectedTarget.Value, view));
+            if (skill == AbilityKind.Connect && _selectionController.SelectedSecondaryTarget.HasValue)
+                targets.Add(EntityWorldPosition(_selectionController.SelectedSecondaryTarget.Value, view));
+            if (targets.Count == 0)
+                targets.Add(PlayerWorldPosition(view));
+            return targets;
+        }
+
+        private List<Vector3> ResolveTargetsServer(AbilityKind skill, GameApiClient.TurnSnapshot turn)
+        {
+            var targets = new List<Vector3>();
+            if (skill == AbilityKind.Undo)
+            {
+                if (TryGetPlayerWorldPosition(out Vector3 selfPosition))
+                    targets.Add(selfPosition);
+                return targets;
+            }
+            if (skill == AbilityKind.SelectAll)
+            {
+                CollectHostilesNearPlayer(targets, 4f);
+                if (targets.Count == 0 && TryGetPlayerWorldPosition(out Vector3 center))
+                    targets.Add(center);
+                return targets;
+            }
+            if (turn.targetIds != null)
+                for (int i = 0; i < turn.targetIds.Length; i++)
+                    if (Guid.TryParse(turn.targetIds[i], out Guid id) &&
+                        _entityVisuals.TryGetValue(id, out KeyboardWandererEntityVisualState visual) &&
+                        visual?.Root != null)
+                        targets.Add(visual.Root.transform.position);
+            if (targets.Count == 0 && TryGetPlayerWorldPosition(out Vector3 fallback))
+                targets.Add(fallback);
+            return targets;
+        }
+
+        private void CollectHostilesNearPlayer(List<Vector3> into, float radiusTiles)
+        {
+            if (!TryGetPlayerWorldPosition(out Vector3 playerPosition))
+                return;
+            float limit = radiusTiles * TileSize + 0.1f;
+            foreach (KeyValuePair<Guid, KeyboardWandererEntityVisualState> pair in _entityVisuals)
+            {
+                KeyboardWandererEntityVisualState visual = pair.Value;
+                if (visual == null || visual.Root == null || visual.IsPlayer || !visual.IsHostile)
+                    continue;
+                if (Vector3.Distance(visual.Root.transform.position, playerPosition) <= limit)
+                    into.Add(visual.Root.transform.position);
+            }
+        }
+
+        private void FacePlayerToward(Vector3 worldTarget)
+        {
+            foreach (KeyValuePair<Guid, KeyboardWandererEntityVisualState> pair in _entityVisuals)
+            {
+                KeyboardWandererEntityVisualState visual = pair.Value;
+                if (visual == null || visual.Root == null || !visual.IsPlayer)
+                    continue;
+                Vector3 delta = worldTarget - visual.Root.transform.position;
+                visual.Facing = Mathf.Abs(delta.x) >= Mathf.Abs(delta.y)
+                    ? new Vector2(delta.x >= 0f ? 1f : -1f, 0f)
+                    : new Vector2(0f, delta.y >= 0f ? 1f : -1f);
+                return;
+            }
+        }
+
+        private bool TryGetPlayerWorldPosition(out Vector3 position)
+        {
+            foreach (KeyValuePair<Guid, KeyboardWandererEntityVisualState> pair in _entityVisuals)
+            {
+                KeyboardWandererEntityVisualState visual = pair.Value;
+                if (visual != null && visual.Root != null && visual.IsPlayer)
+                {
+                    position = visual.Root.transform.position;
+                    return true;
+                }
+            }
+            position = Vector3.zero;
+            return false;
+        }
+
+        private Vector3 PlayerWorldPosition(RunView view)
+        {
+            if (TryGetPlayerWorldPosition(out Vector3 live))
+                return live;
+            return view != null ? WorldPosition(MapOrigin(view), view.PlayerPosition) : Vector3.zero;
+        }
+
+        private Vector3 EntityWorldPosition(Guid entityId, RunView view)
+        {
+            if (_entityVisuals.TryGetValue(entityId, out KeyboardWandererEntityVisualState visual) &&
+                visual?.Root != null)
+                return visual.Root.transform.position;
+            if (view != null)
+            {
+                Vector2 origin = MapOrigin(view);
+                for (int i = 0; i < view.Entities.Count; i++)
+                    if (view.Entities[i].EntityId == entityId)
+                        return WorldPosition(origin, view.Entities[i].Position);
+            }
+            return PlayerWorldPosition(view);
+        }
+
+        private static AbilityKind AbilityFromSkillId(string skillId)
+        {
+            switch ((skillId ?? string.Empty).Trim().ToUpperInvariant())
+            {
+                case "COPY": return AbilityKind.Copy;
+                case "DELETE": return AbilityKind.Delete;
+                case "CONNECT": return AbilityKind.Connect;
+                case "RESTORE": return AbilityKind.Restore;
+                case "UNDO": return AbilityKind.Undo;
+                case "SEARCH": return AbilityKind.Search;
+                case "SELECT_ALL": return AbilityKind.SelectAll;
+                case "INTERACT": return AbilityKind.Interact;
+                default: return AbilityKind.Move;
+            }
         }
 
         /// <summary>응답 출처를 구분하지 않고 정규화된 결과를 현재 화면 상태에 반영한다.</summary>
