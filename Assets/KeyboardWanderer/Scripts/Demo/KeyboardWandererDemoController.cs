@@ -140,12 +140,6 @@ namespace KeyboardWanderer.Demo
         // 현재 스킬 시전 모션 프레임. null이면 방향별 기본 공격 모션을 쓴다(DELETE 등).
         private Sprite[] _playerActionFrames;
 
-        [Header("Skill effects (temp)")]
-        [SerializeField, Tooltip("플레이 중 좌상단에 스킬 이펙트 테스터 패널을 띄운다. 출시 전 끄면 된다.")]
-        private bool enableSkillEffectTester = true;
-        private SkillEffectDirector _skillEffectDirector;
-        private SkillEffectTester _skillEffectTester;
-
         private float PlayerWalkSpeed => authoringSettings != null ? authoringSettings.PlayerWalkSpeed : 4.2f;
         private float MusicVolume => _settingsController != null ? _settingsController.MusicVolume : 0.65f;
         private float SfxVolume => _settingsController != null ? _settingsController.SfxVolume : 0.8f;
@@ -253,10 +247,6 @@ namespace KeyboardWanderer.Demo
                 UpdateAuthoredUi();
             }
             PlayIntroIfNeeded();
-            /// <summary>
-            /// 스킬 테스터(개발자용)
-            /// </summary>
-            // EnsureSkillEffectTester();
         }
 
         /// <summary>
@@ -1415,7 +1405,7 @@ namespace KeyboardWanderer.Demo
 
             SyncLocalEncounterState(response.Run);
             ApplyTurnPresentation(LocalTurnPresentationAdapter.Create(response));
-            PlaySkillEffectsForLocalTurn(request.Ability, response.Outcome, response.Run ?? _service.CurrentView);
+            ApplySkillMotionForLocalTurn(request.Ability, response.Run ?? _service.CurrentView);
             CaptureLocalRestorableTarget(response, view);
 
             RunView committedView = response.Run ?? _service.CurrentView;
@@ -1693,7 +1683,7 @@ namespace KeyboardWanderer.Demo
             ApplyServerTurnPresentation(committed.Turn);
             SyncServerEntityVisuals(_serverRun);
             PrepareStoryWorldActions();
-            PlaySkillEffectsForServerTurn(committed.Turn);
+            ApplySkillMotionForServerTurn(committed.Turn);
             UpdateSelectionVisual(_service.CurrentView);
             _runSessionController?.RememberServerRun(_serverRun.id);
 
@@ -4467,52 +4457,16 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        // ── 스킬 이펙트 ─────────────────────────────────────────────────────────────
-
-        private void EnsureSkillEffectTester()
-        {
-            if (!enableSkillEffectTester || _skillEffectTester != null)
-                return;
-            var go = new GameObject("SkillEffectTester");
-            go.transform.SetParent(transform, false);
-            _skillEffectTester = go.AddComponent<SkillEffectTester>();
-            _skillEffectTester.Bind(this);
-        }
-
-        private SkillEffectDirector EnsureSkillEffectDirector()
-        {
-            if (_skillEffectDirector != null)
-                return _skillEffectDirector;
-            Transform effectsRoot = WorldEffectsRoot;
-            // 디렉터는 컨트롤러에 붙여 런 리셋(RuntimeEffects 정리)에도 살아남게 하고,
-            // 실제 이펙트 인스턴스만 effectsRoot 밑에 스폰한다.
-            var go = new GameObject("SkillEffectDirector");
-            go.transform.SetParent(transform, false);
-            _skillEffectDirector = go.AddComponent<SkillEffectDirector>();
-            SkillEffectCatalog catalog = Resources.Load<SkillEffectCatalog>("SkillEffectCatalog");
-            _skillEffectDirector.Initialize(catalog, effectsRoot);
-            if (catalog == null)
-                Debug.LogWarning("[SkillEffect] SkillEffectCatalog.asset을 Resources에서 찾지 못했습니다. " +
-                                 "메뉴 Keyboard Wanderer > Rebuild Skill Effect Catalog를 실행하세요.");
-            return _skillEffectDirector;
-        }
-
-        /// <summary>확정된 스킬·크기·속성·대상 위치로 이펙트를 재생하고, 공격 스킬이면 시전자를 대상 쪽으로 돌린다.</summary>
-        private void PlaySkillEffects(AbilityKind skill, SkillFxSize size, List<Vector3> targets,
-            SkillFxType fxType = SkillFxType.Physical)
-        {
-            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
-                return;
-            SetPlayerSkillMotion(skill, targets);
-            SkillEffectDirector director = EnsureSkillEffectDirector();
-            if (director == null || !director.IsReady)
-                return;
-            director.Play(SkillEffectMapping.ForTarget(skill, size, fxType), targets);
-        }
+        // ── 스킬 시전 모션 ───────────────────────────────────────────────────────────
+        // 실제 스킬 이펙트(VFX)는 서버 gameplayResult.fx.effectId를 그대로 재생하는
+        // PlayElementalAttackEffect(ApplyTurnPresentation 참조)가 담당한다. 여기서는
+        // 넙죽이가 스킬에 어울리는 시전 모션을 잠깐 재생하는 것만 다룬다.
 
         /// <summary>스킬에 어울리는 넙죽이 모션을 골라 시전 창을 연다. 공격 스킬은 대상 쪽을 바라본다.</summary>
         private void SetPlayerSkillMotion(AbilityKind skill, List<Vector3> targets)
         {
+            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
+                return;
             _playerActionFrames = SkillMotionFrames(skill);
             if ((skill == AbilityKind.Delete || skill == AbilityKind.SelectAll) && targets != null && targets.Count > 0)
                 FacePlayerToward(targets[0]);
@@ -4543,43 +4497,17 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        private void PlaySkillEffectsForLocalTurn(AbilityKind skill, RuleOutcome outcome, RunView view)
+        private void ApplySkillMotionForLocalTurn(AbilityKind skill, RunView view)
         {
-            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
-                return;
-            // 서버 payload의 fx_type이 아직 없으므로 실제 턴은 PHYSICAL(기본 폭발)로 재생한다.
-            PlaySkillEffects(skill, SkillEffectMapping.SizeFromOutcome(outcome), ResolveTargetsLocal(skill, view));
+            SetPlayerSkillMotion(skill, ResolveTargetsLocal(skill, view));
         }
 
-        private void PlaySkillEffectsForServerTurn(GameApiClient.TurnSnapshot turn)
+        private void ApplySkillMotionForServerTurn(GameApiClient.TurnSnapshot turn)
         {
             if (turn == null)
                 return;
             AbilityKind skill = AbilityFromSkillId(turn.skillId);
-            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
-                return;
-            PlaySkillEffects(skill, SkillEffectMapping.SizeFromOutcome(turn.outcome), ResolveTargetsServer(skill, turn));
-        }
-
-        /// <summary>테스터 전용. 근처 적(없으면 시전자) 위에 스킬 이펙트를 미리보기 재생하고, 맞힌 대상 수를 돌려준다.</summary>
-        public int DebugPreviewSkillEffect(AbilityKind skill, SkillFxSize size, SkillFxType fxType)
-        {
-            var targets = new List<Vector3>();
-            if (skill == AbilityKind.Undo || skill == AbilityKind.Search)
-            {
-                if (TryGetPlayerWorldPosition(out Vector3 selfPosition))
-                    targets.Add(selfPosition);
-            }
-            else
-            {
-                CollectHostilesNearPlayer(targets, 6f);
-                if (skill == AbilityKind.Connect && targets.Count > 2)
-                    targets = targets.GetRange(0, 2);
-            }
-            if (targets.Count == 0 && TryGetPlayerWorldPosition(out Vector3 fallback))
-                targets.Add(fallback);
-            PlaySkillEffects(skill, size, targets, fxType);
-            return targets.Count;
+            SetPlayerSkillMotion(skill, ResolveTargetsServer(skill, turn));
         }
 
         private List<Vector3> ResolveTargetsLocal(AbilityKind skill, RunView view)
