@@ -34,7 +34,9 @@ namespace KeyboardWanderer.Demo
         private TMP_InputField _freeformInput;
         private Button _freeformSubmit;
         private GameObject _freeformRow;
+        private GameObject _actionHint;
         private string _choiceSignature = string.Empty;
+        private bool _panelSized;
         private bool _choiceInputLocked;
         private bool _freeformHasSelection;
         private int _keyboardChoiceIndex;
@@ -103,6 +105,8 @@ namespace KeyboardWanderer.Demo
                 _choiceInputLocked = false;
             if (_freeformRow != null && _freeformRow.activeSelf != visible)
                 _freeformRow.SetActive(visible);
+            if (_actionHint != null && _actionHint.activeSelf == visible)
+                _actionHint.SetActive(!visible);
             if (_freeformInput != null)
             {
                 _freeformInput.interactable = visible && interactable && !_choiceInputLocked;
@@ -179,13 +183,22 @@ namespace KeyboardWanderer.Demo
         private void ResolveFreeformReferences()
         {
             if (_choiceStrip == null || _freeformInput != null) return;
+            // 좁은 원본 패널로는 본문과 입력창이 붙어 버리므로, 먼저 대화 패널을 위로 키워
+            // 세로 여백을 확보한 뒤 본문(위)과 입력창(아래)을 분리한다.
+            EnsureDialoguePanelSize();
             // 긴 장면 문장이 본문 Rect를 벗어나 입력창 위에 그려지지 않도록 한다.
             // 전체 내용은 장면 페이지 단위로 넘기고, 한 페이지의 물리 경계는 UI가 지킨다.
             if (storyText != null)
             {
                 storyText.overflowMode = TextOverflowModes.Ellipsis;
                 storyText.enableAutoSizing = true;
-                storyText.fontSizeMin = Mathf.Min(storyText.fontSizeMin, 10f);
+                storyText.fontSizeMin = 14f;
+                storyText.fontSizeMax = 22f;
+                // 본문을 말풍선 위쪽 절반으로 올려 아래쪽 입력창 밴드와 겹치지 않게 한다.
+                RectTransform storyRect = (RectTransform)storyText.transform;
+                storyRect.anchorMin = new Vector2(0.05f, 0.47f);
+                storyRect.anchorMax = new Vector2(0.965f, 0.97f);
+                storyRect.offsetMin = storyRect.offsetMax = Vector2.zero;
             }
             _freeformRow = new GameObject("Freeform Input", typeof(RectTransform), typeof(Image));
             // 자연어 입력은 선택지 목록 위의 별도 HUD가 아니라 실제 대화 상자 안에 둔다.
@@ -194,10 +207,19 @@ namespace KeyboardWanderer.Demo
             Transform dialogueContent = storyText != null && storyText.transform.parent != null
                 ? storyText.transform.parent
                 : transform;
+            // 선택지·입력 중에는 이동/스킬 힌트가 무의미하고 입력창 아래로 삐져나오므로,
+            // 같은 말풍선 안의 Action Hint를 찾아 두었다가 그 동안 숨긴다.
+            if (_actionHint == null && dialogueContent != null)
+            {
+                Transform hint = dialogueContent.Find("Action Hint");
+                if (hint != null) _actionHint = hint.gameObject;
+            }
             _freeformRow.transform.SetParent(dialogueContent, false);
             RectTransform rowRect = (RectTransform)_freeformRow.transform;
-            rowRect.anchorMin = new Vector2(0.055f, 0.045f);
-            rowRect.anchorMax = new Vector2(0.945f, 0.215f);
+            // 입력창을 말풍선 아래쪽 밴드로 넓게 깔아 글자가 크게 들어가도록 한다.
+            // 바닥까지 내려 뒤에 깔린 Action Hint가 입력창 밑으로 삐져나오지 않게 덮는다.
+            rowRect.anchorMin = new Vector2(0.04f, 0.0f);
+            rowRect.anchorMax = new Vector2(0.965f, 0.43f);
             rowRect.offsetMin = rowRect.offsetMax = Vector2.zero;
             _freeformRow.GetComponent<Image>().color = new Color(0.06f, 0.07f, 0.09f, 0.96f);
             _freeformRow.transform.SetAsLastSibling();
@@ -206,13 +228,20 @@ namespace KeyboardWanderer.Demo
             inputObject.transform.SetParent(_freeformRow.transform, false);
             RectTransform inputRect = (RectTransform)inputObject.transform;
             inputRect.anchorMin = new Vector2(0f, 0f);
-            inputRect.anchorMax = new Vector2(0.82f, 1f);
-            inputRect.offsetMin = new Vector2(6f, 5f);
-            inputRect.offsetMax = new Vector2(-4f, -5f);
+            inputRect.anchorMax = new Vector2(0.845f, 1f);
+            inputRect.offsetMin = new Vector2(8f, 6f);
+            inputRect.offsetMax = new Vector2(-4f, -6f);
             inputObject.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.08f);
 
             TMP_Text textComponent = CreateInputText(inputObject.transform, "Text", "", new Color(0.96f, 0.96f, 0.92f, 1f));
             TMP_Text placeholder = CreateInputText(inputObject.transform, "Placeholder", "하고 싶은 말이나 행동을 직접 입력하세요…", new Color(0.72f, 0.74f, 0.76f, 0.75f));
+            // 입력 글자를 크게. 세로 밴드가 넓어졌으므로 오토사이즈 상한도 함께 올린다.
+            textComponent.enableAutoSizing = true;
+            textComponent.fontSizeMin = 16f;
+            textComponent.fontSizeMax = 24f;
+            placeholder.enableAutoSizing = true;
+            placeholder.fontSizeMin = 14f;
+            placeholder.fontSizeMax = 22f;
             _freeformInput = inputObject.GetComponent<TMP_InputField>();
             _freeformInput.textComponent = textComponent;
             _freeformInput.placeholder = placeholder;
@@ -225,15 +254,16 @@ namespace KeyboardWanderer.Demo
             var buttonObject = new GameObject("Send", typeof(RectTransform), typeof(Image), typeof(Button));
             buttonObject.transform.SetParent(_freeformRow.transform, false);
             RectTransform buttonRect = (RectTransform)buttonObject.transform;
-            buttonRect.anchorMin = new Vector2(0.83f, 0f);
+            buttonRect.anchorMin = new Vector2(0.85f, 0f);
             buttonRect.anchorMax = new Vector2(1f, 1f);
-            buttonRect.offsetMin = new Vector2(2f, 5f);
-            buttonRect.offsetMax = new Vector2(-6f, -5f);
+            buttonRect.offsetMin = new Vector2(2f, 6f);
+            buttonRect.offsetMax = new Vector2(-6f, -6f);
             buttonObject.GetComponent<Image>().color = new Color(0.25f, 0.55f, 0.92f, 0.95f);
             _freeformSubmit = buttonObject.GetComponent<Button>();
             _freeformSubmit.onClick.AddListener(SubmitFreeform);
             TMP_Text sendLabel = CreateInputText(buttonObject.transform, "Label", "전송", Color.white);
             sendLabel.alignment = TextAlignmentOptions.Center;
+            sendLabel.fontSize = 18f;
         }
 
         public bool InsertItemReference(string itemName)
@@ -251,6 +281,20 @@ namespace KeyboardWanderer.Demo
             _freeformInput.Select();
             _freeformInput.ActivateInputField();
             return true;
+        }
+
+        // 원본 대화 패널이 너무 낮아 본문과 입력창이 붙는다. 한 번만 위쪽으로 키워
+        // 세로 여백을 확보한다. 선택지 스트립은 패널 기준 앵커라 함께 올라간다.
+        private void EnsureDialoguePanelSize()
+        {
+            if (_panelSized) return;
+            _panelSized = true;
+            if (transform is RectTransform panel)
+            {
+                panel.anchorMin = new Vector2(0.220f, 0.025f);
+                panel.anchorMax = new Vector2(0.845f, 0.250f);
+                panel.offsetMin = panel.offsetMax = Vector2.zero;
+            }
         }
 
         private TMP_Text CreateInputText(Transform parent, string name, string value, Color color)
@@ -348,10 +392,10 @@ namespace KeyboardWanderer.Demo
                 {
                     ApplyDialogueFont(_choiceLabels[i]);
                     _choiceLabels[i].enableAutoSizing = true;
-                    _choiceLabels[i].fontSizeMin = 10f;
-                    _choiceLabels[i].fontSizeMax = 16f;
+                    _choiceLabels[i].fontSizeMin = 16f;
+                    _choiceLabels[i].fontSizeMax = 26f;
                     _choiceLabels[i].alignment = TextAlignmentOptions.MidlineLeft;
-                    _choiceLabels[i].margin = new Vector4(14f, 3f, 10f, 3f);
+                    _choiceLabels[i].margin = new Vector4(16f, 4f, 12f, 4f);
                 }
             }
         }
@@ -361,8 +405,10 @@ namespace KeyboardWanderer.Demo
             var strip = new GameObject("Choice Strip", typeof(RectTransform), typeof(Image));
             strip.transform.SetParent(transform, false);
             RectTransform stripRect = (RectTransform)strip.transform;
-            stripRect.anchorMin = new Vector2(0.02f, 1.08f);
-            stripRect.anchorMax = new Vector2(0.98f, 2.08f);
+            // 선택지 스트립은 대화 패널 바로 위에 띄운다. 패널을 키운 만큼 간격을 더 두고
+            // 스트립 자체도 높여, 큰 글자가 들어가면서도 대화창과 겹치지 않게 한다.
+            stripRect.anchorMin = new Vector2(0.02f, 1.14f);
+            stripRect.anchorMax = new Vector2(0.98f, 2.50f);
             stripRect.offsetMin = Vector2.zero;
             stripRect.offsetMax = Vector2.zero;
             strip.GetComponent<Image>().color = new Color(0.055f, 0.036f, 0.022f, 0.96f);
@@ -381,8 +427,8 @@ namespace KeyboardWanderer.Demo
                 TMP_Text label = CreateInputText(buttonObject.transform, "Choice Label " + (i + 1),
                     "선택 " + (i + 1), Color.white);
                 label.enableAutoSizing = true;
-                label.fontSizeMin = 10f;
-                label.fontSizeMax = 16f;
+                label.fontSizeMin = 16f;
+                label.fontSizeMax = 26f;
             }
             strip.SetActive(false);
             return strip;
