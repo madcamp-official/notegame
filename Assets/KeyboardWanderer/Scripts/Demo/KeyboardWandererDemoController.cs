@@ -18,6 +18,7 @@ namespace KeyboardWanderer.Demo
         private const float TileSize = 1f;
         private const int TerrainSortingOrder = -1000;
         private const string TutorialCompletedKey = "keyboard-wanderer.tutorial-v1-complete";
+        private const string IntroCompletedKey = "keyboard-wanderer.intro-v1-complete";
 
         private enum ScreenMode
         {
@@ -217,6 +218,27 @@ namespace KeyboardWanderer.Demo
                 _sceneUi.Bind(this);
                 UpdateAuthoredUi();
             }
+            PlayIntroIfNeeded();
+        }
+
+        /// <summary>
+        /// 첫 실행에서만 오프닝 컷신을 화면 위 오버레이로 재생한다. 화면 상태(_screenMode)와
+        /// 완전히 독립적이므로 어떤 화면이 떠 있든 그 위에 그려지고, 끝나면 스스로 사라진다.
+        /// </summary>
+        private void PlayIntroIfNeeded()
+        {
+            if (PlayerPrefs.GetInt(IntroCompletedKey, 0) != 0)
+                return;
+            Sprite[] frames = _visualAssetLibrary != null && _visualAssetLibrary.Manifest != null
+                ? _visualAssetLibrary.Manifest.CutsceneIntroFrames
+                : null;
+            if (frames == null || frames.Length == 0)
+                return;
+            KeyboardWandererIntroView.Play(transform, frames, () =>
+            {
+                PlayerPrefs.SetInt(IntroCompletedKey, 1);
+                PlayerPrefs.Save();
+            });
         }
 
         public void ConfigureAuthoredContent(
