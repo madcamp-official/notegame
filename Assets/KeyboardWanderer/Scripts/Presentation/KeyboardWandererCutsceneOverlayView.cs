@@ -7,13 +7,14 @@ using UnityEngine.UI;
 namespace KeyboardWanderer.Demo
 {
     /// <summary>
-    /// Authored UI 화면 목록에 속하지 않는, 완전히 코드로만 만들어지는 오프닝 컷신 오버레이다.
+    /// Authored UI 화면 목록에 속하지 않는, 완전히 코드로만 만들어지는 컷신 오버레이다.
+    /// 오프닝·엔딩·게임 오버 컷신이 모두 이 View를 공유한다.
     /// 부착된 오브젝트 위에 자기 전용 Canvas를 새로 만들어 무엇이 떠 있든 그 위에 그려지고,
     /// 재생이 끝나면 그 Canvas를 포함한 자기 자신을 통째로 파괴한다.
     /// Editor의 "Rebuild Authored Scene UI" 도구나 씬에 미리 구워둔 오브젝트에 전혀 의존하지 않으므로
     /// 씬을 다시 굽지 않아도 항상 재생되고, 끝난 뒤에는 게임 UI에 어떤 흔적도 남기지 않는다.
     /// </summary>
-    public sealed class KeyboardWandererIntroView : MonoBehaviour
+    public sealed class KeyboardWandererCutsceneOverlayView : MonoBehaviour
     {
         private const float FadeDuration = 0.6f;
         private const float CrossfadeDuration = 0.45f;
@@ -40,9 +41,9 @@ namespace KeyboardWanderer.Demo
                 return;
             }
 
-            var host = new GameObject("Intro Cutscene Overlay");
+            var host = new GameObject("Cutscene Overlay");
             host.transform.SetParent(parent, false);
-            KeyboardWandererIntroView view = host.AddComponent<KeyboardWandererIntroView>();
+            KeyboardWandererCutsceneOverlayView view = host.AddComponent<KeyboardWandererCutsceneOverlayView>();
             view.BuildUi();
             view.StartCoroutine(view.PlayRoutine(frames, onComplete, host));
         }

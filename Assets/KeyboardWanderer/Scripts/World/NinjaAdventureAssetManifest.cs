@@ -100,6 +100,12 @@ namespace KeyboardWanderer.Demo
         [Header("Intro cutscene")]
         public Sprite[] CutsceneIntroFrames = Array.Empty<Sprite>();
 
+        [Header("Ending cutscene")]
+        public Sprite CutsceneEndingImage;
+
+        [Header("Game over cutscene")]
+        public Sprite CutsceneGameOverImage;
+
         [Header("Actors and props")]
         public Sprite PlayerIdle;
         public Sprite WardenIdle;
