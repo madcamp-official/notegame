@@ -32,6 +32,8 @@ public class IcosahedronDice : MonoBehaviour
     [Tooltip("0 = perfectly clean single-axis spin, ~0.3 = slight tumbling wobble that fades out with the spin.")]
     [Range(0f, 1f)]
     [SerializeField] private float wobble = 0.3f;
+    [Tooltip("Time used to settle on the authoritative result after a pending server response arrives.")]
+    [SerializeField] private float responseSettleDuration = 0.7f;
 
     [Header("Facing")]
     [Tooltip("Camera the winning face should end up pointing at. Defaults to Camera.main.")]
@@ -49,6 +51,8 @@ public class IcosahedronDice : MonoBehaviour
     // IMPORTANT: reorder (or expose) this array so index matches the number painted
     // on your texture for that face — see ExtractFaceNormals().
     private Vector3[] faceNormals;
+    private Coroutine rollCoroutine;
+    private int pendingResult;
 
     private void Awake()
     {
@@ -75,7 +79,21 @@ public class IcosahedronDice : MonoBehaviour
     /// </summary>
     private void ExtractFaceNormals()
     {
-        Mesh mesh = GetComponent<MeshFilter>().sharedMesh;
+        MeshFilter filter = GetComponent<MeshFilter>();
+        if (filter == null || filter.sharedMesh == null)
+        {
+            MeshFilter[] filters = GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < filters.Length; i++)
+                if (filters[i] != null && filters[i].sharedMesh != null)
+                {
+                    filter = filters[i];
+                    break;
+                }
+        }
+        if (filter == null || filter.sharedMesh == null)
+            throw new InvalidOperationException("IcosahedronDice needs an icosahedron mesh on itself or a child.");
+
+        Mesh mesh = filter.sharedMesh;
         Vector3[] verts = mesh.vertices;
         int[] tris = mesh.triangles;
 
@@ -127,8 +145,42 @@ public class IcosahedronDice : MonoBehaviour
 
         int faceIndex = result - 1;
         LastResult = result;
-        StartCoroutine(RollRoutine(faceIndex, Mathf.Clamp01(power01)));
+        rollCoroutine = StartCoroutine(RollRoutine(faceIndex, Mathf.Clamp01(power01)));
         return LastResult;
+    }
+
+    /// <summary>
+    /// Starts an unresolved visual roll. This is used while an authoritative request is
+    /// waiting for its narrative response; no mechanical value is drawn on the client.
+    /// Call <see cref="ResolveTo"/> when the server-provided D20 arrives.
+    /// </summary>
+    public void BeginPendingRoll(float power01 = 1f)
+    {
+        CancelRoll();
+        pendingResult = 0;
+        LastResult = 0;
+        rollCoroutine = StartCoroutine(PendingRollRoutine(Mathf.Clamp01(power01)));
+    }
+
+    /// <summary>Finishes a pending visual roll on the already-authoritative result.</summary>
+    public void ResolveTo(int result)
+    {
+        if (result < 1 || result > faceNormals.Length)
+            throw new ArgumentOutOfRangeException(nameof(result), result,
+                $"Expected a value between 1 and {faceNormals.Length}.");
+        LastResult = result;
+        pendingResult = result;
+        if (!IsRolling)
+            RollTo(result);
+    }
+
+    public void CancelRoll()
+    {
+        if (rollCoroutine != null)
+            StopCoroutine(rollCoroutine);
+        rollCoroutine = null;
+        pendingResult = 0;
+        IsRolling = false;
     }
 
     /// <summary>World rotation that presents faceNormals[faceIndex] to the camera.</summary>
@@ -202,7 +254,53 @@ public class IcosahedronDice : MonoBehaviour
         transform.rotation = targetRot;
 
         IsRolling = false;
+        rollCoroutine = null;
         RollFinished?.Invoke(LastResult);
+    }
+
+    private IEnumerator PendingRollRoutine(float power01)
+    {
+        IsRolling = true;
+        float speed = Mathf.Lerp(minStartSpeed, maxStartSpeed, power01);
+        Vector3 primaryAxis = new Vector3(0.72f, 1f, 0.38f).normalized;
+        Vector3 secondaryAxis = new Vector3(-0.42f, 0.26f, 1f).normalized;
+        float elapsed = 0f;
+
+        while (pendingResult == 0)
+        {
+            float delta = Time.unscaledDeltaTime;
+            elapsed += delta;
+            transform.Rotate(primaryAxis, speed * delta, Space.World);
+            transform.Rotate(secondaryAxis, speed * wobble * 0.22f *
+                (0.65f + 0.35f * Mathf.Sin(elapsed * 5f)) * delta, Space.World);
+            yield return null;
+        }
+
+        Quaternion start = transform.rotation;
+        Quaternion target = TargetRotationFor(pendingResult - 1);
+        Vector3 settleAxis = new Vector3(0.37f, 0.81f, -0.45f).normalized;
+        float duration = Mathf.Max(0.1f, responseSettleDuration);
+        elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float eased = 1f - Mathf.Pow(1f - t, 3f);
+            Quaternion extraTurns = Quaternion.AngleAxis((1f - eased) * 720f, settleAxis);
+            transform.rotation = extraTurns * Quaternion.Slerp(start, target, eased);
+            yield return null;
+        }
+
+        transform.rotation = target;
+        pendingResult = 0;
+        IsRolling = false;
+        rollCoroutine = null;
+        RollFinished?.Invoke(LastResult);
+    }
+
+    private void OnDisable()
+    {
+        CancelRoll();
     }
 
     /// <summary>

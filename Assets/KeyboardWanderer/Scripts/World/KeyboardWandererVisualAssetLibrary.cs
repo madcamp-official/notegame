@@ -127,8 +127,10 @@ namespace KeyboardWanderer.World
                 case "DataArchiveMusic": return manifest.DataArchiveMusic;
                 case "LegacyCitadelMusic": return manifest.LegacyCitadelMusic;
                 case "RootSystemMusic": return manifest.RootSystemMusic;
+                case "BossMusic": return manifest.BossMusic;
                 case "FinalBossMusic": return manifest.FinalBossMusic;
                 case "GameOverMusic": return manifest.GameOverMusic;
+                case "VictoryMusic": return manifest.VictoryMusic;
                 case "UiMoveSound": return manifest.UiMoveSound;
                 case "UiAcceptSound": return manifest.UiAcceptSound;
                 case "UiCancelSound": return manifest.UiCancelSound;

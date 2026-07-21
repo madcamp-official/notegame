@@ -136,6 +136,7 @@ namespace KeyboardWanderer.Demo
         private KeyboardWandererBiomeDecorationRenderer _decorationRenderer;
         private KeyboardWandererEntityVisualFactory _entityVisualFactory;
         private KeyboardWandererEntityAnimationDriver _entityAnimationDriver;
+        private KeyboardWandererDiceOverlay _diceOverlay;
         private float _playerActionUntil;
         // 현재 스킬 시전 모션 프레임. null이면 방향별 기본 공격 모션을 쓴다(DELETE 등).
         private Sprite[] _playerActionFrames;
@@ -234,6 +235,10 @@ namespace KeyboardWanderer.Demo
             if (_visualAssetLibrary == null)
                 throw new InvalidOperationException("Authored World에는 Visual Asset Library 참조가 필요합니다.");
             _visualAssetLibrary.Initialize(authoredAssetManifest, authoringSettings);
+            _diceOverlay = GetComponent<KeyboardWandererDiceOverlay>();
+            if (_diceOverlay == null)
+                _diceOverlay = gameObject.AddComponent<KeyboardWandererDiceOverlay>();
+            _diceOverlay.Configure(authoredCamera != null ? authoredCamera : Camera.main, _assets?.D20Prefab);
             _sceneUi?.InitializeInventoryQuestOverlay(_assets, UiSelectInventoryItem,
                 open => _inputRouter?.SetUiOverlayMode(open));
             ConfigureCamera();
@@ -419,7 +424,7 @@ namespace KeyboardWanderer.Demo
 
             _inputRouter?.SetNarrativeChoiceMode(false);
             RunView view = _service.CurrentView;
-            UpdateDynamicMusic(view);
+            RefreshDynamicMusic(view, _runPresentationModel);
             if ((changes & PresentationChange.Minimap) != 0)
                 UpdateMinimap(view);
             string narrative = _lastOutcome == "RESTORED" ||
@@ -1493,6 +1498,7 @@ namespace KeyboardWanderer.Demo
             _choiceSubmissionPending = true;
             _serverPending = true;
             _gmPending = true;
+            BeginPendingDiceRoll();
             _serverStatus = "서사 선택 처리 중";
             // Invalidate the consumed set immediately so a second mouse/key event cannot
             // submit it. Keep the visible options in place (disabled by TurnPending) so
@@ -1506,11 +1512,12 @@ namespace KeyboardWanderer.Demo
             yield return _gameApi.SubmitNarrativeChoice(_serverRun.id, submittedChoiceSetId,
                 submittedChoiceId, idempotencyKey, expectedVersion, value => result = value);
 
-            _serverPending = false;
-            _gmPending = false;
-            _choiceSubmissionPending = false;
             if (result == null || !result.IsSuccess || result.Value == null)
             {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
+                _choiceSubmissionPending = false;
                 // Restore the exact sealed set so a transient network failure is retryable.
                 _lastChoiceSetId = submittedChoiceSetId;
                 _lastNarrativeChoices = submittedChoices ?? Array.Empty<NarrativeChoiceOption>();
@@ -1522,6 +1529,10 @@ namespace KeyboardWanderer.Demo
             }
 
             GameApiClient.CommittedTurn committed = result.Value;
+            yield return ResolvePendingDiceRoll(committed.Turn?.dice?.raw ?? 0);
+            _serverPending = false;
+            _gmPending = false;
+            _choiceSubmissionPending = false;
             CaptureRestorableTarget(committed.Turn, runBeforeSubmit);
             _serverRun = committed.Run;
             SyncEncounterStateFromServer();
@@ -1555,6 +1566,7 @@ namespace KeyboardWanderer.Demo
             _choiceSubmissionPending = true;
             _serverPending = true;
             _gmPending = true;
+            BeginPendingDiceRoll();
             _serverStatus = "자연어 대화 생성 중";
             _lastChoiceSetId = string.Empty;
             Debug.Log("[KW.Message] event=Submitted runId=" + _serverRun.id + " turn=" +
@@ -1564,11 +1576,12 @@ namespace KeyboardWanderer.Demo
             yield return _gameApi.SubmitPlayerMessage(_serverRun.id, text, idempotencyKey,
                 expectedVersion, value => result = value);
 
-            _serverPending = false;
-            _gmPending = false;
-            _choiceSubmissionPending = false;
             if (result == null || !result.IsSuccess || result.Value == null)
             {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
+                _choiceSubmissionPending = false;
                 RecoverPendingChoiceSet(runBeforeSubmit?.pendingChoiceSet, true);
                 PresentChoiceRejection(result?.ErrorCode, result?.ErrorMessage);
                 if (result == null || result.ErrorCode == "NETWORK_ERROR" || result.ErrorCode == "RUN_VERSION_CONFLICT")
@@ -1577,6 +1590,10 @@ namespace KeyboardWanderer.Demo
             }
 
             GameApiClient.CommittedTurn committed = result.Value;
+            yield return ResolvePendingDiceRoll(committed.Turn?.dice?.raw ?? 0);
+            _serverPending = false;
+            _gmPending = false;
+            _choiceSubmissionPending = false;
             _serverRun = committed.Run;
             SyncEncounterStateFromServer();
             SyncRestorableCandidateFromServer();
@@ -1616,6 +1633,7 @@ namespace KeyboardWanderer.Demo
             EnsureRuntimeClients();
             _serverPending = true;
             _gmPending = true;
+            BeginPendingDiceRoll();
             _serverStatus = "권위 턴 커밋 중";
 
             GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
@@ -1625,10 +1643,11 @@ namespace KeyboardWanderer.Demo
             GameApiClient.Result<GameApiClient.CommittedTurn> result =
                 gatewayResult?.TransportResponse as GameApiClient.Result<GameApiClient.CommittedTurn>;
 
-            _serverPending = false;
-            _gmPending = false;
             if (gatewayResult == null || !gatewayResult.IsSuccess)
             {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
                 bool encounterRequired = string.Equals(gatewayResult?.ErrorCode, "TRAVEL_ENCOUNTER_REQUIRED", StringComparison.Ordinal);
                 if (encounterRequired)
                 {
@@ -1674,9 +1693,15 @@ namespace KeyboardWanderer.Demo
             GameApiClient.CommittedTurn committed = gatewayResult.Payload as GameApiClient.CommittedTurn;
             if (committed == null)
             {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
                 PresentActionRejection("EMPTY_RESPONSE", "Server reported success but returned no committed turn.");
                 yield break;
             }
+            yield return ResolvePendingDiceRoll(committed.Turn?.dice?.raw ?? 0);
+            _serverPending = false;
+            _gmPending = false;
             CaptureRestorableTarget(committed.Turn, runBeforeSubmit);
             _serverRun = committed.Run;
             SyncEncounterStateFromServer();
@@ -1705,6 +1730,23 @@ namespace KeyboardWanderer.Demo
                    (technicalMessage ?? string.Empty));
             PlaySfx(AssetClip("UiCancelSound"));
             PublishPresentationState(PresentationChange.Hud | PresentationChange.Selection);
+        }
+
+        private void BeginPendingDiceRoll()
+        {
+            _diceOverlay?.BeginRoll();
+        }
+
+        private IEnumerator ResolvePendingDiceRoll(int authoritativeD20)
+        {
+            if (_diceOverlay == null)
+                yield break;
+            yield return _diceOverlay.ResolveAndHide(authoritativeD20);
+        }
+
+        private void CancelPendingDiceRoll()
+        {
+            _diceOverlay?.CancelAndHide();
         }
 
         private static string PlayerFacingRejection(string errorCode, string technicalMessage)
@@ -2021,7 +2063,7 @@ namespace KeyboardWanderer.Demo
             _screenMode = ScreenMode.Playing;
             _cameraController?.SetEnabled(true);
             SnapCameraToPlayer();
-            SetMusic(_assets != null ? _assets.VillageMusic ?? _assets.AdventureMusic : null);
+            RefreshDynamicMusic(_service.CurrentView, PresentationModel(_service.CurrentView));
             if (!_serverOnline)
                 LocalRunSaveService.Save(_service);
         }
@@ -2969,6 +3011,103 @@ namespace KeyboardWanderer.Demo
         private void SetMusic(AudioClip clip)
         {
             _audioController?.SetMusic(clip);
+        }
+
+        private void RefreshDynamicMusic(RunView view, RunPresentationModel presentation)
+        {
+            if (_assets == null || view == null || presentation == null) return;
+            bool gameOver = IsGameOver(view, presentation);
+            bool cleared = !gameOver && IsRunCleared(view, presentation);
+            bool bossBattle = TryGetActiveBossBattle(presentation.CurrentBiomeId, out bool finalBossBattle);
+            AudioClip clip = KeyboardWandererMusicDirector.Resolve(_assets,
+                new KeyboardWandererMusicDirector.Context(presentation.CurrentBiomeId, bossBattle,
+                    finalBossBattle, gameOver, cleared));
+            SetMusic(clip);
+        }
+
+        private bool IsGameOver(RunView view, RunPresentationModel presentation)
+        {
+            if (presentation.Health <= 0) return true;
+            if (_serverOnline && _serverRun != null)
+                return StatusMatches(_serverRun.status, "dead", "failed", "game_over", "gameover");
+            return view.Status == RunStatus.Dead;
+        }
+
+        private bool IsRunCleared(RunView view, RunPresentationModel presentation)
+        {
+            if (presentation.IsPlaying) return false;
+            if (_serverOnline && _serverRun != null)
+                return StatusMatches(_serverRun.status, "completed", "cleared", "victory", "won");
+            return view.Status == RunStatus.Completed;
+        }
+
+        private bool TryGetActiveBossBattle(string biomeId, out bool finalBossBattle)
+        {
+            finalBossBattle = false;
+            if (_serverOnline && _serverRun != null)
+            {
+                GameApiClient.ActiveEncounterSnapshot encounter = _serverRun.activeEncounter;
+                if (!IsOpenServerEncounter(encounter) ||
+                    !string.Equals(encounter.kind, "COMBAT", StringComparison.OrdinalIgnoreCase))
+                    return false;
+                GameApiClient.EntitySnapshot source = FindServerEntity(encounter.sourceEntityId);
+                bool boss = source != null && (source.state?.boss == true || IsBossAsset(source.assetId));
+                if (!boss) return false;
+                finalBossBattle = IsFinalBoss(source, biomeId);
+                return true;
+            }
+
+            if (_service?.CurrentView == null || !_service.CurrentView.HasActiveEncounter) return false;
+            RunPresentationModel run = _runPresentationModel;
+            if (run?.Entities == null) return false;
+            for (int i = 0; i < run.Entities.Count; i++)
+            {
+                RunPresentationEntity entity = run.Entities[i];
+                if (entity == null || !entity.IsActive || !entity.IsHostile || !IsBossAsset(entity.AssetId)) continue;
+                finalBossBattle = IsFinalBossAsset(entity.AssetId) ||
+                                  string.Equals(biomeId, "root_system", StringComparison.OrdinalIgnoreCase);
+                return true;
+            }
+            return false;
+        }
+
+        private GameApiClient.EntitySnapshot FindServerEntity(string entityId)
+        {
+            if (string.IsNullOrWhiteSpace(entityId) || _serverRun?.entities == null) return null;
+            for (int i = 0; i < _serverRun.entities.Length; i++)
+                if (string.Equals(_serverRun.entities[i]?.id, entityId, StringComparison.OrdinalIgnoreCase))
+                    return _serverRun.entities[i];
+            return null;
+        }
+
+        private static bool IsFinalBoss(GameApiClient.EntitySnapshot source, string biomeId)
+        {
+            if (source == null) return false;
+            if (IsFinalBossAsset(source.assetId) ||
+                string.Equals(biomeId, "root_system", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (string.Equals(source.state?.campaignRole, CampaignCatalog.FinalConvergenceRole,
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+            string[] roles = source.state?.roleTags;
+            if (roles == null) return false;
+            for (int i = 0; i < roles.Length; i++)
+                if (string.Equals(roles[i], CampaignCatalog.FinalConvergenceRole, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            return false;
+        }
+
+        private static bool IsBossAsset(string assetId)
+            => !string.IsNullOrWhiteSpace(assetId) && assetId.StartsWith("boss.", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsFinalBossAsset(string assetId)
+            => string.Equals(assetId, "boss.giant-flam.v1", StringComparison.OrdinalIgnoreCase);
+
+        private static bool StatusMatches(string status, params string[] values)
+        {
+            for (int i = 0; i < values.Length; i++)
+                if (string.Equals(status, values[i], StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         private void PlaySfx(AudioClip clip, bool cutOffPrevious = true)

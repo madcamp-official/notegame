@@ -115,6 +115,7 @@ MonoBehaviour:
   Crate: {fileID: 769504479347062634, guid: 6ecd53b1450af47f5af94ecd5e5ae9aa, type: 3}
   TreasureChest: {fileID: 8213334933265063372, guid: b53ed5982c55a4291a34c0d3b071c53b, type: 3}
   D20: {fileID: -5843691984524311486, guid: 3bea09d9b5af44d068c18afa0f0a37d6, type: 3}
+  D20Prefab: {fileID: 5130974440242305061, guid: 59e381ba0d3310d4384ba7bc6fea4083, type: 3}
   PlayerAnimatorController: {fileID: 9100000, guid: 370da4c39c3164e489e07ecf04721c08, type: 2}
   SlimeAnimatorController: {fileID: 9100000, guid: 7de334d523b4b4dd394ca62a64f54ed8, type: 2}
   VillagerAnimatorController: {fileID: 9100000, guid: f33b4198cae7c48e6af7c9d001060185, type: 2}
@@ -435,8 +436,10 @@ MonoBehaviour:
   DataArchiveMusic: {fileID: 8300000, guid: b9b06c78c575a8f4e80a21bca5ca57cd, type: 3}
   LegacyCitadelMusic: {fileID: 8300000, guid: 9e3472e097ea4b248a042afd42182460, type: 3}
   RootSystemMusic: {fileID: 8300000, guid: bfcbc7c25a8d90c47a259df60329e908, type: 3}
+  BossMusic: {fileID: 8300000, guid: 9ea3307a8807c4245917ef342ea5b711, type: 3}
   FinalBossMusic: {fileID: 8300000, guid: c1c8aed8999dceb4eb9a4a77558fbbcf, type: 3}
   GameOverMusic: {fileID: 8300000, guid: 22819c50bd5fd364c968fc46de8dc8ae, type: 3}
+  VictoryMusic: {fileID: 0}
   UiMoveSound: {fileID: 8300000, guid: abcd64c94256f4bf39dad98f611f2c3b, type: 3}
   UiAcceptSound: {fileID: 8300000, guid: 6f68444b693e344c88d586ee6093a47d, type: 3}
   UiCancelSound: {fileID: 8300000, guid: 52a3b4ea3a320477ebc52626d0e11987, type: 3}

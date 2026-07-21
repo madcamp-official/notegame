@@ -109,6 +109,7 @@ namespace KeyboardWanderer.Demo
         public Sprite Crate;
         public Sprite TreasureChest;
         public Sprite D20;
+        public GameObject D20Prefab;
 
         [Header("Animator controllers")]
         public RuntimeAnimatorController PlayerAnimatorController;
@@ -206,8 +207,10 @@ namespace KeyboardWanderer.Demo
         public AudioClip DataArchiveMusic;
         public AudioClip LegacyCitadelMusic;
         public AudioClip RootSystemMusic;
+        public AudioClip BossMusic;
         public AudioClip FinalBossMusic;
         public AudioClip GameOverMusic;
+        public AudioClip VictoryMusic;
 
         [Header("Sound effects")]
         public AudioClip UiMoveSound;

@@ -118,6 +118,7 @@ namespace KeyboardWanderer.Editor
             manifest.Crate = LoadFirstSprite("Assets/NinjaAdventure/Items/Object/CrateEmpty.png");
             manifest.TreasureChest = LoadFirstSprite("Assets/NinjaAdventure/Items/Treasure/BigTreasureChest.png");
             manifest.D20 = LoadFirstSprite("Assets/NinjaAdventure/Items/Object/Dice 20.png");
+            manifest.D20Prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/3DObjects/icosa.prefab");
 
             manifest.PlayerAnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
                 "Assets/KeyboardWanderer/Animations/Player/Player.controller");
@@ -300,8 +301,12 @@ namespace KeyboardWanderer.Editor
             manifest.DataArchiveMusic = LoadAudioClip("Assets/bgm/bgm_archive.ogg");
             manifest.LegacyCitadelMusic = LoadAudioClip("Assets/bgm/bgm_legacy.ogg");
             manifest.RootSystemMusic = LoadAudioClip("Assets/bgm/bgm_root.ogg");
+            manifest.BossMusic = LoadAudioClip("Assets/bgm/bgm_boss_1.ogg");
             manifest.FinalBossMusic = LoadAudioClip("Assets/bgm/bgm_main_wave4.ogg");
             manifest.GameOverMusic = LoadAudioClip("Assets/bgm/bgm_game_over.ogg");
+            // 승리곡 파일은 아직 전달되지 않았다. 파일이 추가되면 빌더 소스 수정 없이
+            // 이 선택 슬롯이 자동으로 채워지고, 그 전에는 런타임이 루트 테마를 유지한다.
+            manifest.VictoryMusic = LoadOptionalAudioClip("Assets/bgm/bgm_victory.ogg");
             manifest.UiMoveSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Move1.wav");
             manifest.UiAcceptSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Accept.wav");
             manifest.UiCancelSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Cancel.wav");
@@ -397,6 +402,11 @@ namespace KeyboardWanderer.Editor
             AudioClip clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
             if (clip == null) _missingAssetPaths.Add(path);
             return clip;
+        }
+
+        private static AudioClip LoadOptionalAudioClip(string path)
+        {
+            return AssetDatabase.LoadAssetAtPath<AudioClip>(path);
         }
 
         private static ActorAnimationEntry Actor(string assetId, string sourcePath, string spriteName,
