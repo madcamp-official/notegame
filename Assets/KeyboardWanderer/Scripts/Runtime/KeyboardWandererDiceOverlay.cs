@@ -1,39 +1,44 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace KeyboardWanderer.Runtime
 {
     /// <summary>
-    /// Camera-space presentation for the existing 3D D20. The client never chooses the
-    /// mechanical result: it spins while the request is pending, then lands on the value
-    /// returned by the authoritative turn response.
+    /// Presents the existing 3D D20 inside a fixed-size screen-space UI layer. The die is
+    /// rendered by an isolated camera into a transparent RenderTexture, so neither its
+    /// size nor its rotation can affect the gameplay camera or world presentation.
     /// </summary>
     public sealed class KeyboardWandererDiceOverlay : MonoBehaviour
     {
         private const float ResultHoldSeconds = 0.4f;
-        private const float TargetViewportDiameter = 0.16f;
-        private const float CameraDepth = 8f;
-        private static readonly Vector2 ViewportPosition = new Vector2(0.5f, 0.58f);
-        private Camera _camera;
-        private GameObject _prefab;
-        private GameObject _instance;
-        private IcosahedronDice _dice;
-        private float _unscaledDiameter;
+        private const int OverlaySortingOrder = 4500;
+        private const int TextureSize = 512;
+        private static readonly Vector3 CaptureOrigin = new Vector3(10000f, 10000f, 0f);
 
-        public bool IsVisible => _instance != null && _instance.activeSelf;
+        private GameObject _prefab;
+        private GameObject _uiRoot;
+        private GameObject _instance;
+        private Camera _captureCamera;
+        private RenderTexture _renderTexture;
+        private IcosahedronDice _dice;
+
+        public bool IsVisible => _uiRoot != null && _uiRoot.activeSelf;
         public bool IsRolling => _dice != null && _dice.IsRolling;
 
         public void Configure(Camera targetCamera, GameObject dicePrefab)
         {
-            _camera = targetCamera;
+            // Kept in the signature for the existing composition API. The gameplay
+            // camera is deliberately not used by this screen-space presentation.
             _prefab = dicePrefab;
         }
 
         public void BeginRoll()
         {
             if (!EnsureInstance()) return;
-            PositionInCamera();
+            _uiRoot.SetActive(true);
             _instance.SetActive(true);
+            FitCaptureCamera();
             _dice.BeginPendingRoll();
         }
 
@@ -64,65 +69,84 @@ namespace KeyboardWanderer.Runtime
 
         private bool EnsureInstance()
         {
-            if (_instance != null && _dice != null) return true;
-            if (_camera == null || _prefab == null) return false;
+            if (_uiRoot != null && _instance != null && _dice != null) return true;
+            if (_prefab == null) return false;
 
-            // Keep the die out of the camera hierarchy. The overlay follows the
-            // camera position, but rotating the die must never have a transform path
-            // that can be mistaken for (or coupled to) camera rotation.
-            _instance = Instantiate(_prefab);
-            _instance.name = "Pending D20 Overlay";
+            BuildUiLayer();
+
+            _instance = Instantiate(_prefab, _uiRoot.transform);
+            _instance.name = "Pending D20 Capture";
+            _instance.transform.position = CaptureOrigin;
             _instance.transform.localScale = Vector3.one;
             _dice = _instance.GetComponent<IcosahedronDice>();
             if (_dice == null) _dice = _instance.GetComponentInChildren<IcosahedronDice>(true);
             if (_dice == null)
             {
-                Destroy(_instance);
+                Destroy(_uiRoot);
+                _uiRoot = null;
                 _instance = null;
                 return false;
             }
-            _unscaledDiameter = MeasureRendererDiameter(_instance);
-            _instance.SetActive(false);
+
+            _dice.SetTargetCamera(_captureCamera);
+            _uiRoot.SetActive(false);
             return true;
         }
 
-        private void PositionInCamera()
+        private void BuildUiLayer()
         {
-            if (_instance == null || _camera == null) return;
+            _uiRoot = new GameObject("D20 UI Overlay");
+            _uiRoot.transform.SetParent(transform, false);
 
-            float visibleHeight = _camera.orthographic
-                ? _camera.orthographicSize * 2f
-                : 2f * CameraDepth * Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            float visibleWidth = visibleHeight * _camera.aspect;
-            float scale = CalculateViewportScale(visibleWidth, visibleHeight, _unscaledDiameter);
-            _instance.transform.localScale = Vector3.one * scale;
-            _instance.transform.position = _camera.ViewportToWorldPoint(
-                new Vector3(ViewportPosition.x, ViewportPosition.y, CameraDepth));
-            ClampRenderedSizeToViewport();
+            _renderTexture = new RenderTexture(TextureSize, TextureSize, 24, RenderTextureFormat.ARGB32)
+            {
+                name = "D20 UI Render Texture",
+                antiAliasing = 4,
+                useMipMap = false,
+                autoGenerateMips = false
+            };
+            _renderTexture.Create();
+
+            var cameraObject = new GameObject("D20 UI Camera", typeof(Camera));
+            cameraObject.transform.SetParent(_uiRoot.transform, false);
+            _captureCamera = cameraObject.GetComponent<Camera>();
+            _captureCamera.orthographic = true;
+            _captureCamera.clearFlags = CameraClearFlags.SolidColor;
+            _captureCamera.backgroundColor = Color.clear;
+            _captureCamera.nearClipPlane = 0.1f;
+            _captureCamera.farClipPlane = 50f;
+            _captureCamera.allowHDR = false;
+            _captureCamera.allowMSAA = true;
+            _captureCamera.targetTexture = _renderTexture;
+
+            var canvasObject = new GameObject("D20 Overlay Canvas",
+                typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            canvasObject.transform.SetParent(_uiRoot.transform, false);
+            Canvas canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = OverlaySortingOrder;
+            CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1440f, 900f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            var imageObject = new GameObject("Rolling D20", typeof(RectTransform), typeof(RawImage));
+            imageObject.transform.SetParent(canvasObject.transform, false);
+            RectTransform rect = imageObject.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(0f, 45f);
+            rect.sizeDelta = new Vector2(190f, 190f);
+            RawImage image = imageObject.GetComponent<RawImage>();
+            image.texture = _renderTexture;
+            image.color = Color.white;
+            image.raycastTarget = false;
         }
 
-        private static float CalculateViewportScale(float visibleWidth, float visibleHeight, float unscaledDiameter)
+        private void FitCaptureCamera()
         {
-            if (visibleWidth <= 0f || visibleHeight <= 0f || unscaledDiameter <= 0f)
-                return 1f;
-            return Mathf.Min(visibleWidth, visibleHeight) * TargetViewportDiameter / unscaledDiameter;
-        }
-
-        private static float MeasureRendererDiameter(GameObject instance)
-        {
-            Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0) return 1f;
-
-            Bounds bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
-            // Use the enclosing-box diagonal so the die remains within the target
-            // viewport diameter even when rotation enlarges its screen-space AABB.
-            return Mathf.Max(bounds.size.magnitude, 0.001f);
-        }
-
-        private void ClampRenderedSizeToViewport()
-        {
+            if (_captureCamera == null || _instance == null) return;
             Renderer[] renderers = _instance.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length == 0) return;
 
@@ -130,40 +154,34 @@ namespace KeyboardWanderer.Runtime
             for (int i = 1; i < renderers.Length; i++)
                 bounds.Encapsulate(renderers[i].bounds);
 
-            Vector3 center = bounds.center;
-            Vector3 extents = bounds.extents;
-            Vector2 min = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
-            Vector2 max = new Vector2(float.NegativeInfinity, float.NegativeInfinity);
-            for (int x = -1; x <= 1; x += 2)
-            for (int y = -1; y <= 1; y += 2)
-            for (int z = -1; z <= 1; z += 2)
-            {
-                Vector3 corner = center + Vector3.Scale(extents, new Vector3(x, y, z));
-                Vector3 viewport = _camera.WorldToViewportPoint(corner);
-                if (viewport.z <= 0f) continue;
-                min = Vector2.Min(min, viewport);
-                max = Vector2.Max(max, viewport);
-            }
-
-            float renderedDiameter = Mathf.Max(max.x - min.x, max.y - min.y);
-            if (renderedDiameter > TargetViewportDiameter)
-                _instance.transform.localScale *= TargetViewportDiameter / renderedDiameter;
+            float halfSize = Mathf.Max(bounds.extents.x, bounds.extents.y, 0.001f);
+            _captureCamera.orthographicSize = halfSize * 1.25f;
+            _captureCamera.transform.position = new Vector3(bounds.center.x, bounds.center.y, bounds.min.z - 10f);
+            _captureCamera.transform.rotation = Quaternion.identity;
         }
 
         private void LateUpdate()
         {
-            if (IsVisible && _camera != null)
-                PositionInCamera();
+            if (IsVisible)
+                FitCaptureCamera();
         }
 
         private void Hide()
         {
-            if (_instance != null) _instance.SetActive(false);
+            if (_uiRoot != null) _uiRoot.SetActive(false);
         }
 
         private void OnDisable()
         {
             CancelAndHide();
+        }
+
+        private void OnDestroy()
+        {
+            if (_renderTexture == null) return;
+            _renderTexture.Release();
+            Destroy(_renderTexture);
+            _renderTexture = null;
         }
     }
 }
