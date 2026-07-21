@@ -1,4 +1,5 @@
 using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -11,9 +12,12 @@ namespace KeyboardWanderer.Runtime
     /// </summary>
     public sealed class KeyboardWandererDiceOverlay : MonoBehaviour
     {
-        private const float ResultHoldSeconds = 0.4f;
+        private const float ShowDelaySeconds = 0.2f;
+        private const float MinimumSpinSeconds = 0.9f;
+        private const float ResultHoldSeconds = 1.25f;
         private const int OverlaySortingOrder = 4500;
         private const int TextureSize = 512;
+        private const string FontResourcePath = "Fonts/NeoDunggeunmoPro-Regular SDF";
         private static readonly Vector3 CaptureOrigin = new Vector3(10000f, 10000f, 0f);
 
         private GameObject _prefab;
@@ -22,8 +26,13 @@ namespace KeyboardWanderer.Runtime
         private Camera _captureCamera;
         private RenderTexture _renderTexture;
         private IcosahedronDice _dice;
+        private RawImage _diceImage;
+        private TMP_Text _resultText;
+        private Coroutine _showCoroutine;
+        private float _rollStartedAt;
 
-        public bool IsVisible => _uiRoot != null && _uiRoot.activeSelf;
+        public bool IsVisible => _uiRoot != null && _uiRoot.activeSelf &&
+                                 _diceImage != null && _diceImage.enabled;
         public bool IsRolling => _dice != null && _dice.IsRolling;
 
         public void Configure(Camera targetCamera, GameObject dicePrefab)
@@ -38,13 +47,19 @@ namespace KeyboardWanderer.Runtime
             if (!EnsureInstance()) return;
             _uiRoot.SetActive(true);
             _instance.SetActive(true);
+            _captureCamera.enabled = false;
+            _diceImage.enabled = false;
+            _resultText.gameObject.SetActive(false);
             FitCaptureCamera();
+            _rollStartedAt = Time.realtimeSinceStartup;
             _dice.BeginPendingRoll();
+            if (_showCoroutine != null) StopCoroutine(_showCoroutine);
+            _showCoroutine = StartCoroutine(ShowAfterDelay());
         }
 
         public IEnumerator ResolveAndHide(int authoritativeD20)
         {
-            if (_dice == null || !IsVisible)
+            if (_dice == null || _uiRoot == null || !_uiRoot.activeSelf)
                 yield break;
             if (!IsD20Result(authoritativeD20))
             {
@@ -52,9 +67,16 @@ namespace KeyboardWanderer.Runtime
                 yield break;
             }
 
+            float remainingSpin = MinimumSpinSeconds - (Time.realtimeSinceStartup - _rollStartedAt);
+            if (remainingSpin > 0f)
+                yield return new WaitForSecondsRealtime(remainingSpin);
+
+            ShowNow();
             _dice.ResolveTo(authoritativeD20);
             while (_dice != null && _dice.IsRolling)
                 yield return null;
+            _resultText.text = "D20 · " + authoritativeD20;
+            _resultText.gameObject.SetActive(true);
             yield return new WaitForSecondsRealtime(ResultHoldSeconds);
             Hide();
         }
@@ -78,6 +100,7 @@ namespace KeyboardWanderer.Runtime
             _instance.name = "Pending D20 Capture";
             _instance.transform.position = CaptureOrigin;
             _instance.transform.localScale = Vector3.one;
+            DisableEmbeddedCameras(_instance);
             _dice = _instance.GetComponent<IcosahedronDice>();
             if (_dice == null) _dice = _instance.GetComponentInChildren<IcosahedronDice>(true);
             if (_dice == null)
@@ -91,6 +114,19 @@ namespace KeyboardWanderer.Runtime
             _dice.SetTargetCamera(_captureCamera);
             _uiRoot.SetActive(false);
             return true;
+        }
+
+        private static void DisableEmbeddedCameras(GameObject instance)
+        {
+            // The imported D20 FBX contains its own enabled Camera. If left active it
+            // renders directly to Display 1 and rotates with the mesh, which makes the
+            // entire game view appear to be a giant spinning die.
+            Camera[] embeddedCameras = instance.GetComponentsInChildren<Camera>(true);
+            for (int i = 0; i < embeddedCameras.Length; i++)
+            {
+                embeddedCameras[i].targetTexture = null;
+                embeddedCameras[i].enabled = false;
+            }
         }
 
         private void BuildUiLayer()
@@ -142,6 +178,38 @@ namespace KeyboardWanderer.Runtime
             image.texture = _renderTexture;
             image.color = Color.white;
             image.raycastTarget = false;
+            _diceImage = image;
+
+            var resultObject = new GameObject("D20 Result", typeof(RectTransform), typeof(TextMeshProUGUI));
+            resultObject.transform.SetParent(canvasObject.transform, false);
+            RectTransform resultRect = resultObject.GetComponent<RectTransform>();
+            resultRect.anchorMin = new Vector2(0.5f, 0.5f);
+            resultRect.anchorMax = new Vector2(0.5f, 0.5f);
+            resultRect.pivot = new Vector2(0.5f, 0.5f);
+            resultRect.anchoredPosition = new Vector2(0f, -72f);
+            resultRect.sizeDelta = new Vector2(220f, 42f);
+            _resultText = resultObject.GetComponent<TextMeshProUGUI>();
+            _resultText.font = Resources.Load<TMP_FontAsset>(FontResourcePath);
+            _resultText.fontSize = 24f;
+            _resultText.fontStyle = FontStyles.Bold;
+            _resultText.alignment = TextAlignmentOptions.Center;
+            _resultText.color = new Color(1f, 0.87f, 0.52f, 1f);
+            _resultText.raycastTarget = false;
+            resultObject.SetActive(false);
+        }
+
+        private IEnumerator ShowAfterDelay()
+        {
+            yield return new WaitForSecondsRealtime(ShowDelaySeconds);
+            ShowNow();
+            _showCoroutine = null;
+        }
+
+        private void ShowNow()
+        {
+            if (_uiRoot == null || !_uiRoot.activeSelf) return;
+            _captureCamera.enabled = true;
+            _diceImage.enabled = true;
         }
 
         private void FitCaptureCamera()
@@ -168,6 +236,14 @@ namespace KeyboardWanderer.Runtime
 
         private void Hide()
         {
+            if (_showCoroutine != null)
+            {
+                StopCoroutine(_showCoroutine);
+                _showCoroutine = null;
+            }
+            if (_captureCamera != null) _captureCamera.enabled = false;
+            if (_diceImage != null) _diceImage.enabled = false;
+            if (_resultText != null) _resultText.gameObject.SetActive(false);
             if (_uiRoot != null) _uiRoot.SetActive(false);
         }
 
