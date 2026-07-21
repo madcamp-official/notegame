@@ -388,6 +388,9 @@ namespace KeyboardWanderer.Tests.EditMode
                     "키보드 선택이 이동하면 이전 버튼은 기본 배경색으로 돌아가야 합니다.");
                 Assert.That(second.GetComponent<Image>().color, Is.EqualTo(selectedColor),
                     "키보드로 선택된 버튼의 배경색도 선택 강조색으로 바뀌어야 합니다.");
+                Assert.That(first.GetComponent<Button>().transition, Is.EqualTo(Selectable.Transition.None));
+                Assert.That(second.GetComponent<Button>().transition, Is.EqualTo(Selectable.Transition.None),
+                    "Unity Button ColorTint가 수동 선택 강조색을 다음 프레임에 덮어쓰면 안 됩니다.");
                 Assert.That(strip.transform.Find("Choice 2").GetComponentInChildren<TMP_Text>().text,
                     Does.StartWith("▶"));
                 view.ConfirmChoiceSelection();

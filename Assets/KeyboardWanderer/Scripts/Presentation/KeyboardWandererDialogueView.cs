@@ -327,6 +327,12 @@ namespace KeyboardWanderer.Demo
                 Transform choice = _choiceStrip.transform.Find("Choice " + (i + 1));
                 if (_choiceButtons[i] == null) _choiceButtons[i] = choice?.GetComponent<Button>();
                 if (_choiceLabels[i] == null) _choiceLabels[i] = choice?.GetComponentInChildren<TMP_Text>(true);
+                // Keyboard selection owns the choice-bar color. Unity's default
+                // ColorTint transition otherwise restores the previously selected
+                // button's authored tint after Button.Select(), making a downward
+                // move look as if the highlight moved upward.
+                if (_choiceButtons[i] != null && _choiceButtons[i].transition != Selectable.Transition.None)
+                    _choiceButtons[i].transition = Selectable.Transition.None;
                 // Older authored prefabs arranged five shortcut-sized tiles in one row.
                 // Reflow the retained first four slots into visual-novel response bars so
                 // the complete LLM-authored sentence remains readable.
