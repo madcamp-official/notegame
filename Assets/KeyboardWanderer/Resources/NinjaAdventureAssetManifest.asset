@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderSourceHash: uEs4eg18X4flaX6P+C//VWeWcjQdKR874sqUr+q2+Tk=
+  BuilderSourceHash: 6SvR0mPCo0za4sI/P2gPfhM/D6kbRPDbNH8mVS/Lfis=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -428,7 +428,7 @@ MonoBehaviour:
   KeyItemIcon: {fileID: 9090724530243979454, guid: b2c8d7d3823ef4c5b8f847a2b350b778, type: 3}
   PixelFont: {fileID: 12800000, guid: 49b2d673e4ad84191a097b7436cd7742, type: 3}
   AdventureMusic: {fileID: 8300000, guid: 5f3b554996b60c14a837b42c0872e529, type: 3}
-  VillageMusic: {fileID: 8300000, guid: bfcbc7c25a8d90c47a259df60329e908, type: 3}
+  VillageMusic: {fileID: 8300000, guid: d13422e93391704458d0bd5d1aaa5d69, type: 3}
   BattleMusic: {fileID: 8300000, guid: 9ea3307a8807c4245917ef342ea5b711, type: 3}
   BugForestMusic: {fileID: 8300000, guid: afa49b3a6183e944bb4240f874313f8f, type: 3}
   BufferVillageMusic: {fileID: 8300000, guid: 89802e54f3c9f804e99b989e49775fcf, type: 3}

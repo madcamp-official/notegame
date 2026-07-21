@@ -293,7 +293,7 @@ namespace KeyboardWanderer.Editor
                 "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf");
 
             manifest.AdventureMusic = LoadAudioClip("Assets/bgm/bgm_quest.ogg");
-            manifest.VillageMusic = LoadAudioClip("Assets/bgm/bgm_root.ogg");
+            manifest.VillageMusic = LoadAudioClip("Assets/bgm/bgm_main_wave2.ogg");
             manifest.BattleMusic = LoadAudioClip("Assets/bgm/bgm_boss_1.ogg");
             manifest.BugForestMusic = LoadAudioClip("Assets/bgm/bgm_main_wave1.ogg");
             manifest.BufferVillageMusic = LoadAudioClip("Assets/bgm/bgm_desert.ogg");
