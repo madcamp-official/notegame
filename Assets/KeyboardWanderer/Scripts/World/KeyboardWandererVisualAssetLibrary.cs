@@ -74,6 +74,9 @@ namespace KeyboardWanderer.World
         public Sprite[] PlayerAttackLeftFrames { get; private set; } = Array.Empty<Sprite>();
         public Sprite[] PlayerAttackUpFrames { get; private set; } = Array.Empty<Sprite>();
         public Sprite[] PlayerAttackDownFrames { get; private set; } = Array.Empty<Sprite>();
+        public Sprite[] PlayerMagicFrames { get; private set; } = Array.Empty<Sprite>();
+        public Sprite[] PlayerDebugFrames { get; private set; } = Array.Empty<Sprite>();
+        public Sprite[] PlayerReviewFrames { get; private set; } = Array.Empty<Sprite>();
         public Sprite[] SlimeFrames { get; private set; } = Array.Empty<Sprite>();
         public Sprite[] VillagerFrames { get; private set; } = Array.Empty<Sprite>();
 
@@ -284,6 +287,10 @@ namespace KeyboardWanderer.World
             PlayerAttackDownFrames = CreateNeopjukiFrames(manifest.NeopjukiAtlas, cellWidth, cellHeight, 13, 8, "Neopjuki Attack Down");
             PlayerWalkUpFrames = CreateNeopjukiFrames(manifest.NeopjukiAtlas, cellWidth, cellHeight, 14, 8, "Neopjuki Walk Up");
             PlayerWalkDownFrames = CreateNeopjukiFrames(manifest.NeopjukiAtlas, cellWidth, cellHeight, 15, 8, "Neopjuki Walk Down");
+            // 스킬 시전용 모션: 키보드 마법(행 9), 키보드 디버그(행 10), 리뷰/조사(행 7).
+            PlayerMagicFrames = CreateNeopjukiFrames(manifest.NeopjukiAtlas, cellWidth, cellHeight, 9, 8, "Neopjuki Magic");
+            PlayerDebugFrames = CreateNeopjukiFrames(manifest.NeopjukiAtlas, cellWidth, cellHeight, 10, 8, "Neopjuki Debug");
+            PlayerReviewFrames = CreateNeopjukiFrames(manifest.NeopjukiAtlas, cellWidth, cellHeight, 7, 6, "Neopjuki Review");
         }
 
         private void BuildEntitySprites()

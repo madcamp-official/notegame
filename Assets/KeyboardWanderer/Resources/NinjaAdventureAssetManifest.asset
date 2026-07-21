@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderSourceHash: rJ0pBeIF7R6EiYfdc79hVmHsKnMpUyHOPwbcEczmxbI=
+  BuilderSourceHash: Ee+IVQ9ti+C/vCba4nL8yeAk6pwxNBtMrASnvXjjTxE=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -98,6 +98,15 @@ MonoBehaviour:
   NeopjukiAtlas: {fileID: 2800000, guid: b4c6db23d0944df6a9c302e0b9d7f168, type: 3}
   NeopjukiCellWidth: 192
   NeopjukiCellHeight: 208
+  CutsceneIntroFrames:
+  - {fileID: 8880519144642361049, guid: c7a7b9f211f7ecc4f86597c959bf4614, type: 3}
+  - {fileID: -1134075481413735451, guid: 66c7568d9986a80459b5e2a8cf48d281, type: 3}
+  - {fileID: 611064955406351188, guid: 521b62a2d3e571b4697fc6110a4755c5, type: 3}
+  - {fileID: -3227749541978812315, guid: c5d7095339b23914ca11736b35178e58, type: 3}
+  - {fileID: 8859341600473015739, guid: f220d28f6285f2947a8f95b01981e208, type: 3}
+  - {fileID: 3013515813444576633, guid: b241c3ce34468e2479a044e66bc040fe, type: 3}
+  - {fileID: -2298989403188267936, guid: f9d9e59b6f2dfab4b8973112342dc24a, type: 3}
+  - {fileID: -3922662285996856929, guid: 87f45173bc0715c438632ff120f17555, type: 3}
   PlayerIdle: {fileID: -7385789195546760866, guid: fd0dc91ff18f746dea9f1192a6d94a41, type: 3}
   WardenIdle: {fileID: -1176183960, guid: 07bb692ab5687420da17d27e29989325, type: 3}
   SlimeIdle: {fileID: 4518187702968751635, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}

@@ -63,7 +63,8 @@ namespace KeyboardWanderer.World
             Sprite[] playerAttackRight,
             Sprite[] playerAttackLeft,
             Sprite[] playerAttackUp,
-            Sprite[] playerAttackDown)
+            Sprite[] playerAttackDown,
+            Sprite[] playerActionOverrideFrames = null)
         {
             if (visuals == null || selection == null)
                 return;
@@ -98,14 +99,17 @@ namespace KeyboardWanderer.World
                 int visualY = Mathf.FloorToInt((visual.Root.transform.position.y - mapOrigin.y) / tileSize);
                 visual.Renderer.sortingOrder = 500 - visualY * 4;
                 bool playerAction = visual.IsPlayer && Time.unscaledTime < playerActionUntil;
+                bool hasOverride = playerActionOverrideFrames != null && playerActionOverrideFrames.Length > 0;
                 Sprite[] frames = visual.IsPlayer && walkingThisFrame
                     ? DirectionalFrames(visual.Facing, false, visual.WalkFrames,
                         playerWalkRight, playerWalkLeft, playerWalkUp, playerWalkDown,
                         playerAttackRight, playerAttackLeft, playerAttackUp, playerAttackDown)
                     : playerAction
-                        ? DirectionalFrames(visual.Facing, true, visual.AttackFrames,
-                            playerWalkRight, playerWalkLeft, playerWalkUp, playerWalkDown,
-                            playerAttackRight, playerAttackLeft, playerAttackUp, playerAttackDown)
+                        ? hasOverride
+                            ? playerActionOverrideFrames
+                            : DirectionalFrames(visual.Facing, true, visual.AttackFrames,
+                                playerWalkRight, playerWalkLeft, playerWalkUp, playerWalkDown,
+                                playerAttackRight, playerAttackLeft, playerAttackUp, playerAttackDown)
                         : visual.IdleFrames;
                 if (visual.IsPlayer && preventPlayerFlip)
                     visual.Renderer.flipX = false;
