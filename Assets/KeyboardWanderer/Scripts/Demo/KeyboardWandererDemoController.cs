@@ -419,6 +419,7 @@ namespace KeyboardWanderer.Demo
 
             _inputRouter?.SetNarrativeChoiceMode(false);
             RunView view = _service.CurrentView;
+            UpdateDynamicMusic(view);
             if ((changes & PresentationChange.Minimap) != 0)
                 UpdateMinimap(view);
             string narrative = _lastOutcome == "RESTORED" ||
@@ -1422,7 +1423,7 @@ namespace KeyboardWanderer.Demo
             if (response.ActionContext == ActionContext.Combat)
                 PlaySfx(AssetClip("SlashSound"));
             else if (response.Outcome == RuleOutcome.CriticalSuccess)
-                PlaySfx(AssetClip("SuccessJingle"));
+                PlaySfx(AssetClip("SuccessJingle"), cutOffPrevious: false);
             else
                 PlaySfx(AssetClip("UiAcceptSound"));
 
@@ -1466,7 +1467,7 @@ namespace KeyboardWanderer.Demo
             if (_service.CurrentView.Status != RunStatus.Playing)
             {
                 _gmPending = false;
-                PlaySfx(AssetClip("SuccessJingle"));
+                PlaySfx(AssetClip("SuccessJingle"), cutOffPrevious: false);
             }
             PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue |
                                      PresentationChange.Minimap | PresentationChange.Selection);
@@ -1690,7 +1691,7 @@ namespace KeyboardWanderer.Demo
             _selectionController.ClearAfterAction(_selectionController.SelectedCoord, _selectionController.Ability == AbilityKind.Move);
             UpdateSelectionVisual(_service.CurrentView);
             _serverStatus = committed.FromIdempotencyCache ? "멱등 응답 재생" : "권위 상태 커밋 완료";
-            PlaySfx(_lastD20 == 20 ? AssetClip("SuccessJingle") : AssetClip("UiAcceptSound"));
+            PlaySfx(_lastD20 == 20 ? AssetClip("SuccessJingle") : AssetClip("UiAcceptSound"), cutOffPrevious: _lastD20 != 20);
         }
 
         private void PresentActionRejection(string errorCode, string technicalMessage)
@@ -2792,7 +2793,7 @@ namespace KeyboardWanderer.Demo
                 if (defeated) visual.Root.SetActive(false);
             }
             if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
-            if (!defeated) PlaySfx(AssetClip("HitSound"));
+            if (!defeated) PlaySfx(AssetClip("HitSound"), cutOffPrevious: false);
         }
 
         private IEnumerator PlayServerActorGesture(GameApiClient.SceneActionSnapshot action, bool defending)
@@ -2970,14 +2971,67 @@ namespace KeyboardWanderer.Demo
             _audioController?.SetMusic(clip);
         }
 
-        private void PlaySfx(AudioClip clip)
+        private void PlaySfx(AudioClip clip, bool cutOffPrevious = true)
         {
-            _audioController?.PlaySfx(clip);
+            _audioController?.PlaySfx(clip, cutOffPrevious);
         }
 
         private AudioClip AssetClip(string fieldName)
         {
             return _visualAssetLibrary != null ? _visualAssetLibrary.GetAudioClip(fieldName) : null;
+        }
+
+        // 서버 인카운터 발동 반경(5칸, SubmitServerAction의 "5칸 이내" 안내)과 동일한 범위를
+        // 보스 교전 판정에 재사용해 별도 상수를 새로 정의하지 않는다.
+        private const int BossEngagementRange = 5;
+
+        private void UpdateDynamicMusic(RunView view)
+        {
+            if (_assets == null || _screenMode != ScreenMode.Playing)
+                return;
+            RunPresentationModel model = PresentationModel(view);
+            AudioClip clip;
+            if (model.Status == RunStatus.Dead)
+                clip = _assets.GameOverMusic;
+            else if (HasNearbyActiveHostileBoss(model))
+                clip = string.Equals(model.CurrentRegionAxis, CampaignCatalog.RootSystemAxis, StringComparison.Ordinal)
+                    ? _assets.FinalBossMusic
+                    : _assets.BattleMusic;
+            else
+                clip = RegionMusic(model.CurrentRegionAxis);
+            if (clip != null)
+                SetMusic(clip);
+        }
+
+        private static bool HasNearbyActiveHostileBoss(RunPresentationModel model)
+        {
+            for (int i = 0; i < model.Entities.Count; i++)
+            {
+                RunPresentationEntity entity = model.Entities[i];
+                if (entity == null || entity.Kind != RunPresentationEntityKind.Enemy ||
+                    !entity.IsHostile || !entity.IsActive ||
+                    !entity.AssetId.StartsWith("boss.", StringComparison.Ordinal))
+                    continue;
+                if (model.DistanceFromPlayer(entity) <= BossEngagementRange)
+                    return true;
+            }
+            return false;
+        }
+
+        private AudioClip RegionMusic(string regionAxis)
+        {
+            if (_assets == null)
+                return null;
+            switch (regionAxis)
+            {
+                case CampaignCatalog.BugForestAxis: return _assets.BugForestMusic;
+                case CampaignCatalog.BufferVillageAxis: return _assets.BufferVillageMusic;
+                case CampaignCatalog.DeadlockCityAxis: return _assets.DeadlockCityMusic;
+                case CampaignCatalog.DataGrandLibraryAxis: return _assets.DataArchiveMusic;
+                case CampaignCatalog.LegacyCitadelAxis: return _assets.LegacyCitadelMusic;
+                case CampaignCatalog.RootSystemAxis: return _assets.RootSystemMusic;
+                default: return null;
+            }
         }
 
        private void TileAppearance(TileKind kind, string biomeId, GridCoord coord, out Sprite sprite, out Color tint)

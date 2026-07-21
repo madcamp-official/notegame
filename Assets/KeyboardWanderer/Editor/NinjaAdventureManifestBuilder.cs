@@ -292,8 +292,16 @@ namespace KeyboardWanderer.Editor
                 "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf");
 
             manifest.AdventureMusic = LoadAudioClip("Assets/bgm/bgm_quest.ogg");
-            manifest.VillageMusic = LoadAudioClip("Assets/bgm/bgm_root.ogg");
+            manifest.VillageMusic = LoadAudioClip("Assets/bgm/bgm_main_wave2.ogg");
             manifest.BattleMusic = LoadAudioClip("Assets/bgm/bgm_boss_1.ogg");
+            manifest.BugForestMusic = LoadAudioClip("Assets/bgm/bgm_main_wave1.ogg");
+            manifest.BufferVillageMusic = LoadAudioClip("Assets/bgm/bgm_desert.ogg");
+            manifest.DeadlockCityMusic = LoadAudioClip("Assets/bgm/bgm_deadlock.ogg");
+            manifest.DataArchiveMusic = LoadAudioClip("Assets/bgm/bgm_archive.ogg");
+            manifest.LegacyCitadelMusic = LoadAudioClip("Assets/bgm/bgm_legacy.ogg");
+            manifest.RootSystemMusic = LoadAudioClip("Assets/bgm/bgm_root.ogg");
+            manifest.FinalBossMusic = LoadAudioClip("Assets/bgm/bgm_main_wave4.ogg");
+            manifest.GameOverMusic = LoadAudioClip("Assets/bgm/bgm_game_over.ogg");
             manifest.UiMoveSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Move1.wav");
             manifest.UiAcceptSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Accept.wav");
             manifest.UiCancelSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Cancel.wav");

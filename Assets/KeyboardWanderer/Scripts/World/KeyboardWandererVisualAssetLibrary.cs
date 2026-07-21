@@ -121,6 +121,14 @@ namespace KeyboardWanderer.World
                 case "AdventureMusic": return manifest.AdventureMusic;
                 case "VillageMusic": return manifest.VillageMusic;
                 case "BattleMusic": return manifest.BattleMusic;
+                case "BugForestMusic": return manifest.BugForestMusic;
+                case "BufferVillageMusic": return manifest.BufferVillageMusic;
+                case "DeadlockCityMusic": return manifest.DeadlockCityMusic;
+                case "DataArchiveMusic": return manifest.DataArchiveMusic;
+                case "LegacyCitadelMusic": return manifest.LegacyCitadelMusic;
+                case "RootSystemMusic": return manifest.RootSystemMusic;
+                case "FinalBossMusic": return manifest.FinalBossMusic;
+                case "GameOverMusic": return manifest.GameOverMusic;
                 case "UiMoveSound": return manifest.UiMoveSound;
                 case "UiAcceptSound": return manifest.UiAcceptSound;
                 case "UiCancelSound": return manifest.UiCancelSound;
