@@ -196,10 +196,10 @@ namespace KeyboardWanderer.Editor
         private const float ThinBorderMultiplier = 2.1f;
 
         /// <summary>
-        /// 기존 프리팹을 다시 만들지 않고 퀘스트 배너·상태 패널·대화 화자 버스트만 덧입힌다.
+        /// 기존 프리팹을 다시 만들지 않고 퀘스트·인벤토리 패널과 대화 화자 버스트를 덧입힌다.
         /// 여러 번 실행해도 같은 결과가 나오도록 이전 실행이 만든 오브젝트는 먼저 지운다.
         /// </summary>
-        [MenuItem("Keyboard Wanderer/Restyle HUD (Quest + Status + Dialogue Bust)")]
+        [MenuItem("Keyboard Wanderer/Restyle HUD (Quest + Inventory + Dialogue Bust)")]
         public static void RestyleQuestStatusDialogue()
         {
             _font = LoadDefaultFont();
@@ -208,10 +208,9 @@ namespace KeyboardWanderer.Editor
             RestyleGameHudPrefab();
             RestyleDialoguePanelPrefab();
             RestyleMinimapPanelPrefab();
-            RestyleSelectionPanelPrefab();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("Restyled HUD prefabs: thin frames, larger text, quest list, status panel, left dialogue bust.");
+            Debug.Log("Restyled HUD prefabs: thin frames, larger text, quest list, inventory panel, left dialogue bust.");
         }
 
         private static void ThinBorder(Transform panel)
@@ -246,12 +245,10 @@ namespace KeyboardWanderer.Editor
                 if (objectivePanel == null)
                     throw new UnityException("GameHUD.prefab is missing its Objective Panel.");
 
-                // 청록 프레임: 디자인은 유지하고 두께만 얇게. 헤더 글자는 키운다.
+                // 퀘스트 프레임은 디자인을 유지하고 두께만 얇게 한다.
                 ThinBorder(objectivePanel);
-                Transform storyHeader = hud.Find("Story Header");
-                ThinBorder(storyHeader);
-                BumpText(storyHeader, "Scene Location", 18, 14);
-                BumpText(storyHeader, "Scene Title", 23, 17);
+                // 좌측 최상단 캐릭터 상태창(초상 + 현재 장소/장면)은 사용하지 않는다.
+                DestroyChild(hud, "Story Header");
 
                 // 퀘스트 패널: 더 크게, 배너 + 번호 목록 본문 + 추천 한 줄.
                 objectivePanel.anchorMin = new Vector2(0.018f, 0.52f);
@@ -287,36 +284,67 @@ namespace KeyboardWanderer.Editor
                     new Vector2(0.93f, 0.14f), "추천  --", 13, Muted, TextAnchor.MiddleLeft);
                 EnableBestFit(questHint, 10, 14);
 
-                // 상태 패널: 라벨·값 2컬럼으로 진행과 자원을 정리한다.
+                // 상태 패널은 소지품 요약 패널로 대체한다. 이동 안내를 담당하던 중앙 상단
+                // Selection Panel도 함께 정리한다(더 이상 화면에 노출하지 않는다).
                 DestroyChild(hud, "Status Panel");
-                RectTransform status = PanelRect(hud, "Status Panel", new Vector2(0.018f, 0.315f),
-                    new Vector2(0.265f, 0.50f), Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.92f));
-                ApplyPanelSprite(status, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
-                ThinBorder(status);
-                status.SetSiblingIndex(objectivePanel.GetSiblingIndex() + 1);
-                RectTransform statusBanner = PanelRect(status, "Status Banner", new Vector2(0.03f, 0.845f),
-                    new Vector2(0.97f, 0.985f), Vector2.zero, Vector2.zero, new Color(Gold.r, Gold.g, Gold.b, 0.92f));
-                statusBanner.SetAsFirstSibling();
-                RectTransform statusHeading = TextRect(status, "Status Heading", new Vector2(0.09f, 0.845f),
-                    new Vector2(0.97f, 0.985f), "◆  STATUS", 16, Ink, TextAnchor.MiddleLeft);
-                statusHeading.GetComponent<TMP_Text>().fontStyle = FontStyles.Bold;
-                // 두 컬럼이 서로 다른 크기로 오토사이즈되면 줄이 어긋나므로 고정 크기를 쓴다.
-                RectTransform statusLabels = TextRect(status, "Status Labels", new Vector2(0.08f, 0.08f),
-                    new Vector2(0.52f, 0.80f), "권한\n의미 턴\nFOCUS\nXP\nGOLD", 15, Muted, TextAnchor.MiddleLeft);
-                RectTransform statusValues = TextRect(status, "Status Values", new Vector2(0.52f, 0.08f),
-                    new Vector2(0.92f, 0.80f), "--", 15, Parchment, TextAnchor.MiddleRight);
+                DestroyChild(hud, "Selection Panel");
+                RectTransform inventory = BuildInventoryPanel(hud);
+                inventory.SetSiblingIndex(objectivePanel.GetSiblingIndex() + 1);
 
                 KeyboardWandererGameHudView hudView = root.GetComponent<KeyboardWandererGameHudView>();
                 if (hudView == null)
                     throw new UnityException("GameHUD.prefab is missing KeyboardWandererGameHudView.");
-                hudView.ConfigureQuestStatus(questHint.GetComponent<TMP_Text>(),
-                    statusLabels.GetComponent<TMP_Text>(), statusValues.GetComponent<TMP_Text>());
+                hudView.ConfigureQuestHint(questHint.GetComponent<TMP_Text>());
                 PrefabUtility.SaveAsPrefabAsset(root, GameHudPrefabPath);
             }
             finally
             {
                 PrefabUtility.UnloadPrefabContents(root);
             }
+        }
+
+        /// <summary>
+        /// Status Panel이 있던 자리에 상시 노출되는 소지품 요약 패널을 만든다.
+        /// 다른 HUD 패널과 같은 FacesetBox 테두리 + 금색 배너 스타일을 쓰고,
+        /// 아이콘 4칸은 <see cref="KeyboardWandererInventoryHudView"/>가 매 프레임 갱신한다.
+        /// </summary>
+        private static RectTransform BuildInventoryPanel(Transform hud)
+        {
+            RectTransform inventory = PanelRect(hud, "Inventory Panel", new Vector2(0.018f, 0.315f),
+                new Vector2(0.265f, 0.50f), Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.92f));
+            ApplyPanelSprite(inventory, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
+            ThinBorder(inventory);
+            RectTransform banner = PanelRect(inventory, "Inventory Banner", new Vector2(0.03f, 0.845f),
+                new Vector2(0.97f, 0.985f), Vector2.zero, Vector2.zero, new Color(Gold.r, Gold.g, Gold.b, 0.92f));
+            banner.SetAsFirstSibling();
+            RectTransform heading = TextRect(inventory, "Inventory Heading", new Vector2(0.09f, 0.845f),
+                new Vector2(0.97f, 0.985f), "◆  INVENTORY", 16, Ink, TextAnchor.MiddleLeft);
+            heading.GetComponent<TMP_Text>().fontStyle = FontStyles.Bold;
+            RectTransform empty = TextRect(inventory, "Inventory Empty", new Vector2(0.08f, 0.10f),
+                new Vector2(0.92f, 0.76f), "아직 소지품이 없습니다.", 13, Muted, TextAnchor.MiddleCenter);
+            EnableBestFit(empty, 10, 13);
+
+            const int slotCount = 4;
+            Image[] icons = new Image[slotCount];
+            TMP_Text[] quantities = new TMP_Text[slotCount];
+            for (int i = 0; i < slotCount; i++)
+            {
+                float left = 0.03f + i * 0.24f;
+                RectTransform slot = PanelRect(inventory, "Item Slot " + i, new Vector2(left, 0.10f),
+                    new Vector2(left + 0.22f, 0.78f), Vector2.zero, Vector2.zero,
+                    new Color(0.12f, 0.10f, 0.08f, 0.85f));
+                Image icon = ImageRect(slot, "Icon", new Vector2(0.12f, 0.12f), new Vector2(0.88f, 0.88f),
+                    null, Color.white).GetComponent<Image>();
+                icon.preserveAspect = true;
+                RectTransform quantity = TextRect(slot, "Quantity", new Vector2(0.42f, 0.02f), new Vector2(0.98f, 0.32f),
+                    string.Empty, 11, Parchment, TextAnchor.LowerRight);
+                icons[i] = icon;
+                quantities[i] = quantity.GetComponent<TMP_Text>();
+            }
+
+            KeyboardWandererInventoryHudView view = inventory.gameObject.AddComponent<KeyboardWandererInventoryHudView>();
+            view.Configure(_assets, icons, quantities, empty.GetComponent<TMP_Text>());
+            return inventory;
         }
 
         private static void RestyleDialoguePanelPrefab()
@@ -447,23 +475,6 @@ namespace KeyboardWanderer.Editor
             }
         }
 
-        private static void RestyleSelectionPanelPrefab()
-        {
-            GameObject root = PrefabUtility.LoadPrefabContents(
-                "Assets/KeyboardWanderer/Prefabs/UI/Screens/SelectionPanel.prefab");
-            try
-            {
-                ThinBorder(root.transform);
-                BumpText(root.transform, "Selection Heading", 18, 14);
-                BumpText(root.transform, "Selection Detail", 14, 11);
-                PrefabUtility.SaveAsPrefabAsset(root, "Assets/KeyboardWanderer/Prefabs/UI/Screens/SelectionPanel.prefab");
-            }
-            finally
-            {
-                PrefabUtility.UnloadPrefabContents(root);
-            }
-        }
-
         private static void DestroyChild(Transform parent, string childName)
         {
             Transform child = parent.Find(childName);
@@ -580,16 +591,6 @@ namespace KeyboardWanderer.Editor
             RectTransform viewport = PanelRect(root, "World Viewport", Vector2.zero, Vector2.one,
                 Vector2.zero, Vector2.zero, new Color(1f, 1f, 1f, 0.005f));
             viewport.GetComponent<Image>().raycastTarget = false;
-
-            RectTransform header = PanelRect(root, "Story Header", new Vector2(0.018f, 0.82f), new Vector2(0.265f, 0.975f),
-                Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.94f));
-            ApplyPanelSprite(header, _assets != null ? _assets.FacesetBox : null, Image.Type.Sliced);
-            RectTransform hudPortrait = PanelRect(header, "HUD Portrait Frame", new Vector2(0.035f, 0.15f), new Vector2(0.285f, 0.88f),
-                Vector2.zero, Vector2.zero, new Color(0.10f, 0.08f, 0.065f, 1f));
-            ImageRect(hudPortrait, "HUD Portrait", new Vector2(0.12f, 0.12f), new Vector2(0.88f, 0.88f),
-                _assets != null ? _assets.PlayerIdle : null, Color.white);
-            TextRect(header, "Scene Location", new Vector2(0.33f, 0.55f), new Vector2(0.94f, 0.84f), "현재 장소", 16, Gold, TextAnchor.MiddleLeft);
-            TextRect(header, "Scene Title", new Vector2(0.33f, 0.20f), new Vector2(0.94f, 0.55f), "현재 장면", 20, Parchment, TextAnchor.MiddleLeft);
 
             RectTransform objective = PanelRect(root, "Objective Panel", new Vector2(0.018f, 0.635f), new Vector2(0.265f, 0.795f),
                 Vector2.zero, Vector2.zero, new Color(0.055f, 0.045f, 0.035f, 0.92f));

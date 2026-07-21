@@ -130,8 +130,8 @@ MonoBehaviour:
   dialogueView: {fileID: 7270933489831317746}
   tutorialView: {fileID: 7742122799926696575}
   skillBarView: {fileID: 1892368826147286695}
-  selectionView: {fileID: 6224691146362330147}
   minimapView: {fileID: 1745656952445330918}
+  inventoryHudView: {fileID: 1434648956083116124}
 --- !u!114 &2773563725233421704
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -609,6 +609,17 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 4954889908603542211}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1434648956083116124 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6281302677913813663, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0448bb42265704894a058f49e9328a59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererInventoryHudView
 --- !u!114 &1745656952445330918 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 6699842911406309157, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
@@ -647,17 +658,6 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 7079004624151568249, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
   m_PrefabInstance: {fileID: 4954889908603542211}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &6224691146362330147 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1342571319627695840, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 4954889908603542211}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 95fa8b30cd8b54259a99163f9ca45361, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSelectionView
 --- !u!114 &7270933489831317746 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2316193136320727601, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}

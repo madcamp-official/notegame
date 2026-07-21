@@ -24,8 +24,8 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private KeyboardWandererDialogueView dialogueView;
         [SerializeField] private KeyboardWandererTutorialView tutorialView;
         [SerializeField] private KeyboardWandererSkillBarView skillBarView;
-        [SerializeField] private KeyboardWandererSelectionView selectionView;
         [SerializeField] private KeyboardWandererMinimapView minimapView;
+        [SerializeField] private KeyboardWandererInventoryHudView inventoryHudView;
         private KeyboardWandererInventoryQuestView _inventoryQuestView;
 
         private bool _bound;
@@ -39,8 +39,8 @@ namespace KeyboardWanderer.Demo
                                dialogueView != null && dialogueView.IsReady &&
                                tutorialView != null && tutorialView.IsReady &&
                                skillBarView != null && skillBarView.IsReady &&
-                               selectionView != null && selectionView.IsReady &&
-                               minimapView != null && minimapView.IsReady;
+                               minimapView != null && minimapView.IsReady &&
+                               inventoryHudView != null && inventoryHudView.IsReady;
 
         public int TutorialPageCount => tutorialView == null ? 0 : tutorialView.PageCount;
 
@@ -81,6 +81,7 @@ namespace KeyboardWanderer.Demo
         public void PresentInventoryAndQuests(RunPresentationModel run)
         {
             _inventoryQuestView?.Present(run?.Inventory, run?.Quests);
+            inventoryHudView?.Present(run?.Inventory);
         }
 
         public bool ToggleInventory() => _inventoryQuestView != null && _inventoryQuestView.ToggleInventory();
@@ -109,9 +110,9 @@ namespace KeyboardWanderer.Demo
             gameHudView?.Present(location, title, objective, actionHint);
         }
 
-        public void PresentQuestStatus(string questActionHint, string statusLabels, string statusValues)
+        public void PresentQuestStatus(string questActionHint)
         {
-            gameHudView?.PresentQuestStatus(questActionHint, statusLabels, statusValues);
+            gameHudView?.PresentQuestStatus(questActionHint);
         }
 
         public void PresentConfirm(string label, bool interactable)
@@ -127,12 +128,6 @@ namespace KeyboardWanderer.Demo
         public void SetMinimap(Sprite sprite, string status)
         {
             minimapView?.Present(sprite, status);
-        }
-
-        public void PresentSelection(AbilityKind ability, Sprite targetSprite, bool available,
-            string heading, string detail)
-        {
-            selectionView?.Present(ability, targetSprite, available, heading, detail);
         }
 
         public void SetStoryVisible(bool visible)
@@ -212,8 +207,8 @@ namespace KeyboardWanderer.Demo
             dialogueView = FindComponent<KeyboardWandererDialogueView>("Story Panel");
             tutorialView = FindComponent<KeyboardWandererTutorialView>("Story Panel");
             skillBarView = FindComponent<KeyboardWandererSkillBarView>("Action Bar");
-            selectionView = FindComponent<KeyboardWandererSelectionView>("Selection Panel");
             minimapView = FindComponent<KeyboardWandererMinimapView>("Minimap Panel");
+            inventoryHudView = FindComponent<KeyboardWandererInventoryHudView>("Inventory Panel");
             UnityEditor.EditorUtility.SetDirty(this);
         }
 

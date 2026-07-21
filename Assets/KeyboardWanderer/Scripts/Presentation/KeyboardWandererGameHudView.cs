@@ -6,7 +6,7 @@ using UnityEngine.UI;
 namespace KeyboardWanderer.Demo
 {
     /// <summary>
-    /// Game HUD 루트가 지역·목표·행동 안내와 실행 버튼을 소유한다.
+    /// Game HUD 루트가 목표·행동 안내와 실행 버튼을 소유한다.
     /// 스킬, 선택, 대화, 미니맵은 더 작은 하위 View가 각각 담당한다.
     /// </summary>
     [DisallowMultipleComponent]
@@ -21,15 +21,13 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private Button confirmButton;
         [SerializeField] private Image outcomeEmote;
 
-        [Header("퀘스트·상태 패널(선택)")]
+        [Header("퀘스트 패널(선택)")]
         [SerializeField] private TMP_Text questHint;
-        [SerializeField] private TMP_Text statusLabels;
-        [SerializeField] private TMP_Text statusValues;
 
         private bool _bound;
 
-        public bool IsReady => assetManifest != null && location != null && sceneTitle != null &&
-                               objective != null && actionHint != null && confirmLabel != null &&
+        public bool IsReady => assetManifest != null && objective != null && actionHint != null &&
+                               confirmLabel != null &&
                                confirmButton != null && outcomeEmote != null;
 
         public void Bind(Action onConfirm)
@@ -50,12 +48,10 @@ namespace KeyboardWanderer.Demo
             SetText(actionHint, guidance);
         }
 
-        /// <summary>퀘스트 추천 행동과 상태 2컬럼. 리스타일 전 프리팹에서는 필드가 비어 있어도 안전하다.</summary>
-        public void PresentQuestStatus(string questActionHint, string labels, string values)
+        /// <summary>퀘스트 추천 행동 한 줄. 리스타일 전 프리팹에서는 필드가 비어 있어도 안전하다.</summary>
+        public void PresentQuestStatus(string questActionHint)
         {
             SetText(questHint, questActionHint);
-            SetText(statusLabels, labels);
-            SetText(statusValues, values);
         }
 
         public void PresentConfirm(string label, bool interactable)
@@ -102,11 +98,9 @@ namespace KeyboardWanderer.Demo
             UnityEditor.EditorUtility.SetDirty(this);
         }
 
-        public void ConfigureQuestStatus(TMP_Text questActionHint, TMP_Text labels, TMP_Text values)
+        public void ConfigureQuestHint(TMP_Text questActionHint)
         {
             questHint = questActionHint;
-            statusLabels = labels;
-            statusValues = values;
             UnityEditor.EditorUtility.SetDirty(this);
         }
 #endif
