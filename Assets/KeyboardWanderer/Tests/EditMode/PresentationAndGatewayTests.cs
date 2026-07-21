@@ -329,7 +329,9 @@ namespace KeyboardWanderer.Tests.EditMode
             var root = new GameObject("Narrative Choice View", typeof(RectTransform));
             var view = root.AddComponent<KeyboardWandererDialogueView>();
             var speaker = CreateText(root.transform, "Speaker");
-            var story = CreateText(root.transform, "Story");
+            var speechBubble = new GameObject("Speech Bubble", typeof(RectTransform));
+            speechBubble.transform.SetParent(root.transform, false);
+            var story = CreateText(speechBubble.transform, "Story");
             var nextLabel = CreateText(root.transform, "Next Label");
             var nextObject = new GameObject("Next", typeof(RectTransform), typeof(Image), typeof(Button));
             nextObject.transform.SetParent(root.transform, false);
@@ -361,9 +363,12 @@ namespace KeyboardWanderer.Tests.EditMode
 
                 view.PresentChoices(true, choices, true);
                 Button first = strip.transform.Find("Choice 1").GetComponent<Button>();
-                TMP_InputField freeform = root.transform.Find("Freeform Input/Input").GetComponent<TMP_InputField>();
-                Assert.That(freeform.transform.parent.parent, Is.EqualTo(root.transform),
-                    "자연어 입력은 선택지 위 별도 패널이 아니라 대화 UI 안에 있어야 합니다.");
+                Button second = strip.transform.Find("Choice 2").GetComponent<Button>();
+                TMP_InputField freeform = speechBubble.transform.Find("Freeform Input/Input").GetComponent<TMP_InputField>();
+                Assert.That(freeform.transform.parent.parent, Is.EqualTo(speechBubble.transform),
+                    "자연어 입력은 본문과 같은 Speech Bubble 좌표계 안에 있어야 합니다.");
+                Color selectedColor = first.GetComponent<Image>().color;
+                Color defaultColor = second.GetComponent<Image>().color;
                 Assert.That(story.overflowMode, Is.EqualTo(TextOverflowModes.Ellipsis),
                     "긴 대사가 자연어 입력창 위로 넘쳐 그려지면 안 됩니다.");
                 freeform.onSelect.Invoke(string.Empty);
@@ -379,6 +384,10 @@ namespace KeyboardWanderer.Tests.EditMode
                 freeform.onDeselect.Invoke(string.Empty);
                 view.MoveChoiceSelection(1);
                 Assert.That(view.KeyboardChoiceIndex, Is.EqualTo(1));
+                Assert.That(first.GetComponent<Image>().color, Is.EqualTo(defaultColor),
+                    "키보드 선택이 이동하면 이전 버튼은 기본 배경색으로 돌아가야 합니다.");
+                Assert.That(second.GetComponent<Image>().color, Is.EqualTo(selectedColor),
+                    "키보드로 선택된 버튼의 배경색도 선택 강조색으로 바뀌어야 합니다.");
                 Assert.That(strip.transform.Find("Choice 2").GetComponentInChildren<TMP_Text>().text,
                     Does.StartWith("▶"));
                 view.ConfirmChoiceSelection();

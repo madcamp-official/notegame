@@ -419,6 +419,7 @@ namespace KeyboardWanderer.Demo
 
             _inputRouter?.SetNarrativeChoiceMode(false);
             RunView view = _service.CurrentView;
+            RefreshDynamicMusic(view, _runPresentationModel);
             if ((changes & PresentationChange.Minimap) != 0)
                 UpdateMinimap(view);
             string narrative = _lastOutcome == "RESTORED" ||
@@ -2020,7 +2021,7 @@ namespace KeyboardWanderer.Demo
             _screenMode = ScreenMode.Playing;
             _cameraController?.SetEnabled(true);
             SnapCameraToPlayer();
-            SetMusic(_assets != null ? _assets.VillageMusic ?? _assets.AdventureMusic : null);
+            RefreshDynamicMusic(_service.CurrentView, PresentationModel(_service.CurrentView));
             if (!_serverOnline)
                 LocalRunSaveService.Save(_service);
         }
@@ -2968,6 +2969,103 @@ namespace KeyboardWanderer.Demo
         private void SetMusic(AudioClip clip)
         {
             _audioController?.SetMusic(clip);
+        }
+
+        private void RefreshDynamicMusic(RunView view, RunPresentationModel presentation)
+        {
+            if (_assets == null || view == null || presentation == null) return;
+            bool gameOver = IsGameOver(view, presentation);
+            bool cleared = !gameOver && IsRunCleared(view, presentation);
+            bool bossBattle = TryGetActiveBossBattle(presentation.CurrentBiomeId, out bool finalBossBattle);
+            AudioClip clip = KeyboardWandererMusicDirector.Resolve(_assets,
+                new KeyboardWandererMusicDirector.Context(presentation.CurrentBiomeId, bossBattle,
+                    finalBossBattle, gameOver, cleared));
+            SetMusic(clip);
+        }
+
+        private bool IsGameOver(RunView view, RunPresentationModel presentation)
+        {
+            if (presentation.Health <= 0) return true;
+            if (_serverOnline && _serverRun != null)
+                return StatusMatches(_serverRun.status, "dead", "failed", "game_over", "gameover");
+            return view.Status == RunStatus.Dead;
+        }
+
+        private bool IsRunCleared(RunView view, RunPresentationModel presentation)
+        {
+            if (presentation.IsPlaying) return false;
+            if (_serverOnline && _serverRun != null)
+                return StatusMatches(_serverRun.status, "completed", "cleared", "victory", "won");
+            return view.Status == RunStatus.Completed;
+        }
+
+        private bool TryGetActiveBossBattle(string biomeId, out bool finalBossBattle)
+        {
+            finalBossBattle = false;
+            if (_serverOnline && _serverRun != null)
+            {
+                GameApiClient.ActiveEncounterSnapshot encounter = _serverRun.activeEncounter;
+                if (!IsOpenServerEncounter(encounter) ||
+                    !string.Equals(encounter.kind, "COMBAT", StringComparison.OrdinalIgnoreCase))
+                    return false;
+                GameApiClient.EntitySnapshot source = FindServerEntity(encounter.sourceEntityId);
+                bool boss = source != null && (source.state?.boss == true || IsBossAsset(source.assetId));
+                if (!boss) return false;
+                finalBossBattle = IsFinalBoss(source, biomeId);
+                return true;
+            }
+
+            if (_service?.CurrentView == null || !_service.CurrentView.HasActiveEncounter) return false;
+            RunPresentationModel run = _runPresentationModel;
+            if (run?.Entities == null) return false;
+            for (int i = 0; i < run.Entities.Count; i++)
+            {
+                RunPresentationEntity entity = run.Entities[i];
+                if (entity == null || !entity.IsActive || !entity.IsHostile || !IsBossAsset(entity.AssetId)) continue;
+                finalBossBattle = IsFinalBossAsset(entity.AssetId) ||
+                                  string.Equals(biomeId, "root_system", StringComparison.OrdinalIgnoreCase);
+                return true;
+            }
+            return false;
+        }
+
+        private GameApiClient.EntitySnapshot FindServerEntity(string entityId)
+        {
+            if (string.IsNullOrWhiteSpace(entityId) || _serverRun?.entities == null) return null;
+            for (int i = 0; i < _serverRun.entities.Length; i++)
+                if (string.Equals(_serverRun.entities[i]?.id, entityId, StringComparison.OrdinalIgnoreCase))
+                    return _serverRun.entities[i];
+            return null;
+        }
+
+        private static bool IsFinalBoss(GameApiClient.EntitySnapshot source, string biomeId)
+        {
+            if (source == null) return false;
+            if (IsFinalBossAsset(source.assetId) ||
+                string.Equals(biomeId, "root_system", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (string.Equals(source.state?.campaignRole, CampaignCatalog.FinalConvergenceRole,
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+            string[] roles = source.state?.roleTags;
+            if (roles == null) return false;
+            for (int i = 0; i < roles.Length; i++)
+                if (string.Equals(roles[i], CampaignCatalog.FinalConvergenceRole, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            return false;
+        }
+
+        private static bool IsBossAsset(string assetId)
+            => !string.IsNullOrWhiteSpace(assetId) && assetId.StartsWith("boss.", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsFinalBossAsset(string assetId)
+            => string.Equals(assetId, "boss.giant-flam.v1", StringComparison.OrdinalIgnoreCase);
+
+        private static bool StatusMatches(string status, params string[] values)
+        {
+            for (int i = 0; i < values.Length; i++)
+                if (string.Equals(status, values[i], StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         private void PlaySfx(AudioClip clip)

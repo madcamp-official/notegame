@@ -200,6 +200,16 @@ namespace KeyboardWanderer.Demo
         public AudioClip AdventureMusic;
         public AudioClip VillageMusic;
         public AudioClip BattleMusic;
+        public AudioClip BugForestMusic;
+        public AudioClip BufferVillageMusic;
+        public AudioClip DeadlockCityMusic;
+        public AudioClip DataArchiveMusic;
+        public AudioClip LegacyCitadelMusic;
+        public AudioClip RootSystemMusic;
+        public AudioClip BossMusic;
+        public AudioClip FinalBossMusic;
+        public AudioClip GameOverMusic;
+        public AudioClip VictoryMusic;
 
         [Header("Sound effects")]
         public AudioClip UiMoveSound;

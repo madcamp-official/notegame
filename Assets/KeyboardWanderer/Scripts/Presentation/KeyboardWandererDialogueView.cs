@@ -33,10 +33,13 @@ namespace KeyboardWanderer.Demo
         private Action<string> _submitPlayerMessage;
         private TMP_InputField _freeformInput;
         private Button _freeformSubmit;
+        private GameObject _freeformRow;
         private string _choiceSignature = string.Empty;
         private bool _choiceInputLocked;
         private bool _freeformHasSelection;
         private int _keyboardChoiceIndex;
+        private static readonly Color SelectedChoiceColor = new Color(0.88f, 0.68f, 0.31f, 0.96f);
+        private static readonly Color DefaultChoiceColor = new Color(0.22f, 0.16f, 0.10f, 0.96f);
 
         [Header("화자 컷인(선택)")]
         [SerializeField] private Image speakerCutinBackdrop;
@@ -98,9 +101,10 @@ namespace KeyboardWanderer.Demo
             }
             if (!visible)
                 _choiceInputLocked = false;
+            if (_freeformRow != null && _freeformRow.activeSelf != visible)
+                _freeformRow.SetActive(visible);
             if (_freeformInput != null)
             {
-                _freeformInput.gameObject.SetActive(visible);
                 _freeformInput.interactable = visible && interactable && !_choiceInputLocked;
             }
             if (nextButton != null && nextButton.gameObject.activeSelf == visible)
@@ -120,8 +124,8 @@ namespace KeyboardWanderer.Demo
                     _choiceButtons[i].gameObject.SetActive(active);
                 if (_choiceButtons[i] != null)
                     _choiceButtons[i].interactable = active && interactable && !_choiceInputLocked;
-                if (active) SetText(_choiceLabels[i], ChoiceLabel(i));
             }
+            RefreshChoiceVisuals();
             if (visible && interactable && !_choiceInputLocked && !IsFreeformFocused)
                 SelectKeyboardButton();
         }
@@ -132,7 +136,7 @@ namespace KeyboardWanderer.Demo
             int count = ActiveChoiceCount();
             if (count == 0) return;
             _keyboardChoiceIndex = (_keyboardChoiceIndex + (direction < 0 ? -1 : 1) + count) % count;
-            RefreshChoiceLabels();
+            RefreshChoiceVisuals();
             SelectKeyboardButton();
         }
 
@@ -183,18 +187,23 @@ namespace KeyboardWanderer.Demo
                 storyText.enableAutoSizing = true;
                 storyText.fontSizeMin = Mathf.Min(storyText.fontSizeMin, 10f);
             }
-            var row = new GameObject("Freeform Input", typeof(RectTransform), typeof(Image));
+            _freeformRow = new GameObject("Freeform Input", typeof(RectTransform), typeof(Image));
             // 자연어 입력은 선택지 목록 위의 별도 HUD가 아니라 실제 대화 상자 안에 둔다.
-            row.transform.SetParent(transform, false);
-            RectTransform rowRect = (RectTransform)row.transform;
+            // Story Text와 같은 Speech Bubble 좌표계를 사용해야 해상도와 패널 크기가 달라져도
+            // 본문과 입력창의 예약 영역이 서로 침범하지 않는다.
+            Transform dialogueContent = storyText != null && storyText.transform.parent != null
+                ? storyText.transform.parent
+                : transform;
+            _freeformRow.transform.SetParent(dialogueContent, false);
+            RectTransform rowRect = (RectTransform)_freeformRow.transform;
             rowRect.anchorMin = new Vector2(0.055f, 0.045f);
             rowRect.anchorMax = new Vector2(0.945f, 0.215f);
             rowRect.offsetMin = rowRect.offsetMax = Vector2.zero;
-            row.GetComponent<Image>().color = new Color(0.06f, 0.07f, 0.09f, 0.96f);
-            row.transform.SetAsLastSibling();
+            _freeformRow.GetComponent<Image>().color = new Color(0.06f, 0.07f, 0.09f, 0.96f);
+            _freeformRow.transform.SetAsLastSibling();
 
             var inputObject = new GameObject("Input", typeof(RectTransform), typeof(Image), typeof(TMP_InputField));
-            inputObject.transform.SetParent(row.transform, false);
+            inputObject.transform.SetParent(_freeformRow.transform, false);
             RectTransform inputRect = (RectTransform)inputObject.transform;
             inputRect.anchorMin = new Vector2(0f, 0f);
             inputRect.anchorMax = new Vector2(0.82f, 1f);
@@ -214,7 +223,7 @@ namespace KeyboardWanderer.Demo
             _freeformInput.onSubmit.AddListener(_ => SubmitFreeform());
 
             var buttonObject = new GameObject("Send", typeof(RectTransform), typeof(Image), typeof(Button));
-            buttonObject.transform.SetParent(row.transform, false);
+            buttonObject.transform.SetParent(_freeformRow.transform, false);
             RectTransform buttonRect = (RectTransform)buttonObject.transform;
             buttonRect.anchorMin = new Vector2(0.83f, 0f);
             buttonRect.anchorMax = new Vector2(1f, 1f);
@@ -274,10 +283,18 @@ namespace KeyboardWanderer.Demo
         private string ChoiceLabel(int index)
             => (_keyboardChoiceIndex == index ? "▶ " : "  ") + (index + 1) + ".  " + (_choiceOptions[index]?.Text ?? string.Empty);
 
-        private void RefreshChoiceLabels()
+        private void RefreshChoiceVisuals()
         {
             for (int i = 0; i < 4 && i < _choiceOptions.Length; i++)
-                if (_choiceOptions[i] != null) SetText(_choiceLabels[i], ChoiceLabel(i));
+            {
+                if (_choiceOptions[i] == null) continue;
+                SetText(_choiceLabels[i], ChoiceLabel(i));
+                Image background = _choiceButtons[i] != null ? _choiceButtons[i].targetGraphic as Image : null;
+                if (background == null && _choiceButtons[i] != null)
+                    background = _choiceButtons[i].GetComponent<Image>();
+                if (background != null)
+                    background.color = i == _keyboardChoiceIndex ? SelectedChoiceColor : DefaultChoiceColor;
+            }
         }
 
         private void SelectKeyboardButton()
@@ -354,9 +371,7 @@ namespace KeyboardWanderer.Demo
                 buttonRect.anchorMax = new Vector2(0.975f, top);
                 buttonRect.offsetMin = Vector2.zero;
                 buttonRect.offsetMax = Vector2.zero;
-                buttonObject.GetComponent<Image>().color = i == 0
-                    ? new Color(0.88f, 0.68f, 0.31f, 0.96f)
-                    : new Color(0.22f, 0.16f, 0.10f, 0.96f);
+                buttonObject.GetComponent<Image>().color = i == 0 ? SelectedChoiceColor : DefaultChoiceColor;
                 TMP_Text label = CreateInputText(buttonObject.transform, "Choice Label " + (i + 1),
                     "선택 " + (i + 1), Color.white);
                 label.enableAutoSizing = true;

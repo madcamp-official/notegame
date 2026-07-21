@@ -429,6 +429,16 @@ MonoBehaviour:
   AdventureMusic: {fileID: 8300000, guid: 5f3b554996b60c14a837b42c0872e529, type: 3}
   VillageMusic: {fileID: 8300000, guid: bfcbc7c25a8d90c47a259df60329e908, type: 3}
   BattleMusic: {fileID: 8300000, guid: 9ea3307a8807c4245917ef342ea5b711, type: 3}
+  BugForestMusic: {fileID: 8300000, guid: afa49b3a6183e944bb4240f874313f8f, type: 3}
+  BufferVillageMusic: {fileID: 8300000, guid: 89802e54f3c9f804e99b989e49775fcf, type: 3}
+  DeadlockCityMusic: {fileID: 8300000, guid: 9029232ed489f8d40bbdc9344a25ea72, type: 3}
+  DataArchiveMusic: {fileID: 8300000, guid: b9b06c78c575a8f4e80a21bca5ca57cd, type: 3}
+  LegacyCitadelMusic: {fileID: 8300000, guid: 9e3472e097ea4b248a042afd42182460, type: 3}
+  RootSystemMusic: {fileID: 8300000, guid: bfcbc7c25a8d90c47a259df60329e908, type: 3}
+  BossMusic: {fileID: 8300000, guid: 9ea3307a8807c4245917ef342ea5b711, type: 3}
+  FinalBossMusic: {fileID: 8300000, guid: c1c8aed8999dceb4eb9a4a77558fbbcf, type: 3}
+  GameOverMusic: {fileID: 8300000, guid: 22819c50bd5fd364c968fc46de8dc8ae, type: 3}
+  VictoryMusic: {fileID: 0}
   UiMoveSound: {fileID: 8300000, guid: abcd64c94256f4bf39dad98f611f2c3b, type: 3}
   UiAcceptSound: {fileID: 8300000, guid: 6f68444b693e344c88d586ee6093a47d, type: 3}
   UiCancelSound: {fileID: 8300000, guid: 52a3b4ea3a320477ebc52626d0e11987, type: 3}
