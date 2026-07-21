@@ -106,7 +106,9 @@ namespace KeyboardWanderer.Tests.PlayMode
             AbilityKind selected = Selection(controller).Ability;
             string objective = (string)Invoke(controller, "ObjectiveHudText", service.CurrentView);
             string questHint = (string)Invoke(controller, "QuestActionHintText", service.CurrentView);
-            string statusValues = (string)Invoke(controller, "StatusHudValues", service.CurrentView);
+            RunPresentationModel presentationModel =
+                (RunPresentationModel)Invoke(controller, "PresentationModel", service.CurrentView);
+            string statusValues = KeyboardWandererHudTextComposer.StatusValues(presentationModel);
             string guidance = (string)Invoke(controller, "ActionGuidanceText", service.CurrentView);
 
             Assert.That(selected, Is.EqualTo(AbilityKind.Move),

@@ -88,12 +88,14 @@ namespace KeyboardWanderer.Tests.PlayMode
                 ?.GetComponent<KeyboardWandererTutorialView>()?.IsReady, Is.True,
                 "튜토리얼 문구는 Story Panel 컴포넌트에서 편집할 수 있어야 합니다.");
 
-            var selectionView = Find(_sceneUi.transform, "Selection Panel")
-                ?.GetComponent<KeyboardWandererSelectionView>();
-            Assert.That(selectionView, Is.Not.Null,
-                "Game HUD에 현재 스킬과 대상을 보여 주는 Selection Panel이 있어야 합니다.");
-            Assert.That(selectionView.IsReady, Is.True,
-                "Selection Panel의 텍스트와 아이콘은 Inspector 참조로 연결되어야 합니다.");
+            var inventoryHudView = Find(_sceneUi.transform, "Inventory Panel")
+                ?.GetComponent<KeyboardWandererInventoryHudView>();
+            Assert.That(inventoryHudView, Is.Not.Null,
+                "Game HUD에 상시 노출되는 소지품 요약 Inventory Panel이 있어야 합니다.");
+            Assert.That(inventoryHudView.IsReady, Is.True,
+                "Inventory Panel의 아이콘 슬롯은 Inspector 참조로 연결되어야 합니다.");
+            Assert.That(Find(_sceneUi.transform, "Story Header"), Is.Null,
+                "좌측 최상단 캐릭터 상태창은 Game HUD에 남아 있으면 안 됩니다.");
 
             var skillBarView = Find(_sceneUi.transform, "Action Bar")
                 ?.GetComponent<KeyboardWandererSkillBarView>();

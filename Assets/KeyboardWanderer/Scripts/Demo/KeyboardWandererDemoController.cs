@@ -468,20 +468,8 @@ namespace KeyboardWanderer.Demo
             _sceneUi.PresentHud(CurrentAreaName(view) + " · " + CurrentBiomeLabel(view), StoryBeat(view),
                 ObjectiveHudText(view),
                 _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : ActionGuidanceText(view));
-            _sceneUi.PresentQuestStatus(QuestActionHintText(view),
-                KeyboardWandererHudTextComposer.StatusLabels(), StatusHudValues(view));
+            _sceneUi.PresentQuestStatus(QuestActionHintText(view));
             _sceneUi.PresentInventoryAndQuests(_runPresentationModel);
-            bool selectionReady = CanSubmitCurrentSelection();
-            string selectionHeading = AbilityPlayerLabel(_selectionController.Ability) + " · " +
-                                      (selectionReady ? "사용 가능" : "준비 필요");
-            string selectionDetail = SelectionStatusDetail(view);
-            EntityView selectedEntity = SelectedEntity(view, _selectionController.SelectedTarget);
-            Sprite selectedTargetSprite = selectedEntity == null ? null : SpriteForEntity(selectedEntity);
-            if (selectedTargetSprite == null && TryGetServerEntity(_selectionController.SelectedTarget, out GameApiClient.EntitySnapshot serverSelected))
-                selectedTargetSprite = SpriteForServerEntity(serverSelected,
-                    string.Equals(serverSelected.id, _serverRun.playerEntityId, StringComparison.OrdinalIgnoreCase));
-            _sceneUi.PresentSelection(_selectionController.Ability, selectedTargetSprite, selectionReady,
-                selectionHeading, selectionDetail);
 
             SetAbilityButton(AbilityKind.Move);
             SetAbilityButton(AbilityKind.Copy);
@@ -905,6 +893,10 @@ namespace KeyboardWanderer.Demo
             return available;
         }
 
+        /// <summary>
+        /// 화면에 상시 노출되던 Selection Panel은 제거되었지만, 서버 지시 스킬과
+        /// 로컬 대상 선택의 안내 문구가 갈라지는 지점은 여전히 회귀 테스트가 검증하므로 남겨 둔다.
+        /// </summary>
         private string SelectionStatusDetail(RunView view)
         {
             RunPresentationModel run = PresentationModel(view);
@@ -993,14 +985,6 @@ namespace KeyboardWanderer.Demo
                 ? "높은 위험"
                 : _selectionController.Ability == AbilityKind.Connect ? "관계 변화 가능" : "판정 결과 적용";
             return "실행 · 의미 턴 1 + D20 · " + risk;
-        }
-
-        private static EntityView SelectedEntity(RunView view, Guid? entityId)
-        {
-            if (view == null || !entityId.HasValue) return null;
-            for (int i = 0; i < view.Entities.Count; i++)
-                if (view.Entities[i].EntityId == entityId.Value) return view.Entities[i];
-            return null;
         }
 
         private void ConfigureInput()
@@ -4080,11 +4064,6 @@ namespace KeyboardWanderer.Demo
         {
             return KeyboardWandererHudTextComposer.QuestActionHint(PresentationModel(view),
                 _encounterMoveRequired);
-        }
-
-        private string StatusHudValues(RunView view)
-        {
-            return KeyboardWandererHudTextComposer.StatusValues(PresentationModel(view));
         }
 
         private string ActionGuidanceText(RunView view)
