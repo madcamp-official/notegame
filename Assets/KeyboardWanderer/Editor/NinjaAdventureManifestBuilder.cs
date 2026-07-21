@@ -273,6 +273,10 @@ namespace KeyboardWanderer.Editor
             manifest.HitSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Hit & Impact/Hit1.wav");
             manifest.CoinSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Bonus/Coin.wav");
             manifest.SuccessJingle = LoadAudioClip("Assets/NinjaAdventure/Audio/Jingles/Success1.wav");
+
+            manifest.CutsceneIntroFrames = Enumerable.Range(1, 8)
+                .Select(index => LoadIllustrationSprite("Assets/cutscenes/cutscene-intro" + index + ".png"))
+                .ToArray();
             // Only remember this build as successful if every path above actually resolved;
             // otherwise a transient/broken asset would be cached as "done" forever (it happened).
             if (_missingAssetPaths.Count == 0)
@@ -323,6 +327,17 @@ namespace KeyboardWanderer.Editor
         private static Sprite LoadFirstSprite(string path)
         {
             ConfigurePixelTexture(path);
+            Sprite sprite = AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
+            if (sprite == null) _missingAssetPaths.Add(path);
+            return sprite;
+        }
+
+        /// <summary>
+        /// Loads a sprite without forcing the pixel-art import settings that <see cref="ConfigurePixelTexture"/>
+        /// applies (point filtering, uncompressed) — painted cutscene illustrations should keep their own settings.
+        /// </summary>
+        private static Sprite LoadIllustrationSprite(string path)
+        {
             Sprite sprite = AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
             if (sprite == null) _missingAssetPaths.Add(path);
             return sprite;

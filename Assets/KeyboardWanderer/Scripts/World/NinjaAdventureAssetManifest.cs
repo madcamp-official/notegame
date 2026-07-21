@@ -87,6 +87,9 @@ namespace KeyboardWanderer.Demo
         public int NeopjukiCellWidth = 192;
         public int NeopjukiCellHeight = 208;
 
+        [Header("Intro cutscene")]
+        public Sprite[] CutsceneIntroFrames = Array.Empty<Sprite>();
+
         [Header("Actors and props")]
         public Sprite PlayerIdle;
         public Sprite WardenIdle;
