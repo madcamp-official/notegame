@@ -504,9 +504,11 @@ namespace KeyboardWanderer.Gameplay
             string immutableLayoutHash = working.Region.LayoutHash;
             EntityState beforePlayer = GetPlayer(working);
             WorldArea beforeArea = working.Region.AreaAt(beforePlayer.Position);
+
             working.RecordIntent(working.CurrentTurn, request.Ability, preparation.NormalizedAttempt);
             List<string> events = _ruleEngine.Apply(working, request, preparation, RuleOutcome.Success,
                 working.CurrentTurn);
+
             WorldArea afterArea = working.Region.AreaAt(GetPlayer(working).Position);
             if (afterArea != null && (beforeArea == null || beforeArea.Id != afterArea.Id))
             {
@@ -515,6 +517,7 @@ namespace KeyboardWanderer.Gameplay
                 events.Add("SAFE_AREA_DISCOVERED:" + afterArea.Id);
                 events.Add("TRAVEL_TIME_CHANGED:+" + afterArea.TravelCost);
             }
+
             events.Add("EXPLORATION_TRAVEL:NO_CAMPAIGN_TURN");
             working.Version++;
             working.LastNormalizedAttempt = preparation.NormalizedAttempt;

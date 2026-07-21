@@ -23,6 +23,16 @@ test("a run starts with the protected administrator keyboard in server-owned inv
   assert.equal(dto.inventory[0].protected, true);
 });
 
+test("a run starts with one world quest and keeps story hooks as future templates", () => {
+  const run = runFixture();
+  const dto = publicRun(run);
+  assert.equal(dto.activeQuests.length, 1);
+  assert.equal(dto.activeQuests[0].questKind, "world_thread");
+  assert.equal(dto.activeQuests[0].currentStep, "opening");
+  assert.equal(dto.activeQuests[0].acceptsNewSteps, true);
+  assert.ok(run.questTemplates.length >= 1);
+});
+
 test("inventory actions reject nonexistent and protected items", () => {
   const run = runFixture();
   assert.throws(() => resolveInventoryAction(run, { action: "DROP", itemId: "missing-item", quantity: 1 }), (error) => error.code === "INVENTORY_ITEM_NOT_OWNED");

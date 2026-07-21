@@ -50,6 +50,8 @@ export function loadConfig(env = process.env) {
     geminiQualityModel: env.GEMINI_QUALITY_MODEL || env.GEMINI_FAST_MODEL || "gemini-3.1-flash-lite",
     geminiFastOutputTokens: integer(env.GEMINI_FAST_OUTPUT_TOKENS, 1024, 256, 2048, "GEMINI_FAST_OUTPUT_TOKENS"),
     geminiQualityOutputTokens: integer(env.GEMINI_QUALITY_OUTPUT_TOKENS, 1536, 512, 3072, "GEMINI_QUALITY_OUTPUT_TOKENS"),
+    llmResponseTrace: boolean(env.LLM_RESPONSE_TRACE, environment === "development"),
+    llmResponseTraceFile: env.LLM_RESPONSE_TRACE_FILE || "logs/llm-responses.jsonl",
     llmProvider,
     vllmBaseUrl: env.VLLM_BASE_URL || "",
     vllmApiKey: env.VLLM_API_KEY || "",

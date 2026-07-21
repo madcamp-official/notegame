@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderSourceHash: YBMd/8xaV2VddX9AZMgnOljBh4XF1VVjcrPt6YSPUVQ=
+  BuilderSourceHash: Ee+IVQ9ti+C/vCba4nL8yeAk6pwxNBtMrASnvXjjTxE=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -121,120 +121,211 @@ MonoBehaviour:
   NpcAnimations:
   - AssetId: npc.villager.green.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: 0a610727db16c4b10ac87cef66cca3cb, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 2c2e69d4f8c62474ab14c0701c81eb40, type: 3}
     AnimatorController: {fileID: 9100000, guid: f33b4198cae7c48e6af7c9d001060185, type: 2}
   - AssetId: npc.villager2.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: b888e1bcdbd3e4201aaed3ef1bf08e19, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: cfefd1e748dd344029423feace93acae, type: 3}
     AnimatorController: {fileID: 9100000, guid: a940c402c58a3b3aec4af24544876da0, type: 2}
   - AssetId: npc.villager3.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: ce9e5cce2d21946178142f900dbefcee, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: e9f44b796e53e4adc8de5c64613cc588, type: 3}
     AnimatorController: {fileID: 9100000, guid: 3613f90a4eebd45eb66e74f10d2aade0, type: 2}
   - AssetId: npc.villager4.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: 351c3c28b65534be6ac0cc74d98338eb, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 81eb9b0002bdd4c4987b4a3376244797, type: 3}
     AnimatorController: {fileID: 9100000, guid: 0027c1766f3eb67a3b1a6551630b5530, type: 2}
   - AssetId: npc.villager5.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: 044dfc212848e4b64b901e3336aa2a3b, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 0d5be185600b64596b216e5c99cb52ef, type: 3}
     AnimatorController: {fileID: 9100000, guid: 5d8bd61ee18b594626d8e185e205b0a8, type: 2}
   - AssetId: npc.villager6.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: 5cc782224b5c040cb9dd0b7041e4809b, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 211ec5ee8931b440ab1bac31de919fe4, type: 3}
     AnimatorController: {fileID: 9100000, guid: 982a5372a015fee276d5a6bd69c1a148, type: 2}
   - AssetId: npc.old-man.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: 9f1c959107a3b421cb4f949db26f76e6, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: db461854ec41b46da8f4229716d2a9e8, type: 3}
     AnimatorController: {fileID: 9100000, guid: 9afd871ed9364e307c38e7e9dec54b02, type: 2}
   - AssetId: npc.noble.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: b2aeba39fe96d46d3ae99bece70b659e, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: e2373d3d521064be982868a7fd6f8e92, type: 3}
     AnimatorController: {fileID: 9100000, guid: 66d993a27769fc064432140dc0cf9b8c, type: 2}
   - AssetId: npc.princess.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: dc14e22666d8548d5833cd1fa201c0e7, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 764950f9d807446568bc52d427468fa7, type: 3}
     AnimatorController: {fileID: 9100000, guid: baae7dba30fca6dcfd45d4d5918ab1f2, type: 2}
   - AssetId: npc.samurai.v1
     DefaultSprite: {fileID: 4035959289877228764, guid: d583b55eb6edb4dd2a1b6845352a62bb, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 35653a9b50a5b4a0db45619eb1cb8f32, type: 3}
     AnimatorController: {fileID: 9100000, guid: 0cd77706212d5792b9b6de8d2aa9787c, type: 2}
   MonsterAnimations:
   - AssetId: enemy.slime.blue.v1
     DefaultSprite: {fileID: -7282886668606283007, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: f2c70685c654c4c7cb4ff44fabbccd53, type: 3}
     AnimatorController: {fileID: 9100000, guid: 7de334d523b4b4dd394ca62a64f54ed8, type: 2}
   - AssetId: enemy.slime.green.v1
     DefaultSprite: {fileID: 7860893253022973495, guid: 67aa05776422a4d168551d7c3c87c61c, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: f01080f966f2d4f069b1f54511b935cd, type: 3}
     AnimatorController: {fileID: 9100000, guid: 3b207bfb1b55147f4fbaae704921df45, type: 2}
   - AssetId: enemy.mushroom.v1
     DefaultSprite: {fileID: 357749872346554099, guid: 7d9724ff98bfe45d4a2c1aea7246bf02, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 4f751cf5c9d2d4cb3b60c0783e2e71a3, type: 3}
     AnimatorController: {fileID: 9100000, guid: 69d171db6933eadb0d23c9f409f7d0bd, type: 2}
   - AssetId: enemy.blue-bat.v1
     DefaultSprite: {fileID: 5546671543968653177, guid: 8f4dd3c4ecba94f94a5ecb7e952d7ad8, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 87b2a8dc4cdac4fa99333fea3edb6e7b, type: 3}
     AnimatorController: {fileID: 9100000, guid: 99cf56a18f47fc03934ddc7a262ac1a5, type: 2}
   - AssetId: enemy.bear.v1
     DefaultSprite: {fileID: 5546671543968653177, guid: 067f6e7bb39ce486b90103768d1db8ae, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: fc324f1eb7f154d3abe7b8d3e54f56ee, type: 3}
     AnimatorController: {fileID: 9100000, guid: 7c2406eb437756838e5c6f0c41e38aa5, type: 2}
   - AssetId: enemy.cyclope.v1
     DefaultSprite: {fileID: 5546671543968653177, guid: 74aab642986b049fe972e509636c8340, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: a905b7f3f6e1c4d749988fbcd86dce95, type: 3}
     AnimatorController: {fileID: 9100000, guid: 725e52e19fc0d2b38bcfa3628ea086fd, type: 2}
   - AssetId: enemy.dragon.v1
     DefaultSprite: {fileID: 5546671543968653177, guid: b907aae08bb6a448389af06e737a2949, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 4873a9e1e26bc43a1b3b26dc57b05ac2, type: 3}
     AnimatorController: {fileID: 9100000, guid: f6f8abe99c0b3ad155b9982affc969bf, type: 2}
   - AssetId: enemy.kappa-green.v1
     DefaultSprite: {fileID: 5546671543968653177, guid: 481f6fc8d60534778a93625b85bd7aec, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 3893e6e8856e54e1ea384ce476de0687, type: 3}
     AnimatorController: {fileID: 9100000, guid: a97422e779f7049fc0cd6c8488159bed, type: 2}
   - AssetId: enemy.snake.v1
     DefaultSprite: {fileID: -7766637424382265647, guid: b69eb3f54d71846489b225bade2e3355, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 769d8aecd446240fa81fde09ade204e5, type: 3}
     AnimatorController: {fileID: 9100000, guid: 72052f85c2eb542792a2bbb27e9077b5, type: 2}
   - AssetId: enemy.spider-red.v1
     DefaultSprite: {fileID: 5546671543968653177, guid: 5922aa07e87784851b0b248e669eb369, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 6a47e5dad1dfc4c23ae2c19f86673fe0, type: 3}
     AnimatorController: {fileID: 9100000, guid: 2c4cbc2173cae483a30eaff68463a089, type: 2}
   BossAnimations:
   - AssetId: boss.demon-cyclop.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 62b050ca4bc1e4c8d941aacdffa79cd8, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: e47d1507df9804181a0658b68fee44ca, type: 3}
     AnimatorController: {fileID: 9100000, guid: b3ef7abe4f2f793f1d0c4175cbcfe7cf, type: 2}
   - AssetId: boss.demon-cyclop-2.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: e930f8e90bae74f5dbb7f9aa70877b4a, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: fdfb3c80e8c8f45969e8891a409052bf, type: 3}
     AnimatorController: {fileID: 9100000, guid: 5377a982d7d74d755ac8a32d2717da91, type: 2}
   - AssetId: boss.giant-bamboo.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: afb5b59889d00449bac2426757b08c69, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 4b7eebd96b0304d0690a8e4916b6c321, type: 3}
     AnimatorController: {fileID: 9100000, guid: 2c07a1ee8037628f5c1603f504b79a27, type: 2}
   - AssetId: boss.giant-bamboo-2.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: a25003e5664174f2e8f8db2cfdba9eea, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 71e8e207a82554188a6a297bae3e06be, type: 3}
     AnimatorController: {fileID: 9100000, guid: 78612e1e88623cedfde41395bcac28a9, type: 2}
   - AssetId: boss.giant-blue-samurai.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: aaef4ebe77eee459baff3b01b43a00ae, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 4d070ce5fda00405c8ab22a20090a568, type: 3}
     AnimatorController: {fileID: 9100000, guid: 7bd82db661a6919d81e62835786ae641, type: 2}
   - AssetId: boss.giant-red-samurai.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 33db9f828d93a493dbc3ced40d13f935, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 321ab8f31846a4671bbcdadec151407a, type: 3}
     AnimatorController: {fileID: 9100000, guid: b9202d020c9e6123d72117f1863bb073, type: 2}
   - AssetId: boss.giant-flam.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 7df8fc84b6099497da2ad374d825b939, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 6e80fe9cf6f32487cac49c5ed8290865, type: 3}
     AnimatorController: {fileID: 9100000, guid: 8fea5b1ac2ebdb1fb22d5459fa07928f, type: 2}
   - AssetId: boss.giant-frog.v1
     DefaultSprite: {fileID: 2044930938454195420, guid: ca9e2f0c0e76344b1acc38611014e687, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 297f5e11e044c4885b498b433aebea10, type: 3}
     AnimatorController: {fileID: 9100000, guid: 42bc054e3f0c305f665079758ea56437, type: 2}
   - AssetId: boss.giant-frog-2.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 6a75ae27a6dc8411392d11000406d4aa, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 6558ffe4aa19a4773b0ec094fc24763d, type: 3}
     AnimatorController: {fileID: 9100000, guid: 6327595e112d54a5956df8b1b4b679a5, type: 2}
   - AssetId: boss.giant-racoon.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: db2ec5335212b4b778df2b02cc5475b4, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 47203742c2d2b46289cf758e3fd16ff0, type: 3}
     AnimatorController: {fileID: 9100000, guid: 754ae6ae28119e07edc3fe9503d76907, type: 2}
   - AssetId: boss.giant-racoon-gold.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 469ca46d504d34fdc82bf434d06c30a3, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: a41802a36034544b38b55abf800ef713, type: 3}
     AnimatorController: {fileID: 9100000, guid: 02d7c7f23ad5343b62fe59c15a7c93a3, type: 2}
   - AssetId: boss.giant-slime.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 4166fc15811bc42d09130c3838df37d6, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: c833dc9ae255d4990b3eecf82c88d022, type: 3}
     AnimatorController: {fileID: 9100000, guid: a95f05569a595cdd7baa1d89fca8157d, type: 2}
   - AssetId: boss.giant-slime-2.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 71de982db78e74682af039f4ec88ed73, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 3683b9e39ba9c46e2a0b06edd2f5e6af, type: 3}
     AnimatorController: {fileID: 9100000, guid: 72d668de9e94fd6f5038838d5a7ca057, type: 2}
   - AssetId: boss.giant-spirit.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 11eed8f102781477d908d057a5c47cdd, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 826eb21658f3e468fb3446a27ec98b6b, type: 3}
     AnimatorController: {fileID: 9100000, guid: 8bc19a0e8d75680750097c0da2fcbe57, type: 2}
   - AssetId: boss.squid-green.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: b8d601ba9cafe408e81a840c3d7fecd7, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: dccaaa078c0574f6f813eb4827b49343, type: 3}
     AnimatorController: {fileID: 9100000, guid: ea28acde0dd39a418927d5e573e15a51, type: 2}
   - AssetId: boss.squid-red.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: c0540d55ee06546baad0415d18d1cc6d, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: ff465d41245964720969150648347aab, type: 3}
     AnimatorController: {fileID: 9100000, guid: dbfefc5e972cbfcd4a985b2d6db4f865, type: 2}
   - AssetId: boss.tengu-blue.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 7392ef6dd091d410e8913f7ba9ff8eeb, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: a2e9378876c244099a66fd0b3e939e59, type: 3}
     AnimatorController: {fileID: 9100000, guid: 759a3f7ea7139b13448b6b95da99359b, type: 2}
   - AssetId: boss.tengu-red.v1
     DefaultSprite: {fileID: 4723107735738678597, guid: 3f46ade550b43468d81f803355a545f7, type: 3}
+    Portrait: {fileID: -7527145504033472756, guid: 27548cbcbff56421396c349b9546bba5, type: 3}
     AnimatorController: {fileID: 9100000, guid: f02734b092f96c7fc831335b1a66bdc3, type: 2}
+  ElementalEffects:
+  - EffectId: ELEMENTAL_EXPLOSION
+    SpriteSheet: {fileID: 2800000, guid: 27b3a3ef239d248398c54b8d09bcbb94, type: 3}
+    FrameCount: 9
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_FLAME
+    SpriteSheet: {fileID: 2800000, guid: 5ac7620e0634246c39b3b536ab1a5de2, type: 3}
+    FrameCount: 10
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_ICE
+    SpriteSheet: {fileID: 2800000, guid: 6fb7c2f6ed76d4864b003c7cc5c72191, type: 3}
+    FrameCount: 10
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_ICE_B
+    SpriteSheet: {fileID: 2800000, guid: 398f516ec0e9d405fa5bdd1817bf5135, type: 3}
+    FrameCount: 9
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_ICE_FLAKE
+    SpriteSheet: {fileID: 2800000, guid: 86583ba30b31d4d58a980055d306cae0, type: 3}
+    FrameCount: 9
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_PLANT
+    SpriteSheet: {fileID: 2800000, guid: efa5ed8d12b4e493dbadc3b1105e8127, type: 3}
+    FrameCount: 10
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_PLANT_B
+    SpriteSheet: {fileID: 2800000, guid: 85f60af3a1c8948a399c4eac26e17ed1, type: 3}
+    FrameCount: 10
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_ROCK
+    SpriteSheet: {fileID: 2800000, guid: dc78dc10708d84b2eb4894a890551a0e, type: 3}
+    FrameCount: 14
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_ROCK_B
+    SpriteSheet: {fileID: 2800000, guid: 7b77d7a5a89384b248e550160540206b, type: 3}
+    FrameCount: 14
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_ROCK_SPIKE
+    SpriteSheet: {fileID: 2800000, guid: 677b1416191f54ea185dd931cfa3bb44, type: 3}
+    FrameCount: 15
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_THUNDER
+    SpriteSheet: {fileID: 2800000, guid: fed5e70dbca1948e696cb2555cc35127, type: 3}
+    FrameCount: 8
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_WATER
+    SpriteSheet: {fileID: 2800000, guid: 5b6dd7478857a42b682df87637c1805f, type: 3}
+    FrameCount: 10
+    FramesPerSecond: 12
+  - EffectId: ELEMENTAL_WATER_PILLAR
+    SpriteSheet: {fileID: 2800000, guid: 3e1cc785b4e5f46d1b2b96c0741237a8, type: 3}
+    FrameCount: 10
+    FramesPerSecond: 12
   WoodPanel: {fileID: -8747778316048434277, guid: 481fd195d24644f91ab5b23504875a35, type: 3}
   WoodBackground: {fileID: -4030754755457138777, guid: df035b5cf01574195bb7af7cabc27e24, type: 3}
   WoodButtonNormal: {fileID: 1205776407840972037, guid: a772c7058990b4c8db9344ed9463d5a5, type: 3}
@@ -328,6 +419,12 @@ MonoBehaviour:
   UndoIcon: {fileID: 6948327744988102790, guid: f81e52fb191b6444b97bdafdf6e37afb, type: 3}
   SearchIcon: {fileID: 1737981779093564301, guid: 85c3aebf94a674e03be62d60b1269510, type: 3}
   SelectAllIcon: {fileID: 5986030973748356752, guid: 3f6c503afbd504a91b1dd630d0ab2101, type: 3}
+  GenericItemIcon: {fileID: -8836097412167140908, guid: f4375bfc4477a45bc96913d031a78467, type: 3}
+  SalvageItemIcon: {fileID: 897710771807637462, guid: 3d9ad5093b2954b5eb7126783a01ef6d, type: 3}
+  MaterialItemIcon: {fileID: 906388131340123023, guid: 68c72cdca0ac146edadfe4b5e456a916, type: 3}
+  ToolItemIcon: {fileID: -2812528802495159281, guid: 3744fa101e1764ee2859ce2099d78d13, type: 3}
+  ConsumableItemIcon: {fileID: -2880734798192188640, guid: 9600ca23c72bb47848a1740ec3b77779, type: 3}
+  KeyItemIcon: {fileID: 9090724530243979454, guid: b2c8d7d3823ef4c5b8f847a2b350b778, type: 3}
   PixelFont: {fileID: 12800000, guid: 49b2d673e4ad84191a097b7436cd7742, type: 3}
   AdventureMusic: {fileID: 8300000, guid: 5f3b554996b60c14a837b42c0872e529, type: 3}
   VillageMusic: {fileID: 8300000, guid: bfcbc7c25a8d90c47a259df60329e908, type: 3}

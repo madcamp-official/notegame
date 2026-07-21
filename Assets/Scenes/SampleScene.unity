@@ -1625,10 +1625,6 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 819155419564696207, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
       propertyPath: m_fontSize
-      value: 18
-      objectReference: {fileID: 0}
-    - target: {fileID: 819155419564696207, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
-      propertyPath: m_fontSize
       value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 819155419564696207, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
@@ -1715,6 +1711,10 @@ PrefabInstance:
       propertyPath: m_TextStyleHashCode
       value: -1183493901
       objectReference: {fileID: 0}
+    - target: {fileID: 2718066642473647119, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 1.9509888
+      objectReference: {fileID: 0}
     - target: {fileID: 2874016764231741063, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
       propertyPath: m_fontColor32.rgba
       value: 4278849302
@@ -1762,6 +1762,10 @@ PrefabInstance:
     - target: {fileID: 3209961104379169342, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
       propertyPath: m_TextStyleHashCode
       value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 3535073622490807258, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3546528338507920981, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
       propertyPath: m_AnchoredPosition.x
@@ -1962,6 +1966,10 @@ PrefabInstance:
     - target: {fileID: 6534454755073023251, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
       propertyPath: m_TextStyleHashCode
       value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 6562389134838041857, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 24.878174
       objectReference: {fileID: 0}
     - target: {fileID: 6924924712840816185, guid: 2d2f32cc87a1d4e02abe62a5896573ad, type: 3}
       propertyPath: m_fontColor32.rgba

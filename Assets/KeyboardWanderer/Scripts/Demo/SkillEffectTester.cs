@@ -51,7 +51,7 @@ namespace KeyboardWanderer.Demo
             if (_expanded)
             {
                 GUILayout.Space(4f);
-                GUILayout.Label("fx_size: " + _size + "  (대성공→Large 등 판정 대응)");
+                GUILayout.Label("fx_size: " + _size + "  (대성공 -> Large 등 판정 대응)");
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("◀ 작게"))
                     _size = (SkillFxSize)Mathf.Max(0, (int)_size - 1);
@@ -72,7 +72,7 @@ namespace KeyboardWanderer.Demo
                     if (GUILayout.Button(Buttons[i].Label))
                     {
                         int hits = _controller.DebugPreviewSkillEffect(Buttons[i].Skill, _size, FxTypes[_fxTypeIndex]);
-                        _lastResult = Buttons[i].Skill + " → 대상 " + hits + "개에 재생";
+                        _lastResult = Buttons[i].Skill + " -> 대상 " + hits + "개에 재생";
                     }
 
                 if (!string.IsNullOrEmpty(_lastResult))

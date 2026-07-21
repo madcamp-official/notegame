@@ -649,8 +649,9 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
       }))
     },
     activeQuests: [
-      { id: deterministicUuid(`${runId}:world-thread`), key: `WORLD.${fingerprint(campaign.templateId || campaign.generatedTitle).slice(0, 12)}`, title: "코드리아의 붕괴", summary: campaign.premise, status: "active", questKind: "world_thread", currentStep: "open", acceptsNewSteps: false, createdTurn: 0 },
-      ...(campaign.questSeeds || []).slice(0, 2).map((quest, index) => ({ id: deterministicUuid(`${runId}:seed-quest:${quest.id || index}`), key: `SEED.${quest.id || index}`, title: quest.title, summary: quest.summary || quest.description, status: "active", questKind: "story_hook", currentStep: quest.initialStep || "discover", acceptsNewSteps: false, createdTurn: 0 }))
+      // Quest seeds are templates, not accepted quests. The director may START_QUEST
+      // from questTemplates only after the player's story actually reaches that hook.
+      { id: deterministicUuid(`${runId}:world-thread`), key: `WORLD.${fingerprint(campaign.templateId || campaign.generatedTitle).slice(0, 12)}`, title: "코드리아의 붕괴", summary: campaign.premise, status: "active", questKind: "world_thread", currentStep: "opening", acceptsNewSteps: true, createdTurn: 0 }
     ],
     questTemplates: clone(campaign.questSeeds || []),
     generationPlan: clone(campaign.generationPlan || campaign.scenarioPlan || { genome: campaign.genome, generationMetadata: campaign.generationMetadata, questSeeds: campaign.questSeeds }),

@@ -26,14 +26,18 @@ namespace KeyboardWanderer.Presentation
             }
             if (objectives.Count == 0)
                 objectives.Add("• 현재 보조 목표 없음");
+
             if (run?.EndingBoard != null && run.EndingBoard.Count > 0)
             {
-                RunPresentationEnding nearest = run.EndingBoard[0];
-                string missing = nearest.IsEligible
-                    ? "모든 조건 충족"
-                    : nearest.MissingConditions.Count > 0 ? nearest.MissingConditions[0] : "조건 확인 필요";
-                objectives.Add("◆ 가장 가까운 결말 · " + nearest.Title + " " + nearest.SatisfiedCount +
-                               "/" + nearest.TotalCount + " · " + missing);
+                objectives.Add("\n<color=#E2AE4F><b>[결말 예측 보드]</b></color>");
+                for (int i = 0; i < Math.Min(2, run.EndingBoard.Count); i++)
+                {
+                    RunPresentationEnding ending = run.EndingBoard[i];
+                    string missingInfo = ending.IsEligible
+                        ? "<color=#52C41A>진입 조건 충족!</color>"
+                        : "<color=#FF4D4F>누락: " + (ending.MissingConditions.Count > 0 ? string.Join(", ", ending.MissingConditions) : "조건 확인 필요") + "</color>";
+                    objectives.Add($"• <b>{ending.Title}</b> ({ending.SatisfiedCount}/{ending.TotalCount})\n  {missingInfo}");
+                }
             }
             return string.Join("\n", objectives);
         }
