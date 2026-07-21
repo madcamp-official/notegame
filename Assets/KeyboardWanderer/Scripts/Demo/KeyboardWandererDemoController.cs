@@ -114,6 +114,7 @@ namespace KeyboardWanderer.Demo
         private bool _showPause;
         private bool _playerWalking;
         private bool _reopenDialogueAfterWalk;
+        private bool _runEndCutscenePlayed;
         private int _runGeneration;
         private long _worldSeed;
         private GridCoord? _cameraInspectCoord;
@@ -267,12 +268,24 @@ namespace KeyboardWanderer.Demo
                 : null;
             if (frames == null || frames.Length == 0)
                 return;
-            KeyboardWandererIntroView.Play(transform, frames, () =>
+            KeyboardWandererCutsceneOverlayView.Play(transform, frames, () =>
             {
                 PlayerPrefs.SetInt(IntroCompletedKey, 1);
                 PlayerPrefs.Save();
             });
 
+        }
+
+        /// <summary>런이 끝난 첫 프레임에 한 번만 결말/게임 오버 컷신을 재생한다.</summary>
+        private void PlayRunEndCutsceneIfNeeded(bool gameOver)
+        {
+            if (_runEndCutscenePlayed || _assets == null)
+                return;
+            _runEndCutscenePlayed = true;
+            Sprite frame = gameOver ? _assets.CutsceneGameOverImage : _assets.CutsceneEndingImage;
+            if (frame == null)
+                return;
+            KeyboardWandererCutsceneOverlayView.Play(transform, new[] { frame }, null);
         }
 
         public void ConfigureAuthoredContent(
@@ -424,6 +437,8 @@ namespace KeyboardWanderer.Demo
 
             _inputRouter?.SetNarrativeChoiceMode(false);
             RunView view = _service.CurrentView;
+            if (ended && !_runEndCutscenePlayed)
+                PlayRunEndCutsceneIfNeeded(IsGameOver(view, PresentationModel(view)));
             RefreshDynamicMusic(view, _runPresentationModel);
             if ((changes & PresentationChange.Minimap) != 0)
                 UpdateMinimap(view);
@@ -1948,6 +1963,7 @@ namespace KeyboardWanderer.Demo
             _showPause = false;
             _playerWalking = false;
             _reopenDialogueAfterWalk = false;
+            _runEndCutscenePlayed = false;
             _service = service;
             Debug.Log("[KW.Session] event=StartRun service=" + (_service == null ? "null" : "ready") +
                       " serverOnline=" + _serverOnline + " serverRun=" +

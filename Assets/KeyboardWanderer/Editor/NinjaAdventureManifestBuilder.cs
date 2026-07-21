@@ -318,6 +318,8 @@ namespace KeyboardWanderer.Editor
             manifest.CutsceneIntroFrames = Enumerable.Range(1, 8)
                 .Select(index => LoadIllustrationSprite("Assets/cutscenes/cutscene-intro" + index + ".png"))
                 .ToArray();
+            manifest.CutsceneEndingImage = LoadIllustrationSprite("Assets/cutscenes/cutscene-ending.png");
+            manifest.CutsceneGameOverImage = LoadIllustrationSprite("Assets/cutscenes/cutscene-gameover.png");
             // Only remember this build as successful if every path above actually resolved;
             // otherwise a transient/broken asset would be cached as "done" forever (it happened).
             if (_missingAssetPaths.Count == 0)
