@@ -52,6 +52,17 @@ export class MemoryStore {
     return { run: clone(committed.run), movedEntityIds: [...committed.movedEntityIds] };
   }
 
+  async commitRunMutation({ ownerId, runId, expectedRunVersion, resolve }) {
+    const run = this.runs.get(runId);
+    if (!run || run.ownerId !== ownerId) throw notFound("Run");
+    if (run.version !== expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: run.version });
+    const committed = resolve(clone(run));
+    if (!committed?.run || committed.run.version !== run.version + 1 || committed.run.currentTurn !== run.currentTurn)
+      throw new AppError(500, "RUN_MUTATION_INVARIANT_FAILED", "Run mutation violated version or turn invariants.");
+    this.runs.set(runId, clone(committed.run));
+    return clone(committed);
+  }
+
   async findTurnByIdempotency(ownerId, runId, idempotencyKey) {
     const run = this.runs.get(runId);
     if (!run || run.ownerId !== ownerId) throw notFound("Run");
@@ -78,7 +89,7 @@ export class MemoryStore {
     if (run.status !== "active") throw new AppError(409, "RUN_NOT_ACTIVE", "The run does not accept travel.");
     if (run.version !== expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: run.version });
     const committed = resolve(clone(run));
-    if (!committed || committed.run.version !== run.version + 1 || committed.run.currentTurn !== run.currentTurn || committed.navigation.campaignTurnConsumed !== false) throw new AppError(500, "TRAVEL_INVARIANT_FAILED", "Safe travel changed a campaign turn or violated versioning.");
+    if (!committed || committed.run.version !== run.version + 1 || committed.run.currentTurn !== run.currentTurn || committed.navigation.campaignTurnConsumed !== false || committed.navigation.campaignTurnBefore !== run.currentTurn || committed.navigation.campaignTurnAfter !== run.currentTurn) throw new AppError(500, "TRAVEL_INVARIANT_FAILED", "Safe travel consumed a campaign turn or violated versioning.");
     this.runs.set(runId, clone(committed.run));
     this.navigationByIdempotency.set(index, clone(committed.navigation));
     return { ...committed, run: clone(committed.run), navigation: clone(committed.navigation), fromIdempotencyCache: false };

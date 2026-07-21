@@ -15,6 +15,7 @@ const ALLOWED_ENRICHMENT = Object.freeze({
   areas: Object.freeze(["flavor"])
 });
 const FORBIDDEN_NARRATIVE_PATTERN = /(?:\b(?:x|y)\s*[:=]\s*-?\d+|\(\s*-?\d+\s*,\s*-?\d+\s*\)|-?\d+\s*,\s*-?\d+|\b(?:coordinate|coordinates|position|positions|route|routes|exit|exits|slot(?:id)?|asset(?:id)?|d20|hp|damage|reward|metric|mechanic|mechanics|recipe|move|copy|delete|connect|restore|undo)\b|\.png\b|\.jpg\b|\/assets?\/|requiredLinks|requiredRemoved|requiredActive|forbiddenLinks|worldStability|worldAutonomy|publicTrust|technicalDebt|companionBond|turnPressure|좌표|슬롯|에셋|레시피|주사위|피해\s*[+-]?\d|보상\s*[+-]?\d|수치\s*[+-]?\d|지도\s*(?:변경|재생성)|경로\s*(?:변경|생성))/iu;
+const FORBIDDEN_PRODUCT_REPLACEMENT_PATTERN = /(?:\becho\s+key\b|에코\s*키)/iu;
 
 export const CAMPAIGN_PLAN_RESPONSE_JSON_SCHEMA = Object.freeze({
   type: "object",
@@ -109,11 +110,13 @@ function exactKeys(value, expected, code, label) {
   assert(unexpected.length === 0, 502, code, `${label} contains forbidden fields: ${unexpected.join(", ")}.`);
 }
 
-function text(value, { code, label, maximum }) {
+function text(value, { code, label, maximum, requireKorean = false }) {
   assert(typeof value === "string", 502, code, `${label} must be a string.`);
   const normalized = value.trim();
   assert(normalized.length >= 1 && normalized.length <= maximum, 502, code, `${label} must contain 1-${maximum} characters.`);
   assert(!FORBIDDEN_NARRATIVE_PATTERN.test(normalized), 502, "CAMPAIGN_PLAN_MECHANICS_FORBIDDEN", `${label} may not contain coordinates, assets, mechanics, rewards, or recipe instructions.`);
+  assert(!FORBIDDEN_PRODUCT_REPLACEMENT_PATTERN.test(normalized), 502, "CAMPAIGN_PLAN_PRODUCT_IDENTITY_FORBIDDEN", `${label} may not replace the administrator keyboard with another signature artifact.`);
+  assert(!requireKorean || /[가-힣]/u.test(normalized), 502, "CAMPAIGN_PLAN_LANGUAGE_INVALID", `${label} must be written in Korean.`);
   return normalized;
 }
 
@@ -227,7 +230,7 @@ function validateKeyedEntries(values, { allowedIds, entryKeys, textFields, code,
     assert(!seen.has(entry.id), 502, code, `${label} IDs must be unique.`);
     seen.add(entry.id);
     const normalized = { id: entry.id };
-    for (const [field, maximum] of Object.entries(textFields)) normalized[field] = text(entry[field], { code, label: `${label}.${field}`, maximum });
+    for (const [field, maximum] of Object.entries(textFields)) normalized[field] = text(entry[field], { code, label: `${label}.${field}`, maximum, requireKorean: true });
     return normalized;
   });
 }
@@ -239,8 +242,8 @@ export function validateCampaignPlanOutput(input, contextInput) {
   assert(Array.isArray(input.campaign.tone) && input.campaign.tone.length >= 1 && input.campaign.tone.length <= 5, 502, "CAMPAIGN_PLAN_OUTPUT_INVALID", "campaign.tone must contain 1-5 items.");
   const campaign = {
     title: text(input.campaign.title, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "campaign.title", maximum: 80 }),
-    description: text(input.campaign.description, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "campaign.description", maximum: 480 }),
-    tone: input.campaign.tone.map((value) => text(value, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "campaign.tone", maximum: 32 }))
+    description: text(input.campaign.description, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "campaign.description", maximum: 480, requireKorean: true }),
+    tone: input.campaign.tone.map((value) => text(value, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "campaign.tone", maximum: 32, requireKorean: true }))
   };
   assert(campaign.title === GAME_TITLE, 502, "CAMPAIGN_PLAN_PRODUCT_IDENTITY_FORBIDDEN", "Campaign planning cannot rename the product.");
   const ids = context.immutableIds;
@@ -256,7 +259,7 @@ export function validateCampaignPlanOutput(input, contextInput) {
     assert(typeof entry.areaId === "string" && areaIds.has(entry.areaId), 502, "CAMPAIGN_PLAN_ID_FORBIDDEN", "areaFlavors references an unknown immutable area ID.");
     assert(!seenAreas.has(entry.areaId), 502, "CAMPAIGN_PLAN_OUTPUT_INVALID", "areaFlavors area IDs must be unique.");
     seenAreas.add(entry.areaId);
-    return { areaId: entry.areaId, flavor: text(entry.flavor, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "areaFlavors.flavor", maximum: 240 }) };
+    return { areaId: entry.areaId, flavor: text(entry.flavor, { code: "CAMPAIGN_PLAN_OUTPUT_INVALID", label: "areaFlavors.flavor", maximum: 240, requireKorean: true }) };
   });
   assert(beats.length <= ids.beatIds.length && npcs.length <= ids.npcIds.length && quests.length <= ids.questIds.length && endings.length <= ids.endingIds.length && areaFlavors.length <= ids.areaIds.length, 502, "CAMPAIGN_PLAN_OUTPUT_INVALID", "Campaign plan contains too many entries.");
   return { campaign, beats, npcs, quests, endings, areaFlavors };
@@ -289,8 +292,9 @@ export function applyCampaignPlanEnrichment(blueprint, proposal, { model = "conf
   const campaign = clone(blueprint);
   campaign.generatedTitle = GAME_TITLE;
   campaign.generatedTitleKo = GAME_TITLE;
-  campaign.premise = proposal.campaign.description;
-  campaign.premiseKo = proposal.campaign.description;
+  // The planner may enrich tone and authored beats, but it must not replace the
+  // deterministic protagonist/world premise that the runtime treats as canon.
+  campaign.plannerSynopsis = proposal.campaign.description;
   campaign.tone = clone(proposal.campaign.tone);
   campaign.requiredStoryBeats = replaceFields(campaign.requiredStoryBeats, proposal.beats, ["title", "description"]);
   const npcProposals = new Map(proposal.npcs.map((npc) => [npc.id, npc]));
@@ -310,6 +314,7 @@ export function applyCampaignPlanEnrichment(blueprint, proposal, { model = "conf
     model,
     modelProfile,
     enrichment: "validated",
+    plannerSynopsis: campaign.plannerSynopsis,
     fallbackUsed: false,
     contentHash: campaign.contentHash
   };

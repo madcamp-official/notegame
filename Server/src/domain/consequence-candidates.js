@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { macroPhaseForBeat } from "./campaign.js";
-import { MONSTER_CATALOG, NPC_CATALOG, SPECIAL_SKILL_TEMPLATES, bossCandidatesFor } from "./content-catalog.js";
+import { SPECIAL_SKILL_TEMPLATES } from "./content-catalog.js";
 import { clone, deterministicUuid } from "./serialization.js";
 import { areaAt } from "./world.js";
 
@@ -59,6 +59,7 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
   const props = run.entities.filter((entity) => entity.active && entity.kind === "prop" && entity.state?.opened !== true && entity.state?.interacted !== true && manhattan(entity.position, player.position) <= 5);
   const npcs = actors.filter((entity) => entity.kind === "npc");
   const enemies = actors.filter((entity) => entity.kind === "enemy");
+  const narrativeIntent = String(turn?.selectedChoice?.intentTag || "").toUpperCase();
 
   if (run.activeEncounter?.status === "active") {
     candidates.push(candidate(run, decisionNo, "START_ENCOUNTER", run.activeEncounter.sourceEntityId, run.playerEntityId, 100, 0, "안전 이동이 위험 요소 앞에서 멈추어 조우가 활성화되었다."));
@@ -67,27 +68,29 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
   for (const enemy of enemies) {
     const playerDistance = manhattan(enemy.position, player.position);
     const traits = new Set(enemy.state?.traits || []);
-    const lowHealth = Number(enemy.state?.hp || 0) <= Math.max(1, Math.floor(Number(enemy.state?.maxHp || 1) * 0.3));
-    if (lowHealth && traits.has("FLEE_AT_LOW_HP")) {
-      candidates.push(candidate(run, decisionNo, "FLEE_ENTITY", enemy.id, player.id, 96, 1, "체력이 낮은 생존형 오류 개체가 플레이어에게서 도주할 수 있다.", "FLEE"));
+    const relationship = run.npcRelationships.find((item) => item.npcId === enemy.id);
+    const confrontationEscalated = ["ASSERTIVE", "PROTECT"].includes(narrativeIntent);
+    if (playerDistance <= 1 && (relationship?.stance === "hostile" || confrontationEscalated)) {
+      candidates.push(candidate(run, decisionNo, "ATTACK_ENTITY", enemy.id, player.id,
+        relationship?.stance === "hostile" ? 96 : 88, 2,
+        confrontationEscalated
+          ? "단호한 대화가 가까운 적대 개체와의 충돌로 번질 수 있다. 선택될 때만 서버가 공격을 확정한다."
+          : "이미 적대적인 개체가 인접해 있어 협상이 무너지면 공격으로 이어질 수 있다.", "DIALOGUE_BREAKDOWN"));
     }
-    if (playerDistance === 1 && !onCooldown(run, "ATTACK_ENTITY") && probabilityGate(run, decisionNo, `attack-player:${enemy.id}`, 85)) {
-      candidates.push(candidate(run, decisionNo, "ATTACK_ENTITY", enemy.id, player.id, traits.has("AMBUSHER") ? 96 : 92, 2, "적대 오류 개체가 플레이어와 인접해 공격할 수 있다.", traits.has("AMBUSHER") ? "AMBUSH" : "MELEE"));
+    if (playerDistance <= 2 && !onCooldown(run, "START_DIALOGUE")) {
+      candidates.push(candidate(run, decisionNo, "START_DIALOGUE", enemy.id, player.id,
+        relationship?.stance === "hostile" ? 92 : 84, 0,
+        "가까운 오류 개체가 플레이어의 개입에 말과 태도로 반응할 수 있다.", "ENCOUNTER_DIALOGUE"));
     } else if (playerDistance >= 2 && playerDistance <= 3 && !onCooldown(run, "MOVE_ACTOR") && probabilityGate(run, decisionNo, `approach:${enemy.id}`, 70)) {
-      candidates.push(candidate(run, decisionNo, "MOVE_ACTOR", enemy.id, player.id, 72, 1, "적대 오류 개체가 플레이어에게 접근할 수 있다.", "APPROACH"));
-    }
-    for (const npc of npcs) {
-      if (manhattan(enemy.position, npc.position) === 1 && probabilityGate(run, decisionNo, `attack-npc:${enemy.id}:${npc.id}`, 65)) {
-        candidates.push(candidate(run, decisionNo, "ATTACK_ENTITY", enemy.id, npc.id, 86, 2, "적대 오류 개체와 비적대 NPC가 인접해 있다.", "MELEE"));
-      }
+      candidates.push(candidate(run, decisionNo, "MOVE_ACTOR", enemy.id, player.id, 72, 1, "경계 중인 오류 개체가 대화를 피하지 않고 거리를 좁힌다.", "APPROACH"));
     }
     if (traits.has("GUARDIAN") && enemies.some((ally) => ally.id !== enemy.id && manhattan(ally.position, enemy.position) <= 1)) {
       const ally = enemies.find((item) => item.id !== enemy.id && manhattan(item.position, enemy.position) <= 1);
       candidates.push(candidate(run, decisionNo, "DEFEND_ENTITY", enemy.id, ally.id, 74, 1, "수호 성향 오류 개체가 인접한 동료를 방어할 수 있다.", "GUARD"));
     }
     if (traits.has("SUPPORT")) {
-      const damaged = enemies.find((ally) => ally.id !== enemy.id && manhattan(ally.position, enemy.position) <= 2 && Number(ally.state?.hp || 0) < Number(ally.state?.maxHp || 0));
-      if (damaged) candidates.push(candidate(run, decisionNo, "ASSIST_ENTITY", enemy.id, damaged.id, 76, 1, "지원형 오류 개체가 손상된 동료를 회복시킬 수 있다.", "SUPPORT"));
+      const guarded = enemies.find((ally) => ally.id !== enemy.id && manhattan(ally.position, enemy.position) <= 2);
+      if (guarded) candidates.push(candidate(run, decisionNo, "DEFEND_ENTITY", enemy.id, guarded.id, 76, 1, "지원형 오류 개체가 동료 앞을 지키며 협상 태도를 드러낸다.", "SUPPORT"));
     }
   }
 
@@ -98,7 +101,7 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
     }
     for (const enemy of enemies) {
       if (manhattan(npc.position, enemy.position) === 1 && relationship?.stance !== "hostile" && probabilityGate(run, decisionNo, `npc-defend:${npc.id}:${enemy.id}`, 55)) {
-        candidates.push(candidate(run, decisionNo, "ATTACK_ENTITY", npc.id, enemy.id, 78, 1, "NPC가 가까운 적대 오류 개체에 대응할 수 있다.", "MELEE"));
+        candidates.push(candidate(run, decisionNo, "DEFEND_ENTITY", npc.id, enemy.id, 70, 1, "NPC가 가까운 오류 개체와 플레이어 사이에서 중재 자세를 취한다.", "MEDIATION"));
       }
     }
     const threatened = enemies.find((enemy) => manhattan(enemy.position, player.position) <= 2);
@@ -138,10 +141,6 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
   if (nearbyNpc && (run.openLoops || []).filter((loop) => loop.status === "open").length < 8 && probabilityGate(run, decisionNo, `hook:${nearbyNpc.id}`, 16)) {
     candidates.push(candidate(run, decisionNo, "CREATE_HOOK", nearbyNpc.id, player.id, 40, 1, "현재 거시 골조를 벗어나지 않는 작은 복선을 만들 여지가 있다."));
   }
-  const npcQuest = (run.activeQuests || []).find((quest) => quest.status === "active" && quest.questKind !== "main");
-  if (nearbyNpc && npcQuest && probabilityGate(run, decisionNo, `quest:${npcQuest.id}`, 22)) {
-    candidates.push(candidate(run, decisionNo, "ADVANCE_QUEST", nearbyNpc.id, player.id, 48, 1, "활성 보조 퀘스트를 한 단계 진행할 수 있다.", null, { questId: npcQuest.id }));
-  }
   if (nearbyNpc && (directorState.specialSkills || []).length < 3 && probabilityGate(run, decisionNo, `reward:${nearbyNpc.id}`, 10)) {
     const reward = SPECIAL_SKILL_TEMPLATES[decisionNo % SPECIAL_SKILL_TEMPLATES.length];
     if (!(directorState.specialSkills || []).some((skill) => skill.templateId === reward.id)) {
@@ -151,37 +150,33 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
 
   const macroPhase = run.currentMacroPhase || macroPhaseForBeat(run.currentStoryBeat);
   const currentArea = areaAt(run.world, player.position);
-  const freeSlot = (kind) => run.world.placementSlots.find((item) => item.kind === kind && item.areaId === currentArea.id &&
-    !run.entities.some((entity) => entity.active && (entity.state?.slotId === item.id || (entity.position.x === item.x && entity.position.y === item.y))));
+  const dormantCandidate = (kind, predicate = () => true) => run.entities.find((entity) => entity.kind === kind && entity.active === false
+    && entity.state?.activationState === "DORMANT" && entity.state?.dormant === true && predicate(entity)
+    && run.world.placementSlots.some((slot) => slot.id === entity.state.activationSlotId && slot.areaId === currentArea.id)
+    && !run.entities.some((other) => other.active && (other.state?.slotId === entity.state.activationSlotId || (other.position.x === entity.position.x && other.position.y === entity.position.y))));
   if (!onCooldown(run, "SPAWN_FROM_SLOT") && (directorState.generatedCharacters || []).length < 3 && probabilityGate(run, decisionNo, `rare-npc:${currentArea.id}`, 7)) {
-    const slot = freeSlot("npc");
-    if (slot) {
-      const npcAsset = NPC_CATALOG[decisionNo % NPC_CATALOG.length];
-      const names = ["리턴", "포인터", "패치", "스택", "모듈", "브랜치"];
-      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 56, 2, "현재 지역의 빈 NPC 슬롯에 런 전용 인물이 등장할 수 있다.", "ARRIVAL", {
-        slotId: slot.id, assetId: npcAsset.assetId, spawnKind: "npc", displayName: names[decisionNo % names.length], traitIds: [...npcAsset.roleTags].slice(0, 3)
+    const dormant = dormantCandidate("npc");
+    if (dormant) {
+      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 56, 2, "현재 지역의 휴면 NPC 후보가 활성화될 수 있다.", "ARRIVAL", {
+        entityId: dormant.id, slotId: dormant.state.activationSlotId, assetId: dormant.assetId, spawnKind: "npc", displayName: dormant.name, traitIds: [...(dormant.state.roleTags || [])]
       }));
     }
   }
   if (!onCooldown(run, "SPAWN_FROM_SLOT") && enemies.length === 0 && probabilityGate(run, decisionNo, `monster-variant:${currentArea.id}`, 14)) {
-    const slot = freeSlot("enemy");
-    if (slot) {
-      const monster = MONSTER_CATALOG[decisionNo % MONSTER_CATALOG.length];
-      const extraTraits = ["LOOTER", "AMBUSHER", "GUARDIAN", "FLEE_AT_LOW_HP", "MEMORY_DRAIN"];
-      const traits = [...new Set([...monster.traits, extraTraits[decisionNo % extraTraits.length]])].slice(0, 3);
-      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 68, 2, "현재 지역의 빈 오류 슬롯에 서버 검증 몬스터 변종이 등장할 수 있다.", "ENCOUNTER", {
-        slotId: slot.id, assetId: monster.assetId, spawnKind: "enemy", displayName: `${monster.name} 변종`, traitIds: traits
+    const dormant = dormantCandidate("enemy", (entity) => entity.state?.boss !== true);
+    if (dormant) {
+      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 68, 2, "현재 지역의 휴면 몬스터 후보가 활성화될 수 있다.", "ENCOUNTER", {
+        entityId: dormant.id, slotId: dormant.state.activationSlotId, assetId: dormant.assetId, spawnKind: "enemy", displayName: dormant.name, traitIds: [...(dormant.state.traits || [])]
       }));
     }
   }
-  const bossAlreadyGenerated = run.entities.some((entity) => String(entity.assetId || "").startsWith("boss."));
+  const bossAlreadyGenerated = run.entities.some((entity) => entity.active && entity.state?.boss === true);
   if (!onCooldown(run, "SPAWN_FROM_SLOT") && !bossAlreadyGenerated && Number(macroPhase.order || 1) >= 2 && probabilityGate(run, decisionNo, `rare-boss:${currentArea.id}`, 8)) {
-    const slot = freeSlot("enemy");
-    const bosses = bossCandidatesFor({ macroOrder: Number(macroPhase.order || 1), campaignRole: currentArea.campaignRole });
-    if (slot && bosses.length > 0) {
-      const boss = bosses[decisionNo % bosses.length];
-      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 84, 3, "현재 지역과 캠페인 단계가 허용하는 희귀 보스 슬롯이 열렸다.", "ENCOUNTER", {
-        slotId: slot.id, assetId: boss.assetId, spawnKind: "enemy", displayName: boss.name, traitIds: [...boss.traits]
+    const dormant = dormantCandidate("enemy", (entity) => entity.state?.boss === true && Number(entity.state?.minMacroOrder || 99) <= Number(macroPhase.order || 1)
+      && (!Array.isArray(entity.state?.roles) || entity.state.roles.includes(currentArea.campaignRole)));
+    if (dormant) {
+      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 84, 3, "현재 지역과 캠페인 단계가 허용하는 휴면 보스 후보가 활성화될 수 있다.", "ENCOUNTER", {
+        entityId: dormant.id, slotId: dormant.state.activationSlotId, assetId: dormant.assetId, spawnKind: "enemy", displayName: dormant.name, traitIds: [...(dormant.state.traits || [])]
       }));
     }
   }
@@ -198,14 +193,27 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
       storyBeat: clone(run.currentStoryBeat),
       area: currentArea.name,
       playerId: player.id,
+      actors: [player, ...actors].slice(0, 16).map((actor) => {
+        const relationship = run.npcRelationships.find((item) => item.npcId === actor.id);
+        return { id: actor.id, kind: actor.kind, name: actor.name, distance: manhattan(actor.position, player.position), stance: relationship?.stance || null, disabled: Boolean(actor.state?.disabled) };
+      }),
       candidates: candidates.slice(0, 32),
       recentSceneTypes: (directorState.recentSceneTypes || []).slice(-8),
       openLoops: (run.openLoops || []).filter((item) => item.status === "open").slice(-8).map((item) => ({ id: item.id, summary: item.summary })),
-      npcRelationships: (run.npcRelationships || []).filter((item) => npcs.some((npc) => npc.id === item.npcId)).slice(0, 16),
+      npcRelationships: (run.npcRelationships || []).filter((item) => actors.some((actor) => actor.id === item.npcId)).slice(0, 16),
       fixedCanon: [...FIXED_CANON],
       maxSelectedActions: 4
     },
     candidates,
-    source: { decisionType, navigation: navigation ? { encounterOpened: Boolean(navigation.encounterOpened), campaignRole: navigation.campaignRole } : null, turn: turn ? { outcome: turn.outcome, actionContext: turn.actionContext } : null }
+    source: { decisionType, navigation: navigation ? { outcome: navigation.outcome, d20: navigation.d20, encounterOpened: Boolean(navigation.encounterOpened), campaignRole: navigation.campaignRole } : null, turn: turn ? { outcome: turn.outcome, actionContext: turn.actionContext } : null }
   };
+}
+
+export function materializeProposedSceneActions(run, proposedActions = []) {
+  const decisionNo = Number(run.directorState?.decisionNo || 0) + 1;
+  const costs = { MOVE_ACTOR: 1, ATTACK_ENTITY: 2, DEFEND_ENTITY: 1, ASSIST_ENTITY: 1, FLEE_ENTITY: 1, START_DIALOGUE: 0, NARRATIVE_EVENT: 0 };
+  return proposedActions.flatMap((proposal, index) => {
+    return [candidate(run, decisionNo, proposal.type, proposal.actorId, proposal.targetId, 60, costs[proposal.type] ?? 0,
+      proposal.text, proposal.actionStyle || "STORY_PROPOSAL", { proposalIndex: index, ...(proposal.type === "NARRATIVE_EVENT" ? { text: proposal.text } : {}) })];
+  });
 }

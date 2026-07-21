@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { advanceStoryDirector, createCampaignBlueprint } from "../src/domain/campaign.js";
+import { advanceArcDirector, advanceStoryDirector, createCampaignBlueprint } from "../src/domain/campaign.js";
 import { generateWorld } from "../src/domain/world.js";
 import { FixedD20Source, createRunState, directorContext, normalizeTurnRequest, resolveTurn } from "../src/domain/turn-engine.js";
 import { validateNarrationOutput } from "../src/llm/narration.js";
@@ -83,6 +83,9 @@ test("validated director operations enrich narrative state only through provided
   const request = deleteRequest(run, "director-turn-1");
   const preview = resolveTurn({ run, request, d20Source: new FixedD20Source(10) });
   const context = directorContext(preview.run, preview.turn);
+  assert.equal(context.spatialContext.authority, "SERVER");
+  assert.ok(context.visibleEntities.every((entity) => !Object.hasOwn(entity, "position")));
+  assert.ok(context.placementSlots.every((candidate) => !Object.hasOwn(candidate, "x") && !Object.hasOwn(candidate, "y")));
   const slot = context.readOnlySlots[0];
   assert.ok(slot, "a pre-generated free placement slot is required");
   const raw = {
@@ -116,6 +119,8 @@ test("director validation rejects coordinates, unknown IDs, invalid assets and f
   const preview = resolveTurn({ run, request, d20Source: new FixedD20Source(10) });
   const context = directorContext(preview.run, preview.turn);
   const base = { summary: "요약", body: "서버가 판정한 결과가 적용됐다. 월드 geometry는 그대로 유지된다.", dialogue: [] };
+  const ambientContext = { ...context, normalizedAttempt: "Delete ambient system residue with DELETE" };
+  assert.throws(() => validateNarrationOutput({ ...base, body: "계절의 파편이 깨끗이 사라졌어. 시간의 주파수도 완전히 정화되었어.", proposedOps: [] }, ambientContext), /persistent world result/);
   assert.throws(() => validateNarrationOutput({ ...base, proposedOps: [{ op: "SET_VISUAL_INTENT", summary: "불법 좌표", slotId: "missing", value: "x=999", x: 999, budgetCost: 0 }] }, context), /Unknown fields/);
   assert.throws(() => validateNarrationOutput({ ...base, proposedOps: [{ op: "ADD_NPC_MEMORY", summary: "없는 NPC", targetId: randomUUID(), budgetCost: 0 }] }, context), /outside the provided scene/);
   const visibleNpcId = context.visibleEntities.find((item) => item.kind === "npc")?.id;
@@ -133,7 +138,7 @@ test("director validation rejects coordinates, unknown IDs, invalid assets and f
   assert.equal(engineRejected.turn.narrative.rejectedOps[0].reason, "OP_SCHEMA_INVALID");
 });
 
-test("story beats require successful matching evidence and unresolved beats become convergence costs", () => {
+test("story beats require successful matching evidence and remain open beyond the soft convergence horizon", () => {
   const source = campaign(0, 40);
   const run = createRunState({ campaign: source, ownerId: OWNER_ID, resolutionSeed: "beat-evidence" });
   const first = run.requiredStoryBeats[0];
@@ -151,20 +156,38 @@ test("story beats require successful matching evidence and unresolved beats beco
   assert.ok(events.some((event) => event.beatId === first.id && event.status === "completed" && event.evidence.outcome === "success"));
 
   advanceStoryDirector(run, 40, events, { ability: "move", outcome: "failure", contextualActions: [], campaignRole: first.requiredCampaignRole, targetEvidenceKeys: [] });
-  assert.ok(run.requiredStoryBeats.some((beat) => beat.status === "skipped"));
-  assert.ok(run.openLoops.some((loop) => loop.source === "campaign_convergence" && loop.summary.startsWith("미해결 대가:")));
+  assert.ok(run.requiredStoryBeats.some((beat) => ["active", "pending"].includes(beat.status)));
+  assert.ok(events.some((event) => event.type === "soft_convergence_pressure" && event.forcedEnding === false));
 });
 
-test("the authoritative director forces a valid seeded ending at the turn limit without model operations", () => {
+test("fixed arc deadlines stay disabled while meaningful committed events drive emergent story density", () => {
+  const source = campaign(81, 40);
+  const run = createRunState({ campaign: source, ownerId: OWNER_ID, resolutionSeed: "arc-ledger" });
+  for (let turnNo = 1; turnNo <= 7; turnNo += 1) {
+    advanceArcDirector(run, turnNo, [], { ability: turnNo % 2 ? "search" : "delete", outcome: turnNo === 3 ? "failure" : "success", campaignRole: "LOCAL_STAKES", targetEvidenceKeys: [], eventTypes: ["ambient_fallback_applied"] });
+  }
+  const events = [];
+  advanceArcDirector(run, 8, events, { ability: "connect", outcome: "partial_success", campaignRole: "LOCAL_STAKES", targetEvidenceKeys: [], eventTypes: ["connection_created"] });
+  assert.ok(run.arcQuestions.every((arc) => arc.status === "legacy_disabled"));
+  assert.equal(run.resolvedArcOutcomes.length, 0);
+  assert.equal(run.storyLedger.length, 8);
+  assert.equal(run.emergentStory.phase, "entangled");
+  assert.equal(run.emergentStory.meaningfulTurns, 8);
+  assert.equal(run.emergentStory.forcedEnding, false);
+  assert.ok(events.some((event) => event.type === "emergent_story_updated"));
+  assert.ok(!events.some((event) => event.type === "arc_question_resolved"));
+});
+
+test("the soft turn horizon never forces an ending", () => {
   const source = campaign(8, 30);
   const run = createRunState({ campaign: source, ownerId: OWNER_ID, resolutionSeed: "ending-fallback" });
   run.currentTurn = 29;
   run.version = 30;
   const request = deleteRequest(run, "ending-turn-30", 30);
   const result = resolveTurn({ run, request, d20Source: new FixedD20Source(12) });
-  assert.equal(result.run.status, "completed");
-  assert.ok(result.run.endingCandidates.some((candidate) => candidate.id === result.run.endingCode));
+  assert.equal(result.run.status, "active");
+  assert.equal(result.run.endingCode, null);
   assert.equal(result.run.currentTurn, 30);
   assert.equal(result.run.world.layoutHash, run.world.layoutHash);
-  assert.ok(result.turn.events.some((event) => event.type === "run_completed"));
+  assert.ok(!result.turn.events.some((event) => event.type === "run_completed"));
 });
