@@ -127,6 +127,8 @@ namespace KeyboardWanderer.Tests.PlayMode
         [UnityTest]
         public IEnumerator NewRunButtonAndDialogue_ChangeVisibleAuthoredState()
         {
+            // 머신의 PlayerPrefs 상태와 무관하게 튜토리얼이 대화 패널을 가리지 않도록 고정한다.
+            PlayerPrefs.SetInt("keyboard-wanderer.tutorial-v1-complete", 1);
             Button newRun = Find(_sceneUi.transform, "New Run Button").GetComponent<Button>();
             newRun.onClick.Invoke();
             yield return null;
@@ -141,6 +143,8 @@ namespace KeyboardWanderer.Tests.PlayMode
                 yield return null;
             }
             Assert.That(gameHud.activeSelf, Is.True);
+            // Search가 목표 스킬인 seed에서는 스토리 대화 페이지가 서사를 대신하므로 스킬을 고정한다.
+            _controller.GetComponent<KeyboardWandererSelectionController>().ResetSelection(AbilityKind.Move);
             SetField(_controller, "_lastOutcome", "SUCCESS");
             SetField(_controller, "_lastNarrative", "첫 번째 이야기");
             SetField(_controller, "_lastDialogue", new[] { "두 번째 대화", "세 번째 대화" });

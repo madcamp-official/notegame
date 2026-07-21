@@ -7,6 +7,7 @@ import { planDecisionScene, resolveTravelDecision } from "../domain/decision-orc
 import { planSkillTarget } from "../domain/skill-target-orchestrator.js";
 import { applyCampaignPlanEnrichment, createCampaignPlanContext, createCampaignPlanFallback, createDeterministicCampaignPreview, validateCampaignPlanOutput } from "../llm/campaign-planning.js";
 import { createFallbackNarration, validateNarrationContext, validateNarrationOutput } from "../llm/narration.js";
+import { createFallbackScenePlan, validateSceneTransitionRequest } from "../llm/scene-transition.js";
 import { PRODUCT_CONTRACT } from "../domain/codria-contract.js";
 import { choiceSelectionFingerprint, choicesFromLegacySkills, narrativeChoiceRequest, normalizeChoiceSelectionRequest, normalizePlayerMessageRequest, playerMessageFingerprint, playerMessageRequest, sealNarrativeIntervention, selectedChoiceForRun } from "../domain/narrative-choices.js";
 import { selectRelevantMemories } from "../llm/prompt-composer.js";
@@ -554,6 +555,18 @@ export class GameService {
 
   async narrate(input) {
     return this.narrator.narrate(validateNarrationContext(input));
+  }
+
+  /**
+   * SCENE_TRANSITION_PLAN: providers without a scene director (e.g. Gemini today) degrade to the
+   * deterministic first-candidate plan, so the endpoint always answers with a valid v1.0 plan.
+   */
+  async planSceneTransition(input) {
+    const request = validateSceneTransitionRequest(input);
+    if (typeof this.narrator?.planSceneTransition !== "function") {
+      return createFallbackScenePlan(request, "provider_unsupported");
+    }
+    return this.narrator.planSceneTransition(request);
   }
 }
 

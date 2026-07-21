@@ -14,8 +14,11 @@ namespace KeyboardWanderer.World
     {
         [SerializeField] private NinjaAdventureAssetManifest manifest;
 
+        private const int CodriaAutotileCount = 16;
+
         private readonly List<Sprite> _runtimeSprites = new List<Sprite>();
         private readonly List<Texture2D> _runtimeTextures = new List<Texture2D>();
+        private readonly Dictionary<Texture2D, Sprite[]> _codriaTileCache = new Dictionary<Texture2D, Sprite[]>();
         private bool _initialized;
 
         public NinjaAdventureAssetManifest Manifest => manifest;
@@ -154,26 +157,28 @@ namespace KeyboardWanderer.World
         {
             ForestTreeSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
                 new Rect(0f, 304f, 32f, 32f), "Forest Tree", Hex("568b42"), new Vector2(0.5f, 0.08f));
+            // 아틀라스에서 그림 한 채를 온전히 감싸도록 픽셀 경계를 실측해 맞춘 Rect들이다.
+            // 격자 좌표로 어림잡으면 이웃 에셋이 섞여 들어와 건물이 잘린 채 그려진다.
             ForestHouseSprite = CreateAtlasSprite(manifest != null ? manifest.HouseAtlas : null,
-                new Rect(0f, 304f, 64f, 64f), "Forest House", Hex("a7653f"), new Vector2(0.5f, 0.05f));
+                new Rect(0f, 320f, 64f, 48f), "Forest House", Hex("a7653f"), new Vector2(0.5f, 0.05f));
             WetlandPlantSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
-                new Rect(96f, 144f, 32f, 32f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
+                new Rect(112f, 144f, 16f, 32f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
             WetlandLandmarkSprite = CreateAtlasSprite(manifest != null ? manifest.WatermillAtlas : null,
                 new Rect(0f, 0f, 34f, 36f), "Wetland Watermill", Hex("9a6b43"), new Vector2(0.5f, 0.08f));
             DesertPalmSprite = CreateAtlasSprite(manifest != null ? manifest.DesertAtlas : null,
-                new Rect(112f, 72f, 48f, 48f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
+                new Rect(160f, 32f, 64f, 40f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
             DesertLandmarkSprite = CreateAtlasSprite(manifest != null ? manifest.DesertAtlas : null,
-                new Rect(256f, 96f, 64f, 96f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
+                new Rect(223f, 48f, 43f, 80f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
             FrostTreeSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
                 new Rect(128f, 304f, 32f, 32f), "Frost Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f));
             FrostLandmarkSprite = CreateAtlasSprite(manifest != null ? manifest.HouseAtlas : null,
-                new Rect(0f, 144f, 96f, 80f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
+                new Rect(0f, 146f, 48f, 46f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
             CavernCrystalSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
-                new Rect(0f, 112f, 32f, 32f), "Cavern Crystal", Hex("a978c4"), new Vector2(0.5f, 0.08f));
+                new Rect(0f, 110f, 42f, 34f), "Cavern Crystal", Hex("a978c4"), new Vector2(0.5f, 0.08f));
             RuinTreeSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
                 new Rect(64f, 304f, 32f, 32f), "Ruins Dead Tree", Hex("75624f"), new Vector2(0.5f, 0.08f));
             RuinLandmarkSprite = CreateAtlasSprite(manifest != null ? manifest.AbandonedVillageAtlas : null,
-                new Rect(176f, 0f, 80f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
+                new Rect(192f, 16f, 64f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
 
             ForestDecorationSprites = new[]
             {
@@ -283,6 +288,31 @@ namespace KeyboardWanderer.World
             WhiteSprite = CreateSolidSprite(Color.white, "White Pixel");
         }
 
+        /// <summary>
+        /// 코드리아 타일셋은 4×4 오토타일 블롭이고, 타일 인덱스가 곧 이웃 비트마스크다
+        /// (N=1, E=2, S=4, W=8). 시트 좌상단이 인덱스 0이므로 Unity Rect 기준으로 y를 뒤집는다.
+        /// </summary>
+        public Sprite CodriaAutotileSprite(Texture2D sheet, int mask)
+        {
+            if (sheet == null)
+                return null;
+            if (!_codriaTileCache.TryGetValue(sheet, out Sprite[] tiles))
+            {
+                tiles = new Sprite[CodriaAutotileCount];
+                _codriaTileCache.Add(sheet, tiles);
+            }
+
+            mask &= CodriaAutotileCount - 1;
+            if (tiles[mask] != null)
+                return tiles[mask];
+
+            int size = manifest != null && manifest.CodriaTileSize > 0 ? manifest.CodriaTileSize : 16;
+            var rect = new Rect((mask % 4) * size, sheet.height - ((mask / 4) + 1) * size, size, size);
+            Sprite sprite = CreateAtlasSprite(sheet, rect, sheet.name + " " + mask, Color.magenta);
+            tiles[mask] = sprite;
+            return sprite;
+        }
+
         private Sprite CreateAtlasSprite(Texture2D texture, Rect requestedRect, string spriteName,
             Color fallbackColor, Vector2? requestedPivot = null)
         {
@@ -371,6 +401,7 @@ namespace KeyboardWanderer.World
                     Destroy(_runtimeTextures[i]);
             _runtimeSprites.Clear();
             _runtimeTextures.Clear();
+            _codriaTileCache.Clear();
             _initialized = false;
         }
 

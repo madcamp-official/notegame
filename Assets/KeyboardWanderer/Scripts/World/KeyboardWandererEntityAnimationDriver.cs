@@ -107,7 +107,7 @@ namespace KeyboardWanderer.World
                         : visual.IdleFrames;
                 if (visual.IsPlayer && preventPlayerFlip)
                     visual.Renderer.flipX = false;
-                UpdateAnimatorOrSprite(visual, frames, walkingThisFrame, playerActionUntil);
+                UpdateAnimatorOrSprite(visual, frames, walkingThisFrame, playerActionUntil, _animationFrame);
                 UpdateSelectionTint(pair.Key, visual, selection);
                 UpdateAttachedVisuals(visual);
             }
@@ -153,7 +153,7 @@ namespace KeyboardWanderer.World
 
         private static void UpdateAnimatorOrSprite(
             KeyboardWandererEntityVisualState visual, Sprite[] frames,
-            bool walkingThisFrame, float playerActionUntil)
+            bool walkingThisFrame, float playerActionUntil, int animationFrame)
         {
             bool usesAnimator = visual.Animator != null && visual.Animator.runtimeAnimatorController != null;
             if (usesAnimator && visual.IsPlayer)
@@ -173,7 +173,7 @@ namespace KeyboardWanderer.World
             }
             if (frames == null || frames.Length == 0)
                 return;
-            Sprite frame = frames[Time.frameCount % frames.Length];
+            Sprite frame = frames[animationFrame % frames.Length];
             if (visual.Renderer.sprite == frame)
                 return;
             visual.Renderer.sprite = frame;

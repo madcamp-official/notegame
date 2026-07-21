@@ -4,7 +4,8 @@
   "references": [
     "Unity.InputSystem",
     "Unity.ugui",
-    "Unity.TextMeshPro"
+    "Unity.TextMeshPro",
+    "KeyboardWanderer.ThreeDObjects"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

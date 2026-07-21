@@ -66,7 +66,7 @@ namespace KeyboardWanderer.Networking
                     : serverNarrative.Trim();
             GameApiClient.EventSnapshot[] events = turn.events ?? turn.stateDelta?.events;
             string stateChanges = StateChangeSummary(events);
-            string[] authoritativeDialogue = NpcInvestigationDialogue(events);
+            string[] authoritativeDialogue = NpcInvestigationDialogue(events, out string dialogueSpeaker);
             var logs = new List<string>
             {
                 "D20 " + d20 + TurnPresentationText.Signed(modifier) + " vs " + difficulty + " · " + outcome,
@@ -97,7 +97,8 @@ namespace KeyboardWanderer.Networking
                 turn.narrative == null || turn.narrative.fallbackUsed,
                 turn.narrative?.model ?? "deterministic",
                 0.28f,
-                logs.ToArray());
+                logs.ToArray(),
+                authoritativeDialogue.Length > 0 ? dialogueSpeaker : null);
         }
 
         public static TurnPresentationResult FromNavigation(
@@ -214,8 +215,9 @@ namespace KeyboardWanderer.Networking
             }
         }
 
-        private static string[] NpcInvestigationDialogue(GameApiClient.EventSnapshot[] events)
+        private static string[] NpcInvestigationDialogue(GameApiClient.EventSnapshot[] events, out string speaker)
         {
+            speaker = null;
             if (events == null) return Array.Empty<string>();
             for (int i = 0; i < events.Length; i++)
             {
@@ -225,6 +227,7 @@ namespace KeyboardWanderer.Networking
                     !type.StartsWith("npc_clue_", StringComparison.OrdinalIgnoreCase) &&
                     !type.StartsWith("npc_rumor_", StringComparison.OrdinalIgnoreCase)) continue;
                 var pages = new List<string>();
+                speaker = FirstNonEmpty(item.npcName, "NPC");
                 pages.Add(FirstNonEmpty(item.npcName, "NPC") + "\n지금 마음에 걸리는 일 · " +
                           FirstNonEmpty(item.concern, "쉽게 말할 수 없는 문제가 있다"));
                 if (!string.IsNullOrWhiteSpace(item.line)) pages.Add(item.line.Trim());

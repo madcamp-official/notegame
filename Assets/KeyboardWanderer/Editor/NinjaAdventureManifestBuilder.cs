@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using KeyboardWanderer.Demo;
 using UnityEditor;
 using UnityEngine;
@@ -8,9 +11,12 @@ namespace KeyboardWanderer.Editor
     public static class NinjaAdventureManifestBuilder
     {
         private const string ManifestPath = "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset";
-        private const int CurrentManifestVersion = 11;
+        private const string BuilderScriptPath = "Assets/KeyboardWanderer/Editor/NinjaAdventureManifestBuilder.cs";
         private const string NeopjukiAtlasPath =
             "Assets/KeyboardWanderer/Art/Pets/Neopjuki/NeopjukiUnityAtlas.png";
+        private const string CodriaTilesetFolder = "Assets/testSprite/tilesets/";
+
+        private static readonly List<string> _missingAssetPaths = new();
 
         [InitializeOnLoadMethod]
         private static void ScheduleEnsureManifest()
@@ -21,6 +27,7 @@ namespace KeyboardWanderer.Editor
         [MenuItem("Keyboard Wanderer/Rebuild Ninja Adventure Manifest")]
         public static void RebuildManifest()
         {
+            _missingAssetPaths.Clear();
             NinjaAdventureAssetManifest manifest = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(ManifestPath);
             if (manifest == null)
             {
@@ -53,6 +60,38 @@ namespace KeyboardWanderer.Editor
             manifest.OutdoorDirtRect = new Rect(16, 208, 16, 16);
             manifest.OutdoorGrassRect = new Rect(16, 160, 16, 16);
             manifest.OutdoorDarkGrassRect = new Rect(16, 112, 16, 16);
+
+            manifest.GeneralFieldTiles = LoadCodriaTileset("General_Field");
+            manifest.GeneralWaterTiles = LoadCodriaTileset("General_Water");
+            manifest.GeneralHighGroundTiles = LoadCodriaTileset("General_HighGround");
+            manifest.GeneralSlopeTiles = LoadCodriaTileset("General_Slope");
+            manifest.BugForestGroundTiles = LoadCodriaTileset("BugForest_Ground");
+            manifest.BugForestCampTiles = LoadCodriaTileset("BugForest_Camp");
+            manifest.BugForestHoleTiles = LoadCodriaTileset("BugForest_Hole");
+            manifest.BugForestLakeTiles = LoadCodriaTileset("BugForest_Lake");
+            manifest.BufferVillageGroundTiles = LoadCodriaTileset("BufferVillage_Ground");
+            manifest.DeadlockCityGroundTiles = LoadCodriaTileset("DeadlockCity_Ground");
+            manifest.DeadlockCityVirusTiles = LoadCodriaTileset("DeadlockCity_Virus");
+            manifest.DataArchiveRockTiles = LoadCodriaTileset("DataArchive_Rock");
+            manifest.DataArchiveCrystalFloorTiles = LoadCodriaTileset("DataArchive_PureCrystalTile");
+            manifest.DataArchiveWoodPlankTiles = LoadCodriaTileset("DataArchive_WoodPlank");
+            manifest.LegacyCitadelSnowTiles = LoadCodriaTileset("LegacyCitadel_Snow");
+            manifest.LegacyCitadelIceTiles = LoadCodriaTileset("LegacyCitadel_Ice");
+            manifest.RootSystemGroundTiles = LoadCodriaTileset("RootSystem_Ground");
+            manifest.CodriaTileSize = 16;
+
+            manifest.BugForestDataTreeProps = LoadCodriaTileset("BugForest_DataTree");
+            manifest.BugForestRockProps = LoadCodriaTileset("BugForest_Rocks");
+            manifest.BugForestCampProps = LoadCodriaTileset("BugForest_Camp_Objects");
+            manifest.BufferVillageBuildingProps = LoadCodriaTileset("BufferVillage_Buildings");
+            manifest.BufferVillageFenceProps = LoadCodriaTileset("BufferVillage_Fence");
+            manifest.DeadlockCityBuildingProps = LoadCodriaTileset("DeadlockCity_Buildings");
+            manifest.DataArchiveBookshelfProps = LoadCodriaTileset("DataArchive_Bookshelf");
+            manifest.DataArchiveCrystalProps = LoadCodriaTileset("DataArchive_Crystal");
+            manifest.LegacyCitadelEdificeProps = LoadCodriaTileset("LegacyCitadel_Edifice");
+            manifest.LegacyCitadelGooseProps = LoadCodriaTileset("LegacyCitadel_Goose");
+            manifest.RootSystemServerProps = LoadCodriaTileset("RootSystem_Device_Server");
+            manifest.RootSystemMonitorProps = LoadCodriaTileset("RootSystem_Device_Monitor");
 
             manifest.PlayerIdleSheet = LoadPixelTexture(
                 "Assets/NinjaAdventure/Actor/CharacterAnimated/NinjaGreen/Separate/Idle.png");
@@ -224,9 +263,9 @@ namespace KeyboardWanderer.Editor
             manifest.PixelFont = AssetDatabase.LoadAssetAtPath<Font>(
                 "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf");
 
-            manifest.AdventureMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/1 - Adventure Begin.ogg");
-            manifest.VillageMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/33 - Calm Village.ogg");
-            manifest.BattleMusic = LoadAudioClip("Assets/NinjaAdventure/Audio/Musics/17 - Fight.ogg");
+            manifest.AdventureMusic = LoadAudioClip("Assets/bgm/bgm_quest.ogg");
+            manifest.VillageMusic = LoadAudioClip("Assets/bgm/bgm_root.ogg");
+            manifest.BattleMusic = LoadAudioClip("Assets/bgm/bgm_boss_1.ogg");
             manifest.UiMoveSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Move1.wav");
             manifest.UiAcceptSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Accept.wav");
             manifest.UiCancelSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Menu/Cancel.wav");
@@ -234,7 +273,20 @@ namespace KeyboardWanderer.Editor
             manifest.HitSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Hit & Impact/Hit1.wav");
             manifest.CoinSound = LoadAudioClip("Assets/NinjaAdventure/Audio/Sounds/Bonus/Coin.wav");
             manifest.SuccessJingle = LoadAudioClip("Assets/NinjaAdventure/Audio/Jingles/Success1.wav");
-            manifest.BuilderVersion = CurrentManifestVersion;
+            // Only remember this build as successful if every path above actually resolved;
+            // otherwise a transient/broken asset would be cached as "done" forever (it happened).
+            if (_missingAssetPaths.Count == 0)
+            {
+                manifest.BuilderSourceHash = ComputeBuilderSourceHash();
+            }
+            else
+            {
+                manifest.BuilderSourceHash = string.Empty;
+                Debug.LogWarning(
+                    "Ninja Adventure manifest rebuilt with " + _missingAssetPaths.Count +
+                    " unresolved asset path(s); it will retry on the next Editor load:\n- " +
+                    string.Join("\n- ", _missingAssetPaths));
+            }
 
             EditorUtility.SetDirty(manifest);
             AssetDatabase.SaveAssets();
@@ -243,8 +295,22 @@ namespace KeyboardWanderer.Editor
         private static void EnsureManifest()
         {
             NinjaAdventureAssetManifest manifest = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(ManifestPath);
-            if (manifest == null || manifest.BuilderVersion < CurrentManifestVersion)
+            if (manifest == null || manifest.BuilderSourceHash != ComputeBuilderSourceHash())
                 RebuildManifest();
+        }
+
+        /// <summary>
+        /// Hashes this file's own source so any edit here (a changed asset path, a new field)
+        /// invalidates the cached manifest automatically, with no version constant to remember to bump.
+        /// </summary>
+        private static string ComputeBuilderSourceHash()
+        {
+            MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(BuilderScriptPath);
+            if (script == null)
+                throw new System.IO.FileNotFoundException("Manifest builder script not found: " + BuilderScriptPath);
+            using SHA256 sha256 = SHA256.Create();
+            byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(script.text));
+            return System.Convert.ToBase64String(hash);
         }
 
         private static Sprite LoadSprite(string path, string spriteName)
@@ -257,18 +323,29 @@ namespace KeyboardWanderer.Editor
         private static Sprite LoadFirstSprite(string path)
         {
             ConfigurePixelTexture(path);
-            return AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
+            Sprite sprite = AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
+            if (sprite == null) _missingAssetPaths.Add(path);
+            return sprite;
+        }
+
+        private static Texture2D LoadCodriaTileset(string sheetName)
+        {
+            return LoadPixelTexture(CodriaTilesetFolder + sheetName + ".png");
         }
 
         private static Texture2D LoadPixelTexture(string path)
         {
             ConfigurePixelTexture(path);
-            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (texture == null) _missingAssetPaths.Add(path);
+            return texture;
         }
 
         private static AudioClip LoadAudioClip(string path)
         {
-            return AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+            AudioClip clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+            if (clip == null) _missingAssetPaths.Add(path);
+            return clip;
         }
 
         private static ActorAnimationEntry Actor(string assetId, string sourcePath, string spriteName,

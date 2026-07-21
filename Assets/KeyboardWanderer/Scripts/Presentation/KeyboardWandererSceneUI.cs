@@ -81,6 +81,11 @@ namespace KeyboardWanderer.Demo
             gameHudView?.Present(location, title, objective, actionHint);
         }
 
+        public void PresentQuestStatus(string questActionHint, string statusLabels, string statusValues)
+        {
+            gameHudView?.PresentQuestStatus(questActionHint, statusLabels, statusValues);
+        }
+
         public void PresentConfirm(string label, bool interactable)
         {
             gameHudView?.PresentConfirm(label, interactable);
@@ -107,9 +112,10 @@ namespace KeyboardWanderer.Demo
             dialogueView?.SetVisible(visible);
         }
 
-        public void PresentDialogue(bool visible, string speaker, string story, string actionLabel, bool interactable)
+        public void PresentDialogue(bool visible, string speaker, string story, string actionLabel, bool interactable,
+            Sprite speakerSprite = null)
         {
-            dialogueView?.Present(visible, speaker, story, actionLabel, interactable);
+            dialogueView?.Present(visible, speaker, story, actionLabel, interactable, speakerSprite);
         }
 
         public void PresentTutorial(int page, string objective)

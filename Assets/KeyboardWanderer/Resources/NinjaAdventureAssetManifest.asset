@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderVersion: 11
+  BuilderSourceHash: NNF0z8g8z9aCCSIyAx4d5SFMIUqWjgVTl/MdkBJmGjs=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -58,6 +58,36 @@ MonoBehaviour:
     y: 112
     width: 16
     height: 16
+  GeneralFieldTiles: {fileID: 2800000, guid: 6a4a29343c0954542a3d8f94a63afbbd, type: 3}
+  GeneralWaterTiles: {fileID: 2800000, guid: e4eb8e1cde224db409d616c1efda0229, type: 3}
+  GeneralHighGroundTiles: {fileID: 2800000, guid: 00e3bbe77e30e8b46b929458836d96af, type: 3}
+  GeneralSlopeTiles: {fileID: 2800000, guid: b27a8787de596f943b0ba9907b89776c, type: 3}
+  BugForestGroundTiles: {fileID: 2800000, guid: a7dcdf513a0f4cc44a4cdbbd81a18afa, type: 3}
+  BugForestCampTiles: {fileID: 2800000, guid: 25252b947d10d004aa91f71fca4e5144, type: 3}
+  BugForestHoleTiles: {fileID: 2800000, guid: c5cfd8e61c21fe848b8ffc0d70625e0b, type: 3}
+  BugForestLakeTiles: {fileID: 2800000, guid: 7ffdd196f4345d74f84d7b084a78c9bc, type: 3}
+  BufferVillageGroundTiles: {fileID: 2800000, guid: ad93d238703bbb14488d9317773b9413, type: 3}
+  DeadlockCityGroundTiles: {fileID: 2800000, guid: 687a55a78b7d5ff4e8005596e8c91c14, type: 3}
+  DeadlockCityVirusTiles: {fileID: 2800000, guid: a9fcbdd6fe6944844950e90ec6c1da5e, type: 3}
+  DataArchiveRockTiles: {fileID: 2800000, guid: 834ce6ffea0c7834eb2de3957039b61c, type: 3}
+  DataArchiveCrystalFloorTiles: {fileID: 2800000, guid: ad68f9fcb926a49a194a1d1469690449, type: 3}
+  DataArchiveWoodPlankTiles: {fileID: 2800000, guid: 66e53de37a9d86940bb2589919dab50a, type: 3}
+  LegacyCitadelSnowTiles: {fileID: 2800000, guid: 86c98e4a9075d8a46b704e2b89533af2, type: 3}
+  LegacyCitadelIceTiles: {fileID: 2800000, guid: c089ce0a8941f494ab5a0663bdeafff2, type: 3}
+  RootSystemGroundTiles: {fileID: 2800000, guid: 786c760fcfed8c4409a8b63652f1a958, type: 3}
+  CodriaTileSize: 16
+  BugForestDataTreeProps: {fileID: 2800000, guid: cb733cc9584e5564c833e426081eb428, type: 3}
+  BugForestRockProps: {fileID: 2800000, guid: 5ffb2b99967138745a81aec966acb987, type: 3}
+  BugForestCampProps: {fileID: 2800000, guid: fb5633ed81ceaa6458a9343619b5588b, type: 3}
+  BufferVillageBuildingProps: {fileID: 2800000, guid: aa9b8f3435db04b4e9b9f23003641519, type: 3}
+  BufferVillageFenceProps: {fileID: 2800000, guid: bf8002c4fa74f6940b322e3624267c9b, type: 3}
+  DeadlockCityBuildingProps: {fileID: 2800000, guid: fca6b0e474893cc4b91a238443a577c1, type: 3}
+  DataArchiveBookshelfProps: {fileID: 2800000, guid: 2876b2ccfb81a77468f174dcc9a2845c, type: 3}
+  DataArchiveCrystalProps: {fileID: 2800000, guid: baae3bce1b1161c4db84cc7b16bb2e35, type: 3}
+  LegacyCitadelEdificeProps: {fileID: 2800000, guid: 82beab04aff93c1439ae3c315be26758, type: 3}
+  LegacyCitadelGooseProps: {fileID: 2800000, guid: b9676c4e2ad372643b62f5d679ac91e0, type: 3}
+  RootSystemServerProps: {fileID: 2800000, guid: 547ddd8b87c996e4785283e77cba08c0, type: 3}
+  RootSystemMonitorProps: {fileID: 2800000, guid: a0d7c839df8f28e4489232b58cdf83ec, type: 3}
   PlayerIdleSheet: {fileID: 2800000, guid: f85ec122d2c2f4aeb9cb75aac6af6bc9, type: 3}
   PlayerWalkSheet: {fileID: 2800000, guid: e771f1022aa0a4b139af54671ffc4433, type: 3}
   PlayerAttackSheet: {fileID: 2800000, guid: 63e3a84d5b4d04162a82e95ff2ce4444, type: 3}
@@ -289,10 +319,10 @@ MonoBehaviour:
   UndoIcon: {fileID: 6948327744988102790, guid: f81e52fb191b6444b97bdafdf6e37afb, type: 3}
   SearchIcon: {fileID: 1737981779093564301, guid: 85c3aebf94a674e03be62d60b1269510, type: 3}
   SelectAllIcon: {fileID: 5986030973748356752, guid: 3f6c503afbd504a91b1dd630d0ab2101, type: 3}
-  PixelFont: {fileID: 12800000, guid: 8d0b54f2b8b774cb69af90b3584a4e9a, type: 3}
-  AdventureMusic: {fileID: 8300000, guid: 918125628d5f84d0fa83ebbbd2743e3f, type: 3}
-  VillageMusic: {fileID: 8300000, guid: b37b85a1a4d0c4601995e2c28a21d1bd, type: 3}
-  BattleMusic: {fileID: 8300000, guid: 90613ea4eba6947b3b5fdaa2b1fbc0c6, type: 3}
+  PixelFont: {fileID: 12800000, guid: 49b2d673e4ad84191a097b7436cd7742, type: 3}
+  AdventureMusic: {fileID: 8300000, guid: 5f3b554996b60c14a837b42c0872e529, type: 3}
+  VillageMusic: {fileID: 8300000, guid: bfcbc7c25a8d90c47a259df60329e908, type: 3}
+  BattleMusic: {fileID: 8300000, guid: 9ea3307a8807c4245917ef342ea5b711, type: 3}
   UiMoveSound: {fileID: 8300000, guid: abcd64c94256f4bf39dad98f611f2c3b, type: 3}
   UiAcceptSound: {fileID: 8300000, guid: 6f68444b693e344c88d586ee6093a47d, type: 3}
   UiCancelSound: {fileID: 8300000, guid: 52a3b4ea3a320477ebc52626d0e11987, type: 3}

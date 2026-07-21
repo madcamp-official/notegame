@@ -104,12 +104,14 @@ namespace KeyboardWanderer.Tests.PlayMode
             Invoke(controller, "StartRun", service, false);
             AbilityKind selected = Selection(controller).Ability;
             string objective = (string)Invoke(controller, "ObjectiveHudText", service.CurrentView);
+            string questHint = (string)Invoke(controller, "QuestActionHintText", service.CurrentView);
+            string statusValues = (string)Invoke(controller, "StatusHudValues", service.CurrentView);
             string guidance = (string)Invoke(controller, "ActionGuidanceText", service.CurrentView);
 
             Assert.That(selected, Is.EqualTo(service.CurrentView.RequiredBeats[0].TriggerAbility));
             Assert.That(objective, Does.Contain(service.CurrentView.CurrentStoryBeatObjective));
-            Assert.That(objective, Does.Contain("추천"));
-            Assert.That(objective, Does.Contain("권한 0/3"));
+            Assert.That(questHint, Does.Contain("추천"));
+            Assert.That(statusValues, Does.Contain("0 / 3"));
             Assert.That(guidance, Does.Contain("의미 턴 1회"));
         }
 

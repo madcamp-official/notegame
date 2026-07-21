@@ -109,14 +109,20 @@ namespace KeyboardWanderer.Tests.EditMode
             RunPresentationModel run = new LocalRunPresentationAdapter().Capture(service.CurrentView);
 
             AbilityKind[] recommendations = KeyboardWandererHudTextComposer.RecommendedActions(run, false);
-            string objective = KeyboardWandererHudTextComposer.ObjectiveHud(run, false);
+            string objective = KeyboardWandererHudTextComposer.ObjectiveHud(run);
+            string questHint = KeyboardWandererHudTextComposer.QuestActionHint(run, false);
+            string statusLabels = KeyboardWandererHudTextComposer.StatusLabels();
+            string statusValues = KeyboardWandererHudTextComposer.StatusValues(run);
             string secondary = KeyboardWandererHudTextComposer.SecondaryObjectives(run);
 
             Assert.That(recommendations.Length, Is.InRange(2, 3));
             Assert.That(recommendations[0], Is.EqualTo(run.ObjectiveAbility));
             Assert.That(objective, Does.Contain(run.StoryObjective));
-            Assert.That(objective, Does.Contain("추천"));
-            Assert.That(objective, Does.Contain("권한 " + run.AdminAccess + "/3"));
+            Assert.That(objective, Does.Not.Contain("추천"), "진행·자원 수치는 상태 패널로 분리되어야 한다.");
+            Assert.That(questHint, Does.Contain("추천"));
+            Assert.That(statusLabels.Split('\n').Length, Is.EqualTo(statusValues.Split('\n').Length),
+                "상태 패널 라벨과 값의 줄 수는 항상 일치해야 한다.");
+            Assert.That(statusValues, Does.Contain(run.AdminAccess + " / 3"));
             Assert.That(KeyboardWandererHudTextComposer.AbilityPlayerLabel(AbilityKind.Search),
                 Is.EqualTo("Ctrl F 조사"));
             Assert.That(secondary.Split('\n').Length, Is.LessThanOrEqualTo(3));

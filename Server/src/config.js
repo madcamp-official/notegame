@@ -29,6 +29,10 @@ export function loadConfig(env = process.env) {
   if (storage === "postgres" && !env.DATABASE_URL) {
     throw new AppError(500, "CONFIG_INVALID", "DATABASE_URL is required for postgres storage.");
   }
+  const llmProvider = env.LLM_PROVIDER || "gemini";
+  if (!["gemini", "vllm"].includes(llmProvider)) {
+    throw new AppError(500, "CONFIG_INVALID", "LLM_PROVIDER must be gemini or vllm.");
+  }
 
   return Object.freeze({
     host: env.HOST || "127.0.0.1",
@@ -48,6 +52,13 @@ export function loadConfig(env = process.env) {
     geminiQualityOutputTokens: integer(env.GEMINI_QUALITY_OUTPUT_TOKENS, 1536, 512, 3072, "GEMINI_QUALITY_OUTPUT_TOKENS"),
     llmResponseTrace: boolean(env.LLM_RESPONSE_TRACE, environment === "development"),
     llmResponseTraceFile: env.LLM_RESPONSE_TRACE_FILE || "logs/llm-responses.jsonl",
+    llmProvider,
+    vllmBaseUrl: env.VLLM_BASE_URL || "",
+    vllmApiKey: env.VLLM_API_KEY || "",
+    vllmModel: env.VLLM_MODEL || "game-director",
+    vllmTimeoutMs: integer(env.VLLM_TIMEOUT_MS, 8000, 250, 30000, "VLLM_TIMEOUT_MS"),
+    vllmFastOutputTokens: integer(env.VLLM_FAST_OUTPUT_TOKENS, 768, 128, 2048, "VLLM_FAST_OUTPUT_TOKENS"),
+    vllmQualityOutputTokens: integer(env.VLLM_QUALITY_OUTPUT_TOKENS, 1024, 256, 2048, "VLLM_QUALITY_OUTPUT_TOKENS"),
     corsOrigins: (env.CORS_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean)
   });
 }

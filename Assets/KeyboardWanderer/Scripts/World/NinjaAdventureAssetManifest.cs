@@ -15,7 +15,7 @@ namespace KeyboardWanderer.Demo
     public sealed class NinjaAdventureAssetManifest : ScriptableObject
     {
         [HideInInspector]
-        public int BuilderVersion;
+        public string BuilderSourceHash;
 
         [Header("Tile atlas")]
         public Texture2D InteriorFloorAtlas;
@@ -35,6 +35,43 @@ namespace KeyboardWanderer.Demo
         public Rect OutdoorDirtRect = new Rect(16, 208, 16, 16);
         public Rect OutdoorGrassRect = new Rect(16, 160, 16, 16);
         public Rect OutdoorDarkGrassRect = new Rect(16, 112, 16, 16);
+
+        // 코드리아 지역 타일셋. 바닥 시트는 4×4 오토타일 블롭이며 타일 인덱스가 곧
+        // 이웃 비트마스크(N=1, E=2, S=4, W=8)다. 4×5, 4×6 시트는 오토타일 16칸 뒤에
+        // 꽉 찬 장식 변형 행이 이어진다.
+        [Header("Codria terrain tilesets (16px autotile blobs)")]
+        public Texture2D GeneralFieldTiles;
+        public Texture2D GeneralWaterTiles;
+        public Texture2D GeneralHighGroundTiles;
+        public Texture2D GeneralSlopeTiles;
+        public Texture2D BugForestGroundTiles;
+        public Texture2D BugForestCampTiles;
+        public Texture2D BugForestHoleTiles;
+        public Texture2D BugForestLakeTiles;
+        public Texture2D BufferVillageGroundTiles;
+        public Texture2D DeadlockCityGroundTiles;
+        public Texture2D DeadlockCityVirusTiles;
+        public Texture2D DataArchiveRockTiles;
+        public Texture2D DataArchiveCrystalFloorTiles;
+        public Texture2D DataArchiveWoodPlankTiles;
+        public Texture2D LegacyCitadelSnowTiles;
+        public Texture2D LegacyCitadelIceTiles;
+        public Texture2D RootSystemGroundTiles;
+        public int CodriaTileSize = 16;
+
+        [Header("Codria region props (free-form sprites)")]
+        public Texture2D BugForestDataTreeProps;
+        public Texture2D BugForestRockProps;
+        public Texture2D BugForestCampProps;
+        public Texture2D BufferVillageBuildingProps;
+        public Texture2D BufferVillageFenceProps;
+        public Texture2D DeadlockCityBuildingProps;
+        public Texture2D DataArchiveBookshelfProps;
+        public Texture2D DataArchiveCrystalProps;
+        public Texture2D LegacyCitadelEdificeProps;
+        public Texture2D LegacyCitadelGooseProps;
+        public Texture2D RootSystemServerProps;
+        public Texture2D RootSystemMonitorProps;
 
         [Header("Animated actor sheets")]
         public Texture2D PlayerIdleSheet;
