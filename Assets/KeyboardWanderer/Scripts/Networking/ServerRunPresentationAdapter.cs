@@ -59,6 +59,7 @@ namespace KeyboardWanderer.Networking
                 IsServerAuthoritative = true,
                 IsPlaying = string.Equals(run.status, "active", StringComparison.OrdinalIgnoreCase) ||
                             string.Equals(run.status, "playing", StringComparison.OrdinalIgnoreCase),
+                Status = fallback?.Status ?? RunStatus.Playing,
                 TurnLimit = run.turnLimit > 0 ? run.turnLimit : fallback?.TurnLimit ?? 0,
                 RemainingTurns = Math.Max(0, run.remainingTurns),
                 Focus = run.focus,
@@ -77,6 +78,7 @@ namespace KeyboardWanderer.Networking
                 StoryObjective = storyObjective,
                 CurrentAreaName = CurrentAreaName(run.world, playerPosition, fallback?.CurrentAreaName),
                 CurrentBiomeId = CurrentBiomeId(run.world, playerPosition, fallback),
+                CurrentRegionAxis = fallback?.CurrentRegionAxis ?? string.Empty,
                 ObjectiveAbility = objectiveAbility,
                 ObjectiveTargetId = objectiveTargetId,
                 ObjectiveTargetName = objectiveTargetName,

@@ -85,6 +85,7 @@ namespace KeyboardWanderer.Presentation
         public RunPresentationCore Core { get; internal set; }
         public bool IsServerAuthoritative { get; internal set; }
         public bool IsPlaying { get; internal set; }
+        public RunStatus Status { get; internal set; }
         public int TurnLimit { get; internal set; }
         public int RemainingTurns { get; internal set; }
         public int Focus { get; internal set; }
@@ -103,6 +104,7 @@ namespace KeyboardWanderer.Presentation
         public string StoryObjective { get; internal set; } = string.Empty;
         public string CurrentAreaName { get; internal set; } = string.Empty;
         public string CurrentBiomeId { get; internal set; } = string.Empty;
+        public string CurrentRegionAxis { get; internal set; } = string.Empty;
         public AbilityKind ObjectiveAbility { get; internal set; } = AbilityKind.Copy;
         public Guid? ObjectiveTargetId { get; internal set; }
         public string ObjectiveTargetName { get; internal set; } = string.Empty;

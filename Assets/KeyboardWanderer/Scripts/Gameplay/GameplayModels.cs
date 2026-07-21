@@ -546,6 +546,7 @@ namespace KeyboardWanderer.Gameplay
         public string CurrentAreaId { get; }
         public string CurrentAreaName { get; }
         public string CurrentAreaDescription { get; }
+        public string CurrentRegionAxis { get; }
         public int AdminAccess { get; }
         public int WorldStability { get; }
         public int WorldAutonomy { get; }
@@ -635,6 +636,7 @@ namespace KeyboardWanderer.Gameplay
             CurrentAreaId = area == null ? "unknown" : area.Id;
             CurrentAreaName = area == null ? "미지의 지역" : area.DisplayName;
             CurrentAreaDescription = area == null ? string.Empty : area.Description;
+            CurrentRegionAxis = area == null ? string.Empty : area.CampaignRole;
             AdminAccess = state.AdminAccess;
             WorldStability = state.WorldStability;
             WorldAutonomy = state.WorldAutonomy;
