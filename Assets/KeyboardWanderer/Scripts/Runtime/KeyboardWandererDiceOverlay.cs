@@ -63,7 +63,10 @@ namespace KeyboardWanderer.Runtime
             if (_instance != null && _dice != null) return true;
             if (_camera == null || _prefab == null) return false;
 
-            _instance = Instantiate(_prefab, _camera.transform);
+            // Keep the die out of the camera hierarchy. The overlay follows the
+            // camera position, but rotating the die must never have a transform path
+            // that can be mistaken for (or coupled to) camera rotation.
+            _instance = Instantiate(_prefab);
             _instance.name = "Pending D20 Overlay";
             _instance.transform.localScale = Vector3.one * 0.36f;
             _dice = _instance.GetComponent<IcosahedronDice>();
@@ -80,8 +83,13 @@ namespace KeyboardWanderer.Runtime
 
         private void PositionInCamera()
         {
-            _instance.transform.SetParent(_camera.transform, false);
-            _instance.transform.localPosition = new Vector3(0f, 0.35f, 8f);
+            _instance.transform.position = _camera.transform.TransformPoint(new Vector3(0f, 0.35f, 8f));
+        }
+
+        private void LateUpdate()
+        {
+            if (IsVisible && _camera != null)
+                PositionInCamera();
         }
 
         private void Hide()
