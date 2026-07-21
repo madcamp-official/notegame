@@ -28,6 +28,7 @@ declare
     test_safe_travel uuid := gen_random_uuid();
     test_plan uuid := gen_random_uuid();
     test_turn uuid := gen_random_uuid();
+    test_narrative_turn uuid := gen_random_uuid();
     test_hook uuid := gen_random_uuid();
     test_debt_entry uuid := gen_random_uuid();
     test_save_slot uuid := gen_random_uuid();
@@ -683,6 +684,134 @@ begin
     ) then
         raise exception 'the client-safe run summary did not expose committed state';
     end if;
+
+    -- A pure dialogue/attitude choice is a normal campaign turn without a
+    -- keyboard skill, target, D20 roll, or Rule Engine resolution row.
+    insert into turn_records (
+        id, run_id, owner_id, idempotency_key, request_fingerprint,
+        expected_run_version, request_json, command_schema_version, input_type,
+        skill_id, target_ids, action_context, turn_context,
+        campaign_turn_before, campaign_turn_after, campaign_turn_consumed,
+        received_at, created_at, updated_at
+    ) values (
+        test_narrative_turn, test_run, test_owner,
+        'codria-smoke-narrative-choice-0001', repeat('0', 64), 4,
+        '{"inputType":"NARRATIVE_CHOICE","choiceSetId":"choice-set.arrival-0001","choiceId":"ask-witness"}'::jsonb,
+        'codria-action.v4', 'NARRATIVE_CHOICE', null, '[]'::jsonb,
+        'NARRATIVE',
+        '{"choiceSetId":"choice-set.arrival-0001","choiceId":"ask-witness","intentTag":"CURIOUS"}'::jsonb,
+        1, 1, false, test_time, test_time, test_time
+    );
+
+    update runs
+       set current_turn = 2,
+           version = 5,
+           world_state = world_state || '{"currentTurn":2,"version":5,"lastInputType":"NARRATIVE_CHOICE"}'::jsonb
+     where id = test_run and owner_id = test_owner and version = 4;
+    if not found then
+        raise exception 'the pure narrative choice did not advance the campaign turn';
+    end if;
+
+    update turn_records
+       set status = 'committed',
+           turn_no = 2,
+           committed_run_version = 5,
+           campaign_turn_after = 2,
+           campaign_turn_consumed = true,
+           result_json = '{"outcome":"accepted","resolutionMode":"NONE","relationshipChanged":true}'::jsonb,
+           narrative_json = '{"summary":"넙죽이는 먼저 목격자의 이야기를 듣기로 했다.","proposedOps":[],"appliedOps":[],"rejectedOps":[]}'::jsonb,
+           fallback_used = false,
+           model = 'smoke-narrative-director',
+           completed_at = test_time
+     where id = test_narrative_turn and owner_id = test_owner;
+
+    update npc_relationships
+       set affinity = 6, trust = 12, relationship_state = 'cooperative',
+           notes = notes || '{"heardWithoutInterruption":true}'::jsonb,
+           last_changed_turn = 2, updated_at = test_time
+     where id = test_relationship and owner_id = test_owner and run_id = test_run;
+
+    insert into major_choices (
+        run_id, owner_id, turn_id, turn_no, choice_key, option_key,
+        region_axis_code, action_context, immediate_effects, long_term_tags, created_at
+    ) values (
+        test_run, test_owner, test_narrative_turn, 2,
+        'choice.bug-forest.hear-witness', 'ask-before-acting',
+        'REGION_BUG_FOREST', 'NARRATIVE', '{"trustDelta":2}'::jsonb,
+        '["curiosity","witness-callback"]'::jsonb, test_time
+    );
+
+    insert into npc_relationship_history (
+        relationship_id, run_id, owner_id, turn_id, turn_no,
+        affinity_delta, trust_delta, fear_delta, affinity_after, trust_after,
+        fear_after, relationship_state_after, reason_code, context, created_at
+    ) values (
+        test_relationship, test_run, test_owner, test_narrative_turn, 2,
+        1, 2, 0, 6, 12, 0, 'cooperative', 'LISTENED_TO_WITNESS',
+        '{"choiceId":"ask-witness","resolutionMode":"NONE"}'::jsonb, test_time
+    );
+
+    if not exists (
+        select 1
+          from turn_records tr
+          join major_choices mc on mc.turn_id = tr.id and mc.run_id = tr.run_id
+          join npc_relationship_history nr on nr.turn_id = tr.id and nr.run_id = tr.run_id
+         where tr.id = test_narrative_turn
+           and tr.input_type = 'NARRATIVE_CHOICE'
+           and tr.command_schema_version = 'codria-action.v4'
+           and tr.status = 'committed'
+           and tr.skill_id is null and tr.target_ids = '[]'::jsonb
+           and tr.action_context = 'NARRATIVE'
+           and tr.campaign_turn_before = 1 and tr.campaign_turn_after = 2
+           and tr.campaign_turn_consumed
+           and mc.choice_key = 'choice.bug-forest.hear-witness'
+           and nr.reason_code = 'LISTENED_TO_WITNESS'
+    ) or exists (
+        select 1 from turn_rule_resolutions
+         where turn_record_id = test_narrative_turn
+    ) then
+        raise exception 'the pure narrative turn or its generic histories were not persisted correctly';
+    end if;
+
+    if (
+        select array_agg(input_type order by input_type)
+          from structured_action_history
+         where run_id = test_run and owner_id = test_owner
+    ) is distinct from array['MOVE', 'NARRATIVE_CHOICE', 'USE_SKILL']::text[] then
+        raise exception 'structured action history must expose pure narrative choices';
+    end if;
+
+    begin
+        insert into ability_usage_history (
+            run_id, owner_id, turn_id, turn_no, skill_id, action_context,
+            target_ids, outcome, effects_json, created_at
+        ) values (
+            test_run, test_owner, test_narrative_turn, 2, 'CONNECT', 'NEGOTIATION',
+            '[]'::jsonb, 'success', '{}'::jsonb, test_time
+        );
+        raise exception 'a pure narrative choice unexpectedly produced ability usage history';
+    exception when sqlstate '23514' then
+        null;
+    end;
+
+    begin
+        insert into turn_rule_resolutions (
+            turn_record_id, run_id, owner_id, turn_no, ruleset_version,
+            normalized_attempt, d20_raw, modifier_total, modifier_breakdown,
+            roll_total, difficulty_class, outcome, consequence_budget,
+            costs_json, guaranteed_operations, allowed_effects, state_delta,
+            state_hash_before, state_hash_after, rng_audit, created_at
+        ) values (
+            test_narrative_turn, test_run, test_owner, 2, 'codria-rules.v4',
+            '{"inputType":"NARRATIVE_CHOICE"}'::jsonb,
+            10, 0, '[]'::jsonb, 10, 10, 'success', 0,
+            '{}'::jsonb, '[]'::jsonb, '[]'::jsonb, '{}'::jsonb,
+            state_hash_after, state_hash_after, '{"secretRedacted":true}'::jsonb, test_time
+        );
+        raise exception 'a pure narrative choice unexpectedly required a D20 resolution';
+    exception when sqlstate '23514' then
+        null;
+    end;
 
     begin
         update worlds

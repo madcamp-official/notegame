@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { createRequestHandler } from "./http/handler.js";
 import { GeminiNarrator } from "./llm/gemini-narrator.js";
+import { LlmResponseTrace } from "./llm/response-trace.js";
 import { MemoryStore } from "./store/memory-store.js";
 import { createPostgresStore } from "./store/postgres-store.js";
 import { GameService } from "./services/game-service.js";
@@ -20,7 +21,12 @@ export async function createApplication(options = {}) {
       fast: { model: config.geminiFastModel, maxOutputTokens: config.geminiFastOutputTokens },
       quality: { model: config.geminiQualityModel, maxOutputTokens: config.geminiQualityOutputTokens }
     },
-    logger
+    logger,
+    responseTrace: new LlmResponseTrace({
+      enabled: config.llmResponseTrace,
+      file: config.llmResponseTraceFile,
+      logger
+    })
   });
   const service = options.service || new GameService({
     store,

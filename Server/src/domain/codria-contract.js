@@ -26,7 +26,7 @@ export const ADMIN_ACCESS_LEVELS = Object.freeze([
   Object.freeze({ id: "ADMIN_ACCESS_LEVEL_3", level: 3, nameKo: "관리자 권한 III" })
 ]);
 
-export const INPUT_TYPES = Object.freeze(["MOVE", "USE_SKILL"]);
+export const INPUT_TYPES = Object.freeze(["MOVE", "USE_SKILL", "NARRATIVE_CHOICE"]);
 export const KEYBOARD_SKILLS = Object.freeze(["COPY", "DELETE", "CONNECT", "RESTORE", "UNDO", "SEARCH", "SELECT_ALL"]);
 export const CAMPAIGN_ACTION_CONTEXTS = Object.freeze([
   "COMBAT",

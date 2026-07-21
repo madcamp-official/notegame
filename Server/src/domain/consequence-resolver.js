@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { clone, deterministicUuid } from "./serialization.js";
 import { isWalkable } from "./world.js";
-import { SPECIAL_SKILL_MODIFIERS, bossForAsset, monsterForAsset, npcForAsset, specialSkillTemplate } from "./content-catalog.js";
+import { SPECIAL_SKILL_MODIFIERS, specialSkillTemplate } from "./content-catalog.js";
 
 const DIRECTIONS = Object.freeze([[1, 0], [0, 1], [-1, 0], [0, -1]]);
 const COOLDOWNS = Object.freeze({ START_DIALOGUE: 2, LOOT_PROP: 4, OPEN_PROP: 4, START_ENCOUNTER: 1, CHANGE_RELATIONSHIP: 2, GRANT_SPECIAL_REWARD: 6, SPAWN_FROM_SLOT: 8 });
@@ -149,6 +149,9 @@ function lootProp(run, candidate, decisionNo, sequence, events) {
   const reward = { id: rewardId, kind: "salvage", name: "복구 가능한 데이터 조각", sourceEntityId: prop.id, acquiredDecisionNo: decisionNo };
   actor.state.inventory ||= [];
   actor.state.inventory.push(reward);
+  run.inventoryHistory ||= [];
+  run.inventoryHistory.push({ type: "acquired", itemId: reward.id, itemName: reward.name, quantity: 1,
+    turnNo: run.currentTurn, source: "scene_loot", sourceEntityId: prop.id });
   actor.state.lastActionTurn = run.currentTurn;
   prop.state = { ...(prop.state || {}), opened: true, interacted: true, lootedBy: actor.id, interactedTurn: run.currentTurn };
   events.push({ type: "prop_looted", entityId: prop.id, actorId: actor.id, rewardId, sceneDecisionNo: decisionNo });
@@ -220,36 +223,27 @@ function revealClue(run, candidate, decisionNo, sequence, events) {
 function spawnFromSlot(run, candidate, decisionNo, sequence, events) {
   const kind = candidate.spawnKind || "enemy";
   const slot = run.world.placementSlots.find((item) => item.id === candidate.slotId && item.kind === kind);
-  const boss = bossForAsset(candidate.assetId);
-  const monster = monsterForAsset(candidate.assetId);
-  const npc = npcForAsset(candidate.assetId);
-  if (!slot || (kind === "npc" ? !npc : !boss && !monster) || (boss && boss.minMacroOrder > Number(run.currentMacroPhase?.order || 1))) return "SPAWN_CATALOG_FORBIDDEN";
+  const dormant = run.entities.find((item) => item.id === candidate.entityId && item.active === false && item.kind === kind
+    && item.assetId === candidate.assetId && item.state?.dormant === true && item.state?.activationState === "DORMANT"
+    && item.state?.activationSlotId === candidate.slotId);
+  if (!slot || !dormant || (dormant.state?.boss && Number(dormant.state?.minMacroOrder || 99) > Number(run.currentMacroPhase?.order || 1))) return "SPAWN_CATALOG_FORBIDDEN";
   if (run.entities.some((item) => item.active && (item.state?.slotId === slot.id || (item.position.x === slot.x && item.position.y === slot.y)))) return "SPAWN_SLOT_OCCUPIED";
-  const catalog = boss || monster || npc;
-  const traits = [...new Set(candidate.traitIds || catalog.traits || catalog.roleTags || [])].slice(0, 4);
-  const id = deterministicUuid(`${run.id}:scene-spawn:${decisionNo}:${slot.id}:${candidate.assetId}`);
-  const created = {
-    id, kind, assetId: candidate.assetId, name: candidate.displayName || boss?.name || monster?.name || "런 전용 인물",
-    position: { x: slot.x, y: slot.y }, blocking: kind === "enemy", protected: false, cloneable: false, active: true,
-    state: {
-      hp: boss?.hp || monster?.hp || 8, maxHp: boss?.hp || monster?.hp || 8, speed: boss?.speed || monster?.speed || 2,
-      boss: Boolean(boss), bossPatterns: [...(boss?.patterns || [])],
-      factionId: kind === "npc" ? "NEUTRAL_BROKERS" : traits.includes("OLD_GUARD_ALIGNED") ? "OLD_GUARD" : traits.includes("AUDITOR_ALIGNED") || boss ? "AUDITORS" : "WILD_PROCESS",
-      goal: kind === "npc" ? "현재 지역에서 플레이어의 선택이 남긴 파장을 추적한다." : "현재 캠페인 단계의 진행을 시험한다.",
-      motivation: kind === "npc" ? "자신만의 생존 이유를 다음 선택과 연결하려 한다." : "자신이 대표하는 시스템 규칙을 끝까지 보존한다.",
-      traits, roleTags: kind === "npc" ? [...traits] : [], awareness: [run.playerEntityId], inventory: [], lastActionTurn: 0,
-      slotId: slot.id, generatedDecisionNo: decisionNo
-    }
-  };
-  run.entities.push(created);
+  dormant.active = true;
+  dormant.blocking = kind === "enemy";
+  dormant.position = { x: slot.x, y: slot.y };
+  dormant.state = { ...dormant.state, dormant: false, activationState: "ACTIVE", activatedDecisionNo: decisionNo,
+    generatedDecisionNo: decisionNo, slotId: slot.id, awareness: [run.playerEntityId], lastActionTurn: 0 };
+  const created = dormant;
   const state = ensureDirectorState(run);
   if (kind === "npc") {
     state.generatedCharacters.push({ entityId: created.id, assetId: created.assetId, name: created.name, roleTags: [...created.state.roleTags] });
     run.npcRelationships.push({ npcId: created.id, affinity: 0, trust: 0, fear: 0, stance: "neutral", lastChangedTurn: run.currentTurn });
   } else {
-    state.generatedMonsterVariants.push({ entityId: created.id, assetId: created.assetId, name: created.name, traits: [...created.state.traits], boss: Boolean(boss) });
+    state.generatedMonsterVariants.push({ entityId: created.id, assetId: created.assetId, name: created.name, traits: [...created.state.traits], boss: created.state?.boss === true });
+    run.npcRelationships.push({ npcId: created.id, affinity: -10, trust: 0, fear: 2,
+      stance: "guarded", encounterStatus: "present", lastChangedTurn: run.currentTurn });
   }
-  events.push({ type: "entity_spawned", entityId: created.id, assetId: created.assetId, position: clone(created.position), sceneDecisionNo: decisionNo });
+  events.push({ type: "entity_activated", entityId: created.id, assetId: created.assetId, position: clone(created.position), activationSlotId: slot.id, sceneDecisionNo: decisionNo });
   sequence.push({ sequence: sequence.length + 1, type: "SPAWN", actorId: created.id, targetId: run.playerEntityId, actionStyle: candidate.actionStyle || "ENCOUNTER", text: `${created.name}이 지역의 오류 슬롯에서 모습을 드러냈다.` });
   return null;
 }
@@ -333,20 +327,28 @@ function grantSpecialReward(run, candidate, decisionNo, sequence, events) {
     acquiredTurn: run.currentTurn, acquiredDecisionNo: decisionNo
   };
   state.specialSkills.push(skill);
-  events.push({ type: "special_reward_granted", entityId: run.playerEntityId, actorId: source.id, rewardId: skill.id, skillId: skill.baseSkill, sceneDecisionNo: decisionNo });
-  sequence.push({ sequence: sequence.length + 1, type: "REWARD", actorId: source.id, targetId: run.playerEntityId, rewardId: skill.id, text: `${source.name}에게서 특수 스킬 ‘${skill.name}’을 얻었다.` });
+  events.push({ type: "special_reward_granted", entityId: run.playerEntityId, actorId: source.id, rewardId: skill.id, skillId: skill.baseSkill, skillName: skill.name, charges: skill.charges, sceneDecisionNo: decisionNo });
+  sequence.push({ sequence: sequence.length + 1, type: "REWARD", actorId: source.id, targetId: run.playerEntityId, rewardId: skill.id, text: `${source.name}에게서 ‘${skill.name}’ 특수 스킬을 얻었다.` });
   return null;
 }
 
 function startEncounter(run, candidate, decisionNo, sequence, events) {
   if (!run.activeEncounter || run.activeEncounter.status !== "active") return "ENCOUNTER_PRECONDITION_FAILED";
   events.push({ type: "scene_encounter_presented", encounterId: run.activeEncounter.id, sceneDecisionNo: decisionNo });
-  sequence.push({ sequence: sequence.length + 1, type: "ENCOUNTER", actorId: candidate.actorId, targetId: run.playerEntityId, text: "위험 요소가 길을 막아 전투 라운드가 열렸다." });
+  const encounter = run.activeEncounter;
+  sequence.push({
+    sequence: sequence.length + 1,
+    type: encounter.kind || "ENCOUNTER",
+    actorId: encounter.sourceEntityId || candidate.actorId,
+    targetId: run.playerEntityId,
+    to: encounter.triggerPosition || encounter.position || null,
+    text: `${encounter.title || "예기치 않은 조우"}. ${encounter.description || "다음 행동을 선택해야 한다."}`
+  });
   return null;
 }
 
-function noEvent(sequence) {
-  sequence.push({ sequence: sequence.length + 1, type: "AMBIENT", actorId: null, targetId: null, text: "주변은 조용하지만, 방금 선택의 흔적은 세계에 남았다." });
+function noEvent(sequence, text = null) {
+  sequence.push({ sequence: sequence.length + 1, type: "AMBIENT", actorId: null, targetId: null, text: text || "주변은 조용하지만, 방금 선택의 흔적은 세계에 남았다." });
   return null;
 }
 
@@ -396,11 +398,13 @@ export function applyScenePlan(run, { candidates, plan, decisionType, now = new 
     else if (candidate.type === "GRANT_SPECIAL_REWARD") reason = grantSpecialReward(run, candidate, decisionNo, sequence, events);
     else if (candidate.type === "START_ENCOUNTER") reason = startEncounter(run, candidate, decisionNo, sequence, events);
     else if (candidate.type === "START_DIALOGUE") reason = null;
+    else if (candidate.type === "NARRATIVE_EVENT") reason = noEvent(sequence, candidate.text || candidate.reason);
     else if (candidate.type === "NO_EVENT") reason = noEvent(sequence);
     else reason = "ACTION_NOT_IMPLEMENTED";
     if (reason) { rejectedActions.push({ actionId, reason }); continue; }
     if (isMechanical && candidate.actorId) actorActions.set(candidate.actorId, Number(actorActions.get(candidate.actorId) || 0) + 1);
     for (let index = sequenceBefore; index < sequence.length; index += 1) {
+      sequence[index].actionId = deterministicUuid(`${run.id}:scene-action:${decisionNo}:${actionId}:${index}`);
       sequence[index].initiative = actionInitiative.score;
       sequence[index].initiativeRoll = actionInitiative.roll;
     }
@@ -412,21 +416,23 @@ export function applyScenePlan(run, { candidates, plan, decisionType, now = new 
 
   for (const dialogue of plan.dialogue || []) {
     const speaker = entity(run, dialogue.speakerId);
-    if (!speaker || speaker.kind !== "npc" || speaker.state?.disabled) {
+    // Monsters are story actors too. A START_DIALOGUE candidate may legally be
+    // issued for either an NPC or an enemy, and both keep memories/relationships.
+    if (!speaker || !["npc", "enemy"].includes(speaker.kind) || speaker.state?.disabled) {
       rejectedActions.push({ actionId: null, reason: "DIALOGUE_SPEAKER_UNAVAILABLE" });
       continue;
     }
     const memory = { id: deterministicUuid(`${run.id}:scene-memory:${decisionNo}:${speaker.id}:${sequence.length}`), npcId: speaker.id, summary: dialogue.line, importance: 0.6, ttlTurns: 12, createdTurn: run.currentTurn, createdDecisionNo: decisionNo };
     run.npcMemories.push(memory);
     events.push({ type: "npc_memory_added", memoryId: memory.id, npcId: speaker.id, summary: memory.summary, sceneDecisionNo: decisionNo });
-    sequence.push({ sequence: sequence.length + 1, type: "DIALOGUE", actorId: speaker.id, targetId: run.playerEntityId, speakerId: speaker.id, line: dialogue.line, text: dialogue.line });
+    sequence.push({ actionId: deterministicUuid(`${run.id}:scene-dialogue:${decisionNo}:${speaker.id}:${sequence.length}`), sequence: sequence.length + 1, type: "DIALOGUE", actorId: speaker.id, targetId: run.playerEntityId, speakerId: speaker.id, line: dialogue.line, text: dialogue.line });
   }
 
   const player = entity(run, run.playerEntityId);
   const nearbyHostiles = run.entities.filter((item) => item.active && item.kind === "enemy" && !item.state?.disabled && !item.state?.fled && player && manhattan(item.position, player.position) <= 6);
   if (nearbyHostiles.length === 0 && sequence.some((item) => ["ATTACK", "FLEE"].includes(item.type))) {
     events.push({ type: "scene_combat_resolved", decisionNo, reason: "no_active_hostiles_in_scene" });
-    sequence.push({ sequence: sequence.length + 1, type: "ENCOUNTER_END", actorId: null, targetId: run.playerEntityId, text: "주변의 적대 개체가 사라져 전투 라운드가 끝났다." });
+    sequence.push({ actionId: deterministicUuid(`${run.id}:scene-end:${decisionNo}`), sequence: sequence.length + 1, type: "ENCOUNTER_END", actorId: null, targetId: run.playerEntityId, text: "주변의 적대 개체가 사라져 전투 라운드가 끝났다." });
   }
 
   state.decisionNo = decisionNo;

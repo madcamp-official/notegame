@@ -15,6 +15,7 @@ psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f Database/migrations/005_generative_ru
 psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f Database/migrations/006_codria_product_contract.sql
 psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f Database/migrations/007_codria_actions_and_access.sql
 psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f Database/migrations/008_codria_narrative_history.sql
+psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f Database/migrations/009_codria_narrative_choice_turns.sql
 psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f Database/seeds/001_reference_catalogs.sql
 psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f Database/tests/smoke.sql
 psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f Database/tests/codria_v4_contract.sql
@@ -50,10 +51,11 @@ Codria에는 정확히 여섯 개의 고정 지역 축이 있습니다.
 
 ## 입력과 턴
 
-신규 입력은 두 종류뿐입니다.
+신규 입력은 세 종류입니다.
 
 - `MOVE`: 안전 이동은 D20과 캠페인 턴을 소비하지 않습니다. 위험 목적지는 안전 지점까지 이동한 뒤 조우를 활성화할 수 있습니다. HTTP의 `TRAVEL`은 전송 호환 별칭이며 저장값은 `MOVE`입니다.
-- `USE_SKILL`: `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO` 중 하나를 사용합니다. 서버가 `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT` 중 하나로 맥락을 분류하고 정확히 한 의미 턴을 확정합니다.
+- `USE_SKILL`: `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`, `SEARCH`, `SELECT_ALL` 중 하나를 사용합니다. 서버가 `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT` 중 하나로 맥락을 분류하고 정확히 한 의미 턴을 확정합니다.
+- `NARRATIVE_CHOICE`: 서버가 봉인한 대사·독백·태도 선택입니다. `skill_id` 없이 빈 대상 목록과 전용 `NARRATIVE` 맥락을 사용해 정확히 한 의미 턴을 확정합니다. 순수 서사 선택에는 D20 `turn_rule_resolutions` 행을 만들지 않습니다.
 
 `playerNote`는 선택적 서술 힌트일 뿐입니다. 자연어가 없어도 모든 합법성, 대상, 비용, D20과 결과를 결정할 수 있어야 하며, 자연어가 규칙을 우회할 수 없습니다.
 

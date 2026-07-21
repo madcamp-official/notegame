@@ -44,7 +44,7 @@ values
         'codria-campaign.v4',
         '넙죽이와 붕괴한 코드 왕국',
         true,
-        '{"language":"ko-KR","turnRange":[30,50],"defaultTurns":40,"biomeCount":6,"regionAxisCount":6,"sealedWorld":true,"runScopedPlan":true,"worldContractCode":"WORLD_CODRIA","protagonistContractCode":"PROTAGONIST_NUPJUKYI","artifactContractCode":"ARTIFACT_ADMIN_KEYBOARD","adminAccessCodes":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"inputTypes":["MOVE","USE_SKILL"]}'::jsonb
+        '{"language":"ko-KR","turnRange":[30,50],"defaultTurns":40,"biomeCount":6,"regionAxisCount":6,"sealedWorld":true,"runScopedPlan":true,"worldContractCode":"WORLD_CODRIA","protagonistContractCode":"PROTAGONIST_NUPJUKYI","artifactContractCode":"ARTIFACT_ADMIN_KEYBOARD","adminAccessCodes":["ADMIN_ACCESS_LEVEL_1","ADMIN_ACCESS_LEVEL_2","ADMIN_ACCESS_LEVEL_3"],"inputTypes":["MOVE","USE_SKILL","NARRATIVE_CHOICE"]}'::jsonb
     )
 on conflict (code) do update set
     version = excluded.version,
@@ -59,21 +59,29 @@ update campaign_template_catalog
  where code <> 'codria-v4'
    and is_enabled;
 
+-- Keep this seed safely re-runnable when upgrading a database whose disabled
+-- compatibility rows previously occupied display orders 70-100.
+update ability_catalog
+   set display_order = display_order + 1000
+ where code in ('SEARCH', 'SELECT_ALL', 'ATTACK', 'INTERACT', 'NEGOTIATE', 'REST');
+
 insert into ability_catalog (
     code, display_name, description, target_mode, focus_cost,
     min_range, max_range, is_enabled, display_order, metadata
 )
 values
     ('MOVE', 'Move', 'Traverse a legal safe path without a D20 or campaign-turn cost.', 'tile', 0, 0, 5, true, 10, '{"canonicalInputType":"MOVE","campaignTurnConsumed":false,"d20":false}'::jsonb),
-    ('COPY', 'Copy', 'Clone an eligible entity into an unoccupied destination tile.', 'entity_and_tile', 1, 0, 4, true, 20, '{"canonicalInputType":"USE_SKILL","technicalDebtTracked":true}'::jsonb),
-    ('DELETE', 'Delete', 'Remove an unprotected entity from the current run.', 'entity', 1, 0, 3, true, 30, '{"canonicalInputType":"USE_SKILL","technicalDebtTracked":true}'::jsonb),
-    ('CONNECT', 'Connect', 'Create a temporary semantic connection between eligible world objects.', 'entity', 2, 0, 5, true, 40, '{"canonicalInputType":"USE_SKILL","temporary":true,"technicalDebtTracked":true}'::jsonb),
-    ('RESTORE', 'Restore', 'Append an explicit recovery of permitted damage, removal, or technical debt.', 'entity', 3, 0, null, true, 50, '{"canonicalInputType":"USE_SKILL","compensating":true,"technicalDebtTracked":true}'::jsonb),
+    ('COPY', 'Copy', 'Duplicate one eligible trace or bounded world state.', 'entity_and_tile', 1, 0, 4, true, 20, '{"canonicalInputType":"USE_SKILL","technicalDebtTracked":true}'::jsonb),
+    ('DELETE', 'Delete', 'Assert a boundary or sever one eligible influence without implying mandatory combat.', 'entity', 1, 0, 3, true, 30, '{"canonicalInputType":"USE_SKILL","technicalDebtTracked":true}'::jsonb),
+    ('CONNECT', 'Connect', 'Attempt understanding, alliance, or a bounded semantic connection.', 'entity', 2, 0, 5, true, 40, '{"canonicalInputType":"USE_SKILL","temporary":true,"technicalDebtTracked":true}'::jsonb),
+    ('RESTORE', 'Restore', 'Append an explicit reconciliation or recovery of a permitted prior state.', 'entity', 3, 0, null, true, 50, '{"canonicalInputType":"USE_SKILL","compensating":true,"technicalDebtTracked":true}'::jsonb),
     ('UNDO', 'Undo', 'Append compensation for the immediately preceding reversible result without rewinding history.', 'none', 3, 0, null, true, 60, '{"canonicalInputType":"USE_SKILL","compensating":true,"technicalDebtTracked":true}'::jsonb),
-    ('ATTACK', 'Attack (legacy)', 'Disabled compatibility row. Combat is an action context for one of the five keyboard skills.', 'entity', 0, 1, 1, false, 70, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
-    ('INTERACT', 'Interact (legacy)', 'Disabled compatibility row. Investigation is an action context for one of the five keyboard skills.', 'entity', 0, 0, 2, false, 80, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
-    ('NEGOTIATE', 'Negotiate (legacy)', 'Disabled compatibility row. Negotiation is an action context for one of the five keyboard skills.', 'entity', 0, 0, 2, false, 90, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
-    ('REST', 'Rest (legacy)', 'Disabled compatibility row. It is not a Codria v4 canonical input.', 'none', 0, 0, null, false, 100, '{"legacyCompatibility":true,"canonical":false}'::jsonb)
+    ('SEARCH', 'Search', 'Investigate one server-selected trace, actor, or bounded ambient event.', 'none', 1, 0, null, true, 70, '{"canonicalInputType":"USE_SKILL","ambientTargeting":true}'::jsonb),
+    ('SELECT_ALL', 'Select All', 'Apply broad attention to one server-bounded local scene.', 'none', 3, 0, null, true, 80, '{"canonicalInputType":"USE_SKILL","ambientTargeting":true}'::jsonb),
+    ('ATTACK', 'Attack (legacy)', 'Disabled compatibility row. Combat is a possible story context, not a required verb.', 'entity', 0, 1, 1, false, 90, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
+    ('INTERACT', 'Interact (legacy)', 'Disabled compatibility row. Investigation is handled by a sealed narrative choice.', 'entity', 0, 0, 2, false, 100, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
+    ('NEGOTIATE', 'Negotiate (legacy)', 'Disabled compatibility row. Dialogue is handled by a sealed narrative choice.', 'entity', 0, 0, 2, false, 110, '{"legacyCompatibility":true,"canonical":false}'::jsonb),
+    ('REST', 'Rest (legacy)', 'Disabled compatibility row. It is not a Codria v4 canonical input.', 'none', 0, 0, null, false, 120, '{"legacyCompatibility":true,"canonical":false}'::jsonb)
 on conflict (code) do update set
     display_name = excluded.display_name,
     description = excluded.description,

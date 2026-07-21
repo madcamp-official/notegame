@@ -340,6 +340,43 @@ function createBeats(worldSeed, turnLimit, genome, tokens) {
   });
 }
 
+export function createArcQuestions(turnLimit, genome) {
+  const boundaries = [0.20, 0.40, 0.60, 0.80, 1].map((ratio) => Math.max(1, Math.round(turnLimit * ratio)));
+  const definitions = [
+    {
+      id: "arc.crash_meaning", question: "코드리아의 첫 균열은 누구에게 어떤 의미가 되는가?",
+      outcomes: ["PLAYER_INVOLVED", "COMMUNITY_INVOLVED", "RIVAL_INVOLVED", "CAUSE_OBSCURED", "CONTESTED"]
+    },
+    {
+      id: "arc.first_authority", question: "첫 관리자 권한은 누구의 통제 아래 놓이는가?",
+      outcomes: ["PLAYER_POSSESSES", "ALLY_POSSESSES", "RIVAL_POSSESSES", "DESTROYED", "UNCLAIMED", "CONTESTED"]
+    },
+    {
+      id: "arc.cause_and_bond", question: "붕괴의 원인과 주요 관계는 어떤 형태로 드러나는가?",
+      outcomes: ["TRUTH_SHARED", "TRUTH_HIDDEN", "ALLIANCE", "BETRAYAL", "MUTUAL_SACRIFICE", "CONTESTED"]
+    },
+    {
+      id: "arc.control_balance", question: "누가 통제권을 쥐고 무엇을 대가로 치르는가?",
+      outcomes: ["PLAYER_CONTROL", "SHARED_CONTROL", "FACTION_CONTROL", "CONTROL_REJECTED", "CONTROL_COLLAPSED", "CONTESTED"]
+    },
+    {
+      id: "arc.ending_convergence", question: "누적된 선택은 코드리아를 어떤 결말로 이끄는가?",
+      outcomes: ["RESTORATION", "AUTONOMY", "CONTROL", "MEMORY", "DEPARTURE", "EMERGENCY"]
+    }
+  ];
+  return definitions.map((definition, index) => ({
+    id: definition.id,
+    order: index + 1,
+    startTurn: index === 0 ? 1 : boundaries[index - 1] + 1,
+    deadlineTurn: boundaries[index],
+    question: definition.question,
+    contextHint: index === 2 ? genome.hiddenCause : index === 4 ? genome.dilemma : genome.crisis,
+    allowedOutcomes: [...definition.outcomes],
+    status: index === 0 ? "active" : "pending",
+    resolution: null
+  }));
+}
+
 function createEndingCandidates(worldSeed, genome) {
   const selected = seededOrder(worldSeed, "ending-subset", ENDING_RECIPES.filter((item) => !item.emergency)).slice(0, 4);
   const emergency = ENDING_RECIPES.find((item) => item.emergency);
@@ -376,6 +413,7 @@ export function computeCampaignContentHash(campaign) {
     npcRoles: campaign.npcRoles,
     questSeeds: campaign.questSeeds,
     requiredStoryBeats: campaign.requiredStoryBeats,
+    arcQuestions: campaign.arcQuestions || [],
     endingCandidates: campaign.endingCandidates,
     areaFlavors: campaign.areaFlavors || []
   });
@@ -392,6 +430,7 @@ export function createCampaignBlueprint({ worldSeed, requestedArchetype = null, 
   const questSeeds = createQuestSeeds(worldSeed, genome);
   for (const quest of questSeeds) quest.summary = quest.description;
   const requiredStoryBeats = createBeats(worldSeed, turnLimit, genome, tokens);
+  const arcQuestions = createArcQuestions(turnLimit, genome);
   const endingCandidates = createEndingCandidates(worldSeed, genome);
   const premise = `${genome.crisis}에 빠진 코드리아를 구하기 위해 넙죽이가 관리자 키보드의 권한을 각성한다.`;
   const tone = ["keyboard_fantasy", genome.palette, pick(worldSeed, "tone", ["tender_mystery", "melancholy_adventure", "hopeful_tension", "strange_folklore"] )];
@@ -438,6 +477,7 @@ export function createCampaignBlueprint({ worldSeed, requestedArchetype = null, 
       { id: deterministicUuid(`${worldSeed}:rumor:motif`), summary: `${genome.motif}는 거짓말보다 말하지 않은 약속에 더 강하게 반응하며, ${genome.crisis}도 주민들이 지키려던 무언가에서 시작됐다고 한다.`, reliability: 0.5, status: "active", firstHeardTurn: 0, expiresTurn: Math.min(turnLimit, 14) }
     ],
     requiredStoryBeats,
+    arcQuestions,
     endingWindow: { normalEligibleStart: Math.max(30, Math.min(38, turnLimit - 2)), preferredEnd: Math.min(42, turnLimit), hardLimit: turnLimit },
     endingCandidates,
     areaFlavors: []
@@ -526,21 +566,7 @@ export function advanceStoryDirector(run, turnNo, events, evidence = {}) {
     }
   }
 
-  const forcedConvergence = turnNo >= run.turnLimit;
-  if (forcedConvergence) {
-    for (const beat of run.requiredStoryBeats) {
-      if (!["active", "pending"].includes(beat.status)) continue;
-      beat.status = "skipped";
-      events.push({ type: "story_beat_changed", beatId: beat.id, status: "skipped", phaseId: beat.phaseId, reason: "turn_limit_convergence" });
-      const loop = { id: deterministicUuid(`${run.id}:skipped:${beat.id}`), summary: `미해결 대가: ${beat.description}`, status: "open", createdTurn: turnNo, expiresTurn: run.turnLimit, source: "campaign_convergence" };
-      if (!run.openLoops.some((item) => item.id === loop.id)) {
-        run.openLoops.push(loop);
-        run.unresolvedHooks ||= [];
-        run.unresolvedHooks.push(clone(loop));
-        events.push({ type: "open_loop_created", loopId: loop.id, summary: loop.summary, consequence: true });
-      }
-    }
-  }
+  const softConvergence = turnNo >= (run.endingWindow?.normalEligibleStart || 30);
 
   active = run.requiredStoryBeats.find((beat) => beat.status === "active")
     || run.requiredStoryBeats.find((beat) => beat.status === "pending")
@@ -548,7 +574,7 @@ export function advanceStoryDirector(run, turnNo, events, evidence = {}) {
     || run.requiredStoryBeats.at(-1);
   if (!active) return;
   if (active.status === "pending") active.status = "active";
-  run.currentAct = forcedConvergence ? "final_convergence" : active.phaseId;
+  run.currentAct = active.phaseId;
   run.campaignPhase = run.currentAct;
   run.currentMacroPhase = clone(macroPhaseForBeat(active));
   run.currentStoryBeat = { ...clone(active), act: run.currentAct };
@@ -562,7 +588,96 @@ export function advanceStoryDirector(run, turnNo, events, evidence = {}) {
       events.push({ type: "open_loop_created", loopId: loop.id, summary: loop.summary });
     }
   }
-  if (run.turnLimit - turnNo <= 5) run.activeQuests = (run.activeQuests || []).map((quest) => quest.questKind === "main" ? quest : { ...quest, acceptsNewSteps: false });
+  if (softConvergence) events.push({ type: "soft_convergence_pressure", turnNo, forcedEnding: false });
+}
+
+function deterministicArcOutcome(run, question) {
+  const outcomes = question.allowedOutcomes || [];
+  const access = Number(run.progressLevel || 0);
+  const trust = Number(run.metrics?.publicTrust || 0);
+  const autonomy = Number(run.metrics?.worldAutonomy || 0);
+  const stability = Number(run.metrics?.worldStability || 0);
+  if (question.id === "arc.first_authority") {
+    if (access > 0) return "PLAYER_POSSESSES";
+    if ((run.npcPromises || []).length > 0) return "ALLY_POSSESSES";
+    return "UNCLAIMED";
+  }
+  if (question.id === "arc.cause_and_bond") return trust >= 55 ? "ALLIANCE" : "TRUTH_HIDDEN";
+  if (question.id === "arc.control_balance") return autonomy >= 55 ? "SHARED_CONTROL" : stability < 35 ? "CONTROL_COLLAPSED" : "CONTROL_REJECTED";
+  if (question.id === "arc.ending_convergence") return stability < 25 ? "EMERGENCY" : autonomy >= 60 ? "AUTONOMY" : trust >= 60 ? "RESTORATION" : "MEMORY";
+  return outcomes.includes("PLAYER_INVOLVED") ? "PLAYER_INVOLVED" : outcomes[0];
+}
+
+export function advanceArcDirector(run, turnNo, events, evidence = {}) {
+  run.arcQuestions ||= [];
+  run.storyLedger ||= [];
+  run.resolvedArcOutcomes ||= [];
+  const ledgerEntry = {
+    id: deterministicUuid(`${run.id}:story-ledger:${turnNo}`),
+    turnNo,
+    skillId: String(evidence.ability || "").toUpperCase(),
+    outcome: evidence.outcome || "unknown",
+    campaignRole: evidence.campaignRole || null,
+    targetEvidenceKeys: [...new Set(evidence.targetEvidenceKeys || [])],
+    eventTypes: [...new Set((evidence.eventTypes || []).filter(Boolean))]
+  };
+  const prior = run.storyLedger.find((item) => item.turnNo === turnNo);
+  if (prior) Object.assign(prior, ledgerEntry);
+  else run.storyLedger.push(ledgerEntry);
+
+  // The old director resolved a predetermined dramatic question at a fixed
+  // turn deadline. The runtime now treats those questions as non-authoritative
+  // campaign notes: only committed player choices and server events determine
+  // how dense the story has become.
+  for (const question of run.arcQuestions) {
+    if (["active", "pending"].includes(question.status)) question.status = "legacy_disabled";
+  }
+  run.currentArcQuestion = null;
+  const ignoredEvents = new Set(["turn_committed", "resource_changed", "pressure_changed", "major_choice_recorded"]);
+  const meaningfulTypes = ledgerEntry.eventTypes.filter((type) => !ignoredEvents.has(type));
+  ledgerEntry.meaningful = meaningfulTypes.length > 0
+    || !["unknown", "narrative"].includes(ledgerEntry.outcome)
+    || (run.majorChoices || []).some((choice) => choice.turnNo === turnNo);
+  const meaningfulTurns = run.storyLedger.filter((entry) => entry.meaningful).length;
+  const majorChoiceCount = (run.majorChoices || []).length;
+  const resolvedThreads = (run.openLoops || []).filter((loop) => ["resolved", "closed", "transformed"].includes(loop.status)).length;
+  const relationshipChanges = (run.npcRelationships || []).filter((relationship) => Number(relationship.lastChangedTurn || 0) > 0).length;
+  const phase = meaningfulTurns >= 12 ? "convergence_available"
+    : meaningfulTurns >= 7 ? "entangled"
+      : meaningfulTurns >= 3 ? "unfolding" : "opening";
+  const endingEligible = meaningfulTurns >= 8 && majorChoiceCount >= 3
+    && (resolvedThreads > 0 || relationshipChanges >= 2 || Number(run.progressLevel || 0) > 0);
+  run.emergentStory = {
+    mode: "world_rule_driven",
+    phase,
+    meaningfulTurns,
+    majorChoiceCount,
+    resolvedThreads,
+    relationshipChanges,
+    endingEligible,
+    forcedEnding: false,
+    updatedTurn: turnNo
+  };
+  const phaseCopy = {
+    opening: [0, "열린 도입", "세계와 인물의 반응이 첫 방향을 만든다."],
+    unfolding: [1, "자유 전개", "실제 선택의 결과에서 새로운 사건과 관계가 이어진다."],
+    entangled: [3, "얽힌 결과", "누적된 선택과 미해결 사건이 서로 영향을 주기 시작한다."],
+    convergence_available: [4, "결말 가능", "충분한 사건이 쌓였다. 원하면 현재 서사에서 결말로 향할 수 있다."]
+  }[phase];
+  const macro = (run.campaignMacroPhases || CAMPAIGN_MACRO_PHASES)[phaseCopy[0]];
+  if (macro) run.currentMacroPhase = clone(macro);
+  run.currentAct = phase;
+  run.campaignPhase = phase;
+  run.currentStoryBeat = {
+    id: `emergent.${phase}`,
+    title: phaseCopy[1],
+    description: phaseCopy[2],
+    phaseId: phase,
+    targetTurn: null,
+    status: "active",
+    act: phase
+  };
+  events.push({ type: "emergent_story_updated", phase, meaningfulTurns, endingEligible, forcedEnding: false });
 }
 
 const COMPONENT_ALIASES = Object.freeze({
@@ -623,6 +738,19 @@ export function chooseEnding(run) {
     const explicit = run.endingCandidates.find((item) => item.id === selected);
     if (explicit) return explicit;
   }
+  const finalArc = [...(run.resolvedArcOutcomes || [])].reverse().find((item) => item.questionId === "arc.ending_convergence");
+  const preferredCategory = {
+    RESTORATION: "reconciliation",
+    AUTONOMY: "freedom",
+    CONTROL: "guardianship",
+    MEMORY: "memory",
+    DEPARTURE: "return",
+    EMERGENCY: "emergency"
+  }[finalArc?.outcomeId];
+  if (preferredCategory) {
+    const arcEnding = run.endingCandidates.find((item) => item.category === preferredCategory);
+    if (arcEnding) return arcEnding;
+  }
   const recipeMatch = run.endingCandidates.find((item) => !item.emergency && endingRecipeMatches(run, item));
   if (recipeMatch) return recipeMatch;
   return run.endingCandidates.find((item) => item.emergency) || run.endingCandidates.at(-1);
@@ -670,7 +798,7 @@ export function resolveFinalConvergence(run, ending, turnNo) {
     progressTokens,
     endingFactors: endingFactors(run, focus?.position || poi?.position || null),
     geometryChanged: false,
-    resolutionMode: run.selectedEndingId ? "explicit_server_recipe" : "turn_limit_recipe_fallback",
+    resolutionMode: run.selectedEndingId ? "explicit_server_recipe" : "story_driven_candidate",
     evidence
   };
 }

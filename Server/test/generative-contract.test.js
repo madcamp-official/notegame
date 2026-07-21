@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createCampaignBlueprint } from "../src/domain/campaign.js";
 import { generateWorld } from "../src/domain/world.js";
 import { FixedD20Source, createRunState, directorContext, normalizeTravelRequest, normalizeTurnRequest, resolveTurn } from "../src/domain/turn-engine.js";
-import { createCampaignPlanContext, validateCampaignPlanOutput } from "../src/llm/campaign-planning.js";
+import { applyCampaignPlanEnrichment, createCampaignPlanContext, validateCampaignPlanOutput } from "../src/llm/campaign-planning.js";
 import { GameService } from "../src/services/game-service.js";
 import { MemoryStore } from "../src/store/memory-store.js";
 
@@ -51,6 +51,18 @@ function minimalProposal() {
   };
 }
 
+test("campaign planner enriches flavor without replacing the sealed Nupjukyi premise", () => {
+  const blueprint = createCampaignBlueprint({ worldSeed: 73022, turnLimit: 40 });
+  const proposal = minimalProposal();
+  const enriched = applyCampaignPlanEnrichment(blueprint, proposal, { model: "test-planner" });
+
+  assert.equal(enriched.premise, blueprint.premise);
+  assert.equal(enriched.premiseKo, blueprint.premiseKo);
+  assert.equal(enriched.plannerSynopsis, proposal.campaign.description);
+  assert.equal(enriched.generationMetadata.plannerSynopsis, proposal.campaign.description);
+  assert.match(enriched.premise, /넙죽이/);
+});
+
 function deleteRequest(run, idempotencyKey, expectedRunVersion = run.version) {
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const target = run.entities.find((item) => item.kind === "enemy" && item.active);
@@ -80,7 +92,7 @@ test("same seeds reproduce campaign and map data while different seeds diversify
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.endingCandidates.map((ending) => ending.id).sort().join("|"))).size > 1);
 });
 
-test("all supported turn limits retain six biomes and converge to a valid seeded ending without rebuilding the map", () => {
+test("all supported soft turn horizons retain six biomes without forcing an ending or rebuilding the map", () => {
   for (const [index, turnLimit] of [30, 40, 50].entries()) {
     const run = createRunState({
       campaign: campaignFixture(8100 + index, turnLimit),
@@ -101,10 +113,10 @@ test("all supported turn limits retain six biomes and converge to a valid seeded
       d20Source: new FixedD20Source(12)
     });
     assert.equal(result.run.currentTurn, turnLimit);
-    assert.equal(result.run.status, "completed");
-    assert.ok(result.run.endingCandidates.some((ending) => ending.id === result.run.endingCode));
+    assert.equal(result.run.status, "active");
+    assert.equal(result.run.endingCode, null);
     assert.equal(result.run.world.layoutHash, layoutHash);
-    assert.ok(result.turn.events.some((event) => event.type === "run_completed"));
+    assert.ok(!result.turn.events.some((event) => event.type === "run_completed"));
   }
 });
 
@@ -119,9 +131,15 @@ test("the same campaign can converge to more than one server-approved ending", (
     run.selectedEndingId = endingId;
     run.finalePuzzle.status = "resolved";
     run.finalePuzzle.matchedEndingId = endingId;
+    run.storyLedger = Array.from({ length: 8 }, (_, turnNo) => ({ id: `story-${index}-${turnNo}`, turnNo, eventTypes: ["relationship_changed"], meaningful: true }));
+    run.majorChoices = Array.from({ length: 3 }, (_, choiceIndex) => ({ id: `choice-${index}-${choiceIndex}`, turnNo: choiceIndex + 1, type: "NARRATIVE_CHOICE" }));
+    run.progressLevel = 1;
+    run.emergentStory = { ...run.emergentStory, meaningfulTurns: 8, majorChoiceCount: 3, endingEligible: true };
+    const request = deleteRequest(run, `ending-path-${index}`, 30);
+    request.intent = "이 선택으로 이야기를 마무리하겠다.";
     return resolveTurn({
       run,
-      request: deleteRequest(run, `ending-path-${index}`, 30),
+      request,
       d20Source: new FixedD20Source(12)
     }).run.endingCode;
   });
@@ -137,7 +155,9 @@ test("structured MOVE and USE_SKILL inputs require no natural-language command",
   assert.equal(move.playerNote, null);
   const skill = normalizeTurnRequest({ inputType: "USE_SKILL", idempotencyKey: "structured-skill-1", expectedRunVersion: 1, skillId: "CONNECT", targetIds: props.map((item) => item.id) });
   assert.equal(skill.skillId, "CONNECT");
-  assert.equal(skill.abilitySource, "structured_selection");
+  assert.equal(skill.abilitySource, "server_auto_target");
+  assert.equal(skill.targetEntityId, null);
+  assert.equal(skill.secondaryTargetEntityId, null);
   assert.equal(skill.playerNote, null);
 
   const travelAlias = normalizeTravelRequest({ inputType: "TRAVEL", idempotencyKey: "structured-move-2", expectedRunVersion: 1, destination: adjacentWalkable(run) });
@@ -194,6 +214,10 @@ test("campaign planning rejects coordinates, assets, and unknown immutable IDs",
     {
       expectedCode: "CAMPAIGN_PLAN_MECHANICS_FORBIDDEN",
       proposal: { ...minimalProposal(), campaign: { ...minimalProposal().campaign, description: "장면에는 assetId hero.secret를 사용한다." } }
+    },
+    {
+      expectedCode: "CAMPAIGN_PLAN_PRODUCT_IDENTITY_FORBIDDEN",
+      proposal: { ...minimalProposal(), campaign: { ...minimalProposal().campaign, description: "넙죽이는 관리자 키보드 대신 에코 키를 핵심 도구로 사용한다." } }
     },
     {
       expectedCode: "CAMPAIGN_PLAN_ID_FORBIDDEN",
