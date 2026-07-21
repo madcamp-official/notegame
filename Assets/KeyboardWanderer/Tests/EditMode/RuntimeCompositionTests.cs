@@ -17,6 +17,15 @@ namespace KeyboardWanderer.Tests.EditMode
     public sealed class RuntimeCompositionTests
     {
         [Test]
+        public void DiceOverlay_OnlySettlesOnAuthoritativeD20Range()
+        {
+            Assert.That(KeyboardWandererDiceOverlay.IsD20Result(1), Is.True);
+            Assert.That(KeyboardWandererDiceOverlay.IsD20Result(20), Is.True);
+            Assert.That(KeyboardWandererDiceOverlay.IsD20Result(0), Is.False);
+            Assert.That(KeyboardWandererDiceOverlay.IsD20Result(21), Is.False);
+        }
+
+        [Test]
         public void GameFlowStateMachine_OnlyAcceptsCommandsAtChoiceBoundaries()
         {
             var flow = new GameFlowStateMachine();

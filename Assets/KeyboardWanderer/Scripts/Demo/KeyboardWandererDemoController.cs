@@ -136,6 +136,7 @@ namespace KeyboardWanderer.Demo
         private KeyboardWandererBiomeDecorationRenderer _decorationRenderer;
         private KeyboardWandererEntityVisualFactory _entityVisualFactory;
         private KeyboardWandererEntityAnimationDriver _entityAnimationDriver;
+        private KeyboardWandererDiceOverlay _diceOverlay;
         private float _playerActionUntil;
         // 현재 스킬 시전 모션 프레임. null이면 방향별 기본 공격 모션을 쓴다(DELETE 등).
         private Sprite[] _playerActionFrames;
@@ -234,6 +235,10 @@ namespace KeyboardWanderer.Demo
             if (_visualAssetLibrary == null)
                 throw new InvalidOperationException("Authored World에는 Visual Asset Library 참조가 필요합니다.");
             _visualAssetLibrary.Initialize(authoredAssetManifest, authoringSettings);
+            _diceOverlay = GetComponent<KeyboardWandererDiceOverlay>();
+            if (_diceOverlay == null)
+                _diceOverlay = gameObject.AddComponent<KeyboardWandererDiceOverlay>();
+            _diceOverlay.Configure(authoredCamera != null ? authoredCamera : Camera.main, _assets?.D20Prefab);
             _sceneUi?.InitializeInventoryQuestOverlay(_assets, UiSelectInventoryItem,
                 open => _inputRouter?.SetUiOverlayMode(open));
             ConfigureCamera();
@@ -1493,6 +1498,7 @@ namespace KeyboardWanderer.Demo
             _choiceSubmissionPending = true;
             _serverPending = true;
             _gmPending = true;
+            BeginPendingDiceRoll();
             _serverStatus = "서사 선택 처리 중";
             // Invalidate the consumed set immediately so a second mouse/key event cannot
             // submit it. Keep the visible options in place (disabled by TurnPending) so
@@ -1506,11 +1512,12 @@ namespace KeyboardWanderer.Demo
             yield return _gameApi.SubmitNarrativeChoice(_serverRun.id, submittedChoiceSetId,
                 submittedChoiceId, idempotencyKey, expectedVersion, value => result = value);
 
-            _serverPending = false;
-            _gmPending = false;
-            _choiceSubmissionPending = false;
             if (result == null || !result.IsSuccess || result.Value == null)
             {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
+                _choiceSubmissionPending = false;
                 // Restore the exact sealed set so a transient network failure is retryable.
                 _lastChoiceSetId = submittedChoiceSetId;
                 _lastNarrativeChoices = submittedChoices ?? Array.Empty<NarrativeChoiceOption>();
@@ -1522,6 +1529,10 @@ namespace KeyboardWanderer.Demo
             }
 
             GameApiClient.CommittedTurn committed = result.Value;
+            yield return ResolvePendingDiceRoll(committed.Turn?.dice?.raw ?? 0);
+            _serverPending = false;
+            _gmPending = false;
+            _choiceSubmissionPending = false;
             CaptureRestorableTarget(committed.Turn, runBeforeSubmit);
             _serverRun = committed.Run;
             SyncEncounterStateFromServer();
@@ -1555,6 +1566,7 @@ namespace KeyboardWanderer.Demo
             _choiceSubmissionPending = true;
             _serverPending = true;
             _gmPending = true;
+            BeginPendingDiceRoll();
             _serverStatus = "자연어 대화 생성 중";
             _lastChoiceSetId = string.Empty;
             Debug.Log("[KW.Message] event=Submitted runId=" + _serverRun.id + " turn=" +
@@ -1564,11 +1576,12 @@ namespace KeyboardWanderer.Demo
             yield return _gameApi.SubmitPlayerMessage(_serverRun.id, text, idempotencyKey,
                 expectedVersion, value => result = value);
 
-            _serverPending = false;
-            _gmPending = false;
-            _choiceSubmissionPending = false;
             if (result == null || !result.IsSuccess || result.Value == null)
             {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
+                _choiceSubmissionPending = false;
                 RecoverPendingChoiceSet(runBeforeSubmit?.pendingChoiceSet, true);
                 PresentChoiceRejection(result?.ErrorCode, result?.ErrorMessage);
                 if (result == null || result.ErrorCode == "NETWORK_ERROR" || result.ErrorCode == "RUN_VERSION_CONFLICT")
@@ -1577,6 +1590,10 @@ namespace KeyboardWanderer.Demo
             }
 
             GameApiClient.CommittedTurn committed = result.Value;
+            yield return ResolvePendingDiceRoll(committed.Turn?.dice?.raw ?? 0);
+            _serverPending = false;
+            _gmPending = false;
+            _choiceSubmissionPending = false;
             _serverRun = committed.Run;
             SyncEncounterStateFromServer();
             SyncRestorableCandidateFromServer();
@@ -1616,6 +1633,7 @@ namespace KeyboardWanderer.Demo
             EnsureRuntimeClients();
             _serverPending = true;
             _gmPending = true;
+            BeginPendingDiceRoll();
             _serverStatus = "권위 턴 커밋 중";
 
             GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
@@ -1625,10 +1643,11 @@ namespace KeyboardWanderer.Demo
             GameApiClient.Result<GameApiClient.CommittedTurn> result =
                 gatewayResult?.TransportResponse as GameApiClient.Result<GameApiClient.CommittedTurn>;
 
-            _serverPending = false;
-            _gmPending = false;
             if (gatewayResult == null || !gatewayResult.IsSuccess)
             {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
                 bool encounterRequired = string.Equals(gatewayResult?.ErrorCode, "TRAVEL_ENCOUNTER_REQUIRED", StringComparison.Ordinal);
                 if (encounterRequired)
                 {
@@ -1674,9 +1693,15 @@ namespace KeyboardWanderer.Demo
             GameApiClient.CommittedTurn committed = gatewayResult.Payload as GameApiClient.CommittedTurn;
             if (committed == null)
             {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
                 PresentActionRejection("EMPTY_RESPONSE", "Server reported success but returned no committed turn.");
                 yield break;
             }
+            yield return ResolvePendingDiceRoll(committed.Turn?.dice?.raw ?? 0);
+            _serverPending = false;
+            _gmPending = false;
             CaptureRestorableTarget(committed.Turn, runBeforeSubmit);
             _serverRun = committed.Run;
             SyncEncounterStateFromServer();
@@ -1705,6 +1730,23 @@ namespace KeyboardWanderer.Demo
                    (technicalMessage ?? string.Empty));
             PlaySfx(AssetClip("UiCancelSound"));
             PublishPresentationState(PresentationChange.Hud | PresentationChange.Selection);
+        }
+
+        private void BeginPendingDiceRoll()
+        {
+            _diceOverlay?.BeginRoll();
+        }
+
+        private IEnumerator ResolvePendingDiceRoll(int authoritativeD20)
+        {
+            if (_diceOverlay == null)
+                yield break;
+            yield return _diceOverlay.ResolveAndHide(authoritativeD20);
+        }
+
+        private void CancelPendingDiceRoll()
+        {
+            _diceOverlay?.CancelAndHide();
         }
 
         private static string PlayerFacingRejection(string errorCode, string technicalMessage)

@@ -109,6 +109,7 @@ namespace KeyboardWanderer.Demo
         public Sprite Crate;
         public Sprite TreasureChest;
         public Sprite D20;
+        public GameObject D20Prefab;
 
         [Header("Animator controllers")]
         public RuntimeAnimatorController PlayerAnimatorController;

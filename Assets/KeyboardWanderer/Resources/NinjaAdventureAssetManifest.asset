@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderSourceHash: Ee+IVQ9ti+C/vCba4nL8yeAk6pwxNBtMrASnvXjjTxE=
+  BuilderSourceHash: uEs4eg18X4flaX6P+C//VWeWcjQdKR874sqUr+q2+Tk=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -115,6 +115,7 @@ MonoBehaviour:
   Crate: {fileID: 769504479347062634, guid: 6ecd53b1450af47f5af94ecd5e5ae9aa, type: 3}
   TreasureChest: {fileID: 8213334933265063372, guid: b53ed5982c55a4291a34c0d3b071c53b, type: 3}
   D20: {fileID: -5843691984524311486, guid: 3bea09d9b5af44d068c18afa0f0a37d6, type: 3}
+  D20Prefab: {fileID: 5130974440242305061, guid: 59e381ba0d3310d4384ba7bc6fea4083, type: 3}
   PlayerAnimatorController: {fileID: 9100000, guid: 370da4c39c3164e489e07ecf04721c08, type: 2}
   SlimeAnimatorController: {fileID: 9100000, guid: 7de334d523b4b4dd394ca62a64f54ed8, type: 2}
   VillagerAnimatorController: {fileID: 9100000, guid: f33b4198cae7c48e6af7c9d001060185, type: 2}

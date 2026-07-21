@@ -118,6 +118,7 @@ namespace KeyboardWanderer.Editor
             manifest.Crate = LoadFirstSprite("Assets/NinjaAdventure/Items/Object/CrateEmpty.png");
             manifest.TreasureChest = LoadFirstSprite("Assets/NinjaAdventure/Items/Treasure/BigTreasureChest.png");
             manifest.D20 = LoadFirstSprite("Assets/NinjaAdventure/Items/Object/Dice 20.png");
+            manifest.D20Prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/3DObjects/icosa.prefab");
 
             manifest.PlayerAnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
                 "Assets/KeyboardWanderer/Animations/Player/Player.controller");
