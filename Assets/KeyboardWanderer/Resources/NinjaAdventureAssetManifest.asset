@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be58079900ef144f68808a3f13c664f2, type: 3}
   m_Name: NinjaAdventureAssetManifest
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.NinjaAdventureAssetManifest
-  BuilderSourceHash: NAo5hfVMxKyOEqDfDo803bYRNcBoTywX8uLQ7tHHkJ0=
+  BuilderSourceHash: LpF7RpC3M98Uv8fV7brQS+x2HjRWkX8kUTcrUJcQAWc=
   InteriorFloorAtlas: {fileID: 2800000, guid: 8eae6af2b42c94eb795e2896a2bb6787, type: 3}
   FloorRect:
     serializedVersion: 2
@@ -107,6 +107,8 @@ MonoBehaviour:
   - {fileID: 3013515813444576633, guid: b241c3ce34468e2479a044e66bc040fe, type: 3}
   - {fileID: -2298989403188267936, guid: f9d9e59b6f2dfab4b8973112342dc24a, type: 3}
   - {fileID: -3922662285996856929, guid: 87f45173bc0715c438632ff120f17555, type: 3}
+  CutsceneEndingImage: {fileID: -613627407344898266, guid: a64927855023f4442b2cd3a3c626cb21, type: 3}
+  CutsceneGameOverImage: {fileID: 7787703922303930837, guid: 3cd8c98629b3bd6459fb4874e633bd8e, type: 3}
   PlayerIdle: {fileID: -7385789195546760866, guid: fd0dc91ff18f746dea9f1192a6d94a41, type: 3}
   WardenIdle: {fileID: -1176183960, guid: 07bb692ab5687420da17d27e29989325, type: 3}
   SlimeIdle: {fileID: 4518187702968751635, guid: 89e8bfe26c4ae4346ac07e0ecc0d9d35, type: 3}
@@ -439,7 +441,7 @@ MonoBehaviour:
   BossMusic: {fileID: 8300000, guid: 9ea3307a8807c4245917ef342ea5b711, type: 3}
   FinalBossMusic: {fileID: 8300000, guid: c1c8aed8999dceb4eb9a4a77558fbbcf, type: 3}
   GameOverMusic: {fileID: 8300000, guid: 22819c50bd5fd364c968fc46de8dc8ae, type: 3}
-  VictoryMusic: {fileID: 0}
+  VictoryMusic: {fileID: 8300000, guid: bab50bd358777a3418df2c69746948d5, type: 3}
   UiMoveSound: {fileID: 8300000, guid: abcd64c94256f4bf39dad98f611f2c3b, type: 3}
   UiAcceptSound: {fileID: 8300000, guid: 6f68444b693e344c88d586ee6093a47d, type: 3}
   UiCancelSound: {fileID: 8300000, guid: 52a3b4ea3a320477ebc52626d0e11987, type: 3}
