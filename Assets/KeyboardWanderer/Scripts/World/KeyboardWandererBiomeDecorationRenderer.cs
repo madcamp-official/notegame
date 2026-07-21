@@ -15,6 +15,7 @@ namespace KeyboardWanderer.World
             public SpriteRenderer Renderer;
             public GameObject PrefabKey;
             public Color BaseColor;
+            public bool WasOccluding;
         }
 
         [SerializeField] private Transform decorationRoot;
@@ -48,6 +49,7 @@ namespace KeyboardWanderer.World
             instance.Renderer.color = tint;
             instance.Renderer.sortingOrder = sortingOrder;
             instance.BaseColor = tint;
+            instance.WasOccluding = false;
             _active.Add(instance);
         }
 
@@ -61,14 +63,20 @@ namespace KeyboardWanderer.World
                 SpriteRenderer renderer = instance?.Renderer;
                 if (renderer == null)
                     continue;
+                Vector2 offset = (Vector2)renderer.transform.position - playerPosition;
+                if (!instance.WasOccluding && offset.sqrMagnitude > 16f)
+                    continue;
                 Bounds bounds = renderer.bounds;
                 float clearance = Mathf.Max(bounds.extents.x, bounds.extents.y) + 0.75f;
                 bool coversPlayer = renderer.sortingOrder >= playerSortingOrder &&
-                                    Vector2.Distance(renderer.transform.position, playerPosition) <= clearance;
+                                    offset.sqrMagnitude <= clearance * clearance;
                 Color target = instance.BaseColor;
                 if (coversPlayer)
                     target.a = Mathf.Min(target.a, 0.16f);
-                renderer.color = Color.Lerp(renderer.color, target, blend);
+                Color next = Color.Lerp(renderer.color, target, blend);
+                instance.WasOccluding = coversPlayer || !Mathf.Approximately(next.a, instance.BaseColor.a);
+                if (next != renderer.color)
+                    renderer.color = next;
             }
         }
 

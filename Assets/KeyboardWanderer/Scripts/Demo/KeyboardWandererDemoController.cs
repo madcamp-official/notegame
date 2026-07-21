@@ -16,8 +16,13 @@ namespace KeyboardWanderer.Demo
     public sealed class KeyboardWandererDemoController : MonoBehaviour
     {
         private const float TileSize = 1f;
+        private const int CinematicTravelPathThreshold = 9;
         private const int TerrainSortingOrder = -1000;
         private const string TutorialCompletedKey = "keyboard-wanderer.tutorial-v1-complete";
+        private const int TargetFrameRate = 30;
+        private const float DecorationOcclusionInterval = 0.1f;
+        private const float AmbientWanderInterval = 2f;
+        private const int MaxBiomeDecorations = 600;
         private const string IntroCompletedKey = "keyboard-wanderer.intro-v1-complete";
 
         private enum ScreenMode
@@ -30,6 +35,7 @@ namespace KeyboardWanderer.Demo
         private readonly Dictionary<Guid, KeyboardWandererEntityVisualState> _entityVisuals = new Dictionary<Guid, KeyboardWandererEntityVisualState>();
         private readonly List<Tile> _runtimeTiles = new List<Tile>();
         private readonly List<string> _sessionLog = new List<string>();
+        private readonly GameFlowStateMachine _flowStateMachine = new GameFlowStateMachine();
 
         [Header("Authored content")]
         [SerializeField] private KeyboardWandererAuthoringSettings authoringSettings;
@@ -60,9 +66,12 @@ namespace KeyboardWanderer.Demo
         private GameApiClient _gameApi;
         private SceneSequencePlayer _sceneSequencePlayer;
         private Coroutine _scenePlaybackCoroutine;
+        private Coroutine _storyWorldActionCoroutine;
+        private bool _storyWorldActionPlaying;
         private GameApiClient.CampaignSnapshot _serverCampaign;
         private GameApiClient.RunSnapshot _serverRun;
         private float _nextAmbientWanderAt;
+        private float _nextDecorationOcclusionAt;
         private ScreenMode _screenMode = ScreenMode.Title;
         private ScreenMode _settingsReturn = ScreenMode.Title;
         private Guid? _lastRestorableTarget;
@@ -83,11 +92,20 @@ namespace KeyboardWanderer.Demo
         // 대화 줄(trim) → 화자 이름·스프라이트. 서버 DIALOGUE 씬 액션에서 채워지고 런 리셋 때 비운다.
         private readonly Dictionary<string, string> _dialogueSpeakerNames = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly Dictionary<string, Sprite> _dialogueSpeakerSprites = new Dictionary<string, Sprite>(StringComparer.Ordinal);
+        private StorySequencePage[] _lastStorySequence = Array.Empty<StorySequencePage>();
+        private string _lastNextInterventionReason = string.Empty;
+        private string _lastChoiceSetId = string.Empty;
+        private NarrativeChoiceOption[] _lastNarrativeChoices = Array.Empty<NarrativeChoiceOption>();
+        private string[] _lastSuggestedSkillIds = Array.Empty<string>();
+        private GameApiClient.SceneActionSnapshot[] _lastServerSceneSequence = Array.Empty<GameApiClient.SceneActionSnapshot>();
+        private GameApiClient.SceneActionSnapshot[] _pendingRuntimeRenderSequence = Array.Empty<GameApiClient.SceneActionSnapshot>();
+        private readonly HashSet<string> _playedStoryActionIds = new HashSet<string>(StringComparer.Ordinal);
         private bool _lastNarrativeFallbackUsed = true;
         private string _lastNarrativeModel = "deterministic";
         private bool _gmPending;
         private bool _serverOnline;
         private bool _serverPending;
+        private bool _choiceSubmissionPending;
         private bool _ambientWanderPending;
         private bool _encounterMoveRequired;
         private GridCoord? _encounterStagingCoord;
@@ -122,17 +140,12 @@ namespace KeyboardWanderer.Demo
         // 현재 스킬 시전 모션 프레임. null이면 방향별 기본 공격 모션을 쓴다(DELETE 등).
         private Sprite[] _playerActionFrames;
 
-        [Header("Skill effects (temp)")]
-        [SerializeField, Tooltip("플레이 중 좌상단에 스킬 이펙트 테스터 패널을 띄운다. 출시 전 끄면 된다.")]
-        private bool enableSkillEffectTester = true;
-        private SkillEffectDirector _skillEffectDirector;
-        private SkillEffectTester _skillEffectTester;
-
         private float PlayerWalkSpeed => authoringSettings != null ? authoringSettings.PlayerWalkSpeed : 4.2f;
         private float MusicVolume => _settingsController != null ? _settingsController.MusicVolume : 0.65f;
         private float SfxVolume => _settingsController != null ? _settingsController.SfxVolume : 0.8f;
         private bool GmEnabled => _settingsController == null || _settingsController.GmEnabled;
-        private bool TurnPending => _serverPending || _ambientWanderPending || (_turnCoordinator != null && _turnCoordinator.IsPending);
+        private bool TurnPending => _serverPending || _choiceSubmissionPending || _ambientWanderPending ||
+                                    (_turnCoordinator != null && _turnCoordinator.IsPending);
         private Transform WorldLandmarkRoot => authoredWorld != null ? authoredWorld.RuntimeLandmarks : null;
         private Transform WorldEffectsRoot => authoredWorld != null ? authoredWorld.RuntimeEffects : null;
 
@@ -197,6 +210,8 @@ namespace KeyboardWanderer.Demo
 
         private void Awake()
         {
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = TargetFrameRate;
             _selectionController = authoredSelectionController;
             _abilityAvailability = authoredAbilityAvailability;
             _turnCoordinator = authoredTurnCoordinator;
@@ -219,6 +234,8 @@ namespace KeyboardWanderer.Demo
             if (_visualAssetLibrary == null)
                 throw new InvalidOperationException("Authored World에는 Visual Asset Library 참조가 필요합니다.");
             _visualAssetLibrary.Initialize(authoredAssetManifest, authoringSettings);
+            _sceneUi?.InitializeInventoryQuestOverlay(_assets, UiSelectInventoryItem,
+                open => _inputRouter?.SetUiOverlayMode(open));
             ConfigureCamera();
             ConfigureAudio();
             ConfigureInput();
@@ -230,10 +247,6 @@ namespace KeyboardWanderer.Demo
                 UpdateAuthoredUi();
             }
             PlayIntroIfNeeded();
-            /// <summary>
-            /// 스킬 테스터(개발자용)
-            /// </summary>
-            // EnsureSkillEffectTester();
         }
 
         /// <summary>
@@ -254,7 +267,7 @@ namespace KeyboardWanderer.Demo
                 PlayerPrefs.SetInt(IntroCompletedKey, 1);
                 PlayerPrefs.Save();
             });
-            
+
         }
 
         public void ConfigureAuthoredContent(
@@ -342,12 +355,16 @@ namespace KeyboardWanderer.Demo
         {
             UpdateCameraViewport();
             PublishPresentationState();
+            // 코루틴 종료처럼 RunPresentationState 자체에는 포함되지 않는 시각 상태도
+            // 요청된 다음 프레임에 반드시 UI에 반영한다.
+            if (_pendingPresentationChanges != PresentationChange.None)
+                UpdateAuthoredUi();
             if (_screenMode != ScreenMode.Playing || _service == null)
                 return;
 
             if (!_playerWalking && !TurnPending && Time.unscaledTime >= _nextAmbientWanderAt)
             {
-                _nextAmbientWanderAt = Time.unscaledTime + 0.5f;
+                _nextAmbientWanderAt = Time.unscaledTime + AmbientWanderInterval;
                 GetCameraActiveTileBounds(_service.CurrentView, 2, out GridCoord activeMin, out GridCoord activeMax);
                 if (_serverOnline && _serverRun != null && _gameApi != null)
                     StartCoroutine(AdvanceServerAmbientWander(activeMin, activeMax));
@@ -400,11 +417,13 @@ namespace KeyboardWanderer.Demo
             if (_service == null)
                 return;
 
+            _inputRouter?.SetNarrativeChoiceMode(false);
             RunView view = _service.CurrentView;
             UpdateDynamicMusic(view);
             if ((changes & PresentationChange.Minimap) != 0)
                 UpdateMinimap(view);
-            string narrative = _lastOutcome == "READY" || _lastOutcome == "RESTORED"
+            string narrative = _lastOutcome == "RESTORED" ||
+                               (_lastOutcome == "READY" && string.IsNullOrWhiteSpace(_lastNarrative))
                 ? CampaignPremise(view)
                 : ShortNarrative(_lastNarrative);
             if (_tutorialPresenter.IsActive)
@@ -421,34 +440,32 @@ namespace KeyboardWanderer.Demo
                         _reopenDialogueAfterWalk = true;
                 }
                 int dialoguePage = Mathf.Clamp(_dialoguePresenter.Page, 0, Mathf.Max(0, dialoguePages.Length - 1));
-                // 스토리 대화 페이지가 활성일 때는 결과·서사 페이지가 목록에 없으므로 화자 판정에서 제외한다.
-                bool storyDialoguePages = _lastDialogue != null && _lastDialogue.Length > 0 &&
-                                          _selectionController.Ability == AbilityKind.Search;
-                bool showingResult = !storyDialoguePages && HasActionResultPage() && dialoguePage == 0;
-                int narrationPage = HasActionResultPage() ? 1 : 0;
-                bool showingNarration = !storyDialoguePages && dialoguePage == narrationPage;
+                PlayCurrentStoryWorldAction(dialoguePage);
                 bool hasNextDialogue = dialoguePage < dialoguePages.Length - 1;
-                string pageText = dialoguePages[dialoguePage];
-                string speaker = showingResult ? "행동 결과"
-                    : showingNarration ? NarrativeSourceLabel() : "코드리아 주민";
-                Sprite speakerSprite = null;
-                if (!showingResult && !showingNarration)
-                {
-                    if (_dialogueSpeakerNames.TryGetValue(pageText, out string recordedSpeaker))
-                        speaker = recordedSpeaker;
-                    _dialogueSpeakerSprites.TryGetValue(pageText, out speakerSprite);
-                }
-                // 화자를 모르는 페이지도 이야기의 주인공인 넙죽이를 컷인으로 세운다.
-                if (speakerSprite == null && _visualAssetLibrary != null)
-                    speakerSprite = _playerSprite;
-                _sceneUi.PresentDialogue(!_dialoguePresenter.IsDismissed, speaker,
-                    pageText, hasNextDialogue ? "다음 ▶" : "대화 끝", true, speakerSprite);
+                bool awaitingIntervention = IsInterventionPage(dialoguePage, dialoguePages.Length);
+                string storySpeaker = StoryPageSpeaker(dialoguePage, awaitingIntervention);
+                bool storyActionPlaying = _storyWorldActionPlaying;
+                Sprite storyPortrait = StoryPagePortrait(dialoguePage, awaitingIntervention);
+                bool showLargeSubject = StoryPageUsesLargeSubject(dialoguePage, awaitingIntervention, storyPortrait);
+                // A confirmed WORLD_ACTION gets an unobstructed field interstitial.
+                // The same story page returns automatically when its short animation ends.
+                _sceneUi.PresentDialogue(!_dialoguePresenter.IsDismissed && !storyActionPlaying,
+                    storySpeaker,
+                    dialoguePages[dialoguePage], storyActionPlaying ? "연출 중…" : hasNextDialogue ? "다음 ▶" : awaitingIntervention ? "선택해 주세요" : "대화 끝",
+                    !storyActionPlaying && !awaitingIntervention,
+                    storyPortrait, showLargeSubject);
+                _sceneUi.PresentDialogueChoices(awaitingIntervention, CurrentNarrativeChoices(),
+                    awaitingIntervention && !TurnPending && !_storyWorldActionPlaying);
+                _inputRouter?.SetNarrativeChoiceMode(awaitingIntervention && !TurnPending &&
+                    !_storyWorldActionPlaying && !_showPause && _screenMode == ScreenMode.Playing &&
+                    !(_sceneUi?.IsDialogueInputFocused ?? false));
             }
             _sceneUi.PresentHud(CurrentAreaName(view) + " · " + CurrentBiomeLabel(view), StoryBeat(view),
                 ObjectiveHudText(view),
                 _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : ActionGuidanceText(view));
             _sceneUi.PresentQuestStatus(QuestActionHintText(view),
                 KeyboardWandererHudTextComposer.StatusLabels(), StatusHudValues(view));
+            _sceneUi.PresentInventoryAndQuests(_runPresentationModel);
             bool selectionReady = CanSubmitCurrentSelection();
             string selectionHeading = AbilityPlayerLabel(_selectionController.Ability) + " · " +
                                       (selectionReady ? "사용 가능" : "준비 필요");
@@ -486,6 +503,13 @@ namespace KeyboardWanderer.Demo
         public void UiCyclePoi(int direction) => CyclePoi(direction);
         public void UiSetAbility(AbilityKind ability)
         {
+            string blocked = AbilityInputBlockReason(ability);
+            if (!string.IsNullOrEmpty(blocked))
+            {
+                Debug.LogWarning("[KW.Input] event=UiSetAbility ability=" + ability +
+                                 " result=blocked reason=" + blocked);
+                return;
+            }
             if (ability == AbilityKind.Copy && _selectionController.Ability == AbilityKind.Copy && _selectionController.CopySourceCaptured &&
                 _selectionController.SelectedCoord.HasValue && CanSubmitCurrentSelection())
             {
@@ -495,9 +519,112 @@ namespace KeyboardWanderer.Demo
             SetAbility(ability);
             if (CanSubmitCurrentSelection()) SubmitImmediately();
         }
+
+        /// <summary>Mouse/UI entry point. The choice id must match the currently displayed sealed set.</summary>
+        public void UiSelectNarrativeChoice(string choiceId)
+        {
+            NarrativeChoiceOption[] choices = CurrentNarrativeChoices();
+            NarrativeChoiceOption selected = null;
+            for (int i = 0; i < choices.Length; i++)
+                if (string.Equals(choices[i]?.ChoiceId, choiceId, StringComparison.Ordinal))
+                {
+                    selected = choices[i];
+                    break;
+                }
+            if (selected == null)
+            {
+                Debug.LogWarning("[KW.Choice] event=Select result=blocked reason=unknown-choice choiceId=" + choiceId);
+                return;
+            }
+            SelectNarrativeChoice(selected);
+        }
+
+        /// <summary>Keyboard accessibility entry point for number keys 1-4.</summary>
+        public void UiSelectNarrativeChoiceIndex(int index)
+        {
+            NarrativeChoiceOption[] choices = CurrentNarrativeChoices();
+            if (index < 0 || index >= choices.Length || index >= 4) return;
+            SelectNarrativeChoice(choices[index]);
+        }
+
+        public void UiMoveNarrativeChoice(int direction) => _sceneUi?.MoveDialogueChoiceSelection(direction);
+        public void UiConfirmNarrativeChoice() => _sceneUi?.ConfirmDialogueChoiceSelection();
+
+        public void UiToggleInventory()
+        {
+            if (_screenMode != ScreenMode.Playing || _showPause) return;
+            bool open = _sceneUi != null && _sceneUi.ToggleInventory();
+            _inputRouter?.SetUiOverlayMode(open);
+        }
+
+        public void UiToggleQuests()
+        {
+            if (_screenMode != ScreenMode.Playing || _showPause) return;
+            bool open = _sceneUi != null && _sceneUi.ToggleQuests();
+            _inputRouter?.SetUiOverlayMode(open);
+        }
+
+        public void UiSelectInventoryItem(string itemName)
+        {
+            if (_sceneUi == null || !_sceneUi.InsertInventoryItemIntoDialogue(itemName)) return;
+            _sceneUi.CloseInventoryQuestOverlay();
+            _inputRouter?.SetUiOverlayMode(false);
+        }
+
+        public void UiSubmitPlayerMessage(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text) || _choiceSubmissionPending || TurnPending) return;
+            if (!_serverOnline || _serverRun == null || _gameApi == null)
+            {
+                PresentChoiceRejection("NETWORK_ERROR", "자연어 대화에는 실행 중인 권위 서버가 필요합니다.");
+                return;
+            }
+            StartCoroutine(SubmitServerPlayerMessage(text.Trim()));
+        }
+
+        private void SelectNarrativeChoice(NarrativeChoiceOption choice)
+        {
+            RefreshFlowPhase();
+            bool awaiting = _flowStateMachine.CanSelectNarrativeChoice ||
+                            _flowStateMachine.Phase == GameFlowPhase.AwaitingChoice ||
+                            _flowStateMachine.Phase == GameFlowPhase.AwaitingEncounterChoice;
+            if (!awaiting || choice == null || _choiceSubmissionPending || TurnPending)
+            {
+                Debug.LogWarning("[KW.Choice] event=Select result=blocked reason=" +
+                                 (_choiceSubmissionPending || TurnPending ? "request-pending" : "not-at-choice-boundary") +
+                                 " choiceId=" + (choice?.ChoiceId ?? "null"));
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_lastChoiceSetId))
+            {
+                if (!_serverOnline || _serverRun == null || _gameApi == null)
+                {
+                    PresentChoiceRejection("NETWORK_ERROR", "서버 선택 세트를 처리할 권위 서버가 없습니다.");
+                    return;
+                }
+                StartCoroutine(SubmitServerNarrativeChoice(choice));
+                return;
+            }
+
+            // Compatibility path for old suggestedSkillIds responses. New server-sealed
+            // SKILL/TRAVEL choices never enter this branch and always use /choices.
+            if (string.Equals(choice.ChoiceKind, "TRAVEL", StringComparison.OrdinalIgnoreCase))
+            {
+                UiSetAbility(AbilityKind.Move);
+                return;
+            }
+            if (choice.IsSkill && TryAbilityForSkillId(choice.SkillId, out AbilityKind ability))
+            {
+                UiSetAbility(ability);
+                return;
+            }
+            PresentChoiceRejection("INVALID_CHOICE", "이전 버전 선택지를 현재 행동으로 변환할 수 없습니다.");
+        }
         public void UiSubmit() => Submit();
         public void UiAdvanceDialogue()
         {
+            if (_storyWorldActionPlaying) return;
             if (_tutorialPresenter.IsActive)
             {
                 if (_tutorialPresenter.Advance(Mathf.Max(1, _sceneUi == null ? 0 : _sceneUi.TutorialPageCount)))
@@ -512,6 +639,8 @@ namespace KeyboardWanderer.Demo
             }
             string[] pages = BuildDialoguePages(_service == null ? _lastNarrative :
                 (_lastOutcome == "READY" || _lastOutcome == "RESTORED" ? CampaignPremise(_service.CurrentView) : ShortNarrative(_lastNarrative)));
+            if (IsInterventionPage(_dialoguePresenter.Page, pages.Length))
+                return;
             if (!_dialoguePresenter.Advance(pages.Length))
             {
                 _sceneUi?.SetStoryVisible(false);
@@ -528,14 +657,24 @@ namespace KeyboardWanderer.Demo
 
         private void SetAbilityButton(AbilityKind ability)
         {
-            _sceneUi.SetAbilityState(ability, CanHandleGameplayInput(), _selectionController.Ability == ability);
+            RefreshFlowPhase();
+            _sceneUi.SetAbilityState(ability, _flowStateMachine.CanIssueAbility(ability) && IsOfferedAbility(ability),
+                _selectionController.Ability == ability);
         }
 
         private string[] BuildDialoguePages(string narrative)
         {
             var pages = new List<string>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            bool hasStoryDialogue = _lastDialogue != null && _lastDialogue.Length > 0 &&
+            if (_lastStorySequence != null && _lastStorySequence.Length > 0)
+            {
+                for (int i = 0; i < _lastStorySequence.Length; i++)
+                {
+                    string text = _lastStorySequence[i]?.Text;
+                    if (!string.IsNullOrWhiteSpace(text)) pages.Add(text.Trim());
+                }
+            }
+            bool hasStoryDialogue = pages.Count == 0 && _lastDialogue != null && _lastDialogue.Length > 0 &&
                                     _selectionController.Ability == AbilityKind.Search;
             if (hasStoryDialogue)
             {
@@ -543,22 +682,93 @@ namespace KeyboardWanderer.Demo
                     if (!string.IsNullOrWhiteSpace(_lastDialogue[i]) && seen.Add(_lastDialogue[i].Trim()))
                         pages.Add(_lastDialogue[i].Trim());
             }
-            if (HasActionResultPage() && !hasStoryDialogue)
-            {
-                string result = (_selectionController.Ability == AbilityKind.Interact ? "INTERACT" : _selectionController.Ability.ToString().ToUpperInvariant()) +
-                                " · " + _lastOutcome;
-                if (_lastD20 > 0)
-                    result += " · D20 " + _lastD20 + " " + Signed(_lastModifier) + " vs " + _lastDifficulty;
-                if (!string.IsNullOrWhiteSpace(_lastAttempt)) result += "\n" + _lastAttempt.Trim();
-                if (!string.IsNullOrWhiteSpace(_lastStateChanges)) result += "\n변화 · " + _lastStateChanges.Trim();
-                if (!string.IsNullOrWhiteSpace(_lastExplanation)) result += "\n" + _lastExplanation.Trim();
-                pages.Add(result);
-                seen.Add(result);
-            }
-            if (!hasStoryDialogue && !string.IsNullOrWhiteSpace(narrative) && seen.Add(narrative.Trim()))
+            if (pages.Count == 0 && !hasStoryDialogue && !string.IsNullOrWhiteSpace(narrative) && seen.Add(narrative.Trim()))
                 pages.Add(narrative.Trim());
-            if (pages.Count == 0) pages.Add("코드리아의 다음 이야기가 시작되기를 기다리고 있습니다.");
+            if (pages.Count == 0) pages.Add("……아직 눈에 띄는 변화는 없어. 조금 더 지켜보자.");
+            if (!string.IsNullOrWhiteSpace(_lastNextInterventionReason))
+                pages.Add(InterventionPageText());
             return pages.ToArray();
+        }
+
+        private string InterventionPageText()
+        {
+            string reason = _lastNextInterventionReason.Trim();
+            if (_encounterMoveRequired)
+                return reason + "\n\n어떤 방식으로 개입할까? 위의 선택지를 골라 주세요.";
+            return reason + "\n\n어디로 이동하거나, 어떤 방식으로 개입할까? 위의 선택지를 골라 주세요.";
+        }
+
+        private bool IsInterventionPage(int page, int pageCount)
+        {
+            return !string.IsNullOrWhiteSpace(_lastNextInterventionReason) &&
+                   pageCount > 0 && page == pageCount - 1;
+        }
+
+        private NarrativeChoiceOption[] CurrentNarrativeChoices()
+        {
+            if (_lastNarrativeChoices != null && _lastNarrativeChoices.Length > 0)
+                return _lastNarrativeChoices;
+            return ServerTurnPresentationAdapter.BuildNarrativeChoices(null,
+                CurrentSuggestedSkillIds(), !_encounterMoveRequired);
+        }
+
+        private string StoryPageSpeaker(int page, bool interventionPage)
+        {
+            if (interventionPage) return "선택";
+            if (_lastStorySequence != null && page >= 0 && page < _lastStorySequence.Length)
+            {
+                StorySequencePage beat = _lastStorySequence[page];
+                if (!string.IsNullOrWhiteSpace(beat?.Speaker)) return beat.Speaker;
+                if (string.Equals(beat?.Type, "WORLD_ACTION", StringComparison.OrdinalIgnoreCase)) return "코드리아";
+                if (string.Equals(beat?.Type, "NARRATION", StringComparison.OrdinalIgnoreCase)) return "이야기";
+            }
+            return CampaignCatalog.ProtagonistName;
+        }
+
+        private Sprite StoryPagePortrait(int page, bool interventionPage)
+        {
+            if (interventionPage) return null;
+            if (_lastStorySequence == null || page < 0 || page >= _lastStorySequence.Length)
+                return _visualAssetLibrary?.PlayerSprite;
+            StorySequencePage beat = _lastStorySequence[page];
+            if (beat == null || string.Equals(beat.Type, "MONOLOGUE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(beat.Type, "NARRATION", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(beat.Type, "WORLD_ACTION", StringComparison.OrdinalIgnoreCase))
+                return _visualAssetLibrary?.PlayerSprite;
+            if (Guid.TryParse(beat.SpeakerId, out Guid speakerId) && TryGetServerEntity(speakerId, out GameApiClient.EntitySnapshot entity))
+            {
+                ActorAnimationEntry actor = ActorAnimationForAsset(entity.assetId, entity.kind);
+                return actor?.Portrait ?? actor?.DefaultSprite ?? SpriteForServerEntity(entity, false);
+            }
+            // A malformed or unavailable speaker portrait must not collapse the
+            // dialogue back into the compact HUD layout. Keep the protagonist as
+            // the visual point of view until the next resolvable actor speaks.
+            return _visualAssetLibrary?.PlayerSprite;
+        }
+
+        private bool StoryPageUsesLargeSubject(int page, bool interventionPage, Sprite portrait)
+        {
+            if (interventionPage || portrait == null || _lastStorySequence == null ||
+                page < 0 || page >= _lastStorySequence.Length)
+                return false;
+            return _lastStorySequence[page] != null;
+        }
+
+        private static string AbilityResultTitle(AbilityKind ability)
+        {
+            switch (ability)
+            {
+                case AbilityKind.Move: return "이동";
+                case AbilityKind.Copy: return "복제";
+                case AbilityKind.Delete: return "경계 설정";
+                case AbilityKind.Connect: return "두 대상 연결";
+                case AbilityKind.Restore: return "대상 복구";
+                case AbilityKind.Undo: return "최근 행동 되돌리기";
+                case AbilityKind.Search: return "대상 조사";
+                case AbilityKind.SelectAll: return "주변 전체에 개입";
+                case AbilityKind.Interact: return "상호작용";
+                default: return "행동";
+            }
         }
 
         private string NarrativeSourceLabel()
@@ -581,14 +791,14 @@ namespace KeyboardWanderer.Demo
             switch (_selectionController.Ability)
             {
                 case AbilityKind.Move: return "이동할 타일을 클릭하면 캐릭터가 즉시 길을 따라 걷습니다.";
-                case AbilityKind.Connect: return "이어 주고 싶은 두 대상을 지도에서 차례로 고르세요.";
-                case AbilityKind.Delete: return "삭제할 적 또는 시스템 노드를 클릭하면 즉시 공격합니다.";
-                case AbilityKind.Restore: return "복구 가능한 대상이 생기면 대상이 자동 선택됩니다.";
+                case AbilityKind.Connect: return _serverOnline ? "Ctrl K로 개입하면 연결할 대상과 사건이 결정됩니다." : "이어 주고 싶은 두 대상을 지도에서 차례로 고르세요.";
+                case AbilityKind.Delete: return _serverOnline ? "Delete로 개입하면 삭제할 대상과 사건이 결정됩니다." : "삭제할 적 또는 시스템 노드를 클릭하면 즉시 공격합니다.";
+                case AbilityKind.Restore: return _serverOnline ? "Ctrl R로 개입하면 복구할 흔적과 사건이 결정됩니다." : "복구 가능한 대상이 생기면 대상이 자동 선택됩니다.";
                 case AbilityKind.Interact: return "가까운 대상을 클릭하면 즉시 상호작용합니다.";
                 case AbilityKind.Undo: return "Ctrl Z로 최근 의미 턴 2회의 상태를 시간 역행합니다.";
-                case AbilityKind.Search: return "Ctrl F를 누른 뒤 조사할 대상을 클릭하면 즉시 조사합니다.";
+                case AbilityKind.Search: return _serverOnline ? "Ctrl F로 개입하면 발견할 대상이나 사건이 결정됩니다." : "Ctrl F를 누른 뒤 조사할 대상을 클릭하면 즉시 조사합니다.";
                 case AbilityKind.SelectAll: return "Ctrl A로 주변 4칸의 모든 적을 광범위 공격합니다.";
-                case AbilityKind.Copy: return _selectionController.CopySourceCaptured
+                case AbilityKind.Copy: return _serverOnline ? "Ctrl C로 개입하면 복제할 대상이나 주변 데이터 사건이 결정됩니다." : _selectionController.CopySourceCaptured
                     ? "Ctrl V 상태입니다. 복제본을 놓을 빈 타일을 고른 뒤 실행하세요."
                     : "Ctrl C 상태입니다. 복제할 대상을 먼저 고르세요.";
                 default: return "이 선택을 적용할 대상을 지도에서 고르세요.";
@@ -640,7 +850,16 @@ namespace KeyboardWanderer.Demo
 
         private bool CanSubmitCurrentSelection()
         {
+            if (!CanHandleGameplayInput()) return false;
+            RefreshFlowPhase();
+            if (!_flowStateMachine.CanIssueAbility(_selectionController.Ability)) return false;
             if (_selectionController.Ability == AbilityKind.Move) return _selectionController.SelectedCoord.HasValue;
+            if (_serverOnline && IsServerDirectedSkill(_selectionController.Ability))
+            {
+                RunPresentationModel run = PresentationModel(_service?.CurrentView);
+                int cost = _abilityAvailability == null ? 0 : _abilityAvailability.FocusCost(_selectionController.Ability);
+                return run != null && run.Focus >= cost;
+            }
             if (_selectionController.Ability == AbilityKind.Undo || _selectionController.Ability == AbilityKind.SelectAll)
                 return IsSkillEnabledForCurrentTarget(_selectionController.Ability);
             if (_selectionController.Ability == AbilityKind.Copy)
@@ -650,6 +869,13 @@ namespace KeyboardWanderer.Demo
                 return _selectionController.SelectedTarget.HasValue && _selectionController.SelectedSecondaryTarget.HasValue &&
                        IsSkillEnabledForCurrentTarget(_selectionController.Ability);
             return _selectionController.SelectedTarget.HasValue && IsSkillEnabledForCurrentTarget(_selectionController.Ability);
+        }
+
+        private static bool IsServerDirectedSkill(AbilityKind ability)
+        {
+            return ability == AbilityKind.Copy || ability == AbilityKind.Delete ||
+                   ability == AbilityKind.Connect || ability == AbilityKind.Restore ||
+                   ability == AbilityKind.Search;
         }
 
         private bool IsSkillEnabledForCurrentTarget(AbilityKind skill)
@@ -681,6 +907,9 @@ namespace KeyboardWanderer.Demo
                 _abilityAvailability.FocusCost(_selectionController.Ability);
             if (run.Focus < cost)
                 return "사용 불가 · 포커스 " + cost + " 필요 (현재 " + run.Focus + ")";
+            if (_serverOnline && IsServerDirectedSkill(_selectionController.Ability))
+                return "사용 가능 · 누적된 이야기와 현재 장면을 바탕으로 AI가 개입 대상과 사건을 정합니다.\n" +
+                       SelectionExecutionSummary();
             if (_selectionController.Ability == AbilityKind.Undo)
                 return IsSkillEnabledForCurrentTarget(_selectionController.Ability)
                     ? "직전 의미 턴 2개를 역순으로 복구합니다.\n" + SelectionExecutionSummary()
@@ -776,10 +1005,15 @@ namespace KeyboardWanderer.Demo
             if (_inputRouter == null)
                 return;
             _inputRouter.PauseRequested += HandlePauseRequested;
+            _inputRouter.NarrativeChoiceRequested += UiSelectNarrativeChoiceIndex;
+            _inputRouter.NarrativeChoiceMoveRequested += UiMoveNarrativeChoice;
+            _inputRouter.NarrativeChoiceConfirmRequested += UiConfirmNarrativeChoice;
             _inputRouter.AbilityRequested += HandleAbilityRequested;
             _inputRouter.PasteRequested += HandlePasteRequested;
             _inputRouter.PoiCycleRequested += HandlePoiCycleRequested;
             _inputRouter.SubmitRequested += HandleSubmitRequested;
+            _inputRouter.InventoryRequested += UiToggleInventory;
+            _inputRouter.QuestRequested += UiToggleQuests;
             _inputRouter.WorldClickRequested += HandleMapClick;
         }
 
@@ -789,24 +1023,81 @@ namespace KeyboardWanderer.Demo
             if (_inputRouter == null)
                 return;
             _inputRouter.PauseRequested -= HandlePauseRequested;
+            _inputRouter.NarrativeChoiceRequested -= UiSelectNarrativeChoiceIndex;
+            _inputRouter.NarrativeChoiceMoveRequested -= UiMoveNarrativeChoice;
+            _inputRouter.NarrativeChoiceConfirmRequested -= UiConfirmNarrativeChoice;
             _inputRouter.AbilityRequested -= HandleAbilityRequested;
             _inputRouter.PasteRequested -= HandlePasteRequested;
             _inputRouter.PoiCycleRequested -= HandlePoiCycleRequested;
             _inputRouter.SubmitRequested -= HandleSubmitRequested;
+            _inputRouter.InventoryRequested -= UiToggleInventory;
+            _inputRouter.QuestRequested -= UiToggleQuests;
             _inputRouter.WorldClickRequested -= HandleMapClick;
             _inputRouter = null;
         }
 
         private bool CanHandleGameplayInput()
         {
-            return _screenMode == ScreenMode.Playing && _service != null && !_showPause &&
-                   RunIsPlaying(_service.CurrentView) && !TurnPending && !_playerWalking;
+            return string.IsNullOrEmpty(GameplayInputBlockReason());
+        }
+
+        private string GameplayInputBlockReason()
+        {
+            RefreshFlowPhase();
+            return _flowStateMachine.BlockReason();
+        }
+
+        private string AbilityInputBlockReason(AbilityKind ability)
+        {
+            RefreshFlowPhase();
+            return _flowStateMachine.BlockReason(ability);
+        }
+
+        private void RefreshFlowPhase()
+        {
+            bool playingScreen = _screenMode == ScreenMode.Playing;
+            bool runActive = _service != null && RunIsPlaying(_service.CurrentView);
+            string[] dialoguePages = BuildDialoguePages(_service == null ? _lastNarrative :
+                (_lastOutcome == "READY" || _lastOutcome == "RESTORED"
+                    ? CampaignPremise(_service.CurrentView)
+                    : ShortNarrative(_lastNarrative)));
+            bool awaitingIntervention = IsInterventionPage(_dialoguePresenter.Page, dialoguePages.Length);
+            bool storyVisible = !_tutorialPresenter.IsActive && _lastStorySequence != null &&
+                                _lastStorySequence.Length > 0 && !_dialoguePresenter.IsDismissed &&
+                                !awaitingIntervention;
+            bool worldAction = _storyWorldActionPlaying || (_sceneSequencePlayer != null && _sceneSequencePlayer.IsPlaying);
+            _flowStateMachine.Refresh(new GameFlowSignals(
+                _screenMode == ScreenMode.Title,
+                _screenMode == ScreenMode.Settings,
+                playingScreen,
+                runActive,
+                _showPause,
+                _tutorialPresenter.IsActive,
+                TurnPending || _gmPending,
+                _playerWalking,
+                worldAction,
+                storyVisible,
+                awaitingIntervention,
+                _encounterMoveRequired,
+                HasSealedNarrativeChoiceSet()));
+        }
+
+        private bool HasSealedNarrativeChoiceSet()
+        {
+            return !string.IsNullOrWhiteSpace(_lastChoiceSetId) &&
+                   _lastNarrativeChoices != null && _lastNarrativeChoices.Length >= 2;
         }
 
         private void HandlePauseRequested()
         {
             if (_screenMode != ScreenMode.Playing || _service == null)
                 return;
+            if (_sceneUi != null && _sceneUi.CloseInventoryQuestOverlay())
+            {
+                _inputRouter?.SetUiOverlayMode(false);
+                PlaySfx(AssetClip("UiCancelSound"));
+                return;
+            }
             if (_actionConfirmation.IsArmed(Time.unscaledTime))
             {
                 _actionConfirmation.Cancel();
@@ -822,8 +1113,13 @@ namespace KeyboardWanderer.Demo
 
         private void HandleAbilityRequested(AbilityKind ability)
         {
-            if (!CanHandleGameplayInput())
+            string blocked = AbilityInputBlockReason(ability);
+            if (!string.IsNullOrEmpty(blocked))
+            {
+                Debug.LogWarning("[KW.Input] event=AbilityRequested ability=" + ability + " result=blocked reason=" + blocked);
                 return;
+            }
+            Debug.Log("[KW.Input] event=AbilityRequested ability=" + ability + " result=accepted");
             SetAbility(ability);
             if (CanSubmitCurrentSelection()) SubmitImmediately();
         }
@@ -847,10 +1143,23 @@ namespace KeyboardWanderer.Demo
 
         private void HandleMapClick(Vector2 mousePosition)
         {
-            if (!CanHandleGameplayInput() || _cameraController == null || !_cameraController.IsReady)
+            string blocked = AbilityInputBlockReason(_selectionController.Ability);
+            if (!string.IsNullOrEmpty(blocked))
+            {
+                Debug.LogWarning("[KW.Input] event=WorldClick ability=" + _selectionController?.Ability +
+                                 " result=blocked reason=" + blocked);
                 return;
+            }
+            if (_cameraController == null || !_cameraController.IsReady)
+            {
+                Debug.LogWarning("[KW.Input] event=WorldClick result=blocked reason=camera-not-ready");
+                return;
+            }
             if (!_cameraController.ContainsScreenPoint(mousePosition))
+            {
+                Debug.Log("[KW.Input] event=WorldClick result=ignored reason=outside-game-viewport");
                 return;
+            }
 
             Vector3 world = _cameraController.ScreenToWorld(mousePosition);
             RunView view = _service.CurrentView;
@@ -859,7 +1168,10 @@ namespace KeyboardWanderer.Demo
                 Mathf.FloorToInt((world.x - origin.x) / TileSize),
                 Mathf.FloorToInt((world.y - origin.y) / TileSize));
             if (!ContainsWorldCoord(view, coord))
+            {
+                Debug.Log("[KW.Input] event=WorldClick result=ignored reason=outside-world coord=" + coord);
                 return;
+            }
 
             _cameraInspectCoord = null;
             _cameraInspectUntil = 0f;
@@ -869,6 +1181,8 @@ namespace KeyboardWanderer.Demo
                 clickedEntity = _serverOnline ? FindServerTarget(coord, _selectionController.Ability == AbilityKind.Restore) : FindTarget(view, coord);
             if (clickedEntity.HasValue && TryGetEntityPosition(view, clickedEntity.Value, out GridCoord entityCoord))
                 coord = entityCoord;
+            Debug.Log("[KW.Input] event=WorldClick ability=" + _selectionController.Ability +
+                      " coord=" + coord + " entity=" + (clickedEntity.HasValue ? clickedEntity.Value.ToString() : "none"));
             string abilityName = _selectionController.Ability.ToString();
             if (abilityName == "Move")
             {
@@ -997,9 +1311,19 @@ namespace KeyboardWanderer.Demo
 
         private void SubmitInternal(bool bypassConfirmation)
         {
-            if (_service == null || _showPause || TurnPending || _playerWalking ||
-                (_sceneSequencePlayer != null && _sceneSequencePlayer.IsPlaying))
+            string blocked = AbilityInputBlockReason(_selectionController.Ability);
+            if (!string.IsNullOrEmpty(blocked))
+            {
+                Debug.LogWarning("[KW.Input] event=Submit ability=" + _selectionController?.Ability +
+                                 " result=blocked reason=" + blocked);
                 return;
+            }
+            if (_sceneSequencePlayer != null && _sceneSequencePlayer.IsPlaying)
+            {
+                Debug.LogWarning("[KW.Input] event=Submit ability=" + _selectionController?.Ability +
+                                 " result=blocked reason=scene-sequence-playing");
+                return;
+            }
             RunView view = _service.CurrentView;
             if (!RunIsPlaying(view))
                 return;
@@ -1007,6 +1331,11 @@ namespace KeyboardWanderer.Demo
             _gameplayTelemetry.RecordSubmit();
             if (!CanSubmitCurrentSelection())
             {
+                Debug.LogWarning("[KW.Input] event=Submit ability=" + _selectionController.Ability +
+                                 " result=blocked reason=selection-invalid target=" +
+                                 (_selectionController.SelectedTarget.HasValue
+                                     ? _selectionController.SelectedTarget.Value.ToString()
+                                     : "none") + " feedback=" + _selectionController.Feedback);
                 _gameplayTelemetry.RecordInvalidSelection();
                 PresentActionRejection("TARGET_INVALID", null);
                 return;
@@ -1077,7 +1406,7 @@ namespace KeyboardWanderer.Demo
 
             SyncLocalEncounterState(response.Run);
             ApplyTurnPresentation(LocalTurnPresentationAdapter.Create(response));
-            PlaySkillEffectsForLocalTurn(request.Ability, response.Outcome, response.Run ?? _service.CurrentView);
+            ApplySkillMotionForLocalTurn(request.Ability, response.Run ?? _service.CurrentView);
             CaptureLocalRestorableTarget(response, view);
 
             RunView committedView = response.Run ?? _service.CurrentView;
@@ -1112,9 +1441,22 @@ namespace KeyboardWanderer.Demo
                         _gmPending = false;
                         if (result.IsSuccess)
                         {
+                            Debug.Log("[KW.Narrative] event=LocalGmResponse result=success turn=" + turn +
+                                      " fallback=" + result.FallbackUsed + " model=" + result.Model +
+                                      " chars=" + (result.Narrative?.Length ?? 0));
                             _lastNarrative = result.Narrative;
+                            _lastNarrativeFallbackUsed = result.FallbackUsed;
+                            _lastNarrativeModel = string.IsNullOrWhiteSpace(result.Model)
+                                ? "deterministic"
+                                : result.Model;
+                            ReopenDialogueForNewTurnContent();
                             AddLog("GM · " + result.Narrative);
                             PublishPresentationState(PresentationChange.Dialogue | PresentationChange.Hud);
+                        }
+                        else
+                        {
+                            Debug.LogWarning("[KW.Narrative] event=LocalGmResponse result=failure turn=" + turn +
+                                             " error=" + result.Error);
                         }
                     }));
             }
@@ -1129,6 +1471,144 @@ namespace KeyboardWanderer.Demo
             }
             PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue |
                                      PresentationChange.Minimap | PresentationChange.Selection);
+        }
+
+        private IEnumerator SubmitServerNarrativeChoice(NarrativeChoiceOption choice)
+        {
+            EnsureRuntimeClients();
+            if (choice == null || string.IsNullOrWhiteSpace(_lastChoiceSetId) || _serverRun == null)
+            {
+                PresentChoiceRejection("INVALID_CHOICE", "현재 선택 세트가 만료되었습니다.");
+                yield break;
+            }
+
+            string submittedChoiceSetId = _lastChoiceSetId;
+            string submittedChoiceId = choice.ChoiceId;
+            NarrativeChoiceOption[] submittedChoices = _lastNarrativeChoices;
+            string idempotencyKey = "unity-choice-" + Guid.NewGuid().ToString("N");
+            long expectedVersion = _serverRun.version;
+            GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
+            int turnBeforeSubmit = _serverRun.currentTurn;
+
+            _choiceSubmissionPending = true;
+            _serverPending = true;
+            _gmPending = true;
+            _serverStatus = "서사 선택 처리 중";
+            // Invalidate the consumed set immediately so a second mouse/key event cannot
+            // submit it. Keep the visible options in place (disabled by TurnPending) so
+            // the choice labels do not flicker into legacy fallback options while waiting.
+            _lastChoiceSetId = string.Empty;
+            Debug.Log("[KW.Choice] event=Selected runId=" + _serverRun.id + " turn=" +
+                      _serverRun.currentTurn + " choiceSetId=" + submittedChoiceSetId +
+                      " choiceId=" + submittedChoiceId + " kind=" + choice.ChoiceKind);
+
+            GameApiClient.Result<GameApiClient.CommittedTurn> result = null;
+            yield return _gameApi.SubmitNarrativeChoice(_serverRun.id, submittedChoiceSetId,
+                submittedChoiceId, idempotencyKey, expectedVersion, value => result = value);
+
+            _serverPending = false;
+            _gmPending = false;
+            _choiceSubmissionPending = false;
+            if (result == null || !result.IsSuccess || result.Value == null)
+            {
+                // Restore the exact sealed set so a transient network failure is retryable.
+                _lastChoiceSetId = submittedChoiceSetId;
+                _lastNarrativeChoices = submittedChoices ?? Array.Empty<NarrativeChoiceOption>();
+                RecoverPendingChoiceSet(runBeforeSubmit?.pendingChoiceSet, true);
+                PresentChoiceRejection(result?.ErrorCode, result?.ErrorMessage);
+                if (result == null || result.ErrorCode == "NETWORK_ERROR" || result.ErrorCode == "RUN_VERSION_CONFLICT")
+                    yield return ResyncServerRun();
+                yield break;
+            }
+
+            GameApiClient.CommittedTurn committed = result.Value;
+            CaptureRestorableTarget(committed.Turn, runBeforeSubmit);
+            _serverRun = committed.Run;
+            SyncEncounterStateFromServer();
+            SyncRestorableCandidateFromServer();
+            ApplyServerTurnPresentation(committed.Turn);
+            RecoverPendingChoiceSet(_serverRun.pendingChoiceSet, false);
+            SyncServerEntityVisuals(_serverRun);
+            PrepareStoryWorldActions();
+            _selectionController.ResetSelection(AbilityKind.Move);
+            UpdateSelectionVisual(_service.CurrentView);
+            _runSessionController?.RememberServerRun(_serverRun.id);
+            _serverStatus = committed.FromIdempotencyCache ? "서사 선택 멱등 응답 재생" : "서사 선택 반영 완료";
+            AddLog("서사 선택 · " + choice.Text);
+            Debug.Log("[KW.Choice] event=Resolved runId=" + _serverRun.id + " turnBefore=" +
+                      turnBeforeSubmit + " turnAfter=" + _serverRun.currentTurn + " choiceSetId=" +
+                      submittedChoiceSetId + " choiceId=" + submittedChoiceId +
+                      " fallback=" + (committed.Turn?.narrative?.fallbackUsed ?? true));
+            PlaySfx(AssetClip("UiAcceptSound"));
+            PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue |
+                                     PresentationChange.Minimap | PresentationChange.Selection);
+        }
+
+        private IEnumerator SubmitServerPlayerMessage(string text)
+        {
+            EnsureRuntimeClients();
+            string idempotencyKey = "unity-message-" + Guid.NewGuid().ToString("N");
+            long expectedVersion = _serverRun.version;
+            GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
+            int turnBeforeSubmit = _serverRun.currentTurn;
+
+            _choiceSubmissionPending = true;
+            _serverPending = true;
+            _gmPending = true;
+            _serverStatus = "자연어 대화 생성 중";
+            _lastChoiceSetId = string.Empty;
+            Debug.Log("[KW.Message] event=Submitted runId=" + _serverRun.id + " turn=" +
+                      turnBeforeSubmit + " chars=" + text.Length);
+
+            GameApiClient.Result<GameApiClient.CommittedTurn> result = null;
+            yield return _gameApi.SubmitPlayerMessage(_serverRun.id, text, idempotencyKey,
+                expectedVersion, value => result = value);
+
+            _serverPending = false;
+            _gmPending = false;
+            _choiceSubmissionPending = false;
+            if (result == null || !result.IsSuccess || result.Value == null)
+            {
+                RecoverPendingChoiceSet(runBeforeSubmit?.pendingChoiceSet, true);
+                PresentChoiceRejection(result?.ErrorCode, result?.ErrorMessage);
+                if (result == null || result.ErrorCode == "NETWORK_ERROR" || result.ErrorCode == "RUN_VERSION_CONFLICT")
+                    yield return ResyncServerRun();
+                yield break;
+            }
+
+            GameApiClient.CommittedTurn committed = result.Value;
+            _serverRun = committed.Run;
+            SyncEncounterStateFromServer();
+            SyncRestorableCandidateFromServer();
+            ApplyServerTurnPresentation(committed.Turn);
+            RecoverPendingChoiceSet(_serverRun.pendingChoiceSet, false);
+            SyncServerEntityVisuals(_serverRun);
+            PrepareStoryWorldActions();
+            _selectionController.ResetSelection(AbilityKind.Move);
+            UpdateSelectionVisual(_service.CurrentView);
+            _runSessionController?.RememberServerRun(_serverRun.id);
+            _serverStatus = "자연어 대화 반영 완료";
+            AddLog("플레이어 · " + text);
+            Debug.Log("[KW.Message] event=Resolved runId=" + _serverRun.id + " turnBefore=" +
+                      turnBeforeSubmit + " turnAfter=" + _serverRun.currentTurn + " fallback=" +
+                      (committed.Turn?.narrative?.fallbackUsed ?? true));
+            PlaySfx(AssetClip("UiAcceptSound"));
+            PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue |
+                                     PresentationChange.Minimap | PresentationChange.Selection);
+        }
+
+        private void PresentChoiceRejection(string errorCode, string technicalMessage)
+        {
+            string playerMessage = PlayerFacingRejection(errorCode, technicalMessage);
+            _selectionController?.Reject(playerMessage);
+            _serverStatus = "선택 처리 불가 · " + playerMessage;
+            _sceneUi?.ReleaseDialogueChoiceInputLock();
+            AddLog("서사 선택 거부 · " + (errorCode ?? "UNKNOWN") + " · " +
+                   (technicalMessage ?? string.Empty));
+            Debug.LogWarning("[KW.Choice] event=Rejected code=" + (errorCode ?? "UNKNOWN") +
+                             " message=" + (technicalMessage ?? string.Empty));
+            PlaySfx(AssetClip("UiCancelSound"));
+            PublishPresentationState(PresentationChange.Dialogue | PresentationChange.Hud);
         }
 
         private IEnumerator SubmitServerAction(TurnRequest request)
@@ -1184,7 +1664,7 @@ namespace KeyboardWanderer.Demo
                             ApplyServerTurnPresentation(recoveredTurn.Value);
                             _serverStatus = "타임아웃 후 커밋된 턴 복구 완료";
                             SyncServerEntityVisuals(_serverRun);
-                            QueueServerSceneSequence(recoveredTurn.Value.sceneSequence);
+                            PrepareStoryWorldActions();
                         }
                     }
                 }
@@ -1203,8 +1683,8 @@ namespace KeyboardWanderer.Demo
             SyncRestorableCandidateFromServer();
             ApplyServerTurnPresentation(committed.Turn);
             SyncServerEntityVisuals(_serverRun);
-            PlaySkillEffectsForServerTurn(committed.Turn);
-            QueueServerSceneSequence(committed.Turn.sceneSequence);
+            PrepareStoryWorldActions();
+            ApplySkillMotionForServerTurn(committed.Turn);
             UpdateSelectionVisual(_service.CurrentView);
             _runSessionController?.RememberServerRun(_serverRun.id);
 
@@ -1325,6 +1805,7 @@ namespace KeyboardWanderer.Demo
                 invariantHeld,
                 GmEnabled,
                 actorName));
+            RecoverPendingChoiceSet(_serverRun.pendingChoiceSet, false);
             SyncRestorableCandidateFromServer();
             TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPositionAfter);
             List<GridCoord> visualPath = _pathPlanner.FindServerVisualPath(
@@ -1353,9 +1834,23 @@ namespace KeyboardWanderer.Demo
                 _serverRun = result.Value;
                 SyncEncounterStateFromServer();
                 SyncRestorableCandidateFromServer();
+                RecoverPendingChoiceSet(_serverRun.pendingChoiceSet, true);
                 SyncServerEntityVisuals(_serverRun);
                 _serverStatus = "최신 권위 상태 재동기화 완료";
             }
+        }
+
+        private static StorySequencePage[] FixedOpeningMonologue()
+        {
+            return new[]
+            {
+                new StorySequencePage("MONOLOGUE", CampaignCatalog.ProtagonistName,
+                    "……여기가 코드리아인가. 조용해 보이지만, 곳곳의 모습이 어딘가 조금씩 어긋나 있어."),
+                new StorySequencePage("MONOLOGUE", CampaignCatalog.ProtagonistName,
+                    "관리자 키보드는 내 손에 있지만 정답까지 알려 주지는 않겠지. 지우기 전에 먼저 살펴보고, 길을 막는 존재가 있다면 왜 그러는지부터 들어 보자."),
+                new StorySequencePage("MONOLOGUE", CampaignCatalog.ProtagonistName,
+                    "이 세계를 정복할 필요는 없어. 흘러가는 이야기를 지켜보다가, 정말 필요한 순간에만 내가 할 수 있는 선택을 하면 돼.")
+            };
         }
 
         private void StartNewRun()
@@ -1423,10 +1918,14 @@ namespace KeyboardWanderer.Demo
                 _scenePlaybackCoroutine = null;
             }
             _gmPending = false;
+            _choiceSubmissionPending = false;
             _showPause = false;
             _playerWalking = false;
             _reopenDialogueAfterWalk = false;
             _service = service;
+            Debug.Log("[KW.Session] event=StartRun service=" + (_service == null ? "null" : "ready") +
+                      " serverOnline=" + _serverOnline + " serverRun=" +
+                      (_serverRun == null ? "null" : _serverRun.id) + " resumed=" + resumed);
             _turnGateway = _serverOnline && _serverRun != null
                 ? new ServerTurnGateway(_gameApi, () => _serverRun?.id)
                 : new LocalTurnGateway(service);
@@ -1454,9 +1953,18 @@ namespace KeyboardWanderer.Demo
             _lastDialogue = Array.Empty<string>();
             _dialogueSpeakerNames.Clear();
             _dialogueSpeakerSprites.Clear();
+            _lastStorySequence = Array.Empty<StorySequencePage>();
+            _lastNextInterventionReason = string.Empty;
+            _lastChoiceSetId = string.Empty;
+            _lastNarrativeChoices = Array.Empty<NarrativeChoiceOption>();
+            _lastSuggestedSkillIds = Array.Empty<string>();
+            _pendingRuntimeRenderSequence = Array.Empty<GameApiClient.SceneActionSnapshot>();
             _lastNarrativeFallbackUsed = true;
             _lastNarrativeModel = "deterministic";
-            _tutorialPresenter.Start(PlayerPrefs.GetInt(TutorialCompletedKey, 0) == 0);
+            // Online runs already open with an authored NPC approach and a server-provided
+            // intervention. The legacy tutorial replaces the entire dialogue view, so showing
+            // it here would hide the NPC's first line. Keep it only for the local fallback.
+            _tutorialPresenter.Start(!_serverOnline && PlayerPrefs.GetInt(TutorialCompletedKey, 0) == 0);
             _dialoguePresenter.Reset();
 
             if (resumed)
@@ -1478,11 +1986,28 @@ namespace KeyboardWanderer.Demo
                 _lastOutcome = "READY";
                 _lastAttempt = "MOVE 목적지 또는 관리자 키보드 스킬과 대상을 선택하세요.";
                 _lastExplanation = "자연어 없이 선택된 스킬·대상·장면 상태만으로 권위 판정을 실행합니다.";
-                _lastNarrative = CampaignPremise(_service.CurrentView);
+                GameApiClient.NarrativeSnapshot opening = _serverOnline ? _serverRun?.openingNarrative : null;
+                _lastNarrative = !string.IsNullOrWhiteSpace(opening?.body)
+                    ? opening.body
+                    : CampaignPremise(_service.CurrentView);
+                _lastStorySequence = opening != null
+                    ? ServerTurnPresentationAdapter.BuildStorySequence(opening, _serverRun, _lastNarrative)
+                    : FixedOpeningMonologue();
+                _lastDialogue = opening?.dialogue ?? Array.Empty<string>();
+                _lastNextInterventionReason = opening?.nextIntervention?.reason ??
+                    "우선 가까운 곳부터 천천히 살펴보자. 길을 따라 움직이거나, 눈에 걸리는 존재의 사정을 조사해도 좋겠다.";
+                _lastSuggestedSkillIds = opening?.nextIntervention?.suggestedSkillIds ?? new[] { "SEARCH", "CONNECT" };
+                _lastNarrativeFallbackUsed = opening?.fallbackUsed ?? true;
+                _lastNarrativeModel = opening?.model ?? "deterministic";
                 AddLog("고정 월드 1회 생성 완료 · seed " + _worldSeed + " · " + ShortHash(LayoutHash(_service.CurrentView)));
             }
 
-            _selectionController.ResetSelection(resumed ? AbilityKind.Move : FirstObjectiveAbility(_service.CurrentView));
+            if (_serverOnline && _serverRun != null)
+                RecoverPendingChoiceSet(_serverRun.pendingChoiceSet, true);
+
+            // A run begins in neutral movement mode. Story beats may recommend a skill,
+            // but recommendations must never look like a player selection.
+            _selectionController.ResetSelection(AbilityKind.Move);
             _cameraInspectCoord = null;
             _cameraInspectUntil = 0f;
             SyncRestorableCandidateFromServer();
@@ -1517,6 +2042,8 @@ namespace KeyboardWanderer.Demo
 
         private void ShowTitle()
         {
+            _sceneUi?.CloseInventoryQuestOverlay();
+            _inputRouter?.SetUiOverlayMode(false);
             _screenMode = ScreenMode.Title;
             _showPause = false;
             _gmPending = false;
@@ -1931,6 +2458,11 @@ namespace KeyboardWanderer.Demo
         {
             if (path == null || path.Count < 2 || !TryGetPlayerVisual(view, out KeyboardWandererEntityVisualState visual))
                 return;
+            if (path.Count - 1 >= CinematicTravelPathThreshold && _cameraController?.TargetCamera != null)
+            {
+                BeginCinematicTravel(path[0], path[path.Count - 1], visual, view);
+                return;
+            }
             visual.MovementPath.Clear();
             Vector2 origin = MapOrigin(view);
             for (int i = 1; i < path.Count; i++)
@@ -1938,12 +2470,70 @@ namespace KeyboardWanderer.Demo
             if (visual.MovementPath.Count == 0)
                 return;
             visual.TargetPosition = visual.MovementPath.Dequeue();
+            BeginWalkingPresentation();
+            _cameraInspectCoord = null;
+            _cameraInspectUntil = 0f;
+        }
+
+        private void BeginCinematicTravel(GridCoord start, GridCoord destination,
+            KeyboardWandererEntityVisualState visual, RunView view)
+        {
+            Vector2 mapOrigin = MapOrigin(view);
+            Vector3 startWorld = WorldPosition(mapOrigin, start);
+            Vector3 destinationWorld = WorldPosition(mapOrigin, destination);
+            Vector3 delta = destinationWorld - startWorld;
+            Vector3 travelDirection = Mathf.Abs(delta.x) >= Mathf.Abs(delta.y)
+                ? new Vector3(Mathf.Sign(delta.x), 0f, 0f)
+                : new Vector3(0f, Mathf.Sign(delta.y), 0f);
+            if (travelDirection.sqrMagnitude < 0.5f) travelDirection = Vector3.right;
+
+            Camera camera = _cameraController.TargetCamera;
+            float halfHeight = camera.orthographicSize;
+            float halfWidth = halfHeight * Mathf.Max(0.1f, camera.aspect);
+            float exitDistance = Mathf.Abs(travelDirection.x) > 0f ? halfWidth + 1.25f : halfHeight + 1.25f;
+            Vector3 cameraCenter = camera.transform.position;
+            Vector3 exit = new Vector3(
+                Mathf.Abs(travelDirection.x) > 0f ? cameraCenter.x + travelDirection.x * exitDistance : startWorld.x,
+                Mathf.Abs(travelDirection.y) > 0f ? cameraCenter.y + travelDirection.y * exitDistance : startWorld.y,
+                startWorld.z);
+
+            visual.MovementPath.Clear();
+            visual.MovementPath.Enqueue(destinationWorld);
+            visual.TargetPosition = exit;
+            BeginWalkingPresentation();
+            _cameraInspectCoord = start;
+            _cameraInspectUntil = Time.unscaledTime + 10f;
+            StartCoroutine(CompleteCinematicTravelExit(visual, destination, destinationWorld, exit,
+                travelDirection, exitDistance));
+        }
+
+        private IEnumerator CompleteCinematicTravelExit(KeyboardWandererEntityVisualState visual,
+            GridCoord destination, Vector3 destinationWorld, Vector3 exitWorld,
+            Vector3 travelDirection, float entryDistance)
+        {
+            while (_playerWalking && visual?.Root != null &&
+                   Vector3.SqrMagnitude(visual.Root.transform.position - exitWorld) > 0.01f)
+                yield return null;
+            if (!_playerWalking || visual?.Root == null) yield break;
+
+            _cameraController.Snap(destinationWorld);
+            _cameraInspectCoord = destination;
+            _cameraInspectUntil = Time.unscaledTime + 10f;
+            Vector3 entry = destinationWorld - travelDirection * entryDistance;
+            entry.z = destinationWorld.z;
+            visual.Root.transform.position = entry;
+            visual.MovementPath.Clear();
+            visual.TargetPosition = destinationWorld;
+            Debug.Log("[KW.Travel] event=CinematicTransition destination=(" + destination.X + "," +
+                      destination.Y + ") result=camera-snapped-and-player-entering");
+        }
+
+        private void BeginWalkingPresentation()
+        {
             _playerWalking = true;
             _reopenDialogueAfterWalk = !_dialoguePresenter.IsDismissed;
             _dialoguePresenter.Dismiss();
             _sceneUi?.SetStoryVisible(false);
-            _cameraInspectCoord = null;
-            _cameraInspectUntil = 0f;
         }
 
         private void QueueServerSceneSequence(GameApiClient.SceneActionSnapshot[] sequence)
@@ -1985,6 +2575,21 @@ namespace KeyboardWanderer.Demo
                 yield return PlayServerActorReaction(action, type == "DEFEATED");
                 yield break;
             }
+            if (type == "DEFEND" || type == "ASSIST")
+            {
+                yield return PlayServerActorGesture(action, type == "DEFEND");
+                yield break;
+            }
+            if (type == "SPAWN")
+            {
+                if (Guid.TryParse(action.actorId, out Guid spawnedId) &&
+                    _entityVisuals.TryGetValue(spawnedId, out KeyboardWandererEntityVisualState spawnedVisual) &&
+                    spawnedVisual.Root != null)
+                    spawnedVisual.Root.SetActive(true);
+                PlaySfx(AssetClip("UiCancelSound"));
+                yield return new WaitForSecondsRealtime(0.45f);
+                yield break;
+            }
 
             string actorName = ServerEntityName(action.actorId, type == "DIALOGUE" ? "NPC" : "세계");
             string message = !string.IsNullOrWhiteSpace(action.text) ? action.text : action.line;
@@ -2000,10 +2605,10 @@ namespace KeyboardWanderer.Demo
                     _dialogueSpeakerNames[dialogueKey] = actorName;
                     _dialogueSpeakerSprites[dialogueKey] = ServerEntitySprite(action.actorId);
                     AddLog(actorName + " · “" + action.line.Trim() + "”");
-                    _dialoguePresenter.Show();
-                    _sceneUi?.SetStoryVisible(true);
                 }
-                yield return new WaitForSecondsRealtime(0.7f);
+                // Player-facing dialogue is owned by narrative.storySequence and advances
+                // only through UiAdvanceDialogue. The authoritative scene sequence keeps
+                // this line as a log entry so its timed playback cannot replace UI pages.
                 yield break;
             }
 
@@ -2014,6 +2619,33 @@ namespace KeyboardWanderer.Demo
             else if (type == "ENCOUNTER")
                 PlaySfx(AssetClip("UiCancelSound"));
             yield return new WaitForSecondsRealtime(type == "ENCOUNTER" ? 0.6f : 0.35f);
+        }
+
+        private void PrepareStoryWorldActions()
+        {
+            for (int i = 0; i < _lastServerSceneSequence.Length; i++)
+            {
+                GameApiClient.SceneActionSnapshot action = _lastServerSceneSequence[i];
+                if (!string.Equals(action?.type, "SPAWN", StringComparison.OrdinalIgnoreCase) ||
+                    !Guid.TryParse(action.actorId, out Guid entityId) ||
+                    !_entityVisuals.TryGetValue(entityId, out KeyboardWandererEntityVisualState visual) || visual.Root == null) continue;
+                visual.Root.SetActive(false);
+            }
+
+            for (int i = 0; i < _pendingRuntimeRenderSequence.Length; i++)
+            {
+                GameApiClient.SceneActionSnapshot action = _pendingRuntimeRenderSequence[i];
+                if (!string.Equals(action?.type, "SPAWN", StringComparison.OrdinalIgnoreCase) ||
+                    !Guid.TryParse(action.actorId, out Guid entityId) ||
+                    !_entityVisuals.TryGetValue(entityId, out KeyboardWandererEntityVisualState visual) || visual.Root == null)
+                    continue;
+                visual.Root.SetActive(false);
+            }
+            if (_pendingRuntimeRenderSequence.Length > 0)
+            {
+                QueueServerSceneSequence(_pendingRuntimeRenderSequence);
+                _pendingRuntimeRenderSequence = Array.Empty<GameApiClient.SceneActionSnapshot>();
+            }
         }
 
         private void FocusServerSceneAction(GameApiClient.SceneActionSnapshot action)
@@ -2045,6 +2677,8 @@ namespace KeyboardWanderer.Demo
                 case "SPAWN":
                 case "ENCOUNTER":
                 case "DIALOGUE":
+                case "DEFEND":
+                case "ASSIST":
                     return true;
                 default:
                     return false;
@@ -2162,14 +2796,45 @@ namespace KeyboardWanderer.Demo
             if (!defeated) PlaySfx(AssetClip("HitSound"), cutOffPrevious: false);
         }
 
+        private IEnumerator PlayServerActorGesture(GameApiClient.SceneActionSnapshot action, bool defending)
+        {
+            if (!Guid.TryParse(action.actorId, out Guid actorId) ||
+                !_entityVisuals.TryGetValue(actorId, out KeyboardWandererEntityVisualState visual) || visual.Root == null)
+            {
+                if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
+                yield return new WaitForSecondsRealtime(0.2f);
+                yield break;
+            }
+
+            Vector3 baseScale = visual.Root.transform.localScale;
+            float started = Time.unscaledTime;
+            const float duration = 0.42f;
+            PlaySfx(AssetClip(defending ? "UiCancelSound" : "UiAcceptSound"));
+            while (visual.Root != null && Time.unscaledTime - started < duration)
+            {
+                float progress = (Time.unscaledTime - started) / duration;
+                float pulse = Mathf.Sin(progress * Mathf.PI);
+                visual.Root.transform.localScale = defending
+                    ? new Vector3(baseScale.x * (1f + pulse * 0.16f), baseScale.y * (1f - pulse * 0.08f), baseScale.z)
+                    : baseScale * (1f + pulse * 0.12f);
+                yield return null;
+            }
+            if (visual.Root != null) visual.Root.transform.localScale = baseScale;
+            if (!string.IsNullOrWhiteSpace(action.text)) AddLog("후속 장면 · " + action.text);
+        }
+
         private void CompletePlayerPathAnimation()
         {
             _playerWalking = false;
+            _cameraInspectCoord = null;
+            _cameraInspectUntil = 0f;
             if (_reopenDialogueAfterWalk)
             {
                 _reopenDialogueAfterWalk = false;
                 _dialoguePresenter.Show();
                 _sceneUi?.SetStoryVisible(true);
+                Debug.Log("[KW.Narrative] event=DialogueDisplay result=reopened-after-walk sceneUi=" +
+                          (_sceneUi == null ? "null" : "ready"));
             }
         }
 
@@ -2640,9 +3305,10 @@ namespace KeyboardWanderer.Demo
         {
             string layoutHash = useServerWorld ? _serverRun?.world?.layoutHash : view.Region.LayoutHash;
             HashSet<GridCoord> routeTiles = BuildRouteTileSet(view, useServerWorld);
-            for (int y = 2; y < height - 2; y += 2)
+            int createdDecorations = 0;
+            for (int y = 2; y < height - 2 && createdDecorations < MaxBiomeDecorations; y += 2)
             {
-                for (int x = 2; x < width - 2; x += 2)
+                for (int x = 2; x < width - 2 && createdDecorations < MaxBiomeDecorations; x += 2)
                 {
                     var coord = new GridCoord(x, y);
                     string biomeId = BiomeIdAt(view, coord);
@@ -2656,6 +3322,7 @@ namespace KeyboardWanderer.Demo
                     CreateDecoration(biomeId, "Scenery", DecorationSpriteForBiome(
                             biomeId, StableVisualHash(layoutHash, x, y, 47)), coord, origin,
                         DecorationTint(biomeId), scale);
+                    createdDecorations++;
                 }
             }
 
@@ -2808,11 +3475,14 @@ namespace KeyboardWanderer.Demo
 
         private void UpdateDecorationOcclusion()
         {
+            if (Time.unscaledTime < _nextDecorationOcclusionAt)
+                return;
+            _nextDecorationOcclusionAt = Time.unscaledTime + DecorationOcclusionInterval;
             if (_service == null || !TryGetPlayerVisual(_service.CurrentView, out KeyboardWandererEntityVisualState player) ||
                 player.Renderer == null)
                 return;
             _decorationRenderer?.UpdateOcclusion(player.Root.transform.position,
-                player.Renderer.sortingOrder, Time.unscaledDeltaTime);
+                player.Renderer.sortingOrder, DecorationOcclusionInterval);
         }
 
         private Sprite DecorationSpriteForBiome(string biomeId, int variantHash)
@@ -3234,6 +3904,15 @@ namespace KeyboardWanderer.Demo
 
         private void SetAbility(AbilityKind ability)
         {
+            if (!string.IsNullOrEmpty(AbilityInputBlockReason(ability)))
+                return;
+            if (!IsOfferedAbility(ability))
+            {
+                Debug.LogWarning("[KW.Input] event=SetAbility ability=" + ability +
+                                 " result=blocked reason=not-offered-by-current-choice");
+                PlaySfx(AssetClip("UiCancelSound"));
+                return;
+            }
             if (!_selectionController.ChangeAbility(ability, _lastRestorableTarget, _lastRestorableCoord))
                 return;
             if (_service != null)
@@ -3271,11 +3950,90 @@ namespace KeyboardWanderer.Demo
 
         private string ActionGuidanceText(RunView view)
         {
+            if (_encounterMoveRequired && IsOpenServerEncounter(_serverRun?.activeEncounter))
+            {
+                GameApiClient.ActiveEncounterSnapshot encounter = _serverRun.activeEncounter;
+                return FirstNonEmpty(encounter.title, "앞을 막은 사건") + " · 어떤 스킬을 사용할까?\n" +
+                       FirstNonEmpty(encounter.description, _encounterReason) + "\n선택지: " + SuggestedSkillList();
+            }
+            if (!string.IsNullOrWhiteSpace(_lastNextInterventionReason))
+                return _lastNextInterventionReason + "\n어디로 이동할까, 또는 어떤 스킬을 사용할까?\n" +
+                       MovementChoiceHint(view) + " · 스킬: " + SuggestedSkillList();
             if (CanSubmitCurrentSelection())
                 return ExecutionPreview(view);
             return KeyboardWandererHudTextComposer.ObjectiveRouteHint(PresentationModel(view)) +
                    NarrativeSelectionHint() +
                    "\nMOVE는 턴을 쓰지 않고, 키보드 기술은 D20과 의미 턴 1회를 사용합니다.";
+        }
+
+        private string[] CurrentSuggestedSkillIds()
+        {
+            GameApiClient.ActiveEncounterSnapshot encounter = _serverRun?.activeEncounter;
+            if (IsOpenServerEncounter(encounter) && encounter.suggestedSkillIds != null &&
+                encounter.suggestedSkillIds.Length > 0)
+                return encounter.suggestedSkillIds;
+            return _lastSuggestedSkillIds ?? Array.Empty<string>();
+        }
+
+        private bool IsOfferedAbility(AbilityKind ability)
+        {
+            if (!_serverOnline) return true;
+            if (ability == AbilityKind.Move) return !_encounterMoveRequired;
+            if (ability == AbilityKind.Interact) return true;
+            string[] offered = CurrentSuggestedSkillIds();
+            if (offered.Length == 0) return true;
+            string skillId = ability == AbilityKind.SelectAll ? "SELECT_ALL" : ability.ToString().ToUpperInvariant();
+            for (int i = 0; i < offered.Length; i++)
+                if (string.Equals(offered[i], skillId, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private string SuggestedSkillList()
+        {
+            string[] offered = CurrentSuggestedSkillIds();
+            if (offered.Length == 0) return "현재 사용 가능한 스킬";
+            var labels = new List<string>();
+            for (int i = 0; i < offered.Length; i++)
+            {
+                if (TryAbilityForSkillId(offered[i], out AbilityKind ability))
+                    labels.Add(AbilityPlayerLabel(ability));
+            }
+            return labels.Count == 0 ? "현재 사용 가능한 스킬" : string.Join(" · ", labels);
+        }
+
+        private string MovementChoiceHint(RunView view)
+        {
+            GameApiClient.PointSnapshot[] points = _serverRun?.world?.points ?? _serverRun?.world?.pois;
+            if (points == null || points.Length == 0 || !TryGetPlayerPosition(view, out GridCoord player))
+                return "이동: 지도 클릭 또는 [ / ]로 목적지 선택";
+            var candidates = new List<GameApiClient.PointSnapshot>();
+            for (int i = 0; i < points.Length; i++)
+                if (points[i] != null && !string.Equals(points[i].kind, "hub", StringComparison.OrdinalIgnoreCase))
+                    candidates.Add(points[i]);
+            candidates.Sort((left, right) =>
+                (Math.Abs(left.x - player.X) + Math.Abs(left.y - player.Y)).CompareTo(
+                    Math.Abs(right.x - player.X) + Math.Abs(right.y - player.Y)));
+            var labels = new List<string>();
+            for (int i = 0; i < Math.Min(3, candidates.Count); i++)
+                labels.Add(FirstNonEmpty(candidates[i].nameKo, candidates[i].name, candidates[i].id, "목적지"));
+            return labels.Count == 0
+                ? "이동: 지도 클릭 또는 [ / ]로 목적지 선택"
+                : "이동: " + string.Join(" / ", labels) + " ([ / ]로 선택)";
+        }
+
+        private static bool TryAbilityForSkillId(string skillId, out AbilityKind ability)
+        {
+            switch ((skillId ?? string.Empty).ToUpperInvariant())
+            {
+                case "COPY": ability = AbilityKind.Copy; return true;
+                case "DELETE": ability = AbilityKind.Delete; return true;
+                case "CONNECT": ability = AbilityKind.Connect; return true;
+                case "RESTORE": ability = AbilityKind.Restore; return true;
+                case "UNDO": ability = AbilityKind.Undo; return true;
+                case "SEARCH": ability = AbilityKind.Search; return true;
+                case "SELECT_ALL": ability = AbilityKind.SelectAll; return true;
+                default: ability = AbilityKind.Move; return false;
+            }
         }
 
         private static string AbilityPlayerLabel(AbilityKind ability)
@@ -3539,6 +4297,11 @@ namespace KeyboardWanderer.Demo
                     }
                 }
             }
+            if (view == null)
+            {
+                position = default;
+                return false;
+            }
             position = view.PlayerPosition;
             return true;
         }
@@ -3690,55 +4453,74 @@ namespace KeyboardWanderer.Demo
 
         private void ApplyServerTurnPresentation(GameApiClient.TurnSnapshot turn)
         {
+            _lastServerSceneSequence = turn?.sceneSequence ?? Array.Empty<GameApiClient.SceneActionSnapshot>();
+            _pendingRuntimeRenderSequence = ServerTurnPresentationAdapter.BuildRuntimeRenderSequence(turn, _serverRun);
             ApplyTurnPresentation(ServerTurnPresentationAdapter.FromTurn(turn, _serverRun, GmEnabled));
+            RecoverPendingChoiceSet(_serverRun?.pendingChoiceSet, false);
         }
 
-        // ── 스킬 이펙트 ─────────────────────────────────────────────────────────────
-
-        private void EnsureSkillEffectTester()
+        private void PlayCurrentStoryWorldAction(int page)
         {
-            if (!enableSkillEffectTester || _skillEffectTester != null)
+            if (_lastStorySequence == null || page < 0 || page >= _lastStorySequence.Length) return;
+            StorySequencePage beat = _lastStorySequence[page];
+            if (!string.Equals(beat?.Type, "WORLD_ACTION", StringComparison.OrdinalIgnoreCase) ||
+                string.IsNullOrWhiteSpace(beat.ActionId) || _playedStoryActionIds.Contains(beat.ActionId)) return;
+            GameApiClient.SceneActionSnapshot action = null;
+            for (int i = 0; i < _lastServerSceneSequence.Length; i++)
+                if (string.Equals(_lastServerSceneSequence[i]?.actionId, beat.ActionId, StringComparison.Ordinal))
+                {
+                    action = _lastServerSceneSequence[i];
+                    break;
+                }
+            if (action == null)
+            {
+                Debug.LogWarning("[KW.Story] WORLD_ACTION ignored: confirmed action not found · " + beat.ActionId);
                 return;
-            var go = new GameObject("SkillEffectTester");
-            go.transform.SetParent(transform, false);
-            _skillEffectTester = go.AddComponent<SkillEffectTester>();
-            _skillEffectTester.Bind(this);
+            }
+            _playedStoryActionIds.Add(beat.ActionId);
+            if (_storyWorldActionCoroutine != null)
+                StopCoroutine(_storyWorldActionCoroutine);
+            _storyWorldActionPlaying = true;
+            Coroutine started = StartCoroutine(PlayStoryWorldAction(action));
+            // StartCoroutine은 첫 yield까지 즉시 실행할 수 있다. 아주 짧은 액션이 이미
+            // 끝났다면 완료된 Coroutine 참조를 다시 저장해 UI를 잠그지 않는다.
+            _storyWorldActionCoroutine = _storyWorldActionPlaying ? started : null;
         }
 
-        private SkillEffectDirector EnsureSkillEffectDirector()
+        private IEnumerator PlayStoryWorldAction(GameApiClient.SceneActionSnapshot action)
         {
-            if (_skillEffectDirector != null)
-                return _skillEffectDirector;
-            Transform effectsRoot = WorldEffectsRoot;
-            // 디렉터는 컨트롤러에 붙여 런 리셋(RuntimeEffects 정리)에도 살아남게 하고,
-            // 실제 이펙트 인스턴스만 effectsRoot 밑에 스폰한다.
-            var go = new GameObject("SkillEffectDirector");
-            go.transform.SetParent(transform, false);
-            _skillEffectDirector = go.AddComponent<SkillEffectDirector>();
-            SkillEffectCatalog catalog = Resources.Load<SkillEffectCatalog>("SkillEffectCatalog");
-            _skillEffectDirector.Initialize(catalog, effectsRoot);
-            if (catalog == null)
-                Debug.LogWarning("[SkillEffect] SkillEffectCatalog.asset을 Resources에서 찾지 못했습니다. " +
-                                 "메뉴 Keyboard Wanderer > Rebuild Skill Effect Catalog를 실행하세요.");
-            return _skillEffectDirector;
+            const float timeoutSeconds = 4f;
+            float deadline = Time.unscaledTime + timeoutSeconds;
+            try
+            {
+                while (_playerWalking && Time.unscaledTime < deadline)
+                    yield return null;
+                if (_playerWalking)
+                {
+                    Debug.LogWarning("[KW.Story] WORLD_ACTION timed out waiting for player movement · " +
+                                     action?.actionId);
+                    yield break;
+                }
+                yield return PlayServerSceneAction(action);
+            }
+            finally
+            {
+                _storyWorldActionPlaying = false;
+                _storyWorldActionCoroutine = null;
+                _pendingPresentationChanges |= PresentationChange.Dialogue;
+            }
         }
 
-        /// <summary>확정된 스킬·크기·속성·대상 위치로 이펙트를 재생하고, 공격 스킬이면 시전자를 대상 쪽으로 돌린다.</summary>
-        private void PlaySkillEffects(AbilityKind skill, SkillFxSize size, List<Vector3> targets,
-            SkillFxType fxType = SkillFxType.Physical)
-        {
-            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
-                return;
-            SetPlayerSkillMotion(skill, targets);
-            SkillEffectDirector director = EnsureSkillEffectDirector();
-            if (director == null || !director.IsReady)
-                return;
-            director.Play(SkillEffectMapping.ForTarget(skill, size, fxType), targets);
-        }
+        // ── 스킬 시전 모션 ───────────────────────────────────────────────────────────
+        // 실제 스킬 이펙트(VFX)는 서버 gameplayResult.fx.effectId를 그대로 재생하는
+        // PlayElementalAttackEffect(ApplyTurnPresentation 참조)가 담당한다. 여기서는
+        // 넙죽이가 스킬에 어울리는 시전 모션을 잠깐 재생하는 것만 다룬다.
 
         /// <summary>스킬에 어울리는 넙죽이 모션을 골라 시전 창을 연다. 공격 스킬은 대상 쪽을 바라본다.</summary>
         private void SetPlayerSkillMotion(AbilityKind skill, List<Vector3> targets)
         {
+            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
+                return;
             _playerActionFrames = SkillMotionFrames(skill);
             if ((skill == AbilityKind.Delete || skill == AbilityKind.SelectAll) && targets != null && targets.Count > 0)
                 FacePlayerToward(targets[0]);
@@ -3769,43 +4551,17 @@ namespace KeyboardWanderer.Demo
             }
         }
 
-        private void PlaySkillEffectsForLocalTurn(AbilityKind skill, RuleOutcome outcome, RunView view)
+        private void ApplySkillMotionForLocalTurn(AbilityKind skill, RunView view)
         {
-            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
-                return;
-            // 서버 payload의 fx_type이 아직 없으므로 실제 턴은 PHYSICAL(기본 폭발)로 재생한다.
-            PlaySkillEffects(skill, SkillEffectMapping.SizeFromOutcome(outcome), ResolveTargetsLocal(skill, view));
+            SetPlayerSkillMotion(skill, ResolveTargetsLocal(skill, view));
         }
 
-        private void PlaySkillEffectsForServerTurn(GameApiClient.TurnSnapshot turn)
+        private void ApplySkillMotionForServerTurn(GameApiClient.TurnSnapshot turn)
         {
             if (turn == null)
                 return;
             AbilityKind skill = AbilityFromSkillId(turn.skillId);
-            if (skill == AbilityKind.Move || skill == AbilityKind.Interact)
-                return;
-            PlaySkillEffects(skill, SkillEffectMapping.SizeFromOutcome(turn.outcome), ResolveTargetsServer(skill, turn));
-        }
-
-        /// <summary>테스터 전용. 근처 적(없으면 시전자) 위에 스킬 이펙트를 미리보기 재생하고, 맞힌 대상 수를 돌려준다.</summary>
-        public int DebugPreviewSkillEffect(AbilityKind skill, SkillFxSize size, SkillFxType fxType)
-        {
-            var targets = new List<Vector3>();
-            if (skill == AbilityKind.Undo || skill == AbilityKind.Search)
-            {
-                if (TryGetPlayerWorldPosition(out Vector3 selfPosition))
-                    targets.Add(selfPosition);
-            }
-            else
-            {
-                CollectHostilesNearPlayer(targets, 6f);
-                if (skill == AbilityKind.Connect && targets.Count > 2)
-                    targets = targets.GetRange(0, 2);
-            }
-            if (targets.Count == 0 && TryGetPlayerWorldPosition(out Vector3 fallback))
-                targets.Add(fallback);
-            PlaySkillEffects(skill, size, targets, fxType);
-            return targets.Count;
+            SetPlayerSkillMotion(skill, ResolveTargetsServer(skill, turn));
         }
 
         private List<Vector3> ResolveTargetsLocal(AbilityKind skill, RunView view)
@@ -3946,7 +4702,15 @@ namespace KeyboardWanderer.Demo
         private void ApplyTurnPresentation(TurnPresentationResult presentation)
         {
             if (presentation == null)
+            {
+                Debug.LogWarning("[KW.Narrative] event=ApplyTurnPresentation result=ignored reason=null-presentation");
                 return;
+            }
+            Debug.Log("[KW.Narrative] event=ApplyTurnPresentation result=accepted outcome=" +
+                      presentation.Outcome + " fallback=" + presentation.NarrativeFallbackUsed +
+                      " model=" + presentation.NarrativeModel + " chars=" +
+                      (presentation.Narrative?.Length ?? 0) + " dialoguePages=" +
+                      (presentation.Dialogue?.Length ?? 0));
             _lastD20 = presentation.D20;
             _lastModifier = presentation.Modifier;
             _lastDifficulty = presentation.Difficulty;
@@ -3971,11 +4735,89 @@ namespace KeyboardWanderer.Demo
                     _dialogueSpeakerSprites[key] = speakerSprite;
                 }
             }
+            _lastStorySequence = presentation.StorySequence;
+            _lastNextInterventionReason = presentation.NextInterventionReason;
+            _lastChoiceSetId = presentation.ChoiceSetId;
+            _lastNarrativeChoices = presentation.NarrativeChoices ?? Array.Empty<NarrativeChoiceOption>();
+            if (!string.IsNullOrWhiteSpace(_lastChoiceSetId) && _lastNarrativeChoices.Length >= 2 &&
+                string.IsNullOrWhiteSpace(_lastNextInterventionReason))
+                _lastNextInterventionReason = "이야기가 잠시 멈췄다. 어떤 말이나 행동으로 다음 장면을 이어 갈까?";
+            _lastSuggestedSkillIds = presentation.SuggestedSkillIds ?? Array.Empty<string>();
+            _playedStoryActionIds.Clear();
             _lastNarrativeFallbackUsed = presentation.NarrativeFallbackUsed;
             _lastNarrativeModel = presentation.NarrativeModel;
             _playerActionUntil = Time.unscaledTime + presentation.ActionDuration;
+            if (!string.IsNullOrWhiteSpace(presentation.ElementalEffectId))
+                StartCoroutine(PlayElementalAttackEffect(presentation.ElementalEffectId));
+            ReopenDialogueForNewTurnContent();
             for (int i = 0; i < presentation.LogEntries.Length; i++)
                 AddLog(presentation.LogEntries[i]);
+        }
+
+        private void RecoverPendingChoiceSet(GameApiClient.NextInterventionSnapshot pending, bool overwrite)
+        {
+            if (!ServerTurnPresentationAdapter.IsValidSealedChoiceSet(pending)) return;
+            if (!overwrite && HasSealedNarrativeChoiceSet()) return;
+            NarrativeChoiceOption[] choices = ServerTurnPresentationAdapter.BuildNarrativeChoices(
+                pending, pending.suggestedSkillIds, !_encounterMoveRequired);
+            if (choices.Length < 2) return;
+            _lastChoiceSetId = pending.choiceSetId.Trim();
+            _lastNarrativeChoices = choices;
+            if (!string.IsNullOrWhiteSpace(pending.reason))
+                _lastNextInterventionReason = pending.reason.Trim();
+            else if (string.IsNullOrWhiteSpace(_lastNextInterventionReason))
+                _lastNextInterventionReason = "이야기가 잠시 멈췄다. 어떤 말이나 행동으로 다음 장면을 이어 갈까?";
+            _lastSuggestedSkillIds = pending.suggestedSkillIds ?? Array.Empty<string>();
+            Debug.Log("[KW.Choice] event=Recovered choiceSetId=" + _lastChoiceSetId +
+                      " choices=" + _lastNarrativeChoices.Length + " turn=" + (_serverRun?.currentTurn ?? 0));
+        }
+
+        private IEnumerator PlayElementalAttackEffect(string effectId)
+        {
+            Sprite[] frames = _visualAssetLibrary?.GetElementalFrames(effectId);
+            if (frames == null || frames.Length == 0) yield break;
+            RunView view = _service?.CurrentView;
+            if (view == null || !TryGetPlayerVisual(view, out KeyboardWandererEntityVisualState player)) yield break;
+
+            Vector3 position = player.Root.transform.position + new Vector3(player.Facing.x, player.Facing.y, 0f) * 0.75f;
+            if (_selectionController?.SelectedTarget is Guid targetId &&
+                _entityVisuals.TryGetValue(targetId, out KeyboardWandererEntityVisualState target) && target?.Root != null)
+                position = target.Root.transform.position;
+            var effect = new GameObject(effectId);
+            if (WorldEffectsRoot != null) effect.transform.SetParent(WorldEffectsRoot, false);
+            effect.transform.position = position + Vector3.up * 0.12f;
+            effect.transform.localScale = Vector3.one * 1.45f;
+            SpriteRenderer renderer = effect.AddComponent<SpriteRenderer>();
+            renderer.sortingOrder = 220;
+            float delay = 1f / _visualAssetLibrary.GetElementalFrameRate(effectId);
+            for (int i = 0; i < frames.Length; i++)
+            {
+                renderer.sprite = frames[i];
+                yield return new WaitForSecondsRealtime(delay);
+            }
+            Destroy(effect);
+        }
+
+        /// <summary>
+        /// A committed result or a later AI narration must never remain hidden just because the
+        /// previous dialogue was dismissed. Walking temporarily owns the screen, so defer the
+        /// reopen until the path animation completes in that case.
+        /// </summary>
+        private void ReopenDialogueForNewTurnContent()
+        {
+            if (_playerWalking)
+            {
+                _reopenDialogueAfterWalk = true;
+                Debug.Log("[KW.Narrative] event=DialogueDisplay result=deferred reason=player-walking");
+                return;
+            }
+
+            _dialoguePresenter.Show();
+            _sceneUi?.SetStoryVisible(true);
+            _pendingPresentationChanges |= PresentationChange.Dialogue;
+            Debug.Log("[KW.Narrative] event=DialogueDisplay result=requested sceneUi=" +
+                      (_sceneUi == null ? "null" : "ready") + " tutorialActive=" +
+                      _tutorialPresenter.IsActive + " screen=" + _screenMode);
         }
 
         private void SyncEncounterStateFromServer()
@@ -3992,6 +4834,17 @@ namespace KeyboardWanderer.Demo
             _encounterReason = encounter.reason;
             GameApiClient.PositionSnapshot staging = encounter.stagingPosition ?? encounter.position;
             _encounterStagingCoord = staging == null ? (GridCoord?)null : new GridCoord(staging.x, staging.y);
+            if (_selectionController != null && _selectionController.Ability == AbilityKind.Move &&
+                encounter.suggestedSkillIds != null)
+            {
+                for (int i = 0; i < encounter.suggestedSkillIds.Length; i++)
+                {
+                    if (!TryAbilityForSkillId(encounter.suggestedSkillIds[i], out AbilityKind suggested)) continue;
+                    _selectionController.ChangeAbility(suggested, _lastRestorableTarget, _lastRestorableCoord);
+                    break;
+                }
+            }
+            RefreshFlowPhase();
         }
 
         private static bool IsOpenServerEncounter(GameApiClient.ActiveEncounterSnapshot encounter)

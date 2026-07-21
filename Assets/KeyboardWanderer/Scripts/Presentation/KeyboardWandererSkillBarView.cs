@@ -55,6 +55,10 @@ namespace KeyboardWanderer.Demo
             {
                 AbilityKind ability = abilities[i].Ability;
                 abilities[i].Button.onClick.AddListener(() => onAbilitySelected(ability));
+                TMP_Text[] labels = abilities[i].Button.GetComponentsInChildren<TMP_Text>(true);
+                for (int j = 0; j < labels.Length; j++)
+                    if (labels[j] != null && labels[j].name.IndexOf("Skill Label", StringComparison.OrdinalIgnoreCase) >= 0)
+                        labels[j].text = SkillLabel(ability, false);
             }
             _bound = true;
         }
@@ -77,10 +81,26 @@ namespace KeyboardWanderer.Demo
         {
             if (!IsReady)
                 return;
-            copyLabel.text = pasteMode ? "Ctrl V" : "Ctrl C";
-            deleteLabel.text = "Delete";
-            undoLabel.text = "Ctrl Z";
+            copyLabel.text = SkillLabel(AbilityKind.Copy, pasteMode);
+            deleteLabel.text = SkillLabel(AbilityKind.Delete, false);
+            undoLabel.text = SkillLabel(AbilityKind.Undo, false);
             copyKeycap.sprite = pasteMode ? assetManifest.KeyV : assetManifest.KeyC;
+        }
+
+        private static string SkillLabel(AbilityKind ability, bool pasteMode)
+        {
+            switch (ability)
+            {
+                case AbilityKind.Move: return "W  이동";
+                case AbilityKind.Copy: return pasteMode ? "Ctrl V  배치" : "Ctrl C  복제";
+                case AbilityKind.Delete: return "Delete  공격";
+                case AbilityKind.Connect: return "Ctrl K  연결";
+                case AbilityKind.Restore: return "Ctrl R  복구";
+                case AbilityKind.Undo: return "Ctrl Z  되돌리기";
+                case AbilityKind.Search: return "Ctrl F  조사";
+                case AbilityKind.SelectAll: return "Ctrl A  범위 공격";
+                default: return ability.ToString();
+            }
         }
 
 #if UNITY_EDITOR

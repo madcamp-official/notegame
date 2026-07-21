@@ -157,15 +157,26 @@ namespace KeyboardWanderer.Editor
             _assets = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(
                 "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset");
 
+            UpgradeDialoguePanelPrefab();
+
             GameObject prefabRoot = PrefabUtility.LoadPrefabContents(UiPrefabPath);
             try
             {
                 Transform oldHud = prefabRoot.transform.Find("Game HUD");
                 if (oldHud != null) Object.DestroyImmediate(oldHud.gameObject);
-                BuildGameHud(prefabRoot.transform);
+                GameObject hudAsset = AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/KeyboardWanderer/Prefabs/UI/Screens/GameHUD.prefab");
+                if (hudAsset == null)
+                    throw new UnityException("Componentized GameHUD prefab is missing.");
+                GameObject hud = (GameObject)PrefabUtility.InstantiatePrefab(hudAsset, prefabRoot.transform);
+                hud.name = "Game HUD";
+                hud.transform.SetSiblingIndex(1);
+                hud.SetActive(false);
 
                 KeyboardWandererSceneUI sceneUi = prefabRoot.GetComponent<KeyboardWandererSceneUI>();
                 sceneUi.AutoWire();
+                if (!sceneUi.IsReady)
+                    throw new UnityException("Regenerated AuthoredUI has incomplete screen references.");
                 EditorUtility.SetDirty(sceneUi);
                 PrefabUtility.SaveAsPrefabAsset(prefabRoot, UiPrefabPath);
             }
@@ -460,6 +471,75 @@ namespace KeyboardWanderer.Editor
                 Object.DestroyImmediate(child.gameObject);
         }
 
+        private static void UpgradeDialoguePanelPrefab()
+        {
+            const string path = "Assets/KeyboardWanderer/Prefabs/UI/Screens/DialoguePanel.prefab";
+            GameObject dialogue = PrefabUtility.LoadPrefabContents(path);
+            try
+            {
+                RectTransform root = dialogue.GetComponent<RectTransform>();
+                root.anchorMin = new Vector2(0.18f, 0.025f);
+                root.anchorMax = new Vector2(0.86f, 0.235f);
+                root.offsetMin = Vector2.zero;
+                root.offsetMax = Vector2.zero;
+
+                Transform storyObject = FindDescendant(dialogue.transform, "Story Text");
+                if (storyObject != null)
+                {
+                    RectTransform storyRect = storyObject.GetComponent<RectTransform>();
+                    storyRect.anchorMin = new Vector2(0.055f, 0.30f);
+                    storyRect.anchorMax = new Vector2(0.95f, 0.80f);
+                    TMP_Text storyText = storyObject.GetComponent<TMP_Text>();
+                    storyText.enableAutoSizing = true;
+                    storyText.fontSizeMin = 13;
+                    storyText.fontSizeMax = 18;
+                }
+
+                Transform oldChoices = FindDescendant(dialogue.transform, "Choice Strip");
+                if (oldChoices != null) Object.DestroyImmediate(oldChoices.gameObject);
+                Transform oldStage = FindDescendant(dialogue.transform, "Encounter Subject Stage");
+                if (oldStage != null) Object.DestroyImmediate(oldStage.gameObject);
+                RectTransform stage = PanelRect(root, "Encounter Subject Stage", new Vector2(-0.27f, 1.02f),
+                    new Vector2(1.27f, 4.62f), Vector2.zero, Vector2.zero,
+                    new Color(0.015f, 0.018f, 0.025f, 0.72f));
+                ImageRect(stage, "Encounter Subject", new Vector2(0.16f, 0.02f), new Vector2(0.84f, 0.98f),
+                    null, Color.white);
+                stage.SetAsFirstSibling();
+                stage.gameObject.SetActive(false);
+                RectTransform choices = PanelRect(root, "Choice Strip", new Vector2(0.02f, 1.08f),
+                    new Vector2(0.98f, 1.72f), Vector2.zero, Vector2.zero,
+                    new Color(0.055f, 0.036f, 0.022f, 0.96f));
+                AddOutline(choices.gameObject, new Color(Gold.r, Gold.g, Gold.b, 0.62f), 2f);
+                for (int i = 0; i < 4; i++)
+                {
+                    float top = 0.94f - i * 0.235f;
+                    RectTransform choice = ButtonRect(choices, "Choice " + (i + 1), "선택 " + (i + 1),
+                        new Vector2(0.025f, top - 0.19f), new Vector2(0.975f, top),
+                        i == 0 ? Gold : Raised, i == 0 ? Ink : Parchment, "Choice Label " + (i + 1));
+                    TMP_Text label = choice.GetComponentInChildren<TMP_Text>(true);
+                    label.enableAutoSizing = true;
+                    label.fontSizeMin = 10;
+                    label.fontSizeMax = 16;
+                    label.alignment = TextAlignmentOptions.MidlineLeft;
+                    label.margin = new Vector4(14f, 3f, 10f, 3f);
+                }
+                choices.gameObject.SetActive(false);
+                PrefabUtility.SaveAsPrefabAsset(dialogue, path);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(dialogue);
+            }
+        }
+
+        private static Transform FindDescendant(Transform root, string objectName)
+        {
+            Transform[] items = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < items.Length; i++)
+                if (items[i].name == objectName) return items[i];
+            return null;
+        }
+
         private static void EnsureEventSystem()
         {
             EventSystem eventSystem = Object.FindAnyObjectByType<EventSystem>(FindObjectsInactive.Include);
@@ -577,9 +657,16 @@ namespace KeyboardWanderer.Editor
                 "MAP\nPLACEHOLDER", 15, Muted, TextAnchor.MiddleCenter);
             TextRect(minimap, "Minimap Status", new Vector2(0.12f, 0.08f), new Vector2(0.88f, 0.19f), "탐사율 0%", 11, Muted, TextAnchor.MiddleLeft);
 
-            RectTransform story = PanelRect(root, "Story Panel", new Vector2(0.245f, 0.025f), new Vector2(0.82f, 0.19f),
+            RectTransform story = PanelRect(root, "Story Panel", new Vector2(0.18f, 0.025f), new Vector2(0.86f, 0.235f),
                 Vector2.zero, Vector2.zero, new Color(0.80f, 0.63f, 0.39f, 0.98f));
             ApplyPanelSprite(story, _assets != null ? _assets.DialogueBoxFaceset : null, Image.Type.Simple);
+            RectTransform subjectStage = PanelRect(story, "Encounter Subject Stage", new Vector2(-0.27f, 1.02f),
+                new Vector2(1.27f, 4.62f), Vector2.zero, Vector2.zero,
+                new Color(0.015f, 0.018f, 0.025f, 0.72f));
+            ImageRect(subjectStage, "Encounter Subject", new Vector2(0.16f, 0.02f), new Vector2(0.84f, 0.98f),
+                null, Color.white);
+            subjectStage.SetAsFirstSibling();
+            subjectStage.gameObject.SetActive(false);
             RectTransform portraitFrame = PanelRect(story, "Speaker Portrait Frame", new Vector2(0.025f, 0.18f), new Vector2(0.18f, 0.88f),
                 Vector2.zero, Vector2.zero, Color.clear);
             ImageRect(portraitFrame, "Speaker Portrait", new Vector2(0.20f, 0.20f), new Vector2(0.80f, 0.80f),
@@ -593,14 +680,35 @@ namespace KeyboardWanderer.Editor
 
             RectTransform speech = PanelRect(story, "Speech Bubble", new Vector2(0.19f, 0.10f), new Vector2(0.975f, 0.90f),
                 Vector2.zero, Vector2.zero, Color.clear);
-            RectTransform storyText = TextRect(speech, "Story Text", new Vector2(0.055f, 0.34f), new Vector2(0.95f, 0.76f),
-                "이곳에서 벌어진 이야기가 표시됩니다.", 14, new Color(0.35f, 0.20f, 0.13f, 1f), TextAnchor.UpperLeft);
-            EnableBestFit(storyText, 10, 14);
+            RectTransform storyText = TextRect(speech, "Story Text", new Vector2(0.055f, 0.30f), new Vector2(0.95f, 0.80f),
+                "이곳에서 벌어진 이야기가 표시됩니다.", 18, new Color(0.35f, 0.20f, 0.13f, 1f), TextAnchor.UpperLeft);
+            EnableBestFit(storyText, 13, 18);
             ButtonRect(speech, "Next Dialogue Button", "다음 ▶", new Vector2(0.86f, 0.10f), new Vector2(0.96f, 0.28f),
                 new Color(0.58f, 0.37f, 0.23f, 1f), Parchment, "Next Dialogue Label");
             RectTransform actionHint = TextRect(speech, "Action Hint", new Vector2(0.055f, 0.10f), new Vector2(0.82f, 0.28f),
                 "대화를 읽은 뒤 이동하거나 스킬을 사용할 수 있습니다.", 11, new Color(0.49f, 0.31f, 0.20f, 1f), TextAnchor.MiddleLeft);
             EnableBestFit(actionHint, 8, 11);
+            RectTransform choices = PanelRect(story, "Choice Strip", new Vector2(0.02f, 1.08f), new Vector2(0.98f, 1.72f),
+                Vector2.zero, Vector2.zero, new Color(0.055f, 0.036f, 0.022f, 0.96f));
+            AddOutline(choices.gameObject, new Color(Gold.r, Gold.g, Gold.b, 0.62f), 2f);
+            for (int i = 0; i < 4; i++)
+            {
+                float top = 0.94f - i * 0.235f;
+                RectTransform choice = ButtonRect(choices, "Choice " + (i + 1), "선택 " + (i + 1),
+                    new Vector2(0.025f, top - 0.19f), new Vector2(0.975f, top),
+                    i == 0 ? Gold : Raised, i == 0 ? Ink : Parchment, "Choice Label " + (i + 1));
+                TMP_Text label = choice.GetComponentInChildren<TMP_Text>(true);
+                if (label != null)
+                {
+                    label.fontSize = 16;
+                    label.enableAutoSizing = true;
+                    label.fontSizeMin = 10;
+                    label.fontSizeMax = 16;
+                    label.alignment = TextAlignmentOptions.MidlineLeft;
+                    label.margin = new Vector4(14f, 3f, 10f, 3f);
+                }
+            }
+            choices.gameObject.SetActive(false);
             root.gameObject.SetActive(false);
         }
 
@@ -672,7 +780,7 @@ namespace KeyboardWanderer.Editor
             Button button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = rect.GetComponent<Image>();
             ColorBlock colors = button.colors;
-            colors.fadeDuration = 0.055f;
+            colors.fadeDuration = 0.18f;
             colors.highlightedColor = new Color(1f, 0.84f, 0.42f, 1f);
             colors.pressedColor = new Color(0.94f, 0.49f, 0.16f, 1f);
             colors.selectedColor = new Color(1f, 0.75f, 0.25f, 1f);

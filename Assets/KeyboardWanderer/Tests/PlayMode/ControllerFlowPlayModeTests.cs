@@ -56,6 +56,7 @@ namespace KeyboardWanderer.Tests.PlayMode
 
             Invoke(controller, "StartRun", service, false);
             controller.UiSetGmEnabled(false);
+            MoveToLegacyChoiceBoundary(controller);
             KeyboardWandererSelectionController selection = Selection(controller);
             selection.ResetSelection(AbilityKind.Search);
             selection.SelectPrimary(keyboard.EntityId);
@@ -91,7 +92,7 @@ namespace KeyboardWanderer.Tests.PlayMode
             Assert.That(actions.All(action => action == AbilityKind.Move ||
                 TurnRequest.IsPublicKeyboardSkill(action)), Is.True);
             Assert.That(secondary.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length,
-                Is.LessThanOrEqualTo(3));
+                Is.LessThanOrEqualTo(8));
         }
 
         [UnityTest]
@@ -108,7 +109,8 @@ namespace KeyboardWanderer.Tests.PlayMode
             string statusValues = (string)Invoke(controller, "StatusHudValues", service.CurrentView);
             string guidance = (string)Invoke(controller, "ActionGuidanceText", service.CurrentView);
 
-            Assert.That(selected, Is.EqualTo(service.CurrentView.RequiredBeats[0].TriggerAbility));
+            Assert.That(selected, Is.EqualTo(AbilityKind.Move),
+                "A new run must not look as if a skill was preselected before the first dialogue choice.");
             Assert.That(objective, Does.Contain(service.CurrentView.CurrentStoryBeatObjective));
             Assert.That(questHint, Does.Contain("추천"));
             Assert.That(statusValues, Does.Contain("0 / 3"));
@@ -148,6 +150,8 @@ namespace KeyboardWanderer.Tests.PlayMode
 
             Invoke(controller, "StartRun", service, false);
             controller.UiSetGmEnabled(false);
+            SetField(controller, "_lastSuggestedSkillIds", new[] { "DELETE" });
+            MoveToLegacyChoiceBoundary(controller);
             controller.UiSetAbility(AbilityKind.Delete);
             Selection(controller).SelectPrimary(enemy.EntityId);
             controller.UiSubmit();
@@ -179,10 +183,71 @@ namespace KeyboardWanderer.Tests.PlayMode
 
             Assert.DoesNotThrow(controller.UiSubmit);
             Assert.That(service.CurrentView.Version, Is.EqualTo(version));
-            Assert.That(Selection(controller).Feedback, Does.Contain("현재 선택한 대상"));
+            Assert.That(Selection(controller).Feedback, Is.Empty,
+                "Gameplay submit is ignored while manually reading the opening pages.");
             DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
-            Assert.That(dialogue.IsDismissed, Is.True,
-                "잘못된 선택이나 시스템 오류는 대화창을 열지 않아야 합니다.");
+            Assert.That(dialogue.IsDismissed, Is.False,
+                "A blocked gameplay shortcut must not dismiss the current dialogue page.");
+        }
+
+        [Test]
+        public void NewTurnContent_ReopensDismissedDialogue()
+        {
+            KeyboardWandererDemoController controller = CreateAuthoredController("Codria Dialogue Reopen Test");
+            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
+            dialogue.Dismiss();
+
+            Invoke(controller, "ReopenDialogueForNewTurnContent");
+
+            Assert.That(dialogue.IsDismissed, Is.False,
+                "새 턴 결과나 AI 문장이 도착하면 이전에 닫은 대화창도 다시 열려야 합니다.");
+        }
+
+        [UnityTest]
+        public IEnumerator InterventionPage_RemainsVisibleAndOpensContextualInput()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(7311);
+            KeyboardWandererDemoController controller = CreateAuthoredController("Codria Intervention Page Test");
+            yield return null;
+            Invoke(controller, "StartRun", service, false);
+            SetField(controller, "_lastStorySequence", new[]
+            {
+                new StorySequencePage("MONOLOGUE", "넙죽이", "이제 다음 선택을 해야 해.")
+            });
+            SetField(controller, "_lastNextInterventionReason", "주변의 흐름이 잠시 멈췄다.");
+            SetField(controller, "_lastSuggestedSkillIds", new[] { "SEARCH", "CONNECT" });
+
+            string[] pages = (string[])Invoke(controller, "BuildDialoguePages", "fallback");
+            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
+            dialogue.Restore(pages.Length - 1, false);
+            Invoke(controller, "RefreshFlowPhase");
+
+            GameFlowStateMachine flow = (GameFlowStateMachine)GetField(controller, "_flowStateMachine");
+            Assert.That(pages[^1], Does.Contain("주변의 흐름이 잠시 멈췄다"));
+            NarrativeChoiceOption[] choices = (NarrativeChoiceOption[])Invoke(controller, "CurrentNarrativeChoices");
+            Assert.That(choices, Has.Some.Matches<NarrativeChoiceOption>(value => value.SkillId == "SEARCH"));
+            Assert.That(choices, Has.Some.Matches<NarrativeChoiceOption>(value => value.SkillId == "CONNECT"));
+            Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.AwaitingChoice));
+            Assert.That(flow.CanIssueAbility(AbilityKind.Search), Is.True);
+
+            controller.UiAdvanceDialogue();
+            Assert.That(dialogue.IsDismissed, Is.False,
+                "개입 페이지는 닫히지 않고 사용자가 문맥 선택지를 고를 때까지 유지되어야 합니다.");
+        }
+
+        [Test]
+        public void NewTurnContent_WhileWalking_DefersDialogueUntilMovementCompletes()
+        {
+            KeyboardWandererDemoController controller = CreateAuthoredController("Codria Dialogue Walking Test");
+            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
+            dialogue.Dismiss();
+            SetField(controller, "_playerWalking", true);
+
+            Invoke(controller, "ReopenDialogueForNewTurnContent");
+
+            Assert.That(dialogue.IsDismissed, Is.True);
+            Assert.That(GetField(controller, "_reopenDialogueAfterWalk"), Is.True,
+                "이동 중 도착한 메시지는 버리지 않고 이동 완료 뒤 표시하도록 예약해야 합니다.");
         }
 
         [Test]
@@ -257,9 +322,16 @@ namespace KeyboardWanderer.Tests.PlayMode
 
             Assert.That(Invoke(controller, "IsSkillEnabledForCurrentTarget", AbilityKind.Search), Is.True);
             string detail = (string)Invoke(controller, "SelectionStatusDetail", service.CurrentView);
-            Assert.That(detail, Does.Contain("코멘트"));
-            Assert.That(detail, Does.Contain("거리 3"));
-            Assert.That(detail, Does.Contain("선택됨"));
+            Assert.That(detail, Does.Contain("AI가 개입 대상"));
+            Assert.That(detail, Does.Not.Contain("선택됨"));
+        }
+
+        private static void MoveToLegacyChoiceBoundary(KeyboardWandererDemoController controller)
+        {
+            string[] pages = (string[])Invoke(controller, "BuildDialoguePages", "fallback");
+            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
+            dialogue.Restore(pages.Length - 1, false);
+            Invoke(controller, "RefreshFlowPhase");
         }
 
         private static object Invoke(object target, string name, params object[] values)

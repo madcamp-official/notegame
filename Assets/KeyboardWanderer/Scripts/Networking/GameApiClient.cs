@@ -455,6 +455,21 @@ namespace KeyboardWanderer.Networking
         }
 
         [Serializable]
+        public sealed class InventoryItemSnapshot
+        {
+            public string id;
+            public string kind;
+            public string name;
+            public string description;
+            public int quantity;
+            public string effect;
+            public int effectValue;
+            public bool @protected;
+            public int acquiredTurn;
+            public string source;
+        }
+
+        [Serializable]
         public sealed class QuestSnapshot
         {
             public string id;
@@ -701,6 +716,9 @@ namespace KeyboardWanderer.Networking
             public string id;
             public string status;
             public string reason;
+            public string kind;
+            public string title;
+            public string description;
             public string areaId;
             public string biomeId;
             public string campaignRole;
@@ -711,6 +729,8 @@ namespace KeyboardWanderer.Networking
             public PositionSnapshot position;
             public PositionSnapshot destination;
             public string[] suggestedActions;
+            public string[] suggestedActionContexts;
+            public string[] suggestedSkillIds;
             public int openedNavigationSequence;
             public int campaignTurnOpened;
             public string openedAt;
@@ -742,6 +762,8 @@ namespace KeyboardWanderer.Networking
             public string campaignPhase;
             public string currentBeat;
             public StoryBeatSnapshot currentStoryBeat;
+            public ArcQuestionSnapshot currentArcQuestion;
+            public ArcQuestionSnapshot[] arcQuestions;
             public MacroPhaseSnapshot currentMacroPhase;
             public MacroPhaseSnapshot[] campaignMacroPhases;
             public DirectorStateSnapshot directorState;
@@ -751,6 +773,7 @@ namespace KeyboardWanderer.Networking
             public int maxFocus;
             public int experience;
             public int gold;
+            public InventoryItemSnapshot[] inventory;
             public int pressure;
             public bool exposed;
             public string endingCode;
@@ -789,6 +812,10 @@ namespace KeyboardWanderer.Networking
             public string[] regionOutcomes;
             public string[] abilityUsageHistory;
             public string[] unresolvedHooks;
+            // Recovery source for turn-zero, save/load, and a client reconnect between
+            // the scene response and the player's next sealed narrative choice.
+            public NextInterventionSnapshot pendingChoiceSet;
+            public NarrativeSnapshot openingNarrative;
         }
 
         [Serializable]
@@ -837,7 +864,14 @@ namespace KeyboardWanderer.Networking
             public string nextObjective;
             public string nextTargetId;
             public string nextTargetName;
+            public string title;
+            public string description;
+            public string discoveryType;
+            public string intensity;
+            public string outcomeId;
+            public string summary;
             public int delta;
+            public int reward;
             public int trust;
             public int fear;
             public int trustDelta;
@@ -846,7 +880,21 @@ namespace KeyboardWanderer.Networking
             public int turnNo;
             public PositionSnapshot from;
             public PositionSnapshot to;
+            public PositionSnapshot[] path;
+            public string facing;
+            public bool arrived;
             public PositionSnapshot position;
+        }
+
+        [Serializable]
+        public sealed class ArcQuestionSnapshot
+        {
+            public string id;
+            public int order;
+            public int startTurn;
+            public int deadlineTurn;
+            public string question;
+            public string status;
         }
 
         [Serializable]
@@ -898,6 +946,7 @@ namespace KeyboardWanderer.Networking
         [Serializable]
         public sealed class SceneActionSnapshot
         {
+            public string actionId;
             public int sequence;
             public string type;
             public string actorId;
@@ -965,11 +1014,45 @@ namespace KeyboardWanderer.Networking
             public string body;
             public string[] dialogue;
             public DialogueSnapshot[] dialogueDetails;
+            public StorySequenceSnapshot[] storySequence;
+            public NextInterventionSnapshot nextIntervention;
+            public string elementalEffectId;
             public ProposedOperationSnapshot[] proposedOps;
             public ProposedOperationSnapshot[] appliedOps;
             public ProposedOperationSnapshot[] rejectedOps;
             public bool fallbackUsed;
             public string model;
+        }
+
+        [Serializable]
+        public sealed class StorySequenceSnapshot
+        {
+            public string type;
+            public string speakerId;
+            public string actionId;
+            public string text;
+        }
+
+        [Serializable]
+        public sealed class NarrativeChoiceSnapshot
+        {
+            public string choiceId;
+            public string text;
+            public string choiceKind;
+            public string intentTag;
+            public string skillId;
+            public string targetEntityId;
+            public string destinationRef;
+            public string resolutionMode;
+        }
+
+        [Serializable]
+        public sealed class NextInterventionSnapshot
+        {
+            public string choiceSetId;
+            public string reason;
+            public NarrativeChoiceSnapshot[] choices;
+            public string[] suggestedSkillIds;
         }
 
         [Serializable]
@@ -1006,6 +1089,214 @@ namespace KeyboardWanderer.Networking
         }
 
         [Serializable]
+        public sealed class RuntimeEntityRefSnapshot
+        {
+            public string id;
+            public string entityType;
+        }
+
+        [Serializable]
+        public sealed class GameplayFxSnapshot
+        {
+            public string scaleTier;
+            public string element;
+            public string effectId;
+        }
+
+        [Serializable]
+        public sealed class GameplayConnectionSnapshot
+        {
+            public string id;
+            public RuntimeEntityRefSnapshot from;
+            public RuntimeEntityRefSnapshot to;
+            public string relation;
+            public int expiresTurn;
+        }
+
+        [Serializable]
+        public sealed class GameplayResultDetailSnapshot
+        {
+            public RuntimeEntityRefSnapshot target;
+            public RuntimeEntityRefSnapshot actor;
+            public RuntimeEntityRefSnapshot clone;
+            public RuntimeEntityRefSnapshot item;
+            public RuntimeEntityRefSnapshot createdItem;
+            public RuntimeEntityRefSnapshot[] targetRefs;
+            public RuntimeEntityRefSnapshot[] targets;
+            public RuntimeEntityRefSnapshot[] sources;
+            public RuntimeEntityRefSnapshot[] affectedTargets;
+            public GameplayConnectionSnapshot[] connections;
+            public string lineageRootId;
+            public string rejectionReason;
+            public string resolution;
+            public string restorationDegree;
+            public string discoveryType;
+            public string informationTitle;
+            public string[] restoredFields;
+            public string[] revealedEvidenceIds;
+            public int[] sourceTurns;
+            public int sourceSnapshotTurn;
+            public int compensatedTurns;
+            public int damage;
+            public int radius;
+            public int affectedCount;
+            public int quantity;
+            public float range;
+            public float speed;
+            public bool hit;
+            public bool destroyed;
+            public bool moved;
+            public bool copyLocked;
+            public bool runTurnRewound;
+            public bool alreadyInvestigated;
+            public bool newInformation;
+            public bool consumed;
+            public PositionSnapshot from;
+            public PositionSnapshot to;
+            public PositionSnapshot[] path;
+            public string facing;
+            public bool arrived;
+        }
+
+        [Serializable]
+        public sealed class GameplayResultSnapshot
+        {
+            public string schemaVersion;
+            public string actionType;
+            public string context;
+            public string outcome;
+            public bool succeeded;
+            public string rollId;
+            public GameplayFxSnapshot fx;
+            public GameplayResultDetailSnapshot result;
+        }
+
+        [Serializable]
+        public sealed class RuntimeRollSnapshot
+        {
+            public string rollId;
+            public int d20;
+            public int modifier;
+            public int total;
+            public int mechanicalScore;
+            public string resultTier;
+        }
+
+        [Serializable]
+        public sealed class RuntimeResolutionSnapshot
+        {
+            public bool required;
+            public RuntimeRollSnapshot roll;
+            public EventSnapshot[] healthChanges;
+            public EventSnapshot[] inventoryChanges;
+            public EventSnapshot[] skillChanges;
+            public EventSnapshot[] statusChanges;
+            public EventSnapshot[] movementChanges;
+            public EventSnapshot[] relationshipChanges;
+            public EventSnapshot[] worldChanges;
+            public EventSnapshot[] confirmedEffects;
+        }
+
+        [Serializable]
+        public sealed class RuntimeUnityEventPayloadSnapshot
+        {
+            public string skillId;
+            public string intensity;
+            public string effectId;
+            public string element;
+            public string fxScaleTier;
+            public GameplayResultSnapshot gameplayResult;
+            public EventSnapshot[] confirmedEvents;
+        }
+
+        [Serializable]
+        public sealed class RuntimeUnityEventSnapshot
+        {
+            public string eventId;
+            public string type;
+            public string actorId;
+            public string[] targetIds;
+            public string resultTier;
+            public int sequence;
+            public RuntimeUnityEventPayloadSnapshot payload;
+        }
+
+        [Serializable]
+        public sealed class RuntimeUnitySnapshot
+        {
+            public bool renderRequired;
+            public RuntimeUnityEventSnapshot[] events;
+        }
+
+        [Serializable]
+        public sealed class RuntimeTurnSnapshot
+        {
+            public int turnNo;
+            public string intent;
+            public string model;
+            public bool fallbackUsed;
+        }
+
+        [Serializable]
+        public sealed class RuntimeNarrativeSnapshot
+        {
+            public StorySequenceSnapshot[] storySequence;
+            public NextInterventionSnapshot nextIntervention;
+        }
+
+        [Serializable]
+        public sealed class RuntimeSpatialPlayerSnapshot
+        {
+            public string entityId;
+            public PositionSnapshot position;
+            public string facing;
+        }
+
+        [Serializable]
+        public sealed class RuntimeSpatialMovementSnapshot
+        {
+            public PositionSnapshot from;
+            public PositionSnapshot to;
+            public PositionSnapshot[] path;
+            public string facing;
+            public bool arrived;
+        }
+
+        [Serializable]
+        public sealed class RuntimeVisibilitySnapshot
+        {
+            public string entityId;
+            public PositionSnapshot position;
+            public int distance;
+            public string direction;
+            public bool visible;
+        }
+
+        [Serializable]
+        public sealed class RuntimeSpatialSnapshot
+        {
+            public bool authoritative;
+            public string areaId;
+            public string biomeId;
+            public RuntimeSpatialPlayerSnapshot player;
+            public RuntimeSpatialMovementSnapshot movement;
+            public RuntimeVisibilitySnapshot[] visibility;
+            public ActiveEncounterSnapshot activeEncounter;
+        }
+
+        [Serializable]
+        public sealed class RuntimeSnapshot
+        {
+            public RuntimeTurnSnapshot turn;
+            public RuntimeNarrativeSnapshot narrative;
+            public RuntimeResolutionSnapshot resolution;
+            public GameplayResultSnapshot gameplayResult;
+            public RuntimeSpatialSnapshot spatial;
+            public RuntimeUnitySnapshot unity;
+            public long runVersion;
+        }
+
+        [Serializable]
         public sealed class TurnSnapshot
         {
             public string id;
@@ -1028,6 +1319,7 @@ namespace KeyboardWanderer.Networking
             public NarrativeSnapshot narrative;
             public SceneDecisionSnapshot sceneDecision;
             public SceneActionSnapshot[] sceneSequence;
+            public RuntimeSnapshot runtime;
             public string createdAt;
         }
 
@@ -1355,6 +1647,67 @@ namespace KeyboardWanderer.Networking
             });
         }
 
+        /// <summary>
+        /// Resolves one server-issued narrative choice. All new choice kinds (including
+        /// SKILL and TRAVEL) use this boundary so the authoritative server can reject a
+        /// stale choice and record the selected line before dispatching its mechanics.
+        /// </summary>
+        public IEnumerator SubmitNarrativeChoice(
+            string runId,
+            string choiceSetId,
+            string choiceId,
+            string idempotencyKey,
+            long expectedRunVersion,
+            Action<Result<CommittedTurn>> completed)
+        {
+            if (string.IsNullOrWhiteSpace(choiceSetId) || string.IsNullOrWhiteSpace(choiceId))
+            {
+                completed?.Invoke(Result<CommittedTurn>.Failure(0, "INVALID_CHOICE",
+                    "A sealed choiceSetId and choiceId are required."));
+                yield break;
+            }
+            string body = BuildChoiceJson(choiceSetId, choiceId, idempotencyKey, expectedRunVersion);
+            yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/choices", body, raw =>
+            {
+                TurnEnvelope envelope = raw.Success ? SafeParse<TurnEnvelope>(raw.Json) : null;
+                if (envelope?.turn == null || envelope.run == null)
+                {
+                    completed?.Invoke(Result<CommittedTurn>.Failure(raw.StatusCode, raw.ErrorCode,
+                        raw.Success ? "선택 결과를 해석할 수 없습니다." : raw.ErrorMessage, raw.CurrentVersion));
+                    return;
+                }
+                PopulateTileCodes(envelope.run.world, raw.Json);
+                completed?.Invoke(Result<CommittedTurn>.Success(raw.StatusCode,
+                    new CommittedTurn(envelope.turn, envelope.run, envelope.fromIdempotencyCache)));
+            });
+        }
+
+        public IEnumerator SubmitPlayerMessage(string runId, string text, string idempotencyKey,
+            long expectedRunVersion, Action<Result<CommittedTurn>> completed)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                completed?.Invoke(Result<CommittedTurn>.Failure(0, "PLAYER_MESSAGE_INVALID", "대화 내용을 입력해 주세요."));
+                yield break;
+            }
+            string body = "{\"text\":\"" + EscapeJson(text.Trim()) + "\"," +
+                          "\"idempotencyKey\":\"" + EscapeJson(idempotencyKey) + "\"," +
+                          "\"expectedRunVersion\":" + expectedRunVersion.ToString(CultureInfo.InvariantCulture) + "}";
+            yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/messages", body, raw =>
+            {
+                TurnEnvelope envelope = raw.Success ? SafeParse<TurnEnvelope>(raw.Json) : null;
+                if (envelope?.turn == null || envelope.run == null)
+                {
+                    completed?.Invoke(Result<CommittedTurn>.Failure(raw.StatusCode, raw.ErrorCode,
+                        raw.Success ? "자연어 대화 결과를 해석할 수 없습니다." : raw.ErrorMessage, raw.CurrentVersion));
+                    return;
+                }
+                PopulateTileCodes(envelope.run.world, raw.Json);
+                completed?.Invoke(Result<CommittedTurn>.Success(raw.StatusCode,
+                    new CommittedTurn(envelope.turn, envelope.run, envelope.fromIdempotencyCache)));
+            });
+        }
+
         public IEnumerator SubmitTravel(
             string runId,
             string idempotencyKey,
@@ -1520,6 +1873,15 @@ namespace KeyboardWanderer.Networking
                            ",\"y\":" + destination.y.ToString(CultureInfo.InvariantCulture) + "}");
             }
             return "{" + string.Join(",", fields) + "}";
+        }
+
+        private static string BuildChoiceJson(string choiceSetId, string choiceId,
+            string idempotencyKey, long expectedVersion)
+        {
+            return "{\"choiceSetId\":\"" + EscapeJson(choiceSetId) + "\"," +
+                   "\"choiceId\":\"" + EscapeJson(choiceId) + "\"," +
+                   "\"idempotencyKey\":\"" + EscapeJson(idempotencyKey) + "\"," +
+                   "\"expectedRunVersion\":" + expectedVersion.ToString(CultureInfo.InvariantCulture) + "}";
         }
 
         private static bool IsCanonicalSkillId(string skillId)

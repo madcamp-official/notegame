@@ -32,12 +32,12 @@ namespace KeyboardWanderer.Demo
             if (healthBack != null)
             {
                 healthBack.sprite = whiteSprite;
-                healthBack.gameObject.SetActive(hostile);
+                healthBack.gameObject.SetActive(false);
             }
             if (healthFill != null)
             {
                 healthFill.sprite = whiteSprite;
-                healthFill.gameObject.SetActive(hostile);
+                healthFill.gameObject.SetActive(false);
             }
             if (finaleLabel != null)
                 finaleLabel.gameObject.SetActive(false);

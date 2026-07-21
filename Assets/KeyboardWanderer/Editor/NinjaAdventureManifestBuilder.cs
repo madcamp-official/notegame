@@ -173,6 +173,22 @@ namespace KeyboardWanderer.Editor
                 Boss("boss.tengu-blue.v1", "TenguBlue", "Idle.png", "Idle_0"),
                 Boss("boss.tengu-red.v1", "TenguRed", "Idle.png", "Idle_0")
             };
+            manifest.ElementalEffects = new[]
+            {
+                Effect("ELEMENTAL_EXPLOSION", "Explosion", "SpriteSheet.png", 9),
+                Effect("ELEMENTAL_FLAME", "Flam", "SpriteSheet.png", 10),
+                Effect("ELEMENTAL_ICE", "Ice", "SpriteSheet.png", 10),
+                Effect("ELEMENTAL_ICE_B", "Ice", "SpriteSheetB.png", 9),
+                Effect("ELEMENTAL_ICE_FLAKE", "Ice", "SpriteSheetFlake.png", 9),
+                Effect("ELEMENTAL_PLANT", "Plant", "SpriteSheet.png", 10),
+                Effect("ELEMENTAL_PLANT_B", "Plant", "SpriteSheetB.png", 10),
+                Effect("ELEMENTAL_ROCK", "Rock", "SpriteSheet.png", 14),
+                Effect("ELEMENTAL_ROCK_B", "Rock", "SpriteSheetB.png", 14),
+                Effect("ELEMENTAL_ROCK_SPIKE", "RockSpike", "SpriteSheet.png", 15),
+                Effect("ELEMENTAL_THUNDER", "Thunder", "SpriteSheet.png", 8),
+                Effect("ELEMENTAL_WATER", "Water", "SpriteSheet.png", 10),
+                Effect("ELEMENTAL_WATER_PILLAR", "WaterPillar", "SpriteSheet.png", 10)
+            };
 
             manifest.WoodPanel = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Theme/Theme Wood/nine_path_panel.png");
@@ -260,6 +276,18 @@ namespace KeyboardWanderer.Editor
                 "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Vision.png");
             manifest.SelectAllIcon = LoadFirstSprite(
                 "Assets/NinjaAdventure/Ui/Skill Icon/Spell/Explosion.png");
+            manifest.GenericItemIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Spell/BookLight.png");
+            manifest.SalvageItemIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Items & Weapon/Scroll.png");
+            manifest.MaterialItemIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Job & Action/Plant.png");
+            manifest.ToolItemIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Items & Weapon/Kunai.png");
+            manifest.ConsumableItemIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Job & Action/Potion.png");
+            manifest.KeyItemIcon = LoadFirstSprite(
+                "Assets/NinjaAdventure/Ui/Skill Icon/Items & Weapon/Amulet.png");
             manifest.PixelFont = AssetDatabase.LoadAssetAtPath<Font>(
                 "Assets/KeyboardWanderer/Resources/Fonts/NeoDunggeunmoPro-Regular.ttf");
 
@@ -374,12 +402,27 @@ namespace KeyboardWanderer.Editor
         private static ActorAnimationEntry Actor(string assetId, string sourcePath, string spriteName,
             string controllerPath)
         {
+            string actorPath = "Assets/NinjaAdventure/Actor/" + sourcePath;
+            string directory = actorPath.Substring(0, actorPath.LastIndexOf('/'))
+                .Replace("/SeparateAnim", string.Empty).Replace("/Separate", string.Empty);
             return new ActorAnimationEntry
             {
                 AssetId = assetId,
-                DefaultSprite = LoadSprite("Assets/NinjaAdventure/Actor/" + sourcePath, spriteName),
+                DefaultSprite = LoadSprite(actorPath, spriteName),
+                Portrait = LoadFirstSprite(directory + "/Faceset.png"),
                 AnimatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
                     "Assets/KeyboardWanderer/Animations/" + controllerPath)
+            };
+        }
+
+        private static ElementalEffectEntry Effect(string effectId, string folder, string file, int frames)
+        {
+            return new ElementalEffectEntry
+            {
+                EffectId = effectId,
+                SpriteSheet = LoadPixelTexture("Assets/NinjaAdventure/FX/Elemental/" + folder + "/" + file),
+                FrameCount = frames,
+                FramesPerSecond = 12f
             };
         }
 

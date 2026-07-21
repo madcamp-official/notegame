@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { createRequestHandler } from "./http/handler.js";
 import { GeminiNarrator } from "./llm/gemini-narrator.js";
+import { LlmResponseTrace } from "./llm/response-trace.js";
 import { VllmNarrator } from "./llm/vllm-director.js";
 import { LlmResponseTrace } from "./llm/response-trace.js";
 import { MemoryStore } from "./store/memory-store.js";

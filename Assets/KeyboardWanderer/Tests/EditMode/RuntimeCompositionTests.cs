@@ -17,6 +17,73 @@ namespace KeyboardWanderer.Tests.EditMode
     public sealed class RuntimeCompositionTests
     {
         [Test]
+        public void GameFlowStateMachine_OnlyAcceptsCommandsAtChoiceBoundaries()
+        {
+            var flow = new GameFlowStateMachine();
+            flow.Refresh(Signals(resolving: true));
+            Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.ResolvingChoice));
+            Assert.That(flow.CanIssueGameplayCommand, Is.False);
+
+            flow.Refresh(Signals(intervention: true));
+            Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.AwaitingChoice));
+            Assert.That(flow.CanIssueAbility(AbilityKind.Move), Is.True);
+
+            flow.Refresh(Signals());
+            Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.WaitingForNarrative));
+            Assert.That(flow.CanIssueAbility(AbilityKind.Search), Is.False);
+        }
+
+        [Test]
+        public void GameFlowStateMachine_SealedNarrativeChoiceBlocksDirectSkills()
+        {
+            var flow = new GameFlowStateMachine();
+            flow.Refresh(new GameFlowSignals(false, false, true, true, false, false,
+                false, false, false, false, true, false, true));
+
+            Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.AwaitingNarrativeChoice));
+            Assert.That(flow.CanSelectNarrativeChoice, Is.True);
+            Assert.That(flow.CanIssueGameplayCommand, Is.False);
+            Assert.That(flow.CanIssueAbility(AbilityKind.Search), Is.False);
+        }
+
+        [Test]
+        public void GameFlowStateMachine_EncounterAllowsSkillsButRejectsMove()
+        {
+            var flow = new GameFlowStateMachine();
+            flow.Refresh(Signals(encounter: true, intervention: true));
+            Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.AwaitingEncounterChoice));
+            Assert.That(flow.CanIssueAbility(AbilityKind.Search), Is.True);
+            Assert.That(flow.CanIssueAbility(AbilityKind.Move), Is.False);
+            Assert.That(flow.BlockReason(AbilityKind.Move), Does.Contain("AwaitingEncounterChoice"));
+        }
+
+        [Test]
+        public void GameFlowStateMachine_PresentationTakesPriorityOverEncounterChoice()
+        {
+            var flow = new GameFlowStateMachine();
+            flow.Refresh(Signals(story: true, encounter: true));
+            Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.PresentingStory));
+            Assert.That(flow.CanIssueGameplayCommand, Is.False);
+        }
+
+        [Test]
+        public void GameFlowStateMachine_TutorialPreservesInteractivePractice()
+        {
+            var flow = new GameFlowStateMachine();
+            flow.Refresh(new GameFlowSignals(false, false, true, true, false, true,
+                false, false, false, false, false, false));
+            Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.Tutorial));
+            Assert.That(flow.CanIssueAbility(AbilityKind.Search), Is.False);
+        }
+
+        private static GameFlowSignals Signals(bool resolving = false, bool story = false,
+            bool encounter = false, bool intervention = false)
+        {
+            return new GameFlowSignals(false, false, true, true, false, false,
+                resolving, false, false, story, intervention, encounter);
+        }
+
+        [Test]
         public void DestructiveActions_RequireSecondMatchingInputAndCanBeCancelled()
         {
             var confirmation = new DestructiveActionConfirmation();

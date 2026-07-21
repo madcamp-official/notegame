@@ -1,5 +1,6 @@
 using KeyboardWanderer.Editor;
 using KeyboardWanderer.Editor.Validation;
+using KeyboardWanderer.Demo;
 using NUnit.Framework;
 using TMPro;
 using UnityEditor;
@@ -47,6 +48,33 @@ namespace KeyboardWanderer.Tests.EditMode
                 Assert.That(atlases[glyph.atlasIndex], Is.Not.Null,
                     "글리프가 비어 있는 Atlas 슬롯을 참조하고 있습니다.");
             }
+        }
+
+        [Test]
+        public void AuthoredUi_KeepsComponentizedHudReferencesAndInactiveStartupState()
+        {
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/KeyboardWanderer/Prefabs/UI/AuthoredUI.prefab");
+            Assert.That(prefab, Is.Not.Null);
+            KeyboardWandererSceneUI sceneUi = prefab.GetComponent<KeyboardWandererSceneUI>();
+            Assert.That(sceneUi, Is.Not.Null);
+            Assert.That(sceneUi.IsReady, Is.True,
+                "HUD 재생성 후 화면 View 직렬화 참조가 유실되었습니다.");
+            Transform hud = Find(prefab.transform, "Game HUD");
+            Assert.That(hud, Is.Not.Null);
+            Assert.That(hud.gameObject.activeSelf, Is.False,
+                "타이틀 초기화 전에 Game HUD placeholder가 노출되면 안 됩니다.");
+            Assert.That(Find(prefab.transform, "Choice Strip"), Is.Not.Null);
+            Assert.That(Find(prefab.transform, "Encounter Subject Stage"), Is.Not.Null);
+            Assert.That(Find(prefab.transform, "Encounter Subject"), Is.Not.Null);
+        }
+
+        private static Transform Find(Transform root, string name)
+        {
+            Transform[] children = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < children.Length; i++)
+                if (children[i].name == name) return children[i];
+            return null;
         }
     }
 }

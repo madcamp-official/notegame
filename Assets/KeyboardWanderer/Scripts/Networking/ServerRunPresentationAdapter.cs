@@ -49,7 +49,7 @@ namespace KeyboardWanderer.Networking
             string premise = FirstNonEmpty(run.premise, campaign?.premiseKo, campaign?.premise,
                 fallback?.CampaignPremise,
                 "넙죽이는 코드리아에서 관리자 키보드와 권한 3단계를 찾아 ROOT_SYSTEM으로 향합니다.");
-            string storyBeat = FirstNonEmpty(run.currentBeat, run.currentStoryBeat?.title,
+            string storyBeat = FirstNonEmpty(run.currentArcQuestion?.question, run.currentBeat, run.currentStoryBeat?.title,
                 fallback?.CurrentStoryBeat, "첫 장면을 확정하세요");
             string storyObjective = StoryObjective(run, fallback);
 
@@ -86,12 +86,63 @@ namespace KeyboardWanderer.Networking
                 OpenLoops = OpenLoopSummaries(run, fallback),
                 RequiredBeats = BuildBeats(campaign, run, fallback),
                 Entities = entities,
-                EndingBoard = BuildEndingBoard(run, fallback)
+                EndingBoard = BuildEndingBoard(run, fallback),
+                Inventory = BuildInventory(run),
+                Quests = BuildQuests(run)
             };
             _cachedVersion = run.version;
             _cachedFallbackVersion = fallbackVersion;
             _cachedCampaign = campaign;
             return _cached;
+        }
+
+        private static IReadOnlyList<RunPresentationItem> BuildInventory(GameApiClient.RunSnapshot run)
+        {
+            if (run.inventory == null || run.inventory.Length == 0)
+                return Array.Empty<RunPresentationItem>();
+            var values = new List<RunPresentationItem>(run.inventory.Length);
+            for (int i = 0; i < run.inventory.Length; i++)
+            {
+                GameApiClient.InventoryItemSnapshot source = run.inventory[i];
+                if (source == null || string.IsNullOrWhiteSpace(source.name)) continue;
+                values.Add(new RunPresentationItem
+                {
+                    Id = source.id ?? string.Empty,
+                    Kind = source.kind ?? "salvage",
+                    Name = source.name.Trim(),
+                    Description = source.description ?? string.Empty,
+                    Quantity = Math.Max(1, source.quantity),
+                    IsProtected = source.@protected
+                });
+            }
+            return values;
+        }
+
+        private static IReadOnlyList<RunPresentationQuest> BuildQuests(GameApiClient.RunSnapshot run)
+        {
+            if (run.activeQuests == null || run.activeQuests.Length == 0)
+                return Array.Empty<RunPresentationQuest>();
+            var values = new List<RunPresentationQuest>(run.activeQuests.Length);
+            for (int i = 0; i < run.activeQuests.Length; i++)
+            {
+                GameApiClient.QuestSnapshot source = run.activeQuests[i];
+                if (source == null) continue;
+                // 이전 빌드가 시작 시 questSeeds 두 개를 이미 수락된 퀘스트로 저장했다.
+                // 기존 세이브에서도 이 레거시 항목은 숨기고, 이후 실제 START_QUEST만 표시한다.
+                if (source.createdTurn == 0 && string.Equals(source.questKind, "story_hook",
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
+                values.Add(new RunPresentationQuest
+                {
+                    Id = source.id ?? string.Empty,
+                    Title = FirstNonEmpty(source.title, "이름 없는 퀘스트"),
+                    Summary = source.summary ?? string.Empty,
+                    CurrentStep = source.currentStep ?? string.Empty,
+                    Kind = source.questKind ?? string.Empty,
+                    Status = source.status ?? "active"
+                });
+            }
+            return values;
         }
 
         private static IReadOnlyList<RunPresentationEnding> BuildEndingBoard(GameApiClient.RunSnapshot run,
@@ -311,6 +362,8 @@ namespace KeyboardWanderer.Networking
 
         private static string StoryObjective(GameApiClient.RunSnapshot run, RunView fallback)
         {
+            if (!string.IsNullOrWhiteSpace(run.currentArcQuestion?.question))
+                return run.currentArcQuestion.question;
             if (!string.IsNullOrWhiteSpace(run.currentStoryBeat?.description))
                 return run.currentStoryBeat.description;
             if (run.activeQuests != null && run.activeQuests.Length > 0)
