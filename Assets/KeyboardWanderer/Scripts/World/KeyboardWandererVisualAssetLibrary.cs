@@ -157,26 +157,28 @@ namespace KeyboardWanderer.World
         {
             ForestTreeSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
                 new Rect(0f, 304f, 32f, 32f), "Forest Tree", Hex("568b42"), new Vector2(0.5f, 0.08f));
+            // 아틀라스에서 그림 한 채를 온전히 감싸도록 픽셀 경계를 실측해 맞춘 Rect들이다.
+            // 격자 좌표로 어림잡으면 이웃 에셋이 섞여 들어와 건물이 잘린 채 그려진다.
             ForestHouseSprite = CreateAtlasSprite(manifest != null ? manifest.HouseAtlas : null,
-                new Rect(0f, 304f, 64f, 64f), "Forest House", Hex("a7653f"), new Vector2(0.5f, 0.05f));
+                new Rect(0f, 320f, 64f, 48f), "Forest House", Hex("a7653f"), new Vector2(0.5f, 0.05f));
             WetlandPlantSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
-                new Rect(96f, 144f, 32f, 32f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
+                new Rect(112f, 144f, 16f, 32f), "Wetland Reeds", Hex("4f8f68"), new Vector2(0.5f, 0.08f));
             WetlandLandmarkSprite = CreateAtlasSprite(manifest != null ? manifest.WatermillAtlas : null,
                 new Rect(0f, 0f, 34f, 36f), "Wetland Watermill", Hex("9a6b43"), new Vector2(0.5f, 0.08f));
             DesertPalmSprite = CreateAtlasSprite(manifest != null ? manifest.DesertAtlas : null,
-                new Rect(112f, 72f, 48f, 48f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
+                new Rect(160f, 32f, 64f, 40f), "Desert Palm", Hex("729347"), new Vector2(0.5f, 0.08f));
             DesertLandmarkSprite = CreateAtlasSprite(manifest != null ? manifest.DesertAtlas : null,
-                new Rect(256f, 96f, 64f, 96f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
+                new Rect(223f, 48f, 43f, 80f), "Desert Tower", Hex("d4a36a"), new Vector2(0.5f, 0.03f));
             FrostTreeSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
                 new Rect(128f, 304f, 32f, 32f), "Frost Tree", Hex("dcebf0"), new Vector2(0.5f, 0.08f));
             FrostLandmarkSprite = CreateAtlasSprite(manifest != null ? manifest.HouseAtlas : null,
-                new Rect(0f, 144f, 96f, 80f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
+                new Rect(0f, 146f, 48f, 46f), "Frost Shelter", Hex("e5f1f4"), new Vector2(0.5f, 0.04f));
             CavernCrystalSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
-                new Rect(0f, 112f, 32f, 32f), "Cavern Crystal", Hex("a978c4"), new Vector2(0.5f, 0.08f));
+                new Rect(0f, 110f, 42f, 34f), "Cavern Crystal", Hex("a978c4"), new Vector2(0.5f, 0.08f));
             RuinTreeSprite = CreateAtlasSprite(manifest != null ? manifest.NatureAtlas : null,
                 new Rect(64f, 304f, 32f, 32f), "Ruins Dead Tree", Hex("75624f"), new Vector2(0.5f, 0.08f));
             RuinLandmarkSprite = CreateAtlasSprite(manifest != null ? manifest.AbandonedVillageAtlas : null,
-                new Rect(176f, 0f, 80f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
+                new Rect(192f, 16f, 64f, 80f), "Ancient Ruin", Hex("82705a"), new Vector2(0.5f, 0.04f));
 
             ForestDecorationSprites = new[]
             {

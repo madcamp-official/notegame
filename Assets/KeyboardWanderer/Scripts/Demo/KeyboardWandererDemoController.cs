@@ -79,6 +79,9 @@ namespace KeyboardWanderer.Demo
         private string _lastOutcome = "READY";
         private string _lastExplanation = "서버는 입력을 가장 가까운 합법적 시도로 정규화합니다.";
         private string[] _lastDialogue = Array.Empty<string>();
+        // 대화 줄(trim) → 화자 이름·스프라이트. 서버 DIALOGUE 씬 액션에서 채워지고 런 리셋 때 비운다.
+        private readonly Dictionary<string, string> _dialogueSpeakerNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Sprite> _dialogueSpeakerSprites = new Dictionary<string, Sprite>(StringComparer.Ordinal);
         private bool _lastNarrativeFallbackUsed = true;
         private string _lastNarrativeModel = "deterministic";
         private bool _gmPending;
@@ -382,17 +385,34 @@ namespace KeyboardWanderer.Demo
                         _reopenDialogueAfterWalk = true;
                 }
                 int dialoguePage = Mathf.Clamp(_dialoguePresenter.Page, 0, Mathf.Max(0, dialoguePages.Length - 1));
-                bool showingResult = HasActionResultPage() && dialoguePage == 0;
+                // 스토리 대화 페이지가 활성일 때는 결과·서사 페이지가 목록에 없으므로 화자 판정에서 제외한다.
+                bool storyDialoguePages = _lastDialogue != null && _lastDialogue.Length > 0 &&
+                                          _selectionController.Ability == AbilityKind.Search;
+                bool showingResult = !storyDialoguePages && HasActionResultPage() && dialoguePage == 0;
                 int narrationPage = HasActionResultPage() ? 1 : 0;
-                bool showingNarration = dialoguePage == narrationPage;
+                bool showingNarration = !storyDialoguePages && dialoguePage == narrationPage;
                 bool hasNextDialogue = dialoguePage < dialoguePages.Length - 1;
-                _sceneUi.PresentDialogue(!_dialoguePresenter.IsDismissed,
-                    showingResult ? "행동 결과" : showingNarration ? NarrativeSourceLabel() : "코드리아 주민",
-                    dialoguePages[dialoguePage], hasNextDialogue ? "다음 ▶" : "대화 끝", true);
+                string pageText = dialoguePages[dialoguePage];
+                string speaker = showingResult ? "행동 결과"
+                    : showingNarration ? NarrativeSourceLabel() : "코드리아 주민";
+                Sprite speakerSprite = null;
+                if (!showingResult && !showingNarration)
+                {
+                    if (_dialogueSpeakerNames.TryGetValue(pageText, out string recordedSpeaker))
+                        speaker = recordedSpeaker;
+                    _dialogueSpeakerSprites.TryGetValue(pageText, out speakerSprite);
+                }
+                // 화자를 모르는 페이지도 이야기의 주인공인 넙죽이를 컷인으로 세운다.
+                if (speakerSprite == null && _visualAssetLibrary != null)
+                    speakerSprite = _playerSprite;
+                _sceneUi.PresentDialogue(!_dialoguePresenter.IsDismissed, speaker,
+                    pageText, hasNextDialogue ? "다음 ▶" : "대화 끝", true, speakerSprite);
             }
             _sceneUi.PresentHud(CurrentAreaName(view) + " · " + CurrentBiomeLabel(view), StoryBeat(view),
                 ObjectiveHudText(view),
                 _playerWalking ? "선택한 경로를 따라 이동하고 있습니다." : ActionGuidanceText(view));
+            _sceneUi.PresentQuestStatus(QuestActionHintText(view),
+                KeyboardWandererHudTextComposer.StatusLabels(), StatusHudValues(view));
             bool selectionReady = CanSubmitCurrentSelection();
             string selectionHeading = AbilityPlayerLabel(_selectionController.Ability) + " · " +
                                       (selectionReady ? "사용 가능" : "준비 필요");
@@ -1394,6 +1414,8 @@ namespace KeyboardWanderer.Demo
             _lastActionContext = "--";
             _lastStateChanges = "아직 확정된 상태 변화가 없습니다.";
             _lastDialogue = Array.Empty<string>();
+            _dialogueSpeakerNames.Clear();
+            _dialogueSpeakerSprites.Clear();
             _lastNarrativeFallbackUsed = true;
             _lastNarrativeModel = "deterministic";
             _tutorialPresenter.Start(PlayerPrefs.GetInt(TutorialCompletedKey, 0) == 0);
@@ -1935,6 +1957,9 @@ namespace KeyboardWanderer.Demo
                     if (dialogue.Count < 8 && !dialogue.Contains(action.line))
                         dialogue.Add(action.line);
                     _lastDialogue = dialogue.ToArray();
+                    string dialogueKey = action.line.Trim();
+                    _dialogueSpeakerNames[dialogueKey] = actorName;
+                    _dialogueSpeakerSprites[dialogueKey] = ServerEntitySprite(action.actorId);
                     AddLog(actorName + " · “" + action.line.Trim() + "”");
                     _dialoguePresenter.Show();
                     _sceneUi?.SetStoryVisible(true);
@@ -2386,7 +2411,8 @@ namespace KeyboardWanderer.Demo
 
             Func<GridCoord, Color> tileColorAt = coord =>
             {
-                if (!useServerWorld && OutsideLocalWorldDisc(coord, width, height))
+                // 서버 월드도 실제로는 정사각 그리드지만, 미니맵은 항상 원형 실루엣으로 보여준다.
+                if (OutsideLocalWorldDisc(coord, width, height))
                     return Color.clear;
                 TileKind kind = WorldTileKind(view, coord, useServerWorld);
                 return MinimapTileColor(BiomeIdAt(view, coord), kind);
@@ -3134,8 +3160,18 @@ namespace KeyboardWanderer.Demo
 
         private string ObjectiveHudText(RunView view)
         {
-            return KeyboardWandererHudTextComposer.ObjectiveHud(PresentationModel(view),
+            return KeyboardWandererHudTextComposer.ObjectiveHud(PresentationModel(view));
+        }
+
+        private string QuestActionHintText(RunView view)
+        {
+            return KeyboardWandererHudTextComposer.QuestActionHint(PresentationModel(view),
                 _encounterMoveRequired);
+        }
+
+        private string StatusHudValues(RunView view)
+        {
+            return KeyboardWandererHudTextComposer.StatusValues(PresentationModel(view));
         }
 
         private string ActionGuidanceText(RunView view)
@@ -3497,6 +3533,49 @@ namespace KeyboardWanderer.Demo
             return _runPresentationModel;
         }
 
+        /// <summary>화자 이름으로 서버·로컬 엔티티를 차례로 찾아 버스트 스프라이트를 결정한다.</summary>
+        private Sprite SpriteForSpeakerName(string speakerName)
+        {
+            if (string.IsNullOrWhiteSpace(speakerName))
+                return null;
+            string name = speakerName.Trim();
+            if (_serverRun?.entities != null)
+            {
+                for (int i = 0; i < _serverRun.entities.Length; i++)
+                {
+                    GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                    if (entity == null || !string.Equals(entity.name?.Trim(), name, StringComparison.Ordinal))
+                        continue;
+                    return SpriteForServerEntity(entity,
+                        string.Equals(entity.id, _serverRun.playerEntityId, StringComparison.OrdinalIgnoreCase));
+                }
+            }
+            if (_service != null)
+            {
+                IReadOnlyList<EntityView> entities = _service.CurrentView.Entities;
+                for (int i = 0; i < entities.Count; i++)
+                    if (string.Equals(entities[i].DisplayName?.Trim(), name, StringComparison.Ordinal))
+                        return SpriteForEntity(entities[i]);
+            }
+            return null;
+        }
+
+        /// <summary>서버 엔티티 id로 대화창 버스트에 쓸 스프라이트를 찾는다. 미확인 화자는 null.</summary>
+        private Sprite ServerEntitySprite(string entityId)
+        {
+            if (_serverRun?.entities == null || string.IsNullOrWhiteSpace(entityId))
+                return null;
+            for (int i = 0; i < _serverRun.entities.Length; i++)
+            {
+                GameApiClient.EntitySnapshot entity = _serverRun.entities[i];
+                if (entity == null || !string.Equals(entity.id, entityId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return SpriteForServerEntity(entity,
+                    string.Equals(entity.id, _serverRun.playerEntityId, StringComparison.OrdinalIgnoreCase));
+            }
+            return null;
+        }
+
         private string ServerEntityName(string entityId, string fallback)
         {
             if (_serverRun?.entities != null && !string.IsNullOrWhiteSpace(entityId))
@@ -3536,6 +3615,18 @@ namespace KeyboardWanderer.Demo
             _lastNarrative = presentation.Narrative;
             _lastStateChanges = presentation.StateChanges;
             _lastDialogue = presentation.Dialogue;
+            if (!string.IsNullOrWhiteSpace(presentation.DialogueSpeaker))
+            {
+                Sprite speakerSprite = SpriteForSpeakerName(presentation.DialogueSpeaker);
+                for (int i = 0; i < _lastDialogue.Length; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(_lastDialogue[i]))
+                        continue;
+                    string key = _lastDialogue[i].Trim();
+                    _dialogueSpeakerNames[key] = presentation.DialogueSpeaker;
+                    _dialogueSpeakerSprites[key] = speakerSprite;
+                }
+            }
             _lastNarrativeFallbackUsed = presentation.NarrativeFallbackUsed;
             _lastNarrativeModel = presentation.NarrativeModel;
             _playerActionUntil = Time.unscaledTime + presentation.ActionDuration;
