@@ -98,6 +98,7 @@ namespace KeyboardWanderer.Runtime
             _instance.transform.localScale = Vector3.one * scale;
             _instance.transform.position = _camera.ViewportToWorldPoint(
                 new Vector3(ViewportPosition.x, ViewportPosition.y, CameraDepth));
+            ClampRenderedSizeToViewport();
         }
 
         private static float CalculateViewportScale(float visibleWidth, float visibleHeight, float unscaledDiameter)
@@ -118,6 +119,35 @@ namespace KeyboardWanderer.Runtime
             // Use the enclosing-box diagonal so the die remains within the target
             // viewport diameter even when rotation enlarges its screen-space AABB.
             return Mathf.Max(bounds.size.magnitude, 0.001f);
+        }
+
+        private void ClampRenderedSizeToViewport()
+        {
+            Renderer[] renderers = _instance.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0) return;
+
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                bounds.Encapsulate(renderers[i].bounds);
+
+            Vector3 center = bounds.center;
+            Vector3 extents = bounds.extents;
+            Vector2 min = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
+            Vector2 max = new Vector2(float.NegativeInfinity, float.NegativeInfinity);
+            for (int x = -1; x <= 1; x += 2)
+            for (int y = -1; y <= 1; y += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                Vector3 corner = center + Vector3.Scale(extents, new Vector3(x, y, z));
+                Vector3 viewport = _camera.WorldToViewportPoint(corner);
+                if (viewport.z <= 0f) continue;
+                min = Vector2.Min(min, viewport);
+                max = Vector2.Max(max, viewport);
+            }
+
+            float renderedDiameter = Mathf.Max(max.x - min.x, max.y - min.y);
+            if (renderedDiameter > TargetViewportDiameter)
+                _instance.transform.localScale *= TargetViewportDiameter / renderedDiameter;
         }
 
         private void LateUpdate()
