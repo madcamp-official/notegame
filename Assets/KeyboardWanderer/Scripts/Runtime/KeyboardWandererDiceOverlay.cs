@@ -1,41 +1,65 @@
 using System.Collections;
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace KeyboardWanderer.Runtime
 {
     /// <summary>
-    /// Camera-space presentation for the existing 3D D20. The client never chooses the
-    /// mechanical result: it spins while the request is pending, then lands on the value
-    /// returned by the authoritative turn response.
+    /// Presents the existing 3D D20 inside a fixed-size screen-space UI layer. The die is
+    /// rendered by an isolated camera into a transparent RenderTexture, so neither its
+    /// size nor its rotation can affect the gameplay camera or world presentation.
     /// </summary>
     public sealed class KeyboardWandererDiceOverlay : MonoBehaviour
     {
-        private const float ResultHoldSeconds = 0.4f;
-        private Camera _camera;
-        private GameObject _prefab;
-        private GameObject _instance;
-        private IcosahedronDice _dice;
+        private const float ShowDelaySeconds = 0.2f;
+        private const float MinimumSpinSeconds = 0.9f;
+        private const float ResultHoldSeconds = 1.25f;
+        private const int OverlaySortingOrder = 4500;
+        private const int TextureSize = 512;
+        private const string FontResourcePath = "Fonts/NeoDunggeunmoPro-Regular SDF";
+        private static readonly Vector3 CaptureOrigin = new Vector3(10000f, 10000f, 0f);
 
-        public bool IsVisible => _instance != null && _instance.activeSelf;
+        private GameObject _prefab;
+        private GameObject _uiRoot;
+        private GameObject _instance;
+        private Camera _captureCamera;
+        private RenderTexture _renderTexture;
+        private IcosahedronDice _dice;
+        private RawImage _diceImage;
+        private TMP_Text _resultText;
+        private Coroutine _showCoroutine;
+        private float _rollStartedAt;
+
+        public bool IsVisible => _uiRoot != null && _uiRoot.activeSelf &&
+                                 _diceImage != null && _diceImage.enabled;
         public bool IsRolling => _dice != null && _dice.IsRolling;
 
         public void Configure(Camera targetCamera, GameObject dicePrefab)
         {
-            _camera = targetCamera;
+            // Kept in the signature for the existing composition API. The gameplay
+            // camera is deliberately not used by this screen-space presentation.
             _prefab = dicePrefab;
         }
 
         public void BeginRoll()
         {
             if (!EnsureInstance()) return;
-            PositionInCamera();
+            _uiRoot.SetActive(true);
             _instance.SetActive(true);
+            _captureCamera.enabled = false;
+            _diceImage.enabled = false;
+            _resultText.gameObject.SetActive(false);
+            FitCaptureCamera();
+            _rollStartedAt = Time.realtimeSinceStartup;
             _dice.BeginPendingRoll();
+            if (_showCoroutine != null) StopCoroutine(_showCoroutine);
+            _showCoroutine = StartCoroutine(ShowAfterDelay());
         }
 
         public IEnumerator ResolveAndHide(int authoritativeD20)
         {
-            if (_dice == null || !IsVisible)
+            if (_dice == null || _uiRoot == null || !_uiRoot.activeSelf)
                 yield break;
             if (!IsD20Result(authoritativeD20))
             {
@@ -43,9 +67,16 @@ namespace KeyboardWanderer.Runtime
                 yield break;
             }
 
+            float remainingSpin = MinimumSpinSeconds - (Time.realtimeSinceStartup - _rollStartedAt);
+            if (remainingSpin > 0f)
+                yield return new WaitForSecondsRealtime(remainingSpin);
+
+            ShowNow();
             _dice.ResolveTo(authoritativeD20);
             while (_dice != null && _dice.IsRolling)
                 yield return null;
+            _resultText.text = "D20 · " + authoritativeD20;
+            _resultText.gameObject.SetActive(true);
             yield return new WaitForSecondsRealtime(ResultHoldSeconds);
             Hide();
         }
@@ -60,38 +91,173 @@ namespace KeyboardWanderer.Runtime
 
         private bool EnsureInstance()
         {
-            if (_instance != null && _dice != null) return true;
-            if (_camera == null || _prefab == null) return false;
+            if (_uiRoot != null && _instance != null && _dice != null) return true;
+            if (_prefab == null) return false;
 
-            _instance = Instantiate(_prefab, _camera.transform);
-            _instance.name = "Pending D20 Overlay";
-            _instance.transform.localScale = Vector3.one * 0.36f;
+            BuildUiLayer();
+
+            _instance = Instantiate(_prefab, _uiRoot.transform);
+            _instance.name = "Pending D20 Capture";
+            _instance.transform.position = CaptureOrigin;
+            _instance.transform.localScale = Vector3.one;
+            DisableEmbeddedCameras(_instance);
             _dice = _instance.GetComponent<IcosahedronDice>();
             if (_dice == null) _dice = _instance.GetComponentInChildren<IcosahedronDice>(true);
             if (_dice == null)
             {
-                Destroy(_instance);
+                Destroy(_uiRoot);
+                _uiRoot = null;
                 _instance = null;
                 return false;
             }
-            _instance.SetActive(false);
+
+            _dice.SetTargetCamera(_captureCamera);
+            _uiRoot.SetActive(false);
             return true;
         }
 
-        private void PositionInCamera()
+        private static void DisableEmbeddedCameras(GameObject instance)
         {
-            _instance.transform.SetParent(_camera.transform, false);
-            _instance.transform.localPosition = new Vector3(0f, 0.35f, 8f);
+            // The imported D20 FBX contains its own enabled Camera. If left active it
+            // renders directly to Display 1 and rotates with the mesh, which makes the
+            // entire game view appear to be a giant spinning die.
+            Camera[] embeddedCameras = instance.GetComponentsInChildren<Camera>(true);
+            for (int i = 0; i < embeddedCameras.Length; i++)
+            {
+                embeddedCameras[i].targetTexture = null;
+                embeddedCameras[i].enabled = false;
+            }
+        }
+
+        private void BuildUiLayer()
+        {
+            _uiRoot = new GameObject("D20 UI Overlay");
+            _uiRoot.transform.SetParent(transform, false);
+
+            _renderTexture = new RenderTexture(TextureSize, TextureSize, 24, RenderTextureFormat.ARGB32)
+            {
+                name = "D20 UI Render Texture",
+                antiAliasing = 4,
+                useMipMap = false,
+                autoGenerateMips = false
+            };
+            _renderTexture.Create();
+
+            var cameraObject = new GameObject("D20 UI Camera", typeof(Camera));
+            cameraObject.transform.SetParent(_uiRoot.transform, false);
+            _captureCamera = cameraObject.GetComponent<Camera>();
+            _captureCamera.orthographic = true;
+            _captureCamera.clearFlags = CameraClearFlags.SolidColor;
+            _captureCamera.backgroundColor = Color.clear;
+            _captureCamera.nearClipPlane = 0.1f;
+            _captureCamera.farClipPlane = 50f;
+            _captureCamera.allowHDR = false;
+            _captureCamera.allowMSAA = true;
+            _captureCamera.targetTexture = _renderTexture;
+
+            var canvasObject = new GameObject("D20 Overlay Canvas",
+                typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            canvasObject.transform.SetParent(_uiRoot.transform, false);
+            Canvas canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = OverlaySortingOrder;
+            CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1440f, 900f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            var imageObject = new GameObject("Rolling D20", typeof(RectTransform), typeof(RawImage));
+            imageObject.transform.SetParent(canvasObject.transform, false);
+            RectTransform rect = imageObject.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(0f, 45f);
+            rect.sizeDelta = new Vector2(190f, 190f);
+            RawImage image = imageObject.GetComponent<RawImage>();
+            image.texture = _renderTexture;
+            image.color = Color.white;
+            image.raycastTarget = false;
+            _diceImage = image;
+
+            var resultObject = new GameObject("D20 Result", typeof(RectTransform), typeof(TextMeshProUGUI));
+            resultObject.transform.SetParent(canvasObject.transform, false);
+            RectTransform resultRect = resultObject.GetComponent<RectTransform>();
+            resultRect.anchorMin = new Vector2(0.5f, 0.5f);
+            resultRect.anchorMax = new Vector2(0.5f, 0.5f);
+            resultRect.pivot = new Vector2(0.5f, 0.5f);
+            resultRect.anchoredPosition = new Vector2(0f, -72f);
+            resultRect.sizeDelta = new Vector2(220f, 42f);
+            _resultText = resultObject.GetComponent<TextMeshProUGUI>();
+            _resultText.font = Resources.Load<TMP_FontAsset>(FontResourcePath);
+            _resultText.fontSize = 24f;
+            _resultText.fontStyle = FontStyles.Bold;
+            _resultText.alignment = TextAlignmentOptions.Center;
+            _resultText.color = new Color(1f, 0.87f, 0.52f, 1f);
+            _resultText.raycastTarget = false;
+            resultObject.SetActive(false);
+        }
+
+        private IEnumerator ShowAfterDelay()
+        {
+            yield return new WaitForSecondsRealtime(ShowDelaySeconds);
+            ShowNow();
+            _showCoroutine = null;
+        }
+
+        private void ShowNow()
+        {
+            if (_uiRoot == null || !_uiRoot.activeSelf) return;
+            _captureCamera.enabled = true;
+            _diceImage.enabled = true;
+        }
+
+        private void FitCaptureCamera()
+        {
+            if (_captureCamera == null || _instance == null) return;
+            Renderer[] renderers = _instance.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0) return;
+
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                bounds.Encapsulate(renderers[i].bounds);
+
+            float halfSize = Mathf.Max(bounds.extents.x, bounds.extents.y, 0.001f);
+            _captureCamera.orthographicSize = halfSize * 1.25f;
+            _captureCamera.transform.position = new Vector3(bounds.center.x, bounds.center.y, bounds.min.z - 10f);
+            _captureCamera.transform.rotation = Quaternion.identity;
+        }
+
+        private void LateUpdate()
+        {
+            if (IsVisible)
+                FitCaptureCamera();
         }
 
         private void Hide()
         {
-            if (_instance != null) _instance.SetActive(false);
+            if (_showCoroutine != null)
+            {
+                StopCoroutine(_showCoroutine);
+                _showCoroutine = null;
+            }
+            if (_captureCamera != null) _captureCamera.enabled = false;
+            if (_diceImage != null) _diceImage.enabled = false;
+            if (_resultText != null) _resultText.gameObject.SetActive(false);
+            if (_uiRoot != null) _uiRoot.SetActive(false);
         }
 
         private void OnDisable()
         {
             CancelAndHide();
+        }
+
+        private void OnDestroy()
+        {
+            if (_renderTexture == null) return;
+            _renderTexture.Release();
+            Destroy(_renderTexture);
+            _renderTexture = null;
         }
     }
 }

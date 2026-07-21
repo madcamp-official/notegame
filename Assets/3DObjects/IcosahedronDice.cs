@@ -72,6 +72,12 @@ public class IcosahedronDice : MonoBehaviour
         }
     }
 
+    /// <summary>Overrides the camera used to orient the authoritative result face.</summary>
+    public void SetTargetCamera(Camera camera)
+    {
+        targetCamera = camera;
+    }
+
     /// <summary>
     /// Builds the list of 20 face normals directly from the mesh, merging coplanar
     /// triangles (some icosahedron meshes are unwrapped with more than one triangle
