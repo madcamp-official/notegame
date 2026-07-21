@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 786c760fcfed8c4409a8b63652f1a958
+guid: 87f45173bc0715c438632ff120f17555
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 369654410909810277
-    second: RootSystem_Ground_0
+      213: -3922662285996856929
+    second: cutscene-intro8_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -37,7 +37,7 @@ TextureImporter:
   maxTextureSize: 2048
   textureSettings:
     serializedVersion: 2
-    filterMode: 0
+    filterMode: 1
     aniso: 1
     mipBias: 0
     wrapU: 1
@@ -75,7 +75,7 @@ TextureImporter:
     maxTextureSize: 2048
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 0
+    textureCompression: 1
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -100,13 +100,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: RootSystem_Ground_0
+      name: cutscene-intro8_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 64
-        height: 64
+        width: 1672
+        height: 941
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -115,8 +115,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 56e7feb6ab6412500800000000000000
-      internalID: 369654410909810277
+      spriteID: f99e55d1f67ef89c0800000000000000
+      internalID: -3922662285996856929
       vertices: []
       indices: 
       edges: []
@@ -135,7 +135,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      RootSystem_Ground_0: 369654410909810277
+      cutscene-intro8_0: -3922662285996856929
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
