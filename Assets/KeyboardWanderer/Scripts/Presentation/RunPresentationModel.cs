@@ -74,6 +74,28 @@ namespace KeyboardWanderer.Presentation
         public IReadOnlyList<string> MissingConditions { get; internal set; } = Array.Empty<string>();
     }
 
+    public sealed class RunPresentationItem
+    {
+        public string Id { get; internal set; } = string.Empty;
+        public string Kind { get; internal set; } = string.Empty;
+        public string Name { get; internal set; } = string.Empty;
+        public string Description { get; internal set; } = string.Empty;
+        public int Quantity { get; internal set; } = 1;
+        public bool IsProtected { get; internal set; }
+        public bool IsEquipment => string.Equals(Kind, "tool", StringComparison.OrdinalIgnoreCase) ||
+                                   string.Equals(Kind, "key_item", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public sealed class RunPresentationQuest
+    {
+        public string Id { get; internal set; } = string.Empty;
+        public string Title { get; internal set; } = string.Empty;
+        public string Summary { get; internal set; } = string.Empty;
+        public string CurrentStep { get; internal set; } = string.Empty;
+        public string Kind { get; internal set; } = string.Empty;
+        public string Status { get; internal set; } = string.Empty;
+    }
+
     /// <summary>
     /// HUD와 선택 규칙이 소비하는 로컬·서버 공통 읽기 모델이다.
     /// Networking DTO와 저장 가능한 RunState는 이 경계 밖으로 노출하지 않는다.
@@ -114,6 +136,10 @@ namespace KeyboardWanderer.Presentation
             Array.Empty<RunPresentationEntity>();
         public IReadOnlyList<RunPresentationEnding> EndingBoard { get; internal set; } =
             Array.Empty<RunPresentationEnding>();
+        public IReadOnlyList<RunPresentationItem> Inventory { get; internal set; } =
+            Array.Empty<RunPresentationItem>();
+        public IReadOnlyList<RunPresentationQuest> Quests { get; internal set; } =
+            Array.Empty<RunPresentationQuest>();
 
         public RunPresentationEntity FindEntity(Guid? id)
         {

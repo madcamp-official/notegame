@@ -1,5 +1,6 @@
 using System;
 using KeyboardWanderer.Gameplay;
+using KeyboardWanderer.Presentation;
 using UnityEngine;
 
 namespace KeyboardWanderer.Demo
@@ -25,6 +26,7 @@ namespace KeyboardWanderer.Demo
         [SerializeField] private KeyboardWandererSkillBarView skillBarView;
         [SerializeField] private KeyboardWandererSelectionView selectionView;
         [SerializeField] private KeyboardWandererMinimapView minimapView;
+        private KeyboardWandererInventoryQuestView _inventoryQuestView;
 
         private bool _bound;
 
@@ -60,9 +62,35 @@ namespace KeyboardWanderer.Demo
                 controller.UiSetGmEnabled, controller.UiCloseSettings, controller.UiDeleteSave);
             pauseView.Bind(controller.UiResume, controller.UiOpenSettingsFromPause, controller.UiShowTitle);
             endingView.Bind(controller.UiStartNewRun, controller.UiShowTitle);
-            dialogueView.Bind(controller.UiAdvanceDialogue);
+            dialogueView.Bind(controller.UiAdvanceDialogue, controller.UiSelectNarrativeChoice, controller.UiSubmitPlayerMessage);
             skillBarView.Bind(controller.UiSetAbility);
             _bound = true;
+        }
+
+        public void InitializeInventoryQuestOverlay(NinjaAdventureAssetManifest manifest,
+            Action<string> itemSelected, Action<bool> visibilityChanged)
+        {
+            if (gameHudView == null || dialogueView == null) return;
+            _inventoryQuestView = gameHudView.GetComponent<KeyboardWandererInventoryQuestView>();
+            if (_inventoryQuestView == null)
+                _inventoryQuestView = gameHudView.gameObject.AddComponent<KeyboardWandererInventoryQuestView>();
+            _inventoryQuestView.Initialize(gameHudView.transform, dialogueView.StoryText?.font,
+                manifest, itemSelected, visibilityChanged);
+        }
+
+        public void PresentInventoryAndQuests(RunPresentationModel run)
+        {
+            _inventoryQuestView?.Present(run?.Inventory, run?.Quests);
+        }
+
+        public bool ToggleInventory() => _inventoryQuestView != null && _inventoryQuestView.ToggleInventory();
+        public bool ToggleQuests() => _inventoryQuestView != null && _inventoryQuestView.ToggleQuests();
+        public bool CloseInventoryQuestOverlay() => _inventoryQuestView != null && _inventoryQuestView.Close();
+        public bool IsInventoryQuestOverlayOpen => _inventoryQuestView != null && _inventoryQuestView.IsOpen;
+
+        public bool InsertInventoryItemIntoDialogue(string itemName)
+        {
+            return dialogueView != null && dialogueView.InsertItemReference(itemName);
         }
 
         public void Show(bool title, bool settings, bool playing, bool paused, bool ended)
@@ -113,9 +141,35 @@ namespace KeyboardWanderer.Demo
         }
 
         public void PresentDialogue(bool visible, string speaker, string story, string actionLabel, bool interactable,
-            Sprite speakerSprite = null)
+            Sprite portrait = null, bool showLargeSubject = false)
         {
-            dialogueView?.Present(visible, speaker, story, actionLabel, interactable, speakerSprite);
+            dialogueView?.Present(visible, speaker, story, actionLabel, interactable, portrait, showLargeSubject);
+        }
+
+        public void PresentDialogueChoices(bool visible, NarrativeChoiceOption[] choices, bool interactable)
+        {
+            dialogueView?.PresentChoices(visible, choices, interactable);
+            // Skills are narrative choices now. The persistent HUD shortcut bar
+            // must never imply that they are available between story prompts.
+            if (skillBarView != null && skillBarView.gameObject.activeSelf)
+                skillBarView.gameObject.SetActive(false);
+        }
+
+        public void ReleaseDialogueChoiceInputLock()
+        {
+            dialogueView?.ReleaseChoiceInputLock();
+        }
+
+        public bool IsDialogueInputFocused => dialogueView != null && dialogueView.IsFreeformFocused;
+
+        public void MoveDialogueChoiceSelection(int direction)
+        {
+            dialogueView?.MoveChoiceSelection(direction);
+        }
+
+        public void ConfirmDialogueChoiceSelection()
+        {
+            dialogueView?.ConfirmChoiceSelection();
         }
 
         public void PresentTutorial(int page, string objective)
@@ -147,6 +201,9 @@ namespace KeyboardWanderer.Demo
         public void AutoWire()
         {
             screenFlowView = GetComponent<KeyboardWandererScreenFlowView>();
+            if (screenFlowView != null)
+                screenFlowView.Configure(FindObject("Title Screen"), FindObject("Game HUD"),
+                    FindObject("Settings Screen"), FindObject("Pause Screen"), FindObject("Ending Screen"));
             titleView = FindComponent<KeyboardWandererTitleView>("Title Screen");
             gameHudView = FindComponent<KeyboardWandererGameHudView>("Game HUD");
             settingsView = FindComponent<KeyboardWandererSettingsView>("Settings Screen");

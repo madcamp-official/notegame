@@ -120,6 +120,32 @@ namespace KeyboardWanderer.Presentation
                     MissingConditions = missing
                 };
             }
+            var inventory = new RunPresentationItem[fallback.Inventory.Count];
+            for (int i = 0; i < fallback.Inventory.Count; i++)
+            {
+                string name = fallback.Inventory[i] ?? string.Empty;
+                inventory[i] = new RunPresentationItem
+                {
+                    Id = name,
+                    Kind = name.IndexOf("키보드", StringComparison.OrdinalIgnoreCase) >= 0 ? "key_item" : "salvage",
+                    Name = name,
+                    Description = "로컬 런에서 시스템이 관리하는 소지품입니다.",
+                    Quantity = 1,
+                    IsProtected = name.IndexOf("키보드", StringComparison.OrdinalIgnoreCase) >= 0
+                };
+            }
+            var quests = new[]
+            {
+                new RunPresentationQuest
+                {
+                    Id = "local-story",
+                    Title = fallback.QuestTitle,
+                    Summary = fallback.QuestObjective,
+                    CurrentStep = fallback.QuestProgress,
+                    Kind = "main",
+                    Status = fallback.Status == RunStatus.Playing ? "active" : "completed"
+                }
+            };
             _cached = new RunPresentationModel
             {
                 Core = new RunPresentationCore(fallback.Version, fallback.CurrentTurn,
@@ -151,7 +177,9 @@ namespace KeyboardWanderer.Presentation
                 OpenLoops = new System.Collections.Generic.List<string>(fallback.OpenLoops),
                 RequiredBeats = beats,
                 Entities = entities,
-                EndingBoard = endingBoard
+                EndingBoard = endingBoard,
+                Inventory = inventory,
+                Quests = quests
             };
             _cachedVersion = fallback.Version;
             return _cached;

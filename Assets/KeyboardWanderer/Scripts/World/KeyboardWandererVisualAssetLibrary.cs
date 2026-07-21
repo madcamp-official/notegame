@@ -19,6 +19,10 @@ namespace KeyboardWanderer.World
         private readonly List<Sprite> _runtimeSprites = new List<Sprite>();
         private readonly List<Texture2D> _runtimeTextures = new List<Texture2D>();
         private readonly Dictionary<Texture2D, Sprite[]> _codriaTileCache = new Dictionary<Texture2D, Sprite[]>();
+        private readonly Dictionary<string, Sprite[]> _elementalFrames =
+            new Dictionary<string, Sprite[]>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, float> _elementalFrameRates =
+            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         private bool _initialized;
 
         public NinjaAdventureAssetManifest Manifest => manifest;
@@ -99,6 +103,7 @@ namespace KeyboardWanderer.World
             BuildTerrainSprites();
             BuildDecorationSprites();
             BuildActorFrames();
+            BuildElementalEffects();
             BuildEntitySprites();
             _initialized = true;
         }
@@ -122,6 +127,20 @@ namespace KeyboardWanderer.World
                 case "SuccessJingle": return manifest.SuccessJingle;
                 default: return null;
             }
+        }
+
+        public Sprite[] GetElementalFrames(string effectId)
+        {
+            return !string.IsNullOrWhiteSpace(effectId) && _elementalFrames.TryGetValue(effectId, out Sprite[] frames)
+                ? frames
+                : Array.Empty<Sprite>();
+        }
+
+        public float GetElementalFrameRate(string effectId)
+        {
+            return !string.IsNullOrWhiteSpace(effectId) && _elementalFrameRates.TryGetValue(effectId, out float rate)
+                ? rate
+                : 12f;
         }
 
         private void OnDestroy()
@@ -313,6 +332,33 @@ namespace KeyboardWanderer.World
             return sprite;
         }
 
+        private void BuildElementalEffects()
+        {
+            _elementalFrames.Clear();
+            _elementalFrameRates.Clear();
+            if (manifest?.ElementalEffects == null) return;
+            foreach (ElementalEffectEntry entry in manifest.ElementalEffects)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.EffectId) || entry.SpriteSheet == null)
+                    continue;
+                int count = Mathf.Max(1, entry.FrameCount);
+                int width = entry.SpriteSheet.width / count;
+                if (width <= 0) continue;
+                var frames = new Sprite[count];
+                for (int i = 0; i < count; i++)
+                {
+                    frames[i] = Sprite.Create(entry.SpriteSheet,
+                        new Rect(i * width, 0f, width, entry.SpriteSheet.height),
+                        new Vector2(0.5f, 0.15f), Mathf.Max(width, entry.SpriteSheet.height),
+                        0, SpriteMeshType.FullRect);
+                    frames[i].name = entry.EffectId + " " + i;
+                    _runtimeSprites.Add(frames[i]);
+                }
+                _elementalFrames[entry.EffectId] = frames;
+                _elementalFrameRates[entry.EffectId] = Mathf.Clamp(entry.FramesPerSecond, 1f, 30f);
+            }
+        }
+
         private Sprite CreateAtlasSprite(Texture2D texture, Rect requestedRect, string spriteName,
             Color fallbackColor, Vector2? requestedPivot = null)
         {
@@ -402,6 +448,8 @@ namespace KeyboardWanderer.World
             _runtimeSprites.Clear();
             _runtimeTextures.Clear();
             _codriaTileCache.Clear();
+            _elementalFrames.Clear();
+            _elementalFrameRates.Clear();
             _initialized = false;
         }
 

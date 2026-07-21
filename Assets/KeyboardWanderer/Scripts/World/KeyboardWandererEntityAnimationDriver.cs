@@ -40,6 +40,8 @@ namespace KeyboardWanderer.World
     [DisallowMultipleComponent]
     public sealed class KeyboardWandererEntityAnimationDriver : MonoBehaviour
     {
+        private const float SpriteFrameInterval = 0.24f;
+
         private float _nextAnimationAt;
         private int _animationFrame;
 
@@ -68,7 +70,7 @@ namespace KeyboardWanderer.World
             if (Time.unscaledTime >= _nextAnimationAt)
             {
                 _animationFrame++;
-                _nextAnimationAt = Time.unscaledTime + 0.16f;
+                _nextAnimationAt = Time.unscaledTime + SpriteFrameInterval;
             }
 
             float smoothing = 1f - Mathf.Exp(-12f * Time.unscaledDeltaTime);

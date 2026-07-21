@@ -8,7 +8,17 @@ namespace KeyboardWanderer.Demo
     {
         public string AssetId;
         public Sprite DefaultSprite;
+        public Sprite Portrait;
         public RuntimeAnimatorController AnimatorController;
+    }
+
+    [Serializable]
+    public sealed class ElementalEffectEntry
+    {
+        public string EffectId;
+        public Texture2D SpriteSheet;
+        public int FrameCount = 1;
+        public float FramesPerSecond = 12f;
     }
 
     [CreateAssetMenu(fileName = "NinjaAdventureAssetManifest", menuName = "Codria/Ninja Adventure Asset Manifest")]
@@ -107,6 +117,9 @@ namespace KeyboardWanderer.Demo
         public ActorAnimationEntry[] MonsterAnimations = Array.Empty<ActorAnimationEntry>();
         public ActorAnimationEntry[] BossAnimations = Array.Empty<ActorAnimationEntry>();
 
+        [Header("Elemental attack effects")]
+        public ElementalEffectEntry[] ElementalEffects = Array.Empty<ElementalEffectEntry>();
+
         [Header("Interface")]
         public Sprite WoodPanel;
         public Sprite WoodBackground;
@@ -171,6 +184,13 @@ namespace KeyboardWanderer.Demo
         public Sprite UndoIcon;
         public Sprite SearchIcon;
         public Sprite SelectAllIcon;
+        [Header("Inventory item kind icons")]
+        public Sprite GenericItemIcon;
+        public Sprite SalvageItemIcon;
+        public Sprite MaterialItemIcon;
+        public Sprite ToolItemIcon;
+        public Sprite ConsumableItemIcon;
+        public Sprite KeyItemIcon;
         public Font PixelFont;
 
         [Header("Music")]

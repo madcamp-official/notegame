@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ninja Adventure - Web Client Playground</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --surface-color: rgba(22, 29, 48, 0.75);
+            --surface-border: rgba(255, 255, 255, 0.08);
+            --accent-gold: #f5a623;
+            --accent-cyan: #00d2ff;
+            --health-red: #ff4949;
+            --focus-blue: #3d94e2;
+            --text-main: #f0f3f8;
+            --text-muted: #a8a294;
+            --tile-walkable: #dcc29a;
+            --tile-wall: #4f5b66;
+            --tile-water: #4b86b4;
+            --tile-hazard: #c0392b;
+            --tile-ruin: #7f8c8d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(0, 210, 255, 0.08) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(245, 166, 35, 0.08) 0px, transparent 50%);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--surface-border);
+            backdrop-filter: blur(10px);
+            background: rgba(11, 15, 25, 0.5);
+            z-index: 100;
+        }
+
+        header h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, var(--text-main) 0%, var(--accent-cyan) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .server-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ff4949;
+            box-shadow: 0 0 8px #ff4949;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.online {
+            background-color: #52c41a;
+            box-shadow: 0 0 8px #52c41a;
+        }
+
+        main {
+            flex: 1;
+            padding: 30px;
+            display: grid;
+            grid-template-columns: 320px 1fr 400px;
+            gap: 30px;
+            max-width: 1800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Lobby Mode */
+        .lobby-container {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 20px;
+        }
+
+        .card {
+            background: var(--surface-color);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 30px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 480px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .lobby-title {
+            font-family: 'Outfit', sans-serif;
+            text-align: center;
+            margin-bottom: 24px;
+            font-size: 28px;
+            color: var(--text-main);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--surface-border);
+            border-radius: 8px;
+            padding: 12px;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            border-color: var(--accent-cyan);
+            outline: none;
+        }
+
+        .btn {
+            display: inline-block;
+            width: 100%;
+            background: linear-gradient(135deg, #1890ff 0%, #00d2ff 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 14px;
+            color: white;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0, 210, 255, 0.2);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 210, 255, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--surface-border);
+            margin-top: 12px;
+            box-shadow: none;
+            color: var(--text-main);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: none;
+        }
+
+        /* Game Layout */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .game-panel {
+            background: var(--surface-color);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(20px);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+            color: var(--accent-gold);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Stats HUD */
+        .stat-bar-container {
+            margin-bottom: 16px;
+        }
+
+        .stat-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 6px;
+            color: var(--text-muted);
+        }
+
+        .stat-bar {
+            height: 8px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .stat-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stat-fill.health { background: var(--health-red); }
+        .stat-fill.focus { background: var(--focus-blue); }
+
+        .currency-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .currency-box {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--surface-border);
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .currency-val {
+            font-family: 'Outfit', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-top: 4px;
+        }
+
+        .currency-container style {
+            margin-top: 12px;
+            grid-template-columns: 1fr 1fr;
+        }
+
+        /* Ending Board */
+        .ending-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .ending-item {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            padding: 12px;
+            border-left: 3px solid var(--text-muted);
+        }
+
+        .ending-item.eligible { border-left-color: #52c41a; }
+        .ending-item.locked { border-left-color: #ff4d4f; }
+
+        .ending-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .ending-conditions {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .cond-badge {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            margin-top: 4px;
+            margin-right: 4px;
+        }
+        .cond-badge.met { background: rgba(82, 196, 26, 0.15); color: #52c41a; }
+        .cond-badge.missing { background: rgba(255, 77, 79, 0.15); color: #ff4d4f; }
+
+        /* Map Canvas Workspace */
+        .map-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        canvas {
+            background: #111422;
+            border-radius: 12px;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8), 0 4px 20px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            max-width: 100%;
+        }
+
+        .controls-overlay {
+            margin-top: 20px;
+            width: 100%;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .coord-display {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--surface-border);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Narrative Side */
+        .narrative-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: 100%;
+        }
+
+        .narrative-box {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--surface-border);
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .narrative-summary {
+            font-weight: 700;
+            color: var(--accent-gold);
+            border-left: 2px solid var(--accent-gold);
+            padding-left: 8px;
+        }
+
+        .narrative-body {
+            color: var(--text-main);
+        }
+
+        .dialogue-bubble {
+            background: rgba(0, 210, 255, 0.08);
+            border: 1px solid rgba(0, 210, 255, 0.15);
+            border-radius: 12px;
+            padding: 12px 16px;
+            position: relative;
+            margin-top: 10px;
+        }
+
+        .dialogue-speaker {
+            font-family: 'Outfit', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .dialogue-text {
+            font-style: italic;
+        }
+
+        /* D20 Dice Representation */
+        .dice-panel {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--surface-border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+        }
+
+        .dice-graphic {
+            width: 70px;
+            height: 70px;
+            background: linear-gradient(135deg, #1f2d3d 0%, #111a24 100%);
+            border: 2px solid var(--surface-border);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Outfit', sans-serif;
+            font-size: 28px;
+            font-weight: 800;
+            color: white;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            position: relative;
+            transition: all 0.6s ease;
+        }
+
+        .dice-graphic.rolling {
+            transform: rotate(720deg) scale(1.1);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.5);
+        }
+
+        .dice-graphic.success { border-color: #52c41a; color: #52c41a; box-shadow: 0 0 15px rgba(82, 196, 26, 0.3); }
+        .dice-graphic.partial { border-color: var(--accent-gold); color: var(--accent-gold); box-shadow: 0 0 15px rgba(245, 166, 35, 0.3); }
+        .dice-graphic.failure { border-color: var(--health-red); color: var(--health-red); box-shadow: 0 0 15px rgba(255, 73, 73, 0.3); }
+
+        .dice-info {
+            flex: 1;
+            margin-left: 20px;
+        }
+
+        .dice-outcome {
+            font-family: 'Outfit', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .dice-formula {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Ability Controller Panel at the Bottom */
+        .ability-bar {
+            grid-column: 1 / -1;
+            background: var(--surface-color);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(20px);
+        }
+
+        .abilities-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .ability-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--surface-border);
+            border-radius: 8px;
+            padding: 10px 16px;
+            color: var(--text-main);
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ability-btn kbd {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-size: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .ability-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--text-muted);
+        }
+
+        .ability-btn.active {
+            background: rgba(0, 210, 255, 0.15);
+            border-color: var(--accent-cyan);
+            color: white;
+            box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);
+        }
+
+        .action-submit-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(11, 15, 25, 0.85);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+        }
+
+        .loading-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--surface-border);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🎮 Ninja Adventure <span>Web Playground</span></h1>
+        <div class="server-status">
+            <div id="statusDot" class="status-dot"></div>
+            <span id="statusText">서버 연결 확인 중...</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- LOBBY SCREEN -->
+        <div id="lobbyView" class="lobby-container">
+            <div class="card">
+                <h2 class="lobby-title">새 모험 시작</h2>
+                <div class="form-group">
+                    <label for="worldSeed">월드 시드 (Seed)</label>
+                    <input type="number" id="worldSeed" value="20260717">
+                </div>
+                <div class="form-group">
+                    <label for="turnLimit">턴 제한 (Turn Limit)</label>
+                    <select id="turnLimit">
+                        <option value="30">30 턴</option>
+                        <option value="40" selected>40 턴</option>
+                        <option value="50">50 턴</option>
+                    </select>
+                </div>
+                <button id="btnStartNew" class="btn">모험 만들기</button>
+                <button id="btnContinue" class="btn btn-secondary" style="display: none;">저장된 모험 이어하기</button>
+            </div>
+        </div>
+
+        <!-- GAMEPLAY SCREEN -->
+        <div id="sidebarView" class="sidebar" style="display: none;">
+            <!-- Player Stats HUD -->
+            <div class="game-panel">
+                <h3 class="panel-title">넙죽이 상태 (HUD)</h3>
+                
+                <div class="stat-bar-container">
+                    <div class="stat-label">
+                        <span>체력 (HP)</span>
+                        <span id="hpText">10 / 10</span>
+                    </div>
+                    <div class="stat-bar">
+                        <div id="hpFill" class="stat-fill health" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <div class="stat-bar-container">
+                    <div class="stat-label">
+                        <span>집중력 (Focus)</span>
+                        <span id="focusText">25 / 25</span>
+                    </div>
+                    <div class="stat-bar">
+                        <div id="focusFill" class="stat-fill focus" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <div class="currency-container">
+                    <div class="currency-box">
+                        <div style="font-size: 11px; color: var(--text-muted);">골드 (Bits)</div>
+                        <div id="goldVal" class="currency-val">0</div>
+                    </div>
+                    <div class="currency-box">
+                        <div style="font-size: 11px; color: var(--text-muted);">경험치 (XP)</div>
+                        <div id="xpVal" class="currency-val">0</div>
+                    </div>
+                </div>
+
+                <div class="currency-container" style="margin-top: 12px; grid-template-columns: 1fr 1fr;">
+                    <div class="currency-box" style="background: rgba(0, 210, 255, 0.05); border-color: rgba(0, 210, 255, 0.2);">
+                        <div style="font-size: 11px; color: var(--accent-cyan);">보안 권한</div>
+                        <div id="accessLevelVal" class="currency-val" style="color: var(--accent-cyan);">Lv.0</div>
+                    </div>
+                    <div class="currency-box">
+                        <div style="font-size: 11px; color: var(--text-muted);">경과 턴</div>
+                        <div id="turnVal" class="currency-val">0 / 40</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ending Predictions -->
+            <div class="game-panel" style="flex: 1;">
+                <h3 class="panel-title">결말 보드</h3>
+                <div id="endingList" class="ending-list">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Map View -->
+        <div id="mapView" class="game-panel map-container" style="display: none;">
+            <h3 class="panel-title">
+                <span>코드리아 지도</span>
+                <span id="targetAreaName" style="font-size: 12px; color: var(--text-muted);">지하 동굴</span>
+            </h3>
+            
+            <div style="position: relative;">
+                <canvas id="mapCanvas" width="600" height="600"></canvas>
+                <div id="mapLoading" class="loading-overlay">
+                    <div class="spinner"></div>
+                    <div id="loadingText" style="font-size: 14px;">서버와 통신 중...</div>
+                </div>
+            </div>
+
+            <div class="controls-overlay">
+                <div class="coord-display">
+                    <span>좌표:</span>
+                    <span id="coordDisplay">선택 없음</span>
+                </div>
+                <div id="objectDisplay" class="coord-display" style="border-color: rgba(255,255,255,0.05); color: var(--text-main);">
+                    대상: 없음
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Narrative Console -->
+        <div id="narrativeView" class="sidebar" style="display: none;">
+            <!-- Narrative Panel -->
+            <div class="game-panel" style="flex: 1;">
+                <h3 class="panel-title">실시간 서사 피드</h3>
+                <div id="narrativeBox" class="narrative-box">
+                    <div class="narrative-summary" id="storyObjective">현재 임무: 로비에서 새 모험을 만들어 시작하세요.</div>
+                    <div class="narrative-body" id="storyBody">아직 생성된 서사가 없습니다. 지도의 타일을 클릭하고 행동을 실행해 이야기를 시작하세요.</div>
+                    
+                    <div id="dialogueContainer" class="dialogue-bubble" style="display: none;">
+                        <div class="dialogue-speaker" id="dialogueSpeaker">패치</div>
+                        <div class="dialogue-text" id="dialogueText">"다음 목표가 저 멀리 지도에 빛나고 있네요."</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Last Roll Dice Panel -->
+            <div class="game-panel">
+                <h3 class="panel-title">주사위 결과</h3>
+                <div class="dice-panel">
+                    <div id="diceGraphic" class="dice-graphic">-</div>
+                    <div class="dice-info">
+                        <div id="diceOutcome" class="dice-outcome">판정 없음</div>
+                        <div id="diceFormula" class="dice-formula">D20 + 수정치 0 / 난이도 0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Ability Bar -->
+        <div id="abilityBarView" class="ability-bar" style="display: none;">
+            <div class="abilities-group">
+                <button class="ability-btn active" data-ability="MOVE"><kbd>W</kbd> 이동</button>
+                <button class="ability-btn" data-ability="SEARCH"><kbd>Ctrl+F</kbd> 조사</button>
+                <button class="ability-btn" data-ability="COPY"><kbd>Ctrl+C</kbd> 복제</button>
+                <button class="ability-btn" data-ability="DELETE"><kbd>Del</kbd> 삭제</button>
+                <button class="ability-btn" data-ability="CONNECT"><kbd>Ctrl+K</kbd> 연결</button>
+                <button class="ability-btn" data-ability="RESTORE"><kbd>Ctrl+R</kbd> 복구</button>
+                <button class="ability-btn" data-ability="UNDO"><kbd>Ctrl+Z</kbd> 되돌리기</button>
+                <button class="ability-btn" data-ability="SELECT_ALL"><kbd>Ctrl+A</kbd> 광역공격</button>
+            </div>
+            <div class="action-submit-group">
+                <button id="btnExecute" class="btn" style="width: auto; padding: 10px 24px;">행동 실행</button>
+                <button id="btnAbandon" class="btn btn-secondary" style="width: auto; padding: 10px 20px; margin-top: 0;">포기</button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8787";
+        
+        let campaignId = null;
+        let runData = null;
+        let activeAbility = "MOVE";
+        let selectedTile = null; // {x, y}
+        let targetEntity = null; // Entity ID
+        let secondaryEntity = null; // Entity ID
+        let tileMap = []; // Decoded tiles
+        let areaMap = [];
+        let biomeMap = [];
+
+        // UI Nodes
+        const statusDot = document.getElementById("statusDot");
+        const statusText = document.getElementById("statusText");
+        
+        const lobbyView = document.getElementById("lobbyView");
+        const sidebarView = document.getElementById("sidebarView");
+        const mapView = document.getElementById("mapView");
+        const narrativeView = document.getElementById("narrativeView");
+        const abilityBarView = document.getElementById("abilityBarView");
+
+        const btnStartNew = document.getElementById("btnStartNew");
+        const btnContinue = document.getElementById("btnContinue");
+        const btnExecute = document.getElementById("btnExecute");
+        const btnAbandon = document.getElementById("btnAbandon");
+
+        const mapCanvas = document.getElementById("mapCanvas");
+        const ctx = mapCanvas.getContext("2d");
+        const mapLoading = document.getElementById("mapLoading");
+        const loadingText = document.getElementById("loadingText");
+
+        const coordDisplay = document.getElementById("coordDisplay");
+        const objectDisplay = document.getElementById("objectDisplay");
+
+        const hpText = document.getElementById("hpText");
+        const hpFill = document.getElementById("hpFill");
+        const focusText = document.getElementById("focusText");
+        const focusFill = document.getElementById("focusFill");
+        const goldVal = document.getElementById("goldVal");
+        const xpVal = document.getElementById("xpVal");
+        const accessLevelVal = document.getElementById("accessLevelVal");
+        const turnVal = document.getElementById("turnVal");
+        const endingList = document.getElementById("endingList");
+
+        const targetAreaName = document.getElementById("targetAreaName");
+        const storyObjective = document.getElementById("storyObjective");
+        const storyBody = document.getElementById("storyBody");
+        const dialogueContainer = document.getElementById("dialogueContainer");
+        const dialogueSpeaker = document.getElementById("dialogueSpeaker");
+        const dialogueText = document.getElementById("dialogueText");
+
+        const diceGraphic = document.getElementById("diceGraphic");
+        const diceOutcome = document.getElementById("diceOutcome");
+        const diceFormula = document.getElementById("diceFormula");
+
+        // Initialization
+        window.addEventListener("DOMContentLoaded", async () => {
+            await checkServerHealth();
+            const savedRunId = localStorage.getItem("kw_server_run_id");
+            if (savedRunId) {
+                btnContinue.style.display = "block";
+                btnContinue.textContent = `모험 이어하기 (Run: ${savedRunId.substring(0, 8)}...)`;
+            }
+
+            // Keyboard shortcuts
+            window.addEventListener("keydown", (e) => {
+                if (lobbyView.style.display !== "none") return;
+                const ctrl = e.ctrlKey || e.metaKey;
+                if (!ctrl) {
+                    if (e.key.toLowerCase() === "w") selectAbility("MOVE");
+                    if (e.key === "Delete" || e.key === "Backspace") selectAbility("DELETE");
+                } else {
+                    if (e.key.toLowerCase() === "f") { e.preventDefault(); selectAbility("SEARCH"); }
+                    if (e.key.toLowerCase() === "c") { e.preventDefault(); selectAbility("COPY"); }
+                    if (e.key.toLowerCase() === "k") { e.preventDefault(); selectAbility("CONNECT"); }
+                    if (e.key.toLowerCase() === "r") { e.preventDefault(); selectAbility("RESTORE"); }
+                    if (e.key.toLowerCase() === "z") { e.preventDefault(); selectAbility("UNDO"); }
+                    if (e.key.toLowerCase() === "a") { e.preventDefault(); selectAbility("SELECT_ALL"); }
+                }
+            });
+        });
+
+        // Health check
+        async function checkServerHealth() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                if (response.ok) {
+                    statusDot.className = "status-dot online";
+                    statusText.textContent = "서버 연결 완료 (Local Mode)";
+                    return true;
+                }
+            } catch (err) {
+                console.error("Health check failed", err);
+            }
+            statusDot.className = "status-dot";
+            statusText.textContent = "서버 오프라인 · Server를 작동시켜주세요.";
+            return false;
+        }
+
+        // Ability buttons click
+        document.querySelectorAll(".ability-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                selectAbility(btn.dataset.ability);
+            });
+        });
+
+        function selectAbility(ability) {
+            activeAbility = ability;
+            document.querySelectorAll(".ability-btn").forEach(b => {
+                b.classList.toggle("active", b.dataset.ability === ability);
+            });
+            // Clear selection targets when changing ability
+            targetEntity = null;
+            secondaryEntity = null;
+            if (ability !== "MOVE") {
+                selectedTile = null;
+            }
+            updateSelectionDisplay();
+            drawMap();
+        }
+
+        // Setup campaign and start run
+        btnStartNew.addEventListener("click", async () => {
+            const seed = parseInt(document.getElementById("worldSeed").value, 10) || 20260717;
+            const limit = parseInt(document.getElementById("turnLimit").value, 10) || 40;
+            
+            showLoading("서버에 캠페인을 생성하는 중...");
+            try {
+                const campaignRes = await fetchJson("/v1/campaigns", {
+                    method: "POST",
+                    body: { title: "Web Play", worldSeed: seed, turnLimit: limit }
+                });
+                if (!campaignRes || !campaignRes.campaign) throw new Error("캠페인 생성 실패");
+                campaignId = campaignRes.campaign.id;
+
+                showLoading("런(Run) 상태를 생성하는 중...");
+                const runRes = await fetchJson(`/v1/campaigns/${campaignId}/runs`, {
+                    method: "POST",
+                    body: {}
+                });
+                if (!runRes || !runRes.run) throw new Error("런 생성 실패");
+                
+                runData = runRes.run;
+                localStorage.setItem("kw_server_run_id", runData.id);
+                initGamePlay();
+            } catch (err) {
+                alert(`오류 발생: ${err.message}`);
+                hideLoading();
+            }
+        });
+
+        // Continue game
+        btnContinue.addEventListener("click", async () => {
+            const savedRunId = localStorage.getItem("kw_server_run_id");
+            if (!savedRunId) return;
+
+            showLoading("저장된 런 상태를 동결 해제 중...");
+            try {
+                const runRes = await fetchJson(`/v1/runs/${savedRunId}`);
+                if (!runRes || !runRes.run) throw new Error("이어하기 실패");
+
+                runData = runRes.run;
+                initGamePlay();
+            } catch (err) {
+                alert(`오류 발생: ${err.message}`);
+                localStorage.removeItem("kw_server_run_id");
+                btnContinue.style.display = "none";
+                hideLoading();
+            }
+        });
+
+        // Abandon Run
+        btnAbandon.addEventListener("click", async () => {
+            if (!runData || !confirm("정말 이 모험을 중단하고 로비로 돌아가시겠습니까?")) return;
+            
+            showLoading("런 포기 처리 중...");
+            try {
+                await fetchJson(`/v1/runs/${runData.id}/abandon`, {
+                    method: "POST",
+                    body: { expectedRunVersion: runData.version }
+                });
+                localStorage.removeItem("kw_server_run_id");
+                runData = null;
+                campaignId = null;
+                btnContinue.style.display = "none";
+                
+                // Show Lobby
+                lobbyView.style.display = "flex";
+                sidebarView.style.display = "none";
+                mapView.style.display = "none";
+                narrativeView.style.display = "none";
+                abilityBarView.style.display = "none";
+            } catch (err) {
+                alert(`오류 발생: ${err.message}`);
+            } finally {
+                hideLoading();
+            }
+        });
+
+        // API Helpers
+        async function fetchJson(path, options = {}) {
+            const res = await fetch(`${API_URL}${path}`, {
+                ...options,
+                headers: {
+                    "content-type": "application/json",
+                    ...options.headers
+                },
+                body: options.body ? JSON.stringify(options.body) : undefined
+            });
+            if (!res.ok) {
+                const errJson = await res.json().catch(() => ({}));
+                throw new Error(errJson?.error?.message || `HTTP ${res.status}`);
+            }
+            return res.json();
+        }
+
+        // Initialize Gameplay View
+        function initGamePlay() {
+            hideLoading();
+            lobbyView.style.display = "none";
+            sidebarView.style.display = "flex";
+            mapView.style.display = "flex";
+            narrativeView.style.display = "flex";
+            abilityBarView.style.display = "flex";
+
+            decodeWorldMap();
+            updateHUD();
+            drawMap();
+            
+            // Set initial player position as selected tile
+            const player = getPlayerEntity();
+            if (player) {
+                selectedTile = { x: player.position.x, y: player.position.y };
+                updateSelectionDisplay();
+            }
+        }
+
+        function decodeWorldMap() {
+            if (!runData || !runData.world) return;
+            tileMap = decodeRle(runData.world.tilesRle);
+            areaMap = decodeRle(runData.world.areaMapRle);
+            biomeMap = decodeRle(runData.world.biomeMapRle);
+        }
+
+        function decodeRle(rle) {
+            const values = [];
+            if (!rle) return values;
+            for (const pair of rle) {
+                const [val, count] = pair;
+                for (let i = 0; i < count; i++) {
+                    values.push(val);
+                }
+            }
+            return values;
+        }
+
+        function getPlayerEntity() {
+            return runData.entities.find(e => e.id === runData.playerEntityId);
+        }
+
+        // Update UI Stats HUD
+        function updateHUD() {
+            if (!runData) return;
+            const player = getPlayerEntity();
+            if (!player) return;
+
+            const hp = player.state?.hp ?? 10;
+            const maxHp = player.state?.maxHp ?? 10;
+            hpText.textContent = `${hp} / ${maxHp}`;
+            hpFill.style.width = `${(hp / maxHp) * 100}%`;
+
+            const maxFocus = runData.maxFocus || 25;
+            focusText.textContent = `${runData.focus} / ${maxFocus}`;
+            focusFill.style.width = `${(runData.focus / maxFocus) * 100}%`;
+
+            goldVal.textContent = runData.gold ?? 0;
+            xpVal.textContent = runData.experience ?? 0;
+            accessLevelVal.textContent = `Lv.${runData.adminAccess ?? 0}`;
+            turnVal.textContent = `${runData.currentTurn} / ${runData.turnLimit}`;
+
+            // Objectives
+            storyObjective.textContent = runData.storyObjective || "임무 목표 없음";
+            
+            // Determine active area name
+            const areaIdx = areaMap[player.position.y * runData.world.width + player.position.x];
+            const areaName = runData.world.areaMapLegend[areaIdx] || "알 수 없는 지역";
+            targetAreaName.textContent = areaName;
+
+            // Ending board
+            endingList.innerHTML = "";
+            const endingReports = runData.endingConditionReports || runData.endingBoard;
+            if (endingReports) {
+                endingReports.forEach(ending => {
+                    const item = document.createElement("div");
+                    item.className = `ending-item ${ending.eligible ? 'eligible' : 'locked'}`;
+                    
+                    const metCount = ending.satisfiedCount;
+                    const totCount = ending.totalCount;
+                    const missing = (ending.conditions || [])
+                        .filter(c => !c.satisfied)
+                        .map(c => c.label);
+                    
+                    item.innerHTML = `
+                        <div class="ending-header">
+                            <span>${ending.title}</span>
+                            <span>${metCount}/${totCount}</span>
+                        </div>
+                        <div class="ending-conditions">
+                            ${missing.length > 0 
+                                ? `<span class="cond-badge missing">누락</span> ${missing.join(", ")}`
+                                : `<span class="cond-badge met">완료</span> 진입 조건 충족!`
+                            }
+                        </div>
+                    `;
+                    endingList.appendChild(item);
+                });
+            }
+        }
+
+        // Draw Interactive Canvas Map (Viewport Centered on Player)
+        const viewSize = 21;
+        const tileSize = 28;
+        function drawMap() {
+            if (!runData || !runData.world) return;
+            const w = runData.world.width;
+            const h = runData.world.height;
+            
+            const player = getPlayerEntity();
+            const px = player ? player.position.x : 0;
+            const py = player ? player.position.y : 0;
+
+            // Center camera on player
+            const halfView = Math.floor(viewSize / 2);
+            let startX = Math.max(0, Math.min(w - viewSize, px - halfView));
+            let startY = Math.max(0, Math.min(h - viewSize, py - halfView));
+
+            mapCanvas.width = viewSize * tileSize;
+            mapCanvas.height = viewSize * tileSize;
+
+            ctx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+            // Draw grid cells
+            for (let vy = 0; vy < viewSize; vy++) {
+                for (let vx = 0; vx < viewSize; vx++) {
+                    const gx = startX + vx;
+                    const gy = startY + vy;
+                    if (gx < 0 || gx >= w || gy < 0 || gy >= h) continue;
+
+                    const tileIdx = tileMap[gy * w + gx];
+                    const tileType = runData.world.tileLegend[tileIdx];
+                    
+                    if (tileType === "wall") ctx.fillStyle = "#4f5b66";
+                    else if (tileType === "water") ctx.fillStyle = "#4b86b4";
+                    else if (tileType === "hazard") ctx.fillStyle = "#c0392b";
+                    else if (tileType === "ruin") ctx.fillStyle = "#7f8c8d";
+                    else ctx.fillStyle = "#dcc29a"; // walkable
+
+                    ctx.fillRect(vx * tileSize, vy * tileSize, tileSize - 1, tileSize - 1);
+                }
+            }
+
+            // Setup font properties for entity labels
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            // Draw entities
+            runData.entities.forEach(entity => {
+                if (!entity.active) return;
+                const pos = entity.position;
+                const vx = pos.x - startX;
+                const vy = pos.y - startY;
+
+                if (vx >= 0 && vx < viewSize && vy >= 0 && vy < viewSize) {
+                    if (entity.id === runData.playerEntityId) {
+                        // Player: Blue square with '넙'
+                        ctx.fillStyle = "#00d2ff";
+                        ctx.fillRect(vx * tileSize + 2, vy * tileSize + 2, tileSize - 4, tileSize - 4);
+                        ctx.strokeStyle = "white";
+                        ctx.lineWidth = 1.5;
+                        ctx.strokeRect(vx * tileSize + 2, vy * tileSize + 2, tileSize - 4, tileSize - 4);
+                        ctx.fillStyle = "white";
+                        ctx.font = "bold 12px sans-serif";
+                        ctx.fillText("넙", vx * tileSize + tileSize/2, vy * tileSize + tileSize/2);
+                    } else if (entity.kind === "enemy") {
+                        // Enemy: Red square with '몬'
+                        ctx.fillStyle = "#ff4949";
+                        ctx.fillRect(vx * tileSize + 2, vy * tileSize + 2, tileSize - 4, tileSize - 4);
+                        ctx.strokeStyle = "white";
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(vx * tileSize + 2, vy * tileSize + 2, tileSize - 4, tileSize - 4);
+                        ctx.fillStyle = "white";
+                        ctx.font = "bold 11px sans-serif";
+                        ctx.fillText("몬", vx * tileSize + tileSize/2, vy * tileSize + tileSize/2);
+                    } else if (entity.kind === "npc") {
+                        // NPC: Green circle with their initial
+                        ctx.fillStyle = "#52c41a";
+                        ctx.beginPath();
+                        ctx.arc(vx * tileSize + tileSize/2, vy * tileSize + tileSize/2, tileSize/2 - 2, 0, 2*Math.PI);
+                        ctx.fill();
+                        ctx.fillStyle = "white";
+                        ctx.font = "bold 11px sans-serif";
+                        const initial = (entity.name || "N").substring(0, 1);
+                        ctx.fillText(initial, vx * tileSize + tileSize/2, vy * tileSize + tileSize/2);
+                    } else {
+                        // Props / Crate: Gold circle with '상' (Crate) or '유' (Artifact)
+                        ctx.fillStyle = "#f5a623";
+                        ctx.beginPath();
+                        ctx.arc(vx * tileSize + tileSize/2, vy * tileSize + tileSize/2, tileSize/2 - 2, 0, 2*Math.PI);
+                        ctx.fill();
+                        ctx.fillStyle = "black";
+                        ctx.font = "bold 11px sans-serif";
+                        const label = entity.kind === "artifact" ? "유" : "상";
+                        ctx.fillText(label, vx * tileSize + tileSize/2, vy * tileSize + tileSize/2);
+                    }
+                }
+            });
+
+            // Draw selection outlines
+            if (selectedTile) {
+                const vx = selectedTile.x - startX;
+                const vy = selectedTile.y - startY;
+                if (vx >= 0 && vx < viewSize && vy >= 0 && vy < viewSize) {
+                    ctx.strokeStyle = "#00d2ff";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(vx * tileSize - 1, vy * tileSize - 1, tileSize + 1, tileSize + 1);
+                }
+            }
+            if (targetEntity) {
+                const target = runData.entities.find(e => e.id === targetEntity);
+                if (target) {
+                    const vx = target.position.x - startX;
+                    const vy = target.position.y - startY;
+                    if (vx >= 0 && vx < viewSize && vy >= 0 && vy < viewSize) {
+                        ctx.strokeStyle = "#ff4949";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(vx * tileSize - 2, vy * tileSize - 2, tileSize + 3, tileSize + 3);
+                    }
+                }
+            }
+            if (secondaryEntity) {
+                const sec = runData.entities.find(e => e.id === secondaryEntity);
+                if (sec) {
+                    const vx = sec.position.x - startX;
+                    const vy = sec.position.y - startY;
+                    if (vx >= 0 && vx < viewSize && vy >= 0 && vy < viewSize) {
+                        ctx.strokeStyle = "#f5a623";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(vx * tileSize - 2, vy * tileSize - 2, tileSize + 3, tileSize + 3);
+                    }
+                }
+            }
+        }
+
+        // Map Click Handling (Translate local click back to world coordinate)
+        mapCanvas.addEventListener("click", (e) => {
+            if (!runData || !runData.world) return;
+            if (activeAbility !== "MOVE") return; // Only allow clicks for movement destination selection
+            const rect = mapCanvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            
+            const cellX = Math.floor(clickX / (rect.width / viewSize));
+            const cellY = Math.floor(clickY / (rect.height / viewSize));
+
+            const player = getPlayerEntity();
+            const px = player ? player.position.x : 0;
+            const py = player ? player.position.y : 0;
+            const halfView = Math.floor(viewSize / 2);
+            const w = runData.world.width;
+            const h = runData.world.height;
+            let startX = Math.max(0, Math.min(w - viewSize, px - halfView));
+            let startY = Math.max(0, Math.min(h - viewSize, py - halfView));
+
+            const worldX = startX + cellX;
+            const worldY = startY + cellY;
+
+            if (worldX >= 0 && worldX < w && worldY >= 0 && worldY < h) {
+                selectedTile = { x: worldX, y: worldY };
+                
+                // Check if an entity is on this tile
+                const clickedEnt = runData.entities.find(ent => ent.active && ent.position.x === worldX && ent.position.y === worldY);
+                if (clickedEnt) {
+                    if (activeAbility === "CONNECT") {
+                        if (!targetEntity) {
+                            targetEntity = clickedEnt.id;
+                        } else if (targetEntity !== clickedEnt.id) {
+                            secondaryEntity = clickedEnt.id;
+                        } else {
+                            targetEntity = null;
+                        }
+                    } else {
+                        targetEntity = clickedEnt.id;
+                    }
+                } else {
+                    if (activeAbility !== "CONNECT") {
+                        targetEntity = null;
+                    }
+                }
+                
+                updateSelectionDisplay();
+                drawMap();
+            }
+        });
+
+        function updateSelectionDisplay() {
+            if (selectedTile) {
+                coordDisplay.textContent = `X: ${selectedTile.x}, Y: ${selectedTile.y}`;
+            } else {
+                coordDisplay.textContent = "선택 없음";
+            }
+
+            if (targetEntity) {
+                const ent = runData.entities.find(e => e.id === targetEntity);
+                let label = ent ? `${ent.displayName || ent.kind}` : "지정되지 않음";
+                if (secondaryEntity) {
+                    const sec = runData.entities.find(e => e.id === secondaryEntity);
+                    label += ` ⚡ ${sec ? (sec.displayName || sec.kind) : '?'}`;
+                }
+                objectDisplay.textContent = `대상: ${label}`;
+            } else {
+                objectDisplay.textContent = "대상: 없음";
+            }
+        }
+
+        // Submit Action Execution to Server
+        btnExecute.addEventListener("click", async () => {
+            if (!runData) return;
+
+            const idempKey = "web-" + Math.random().toString(36).substring(2, 10);
+            
+            showLoading("행동을 수행하는 중...");
+            try {
+                let response;
+                if (activeAbility === "MOVE") {
+                    if (!selectedTile) {
+                        alert("이동할 목적지를 지도에서 선택하세요.");
+                        hideLoading();
+                        return;
+                    }
+                    response = await fetchJson(`/v1/runs/${runData.id}/travel`, {
+                        method: "POST",
+                        body: {
+                            inputType: "MOVE",
+                            expectedRunVersion: runData.version,
+                            idempotencyKey: idempKey,
+                            destination: selectedTile
+                        }
+                    });
+                } else {
+                    const payload = {
+                        inputType: "USE_SKILL",
+                        expectedRunVersion: runData.version,
+                        idempotencyKey: idempKey,
+                        skillId: activeAbility,
+                        targetIds: []
+                    };
+                    response = await fetchJson(`/v1/runs/${runData.id}/turns`, {
+                        method: "POST",
+                        body: payload
+                    });
+                }
+
+                // Handle response
+                const nav = response.navigation || response.turn;
+                runData = response.run;
+                
+                // Update HUD
+                updateHUD();
+                decodeWorldMap();
+                drawMap();
+
+                // Display Narration and Dialogue
+                if (nav && nav.narrative) {
+                    storyBody.textContent = nav.narrative.body || nav.narrative.summary || "서사가 작성되지 않았습니다.";
+                    if (nav.narrative.dialogueDetails && nav.narrative.dialogueDetails.length > 0) {
+                        dialogueContainer.style.display = "block";
+                        const d = nav.narrative.dialogueDetails[0];
+                        const speakerEnt = runData.entities.find(e => e.id === d.speakerId);
+                        dialogueSpeaker.textContent = speakerEnt ? speakerEnt.displayName : "대화 상대";
+                        dialogueText.textContent = `"${d.line}"`;
+                    } else if (nav.narrative.dialogue && nav.narrative.dialogue.length > 0) {
+                        dialogueContainer.style.display = "block";
+                        dialogueSpeaker.textContent = "의문의 존재";
+                        dialogueText.textContent = `"${nav.narrative.dialogue[0]}"`;
+                    } else {
+                        dialogueContainer.style.display = "none";
+                    }
+                } else {
+                    storyBody.textContent = "행동은 적용되었으나 서사 리포트가 수신되지 않았습니다.";
+                    dialogueContainer.style.display = "none";
+                }
+
+                // Render Dice Roll
+                const diceInfo = response.turn?.dice ?? nav?.d20;
+                if (diceInfo) {
+                    const rawVal = typeof diceInfo === "object" ? diceInfo.raw : diceInfo;
+                    const outcomeStr = response.turn?.outcome || nav?.outcome || "Success";
+                    
+                    diceGraphic.textContent = rawVal;
+                    diceGraphic.className = `dice-graphic ${outcomeStr.toLowerCase().replace("partialsuccess", "partial")}`;
+                    
+                    // Trigger spin animation
+                    diceGraphic.classList.add("rolling");
+                    setTimeout(() => diceGraphic.classList.remove("rolling"), 600);
+
+                    if (typeof diceInfo === "object") {
+                        diceOutcome.textContent = KoreanOutcome(outcomeStr);
+                        diceFormula.textContent = `D20 ${rawVal} + 수정치 ${diceInfo.modifier} / 난이도 ${diceInfo.difficulty}`;
+                    } else {
+                        diceOutcome.textContent = KoreanOutcome(outcomeStr);
+                        diceFormula.textContent = `D20 롤: ${rawVal} (이동 탐색 판정)`;
+                    }
+                } else {
+                    diceGraphic.textContent = "-";
+                    diceGraphic.className = "dice-graphic";
+                    diceOutcome.textContent = "판정 없음";
+                    diceFormula.textContent = "D20 주사위 롤이 트리거되지 않았습니다.";
+                }
+
+                // Reset inputs
+                targetEntity = null;
+                secondaryEntity = null;
+                updateSelectionDisplay();
+
+            } catch (err) {
+                alert(`행동 실패: ${err.message}`);
+            } finally {
+                hideLoading();
+            }
+        });
+
+        function KoreanOutcome(val) {
+            switch(val) {
+                case "Success": return "성공 (D20 >= 10)";
+                case "PartialSuccess": return "부분 성공 (6 <= D20 <= 9)";
+                case "Failure": return "실패 (D20 <= 5)";
+                default: return val;
+            }
+        }
+
+        // Loading Overlay Control
+        function showLoading(text) {
+            loadingText.textContent = text;
+            mapLoading.classList.add("active");
+        }
+
+        function hideLoading() {
+            mapLoading.classList.remove("active");
+        }
+    </script>
+</body>
+</html>

@@ -34,7 +34,7 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 883406615674803877}
-  - {fileID: 4997246925671262505}
+  - {fileID: 318702922658164997}
   - {fileID: 1865511365759624730}
   - {fileID: 21633321125946990}
   - {fileID: 6539008476389630918}
@@ -123,15 +123,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSceneUI
   screenFlowView: {fileID: 2773563725233421704}
   titleView: {fileID: 937872717309588592}
-  gameHudView: {fileID: 6397357338853557997}
+  gameHudView: {fileID: 1869681720039415489}
   settingsView: {fileID: 117039418962223300}
   pauseView: {fileID: 7012593935056476330}
   endingView: {fileID: 858432245862791242}
-  dialogueView: {fileID: 2725241243272759518}
-  tutorialView: {fileID: 3045559997203350099}
-  skillBarView: {fileID: 6590596321029093003}
-  selectionView: {fileID: 1681813649571005455}
-  minimapView: {fileID: 6416603330320448970}
+  dialogueView: {fileID: 7270933489831317746}
+  tutorialView: {fileID: 7742122799926696575}
+  skillBarView: {fileID: 1892368826147286695}
+  selectionView: {fileID: 6224691146362330147}
+  minimapView: {fileID: 1745656952445330918}
 --- !u!114 &2773563725233421704
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -145,267 +145,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererScreenFlowView
   titleScreen: {fileID: 728580452500194235}
-  gameHud: {fileID: 7479186131900882326}
+  gameHud: {fileID: 2809933003002578362}
   settingsScreen: {fileID: 8934961942561576703}
   pauseScreen: {fileID: 3775790411490061586}
   endingScreen: {fileID: 1662925354539697704}
---- !u!1001 &429747530073113327
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 3772996109506150923}
-    m_Modifications:
-    - target: {fileID: 58779918067244059, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 144354206865050478, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 671510485550411867, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 972845029091320446, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 1056371849360924768, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 1840381145548921378, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 2988938264654334161, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 3177547086187599291, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 3199385390801027648, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 4169716978482859783, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 4267870689301068412, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 4413917604594476698, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_Pivot.x
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_Pivot.y
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_AnchorMax.x
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_AnchorMax.y
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_AnchorMin.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_AnchorMin.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_SizeDelta.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_SizeDelta.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_AnchoredPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_AnchoredPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4734281919698214087, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 4852833274782711759, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 5448142206829134708, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 6932652012164116297, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 6992839455476976502, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 7079004624151568249, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_Name
-      value: Game HUD
-      objectReference: {fileID: 0}
-    - target: {fileID: 7344389455516493014, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 7652921573932282027, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 7734752127667553953, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    - target: {fileID: 7960261501702994796, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-      propertyPath: m_sharedMaterial
-      value: 
-      objectReference: {fileID: -7585122637854913981, guid: 18d3b98e3b1f941ea9fe30e2a3c51388, type: 2}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
---- !u!114 &1681813649571005455 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 1342571319627695840, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 95fa8b30cd8b54259a99163f9ca45361, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSelectionView
---- !u!114 &2725241243272759518 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 2316193136320727601, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b8f9a950a9fa1493f820e657fc1f1fa7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererDialogueView
---- !u!114 &3045559997203350099 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3437026844240380092, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9d47863db979e45249de61bc0598ddd3, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererTutorialView
---- !u!224 &4997246925671262505 stripped
-RectTransform:
-  m_CorrespondingSourceObject: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &6397357338853557997 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6715218342309184514, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7479186131900882326}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3a91c95a8aa70439ebddababc76c29a3, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererGameHudView
---- !u!114 &6416603330320448970 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6699842911406309157, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: bb1a82638b8294d6a9da848df1ab5b1c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererMinimapView
---- !u!114 &6590596321029093003 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6809519007376569444, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8139e78ee200047078b4c40eb41b2811, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSkillBarView
---- !u!1 &7479186131900882326 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 7079004624151568249, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
-  m_PrefabInstance: {fileID: 429747530073113327}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1803112288789029370
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -760,6 +503,183 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e104631d8b2e4410d9d72c8f6e448237, type: 3}
   m_Name: 
   m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererTitleView
+--- !u!1001 &4954889908603542211
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 3772996109506150923}
+    m_Modifications:
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_Pivot.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_Pivot.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7079004624151568249, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_Name
+      value: Game HUD
+      objectReference: {fileID: 0}
+    - target: {fileID: 7079004624151568249, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+--- !u!224 &318702922658164997 stripped
+RectTransform:
+  m_CorrespondingSourceObject: {fileID: 4660957884229643206, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1745656952445330918 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6699842911406309157, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bb1a82638b8294d6a9da848df1ab5b1c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererMinimapView
+--- !u!114 &1869681720039415489 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6715218342309184514, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2809933003002578362}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3a91c95a8aa70439ebddababc76c29a3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererGameHudView
+--- !u!114 &1892368826147286695 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6809519007376569444, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8139e78ee200047078b4c40eb41b2811, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSkillBarView
+--- !u!1 &2809933003002578362 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 7079004624151568249, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &6224691146362330147 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 1342571319627695840, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 95fa8b30cd8b54259a99163f9ca45361, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererSelectionView
+--- !u!114 &7270933489831317746 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2316193136320727601, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b8f9a950a9fa1493f820e657fc1f1fa7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererDialogueView
+--- !u!114 &7742122799926696575 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 3437026844240380092, guid: f365e15a2835a418ba73ac92c5d7f258, type: 3}
+  m_PrefabInstance: {fileID: 4954889908603542211}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9d47863db979e45249de61bc0598ddd3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: KeyboardWanderer.Runtime::KeyboardWanderer.Demo.KeyboardWandererTutorialView
 --- !u!1001 &8539484255094929785
 PrefabInstance:
   m_ObjectHideFlags: 0

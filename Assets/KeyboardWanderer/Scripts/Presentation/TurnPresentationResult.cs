@@ -5,6 +5,58 @@ using KeyboardWanderer.Gameplay;
 namespace KeyboardWanderer.Presentation
 {
     /// <summary>
+    /// A server-sealed player response shown at a narrative intervention boundary.
+    /// The UI renders <see cref="Text"/> verbatim and sends only <see cref="ChoiceId"/>
+    /// back to the server; it never infers an outcome from the label.
+    /// </summary>
+    public sealed class NarrativeChoiceOption
+    {
+        public string ChoiceId { get; }
+        public string Text { get; }
+        public string ChoiceKind { get; }
+        public string IntentTag { get; }
+        public string SkillId { get; }
+        public string DestinationRef { get; }
+        public string ResolutionMode { get; }
+        public string TargetEntityId { get; }
+
+        public bool IsSkill => string.Equals(ChoiceKind, "SKILL", StringComparison.OrdinalIgnoreCase) &&
+                               !string.IsNullOrWhiteSpace(SkillId);
+
+        public NarrativeChoiceOption(string choiceId, string text, string choiceKind,
+            string intentTag = null, string skillId = null, string destinationRef = null,
+            string resolutionMode = null, string targetEntityId = null)
+        {
+            ChoiceId = choiceId ?? string.Empty;
+            Text = text ?? string.Empty;
+            ChoiceKind = string.IsNullOrWhiteSpace(choiceKind) ? "DIALOGUE" : choiceKind.Trim().ToUpperInvariant();
+            IntentTag = intentTag ?? string.Empty;
+            SkillId = skillId ?? string.Empty;
+            DestinationRef = destinationRef ?? string.Empty;
+            ResolutionMode = resolutionMode ?? string.Empty;
+            TargetEntityId = targetEntityId ?? string.Empty;
+        }
+    }
+
+    public sealed class StorySequencePage
+    {
+        public string Type { get; }
+        public string Speaker { get; }
+        public string SpeakerId { get; }
+        public string ActionId { get; }
+        public string Text { get; }
+
+        public StorySequencePage(string type, string speaker, string text, string actionId = null, string speakerId = null)
+        {
+            Type = type ?? "NARRATION";
+            Speaker = speaker ?? string.Empty;
+            SpeakerId = speakerId ?? string.Empty;
+            ActionId = actionId ?? string.Empty;
+            Text = text ?? string.Empty;
+        }
+    }
+
+    /// <summary>
     /// 로컬 규칙 응답과 서버 DTO를 화면에 표시할 하나의 결과 형식으로 정규화한 값이다.
     /// Presenter와 컨트롤러는 원본 응답 종류를 확인하지 않고 이 값만 읽는다.
     /// </summary>
@@ -28,6 +80,12 @@ namespace KeyboardWanderer.Presentation
         public string NarrativeModel { get; }
         public float ActionDuration { get; }
         public string[] LogEntries { get; }
+        public StorySequencePage[] StorySequence { get; }
+        public string NextInterventionReason { get; }
+        public string ChoiceSetId { get; }
+        public NarrativeChoiceOption[] NarrativeChoices { get; }
+        public string[] SuggestedSkillIds { get; }
+        public string ElementalEffectId { get; }
 
         public TurnPresentationResult(
             int d20,
@@ -46,6 +104,12 @@ namespace KeyboardWanderer.Presentation
             string narrativeModel,
             float actionDuration,
             string[] logEntries,
+            StorySequencePage[] storySequence = null,
+            string nextInterventionReason = null,
+            string[] suggestedSkillIds = null,
+            string elementalEffectId = null,
+            string choiceSetId = null,
+            NarrativeChoiceOption[] narrativeChoices = null,
             string dialogueSpeaker = null)
         {
             D20 = d20;
@@ -65,6 +129,12 @@ namespace KeyboardWanderer.Presentation
             NarrativeModel = narrativeModel ?? "deterministic";
             ActionDuration = Math.Max(0f, actionDuration);
             LogEntries = logEntries ?? Array.Empty<string>();
+            StorySequence = storySequence ?? Array.Empty<StorySequencePage>();
+            NextInterventionReason = nextInterventionReason ?? string.Empty;
+            ChoiceSetId = choiceSetId ?? string.Empty;
+            NarrativeChoices = narrativeChoices ?? Array.Empty<NarrativeChoiceOption>();
+            SuggestedSkillIds = suggestedSkillIds ?? Array.Empty<string>();
+            ElementalEffectId = elementalEffectId ?? string.Empty;
         }
     }
 
@@ -104,7 +174,7 @@ namespace KeyboardWanderer.Presentation
                 "deterministic",
                 response.ActionContext == ActionContext.Combat ? 0.5f : 0.22f,
                 logs.ToArray(),
-                dialogueSpeaker);
+                dialogueSpeaker: dialogueSpeaker);
         }
 
         private static string[] BuildNpcDialogue(TurnResponse response, out string speaker)
@@ -194,14 +264,16 @@ namespace KeyboardWanderer.Presentation
             if (eventCode.StartsWith("MASTERY_RANK_INCREASED:", StringComparison.Ordinal)) return "XP 숙련 등급 상승으로 최대 Focus가 증가함";
             if (eventCode.StartsWith("NPC_PROMISE_MADE:", StringComparison.Ordinal)) return "동료와 ROOT_SYSTEM까지 함께 가기로 약속함";
             if (eventCode.StartsWith("NPC_PROMISE_FULFILLED:", StringComparison.Ordinal)) return "동료와의 약속을 지켜 유대와 신뢰가 상승함";
+            if (eventCode.StartsWith("NPC_MEMORY_ADDED:", StringComparison.Ordinal)) return string.Empty;
             if (eventCode.StartsWith("NPC_CLUE_REVEALED:", StringComparison.Ordinal)) return "NPC가 숨겨 둔 증언을 털어놓음 · 신뢰 상승";
             if (eventCode.StartsWith("NPC_RUMOR_REVEALED:", StringComparison.Ordinal)) return "불확실한 증언을 확보함 · 신뢰와 두려움 상승";
             if (eventCode.StartsWith("NPC_INVESTIGATION_REFUSED:", StringComparison.Ordinal)) return "NPC가 답변을 거부함 · 두려움 상승";
             if (eventCode.StartsWith("NPC_INVESTIGATION_REPEAT:", StringComparison.Ordinal)) return "이미 들은 이야기를 다시 확인함 · 새 단서 없음";
             if (eventCode.StartsWith("ENEMY_DEPENDENCY_REVEALED:", StringComparison.Ordinal)) return "적의 의존성을 밝혀 특수 반응을 차단함";
             if (eventCode.StartsWith("CACHE_ENEMY_REPLICATED:", StringComparison.Ordinal)) return "미조사 Cache 적이 인접 타일에 복제됨";
+            if (eventCode.StartsWith("ENTITY_INVESTIGATED:", StringComparison.Ordinal)) return "대상을 조사해 새로운 정보를 확인함";
             if (eventCode.StartsWith("SEARCH_REVEALED:", StringComparison.Ordinal)) return string.Empty;
-            return eventCode.Replace('_', ' ').Replace(":", " · ");
+            return string.Empty;
         }
 
         public static string StateChangeSummary(IReadOnlyList<string> events)

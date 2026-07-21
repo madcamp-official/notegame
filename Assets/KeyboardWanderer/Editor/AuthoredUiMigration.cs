@@ -134,7 +134,7 @@ namespace KeyboardWanderer.Editor
             foreach (Button button in root.GetComponentsInChildren<Button>(true))
             {
                 ColorBlock colors = button.colors;
-                colors.fadeDuration = 0.055f;
+                colors.fadeDuration = 0.18f;
                 colors.highlightedColor = new Color(1f, 0.84f, 0.42f, 1f);
                 colors.pressedColor = new Color(0.94f, 0.49f, 0.16f, 1f);
                 colors.selectedColor = new Color(1f, 0.75f, 0.25f, 1f);

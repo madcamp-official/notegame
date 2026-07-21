@@ -84,7 +84,9 @@ namespace KeyboardWanderer.Editor
 
             AssetDatabase.SaveAssets();
             AssetDatabase.ImportAsset(FontAssetPath, ImportAssetOptions.ForceSynchronousImport);
-            return AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontAssetPath);
+            TMP_FontAsset imported = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontAssetPath);
+            imported?.ReadFontAssetDefinition();
+            return imported;
         }
 
         /// <summary>
@@ -275,6 +277,9 @@ namespace KeyboardWanderer.Editor
 
         private static bool HasAllCharacters(TMP_FontAsset font, string characters)
         {
+            // CopySerialized로 글리프 테이블을 갱신한 직후에는 TMP의 런타임 lookup table이
+            // 아직 이전 데이터를 가리킬 수 있다. 직렬화된 테이블로 명시적으로 재구축한다.
+            font.ReadFontAssetDefinition();
             for (int i = 0; i < characters.Length; i++)
             {
                 if (!font.HasCharacter(characters[i]))
