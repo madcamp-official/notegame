@@ -76,8 +76,10 @@ namespace KeyboardWanderer.Editor
 
             PlayerSettings.SetIcons(target,
                 Enumerable.Repeat(icon, iconSizes.Length).ToArray(), IconKind.Application);
-            UnityEditor.OSXStandalone.UserBuildSettings.architecture =
-                OSArchitecture.x64ARM64;
+            #if UNITY_EDITOR && UNITY_STANDALONE_OSX
+                UnityEditor.OSXStandalone.UserBuildSettings.architecture =
+                    OSArchitecture.x64ARM64;
+            #endif
             PlayerSettings.productName = ProductName;
             PlayerSettings.bundleVersion = ReleaseVersion;
             PlayerSettings.SetApplicationIdentifier(target, BundleIdentifier);
