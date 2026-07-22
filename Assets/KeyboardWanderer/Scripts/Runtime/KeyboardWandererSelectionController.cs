@@ -150,11 +150,17 @@ namespace KeyboardWanderer.Runtime
         /// <summary>POI 순환으로 찾은 좌표와 표시 문구를 함께 기록한다.</summary>
         public void SelectPoi(int cursor, GridCoord coord, string label)
         {
+            // POIs are travel destinations. Cycling one must take ownership away
+            // from whichever skill was used previously; otherwise the camera moves
+            // to the POI while Enter silently tries that stale skill instead of MOVE.
+            currentAbility = AbilityKind.Move;
+            CopySourceCaptured = false;
             PoiCursor = cursor;
             PoiLabel = label ?? string.Empty;
             SelectedCoord = coord;
             SelectedTarget = null;
             SelectedSecondaryTarget = null;
+            Feedback = string.Empty;
         }
 
         /// <summary>월드 이동이 끝난 뒤 사건 배치 좌표만 남기고 대상은 비운다.</summary>

@@ -110,6 +110,7 @@ namespace KeyboardWanderer.Gameplay
         public string SkillId => Ability == AbilityKind.Move ? string.Empty : Ability.ToString().ToUpperInvariant();
         /// <summary>Optional flavour note. It is never required or used as rules authority.</summary>
         public string IntentText { get; }
+        public int PreparedD20 { get; }
 
         public TurnRequest(string idempotencyKey, long expectedRunVersion, AbilityKind ability,
             Guid? targetEntityId, GridCoord? destination, string intentText)
@@ -119,6 +120,14 @@ namespace KeyboardWanderer.Gameplay
 
         public TurnRequest(string idempotencyKey, long expectedRunVersion, AbilityKind ability,
             Guid? targetEntityId, Guid? secondaryTargetEntityId, GridCoord? destination, string intentText)
+            : this(idempotencyKey, expectedRunVersion, ability, targetEntityId, secondaryTargetEntityId,
+                destination, intentText, 0)
+        {
+        }
+
+        private TurnRequest(string idempotencyKey, long expectedRunVersion, AbilityKind ability,
+            Guid? targetEntityId, Guid? secondaryTargetEntityId, GridCoord? destination, string intentText,
+            int preparedD20)
         {
             IdempotencyKey = idempotencyKey;
             ExpectedRunVersion = expectedRunVersion;
@@ -128,6 +137,14 @@ namespace KeyboardWanderer.Gameplay
             Destination = destination;
             InputType = ability == AbilityKind.Move ? PlayerInputType.MOVE : PlayerInputType.USE_SKILL;
             IntentText = intentText ?? string.Empty;
+            PreparedD20 = preparedD20;
+        }
+
+        public TurnRequest WithPreparedD20(int value)
+        {
+            if (value < 1 || value > 20) throw new ArgumentOutOfRangeException(nameof(value));
+            return new TurnRequest(IdempotencyKey, ExpectedRunVersion, Ability, TargetEntityId,
+                SecondaryTargetEntityId, Destination, IntentText, value);
         }
 
         public static TurnRequest Move(string idempotencyKey, long expectedRunVersion, GridCoord destination)
@@ -455,6 +472,7 @@ namespace KeyboardWanderer.Gameplay
         public int MaxHealth { get; }
         public bool IsHostile { get; }
         public bool IsOpened { get; }
+        public bool IsBlocking { get; }
         public bool IsProtected { get; }
         public bool IsCloneable { get; }
 
@@ -469,6 +487,7 @@ namespace KeyboardWanderer.Gameplay
             MaxHealth = state.MaxHealth;
             IsHostile = state.IsHostile;
             IsOpened = state.IsOpened;
+            IsBlocking = state.IsBlocking;
             IsProtected = state.IsProtected;
             IsCloneable = state.IsCloneable;
         }

@@ -62,7 +62,8 @@ namespace KeyboardWanderer.Networking
                     : null;
                 GameApiClient.Result<GameApiClient.CommittedTurn> action = null;
                 yield return _client.SubmitAction(runId, request.IdempotencyKey, request.ExpectedRunVersion,
-                    SkillId(request.Ability), targetIds.ToArray(), actionDestination, value => action = value);
+                    SkillId(request.Ability), targetIds.ToArray(), actionDestination, request.PreparedD20,
+                    value => action = value);
                 Complete(action, completed);
             }
             finally

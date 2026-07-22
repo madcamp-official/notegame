@@ -147,6 +147,24 @@ test("the same campaign can converge to more than one server-approved ending", (
   assert.equal(new Set(resolved).size, 2);
 });
 
+test("ending intent and ordinary Delete cannot bypass an unresolved finale recipe", () => {
+  const run = createRunState({ campaign: campaignFixture(8202, 30), ownerId: OWNER_ID, resolutionSeed: "ending-bypass" });
+  run.currentTurn = 29;
+  run.version = 30;
+  run.storyLedger = Array.from({ length: 8 }, (_, turnNo) => ({ id: `story-bypass-${turnNo}`, turnNo, eventTypes: ["relationship_changed"], meaningful: true }));
+  run.majorChoices = Array.from({ length: 3 }, (_, index) => ({ id: `choice-bypass-${index}`, turnNo: index + 1, type: "NARRATIVE_CHOICE" }));
+  run.emergentStory = { ...run.emergentStory, meaningfulTurns: 8, majorChoiceCount: 3, endingEligible: true };
+  const request = deleteRequest(run, "ending-bypass-delete", 30);
+  request.intent = "삭제 명령으로 이 이야기를 지금 마무리하겠다.";
+
+  const resolved = resolveTurn({ run, request, d20Source: new FixedD20Source(20) });
+  assert.equal(resolved.run.finalePuzzle.status, "gated");
+  assert.equal(resolved.run.selectedEndingId, null);
+  assert.equal(resolved.run.status, "active");
+  assert.equal(resolved.run.endingCode, null);
+  assert.ok(!resolved.turn.events.some((event) => event.type === "run_completed"));
+});
+
 test("structured MOVE and USE_SKILL inputs require no natural-language command", () => {
   const run = createRunState({ campaign: campaignFixture(8301), ownerId: OWNER_ID, resolutionSeed: "language-grounding" });
   const props = run.entities.filter((entity) => entity.kind === "prop").slice(0, 2);
@@ -155,9 +173,9 @@ test("structured MOVE and USE_SKILL inputs require no natural-language command",
   assert.equal(move.playerNote, null);
   const skill = normalizeTurnRequest({ inputType: "USE_SKILL", idempotencyKey: "structured-skill-1", expectedRunVersion: 1, skillId: "CONNECT", targetIds: props.map((item) => item.id) });
   assert.equal(skill.skillId, "CONNECT");
-  assert.equal(skill.abilitySource, "server_auto_target");
-  assert.equal(skill.targetEntityId, null);
-  assert.equal(skill.secondaryTargetEntityId, null);
+  assert.equal(skill.abilitySource, "structured_selection");
+  assert.equal(skill.targetEntityId, props[0].id);
+  assert.equal(skill.secondaryTargetEntityId, props[1].id);
   assert.equal(skill.playerNote, null);
 
   const travelAlias = normalizeTravelRequest({ inputType: "TRAVEL", idempotencyKey: "structured-move-2", expectedRunVersion: 1, destination: adjacentWalkable(run) });

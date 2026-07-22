@@ -8,7 +8,7 @@ namespace KeyboardWanderer.Demo
 {
     /// <summary>
     /// Action Bar 오브젝트가 자신의 스킬 버튼, 단축키 문구, 선택 표시를 직접 소유한다.
-    /// 루트 UI는 어떤 Button이 Ctrl+F인지 알 필요 없이 AbilityKind 상태만 전달한다.
+    /// 루트 UI는 어떤 Button이 F 조사인지 알 필요 없이 AbilityKind 상태만 전달한다.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class KeyboardWandererSkillBarView : MonoBehaviour
@@ -92,12 +92,12 @@ namespace KeyboardWanderer.Demo
             switch (ability)
             {
                 case AbilityKind.Move: return "W  이동";
-                case AbilityKind.Copy: return pasteMode ? "Ctrl V  배치" : "Ctrl C  복제";
-                case AbilityKind.Delete: return "Delete  공격";
-                case AbilityKind.Connect: return "Ctrl K  연결";
-                case AbilityKind.Restore: return "Ctrl R  복구";
-                case AbilityKind.Undo: return "Ctrl Z  되돌리기";
-                case AbilityKind.Search: return "Ctrl F  조사";
+                case AbilityKind.Copy: return pasteMode ? "Ctrl V  배치" : "E  복제";
+                case AbilityKind.Delete: return "R  공격";
+                case AbilityKind.Connect: return "C  연결";
+                case AbilityKind.Restore: return "X  복구";
+                case AbilityKind.Undo: return "Z  되돌리기";
+                case AbilityKind.Search: return "F  조사";
                 case AbilityKind.SelectAll: return "Ctrl A  범위 공격";
                 default: return ability.ToString();
             }

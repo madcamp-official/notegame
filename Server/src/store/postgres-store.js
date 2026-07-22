@@ -1,9 +1,29 @@
 import { AppError, notFound } from "../errors.js";
-import { clone, fingerprint } from "../domain/serialization.js";
+import { clone, deterministicUuid, fingerprint } from "../domain/serialization.js";
 import { areaAt } from "../domain/world.js";
 import { WORLD_CODRIA } from "../domain/codria-contract.js";
 
 const SCHEMA = "keyboard_wanderer";
+const REQUIRED_SCHEMA_VERSION = "012_request_idempotency_and_schema_readiness";
+const REQUIRED_RELATIONS = [
+  "campaigns",
+  "runs",
+  "turn_records",
+  "safe_travels",
+  "request_idempotency",
+  "schema_migrations"
+];
+const REQUIRED_PRIVILEGES = [
+  ["campaigns", "SELECT"], ["campaigns", "INSERT"],
+  ["runs", "SELECT"], ["runs", "INSERT"], ["runs", "UPDATE"],
+  ["turn_records", "SELECT"], ["turn_records", "INSERT"], ["turn_records", "UPDATE"],
+  ["safe_travels", "SELECT"], ["safe_travels", "INSERT"],
+  ["request_idempotency", "SELECT"], ["request_idempotency", "INSERT"],
+  ["request_idempotency", "UPDATE"], ["request_idempotency", "DELETE"],
+  ["schema_migrations", "SELECT"]
+];
+const TRANSACTION_MAX_ATTEMPTS = 3;
+const TRANSACTION_RETRY_BASE_DELAY_MS = 8;
 
 export async function createPostgresStore({ connectionString, ssl = false } = {}) {
   let pg;
@@ -20,7 +40,14 @@ export async function createPostgresStore({ connectionString, ssl = false } = {}
     connectionTimeoutMillis: 5_000,
     application_name: "codria-v4-game-server"
   });
-  return new PostgresStore(pool);
+  const store = new PostgresStore(pool);
+  try {
+    await store.health();
+    return store;
+  } catch (error) {
+    await pool.end().catch(() => {});
+    throw error;
+  }
 }
 
 export class PostgresStore {
@@ -29,8 +56,136 @@ export class PostgresStore {
   }
 
   async health() {
-    await this.pool.query("select 1 as ok");
-    return { ok: true, storage: "postgres" };
+    const relationResult = await this.pool.query(
+      `select required.relation_name,
+              to_regclass($1 || '.' || required.relation_name) is not null as present
+         from unnest($2::text[]) as required(relation_name)`,
+      [SCHEMA, REQUIRED_RELATIONS]
+    );
+    const missing = relationResult.rows.filter((row) => row.present !== true).map((row) => row.relation_name);
+    if (missing.length > 0) {
+      throw new AppError(503, "DATABASE_SCHEMA_OUTDATED", "PostgreSQL is missing required game schema objects.", {
+        requiredVersion: REQUIRED_SCHEMA_VERSION,
+        missingRelations: missing
+      });
+    }
+    const privilegeResult = await this.pool.query(
+      `select relation_name, privilege,
+              has_table_privilege(current_user, $1 || '.' || relation_name, privilege) as allowed
+         from unnest($2::text[], $3::text[]) as required(relation_name, privilege)`,
+      [SCHEMA, REQUIRED_PRIVILEGES.map(([relation]) => relation), REQUIRED_PRIVILEGES.map(([, privilege]) => privilege)]
+    );
+    const denied = privilegeResult.rows
+      .filter((row) => row.allowed !== true)
+      .map((row) => `${row.relation_name}:${row.privilege}`);
+    if (denied.length > 0) {
+      throw new AppError(503, "DATABASE_SCHEMA_ACCESS_DENIED", "The application role lacks required game schema privileges.", {
+        requiredVersion: REQUIRED_SCHEMA_VERSION,
+        deniedPrivileges: denied
+      });
+    }
+    const versionResult = await this.pool.query(
+      `select version from ${SCHEMA}.schema_migrations where version = $1`,
+      [REQUIRED_SCHEMA_VERSION]
+    );
+    if (versionResult.rowCount !== 1) {
+      throw new AppError(503, "DATABASE_SCHEMA_OUTDATED", "PostgreSQL migrations are not at the required release version.", {
+        requiredVersion: REQUIRED_SCHEMA_VERSION
+      });
+    }
+    return { ok: true, storage: "postgres", schemaVersion: REQUIRED_SCHEMA_VERSION };
+  }
+
+  async claimIdempotency({ ownerId, operation, idempotencyKey, requestFingerprint, leaseToken, leaseMs }) {
+    return this.withOwner(ownerId, async (client) => {
+      await client.query(
+        `insert into ${SCHEMA}.profiles (id, display_name)
+         values ($1, 'Codria Player')
+         on conflict (id) do nothing`,
+        [ownerId]
+      );
+      const inserted = await client.query(
+        `insert into ${SCHEMA}.request_idempotency
+           (owner_id, operation, idempotency_key, request_fingerprint, status, lease_token, lease_expires_at)
+         values ($1,$2,$3,$4,'pending',$5,clock_timestamp() + ($6::integer * interval '1 millisecond'))
+         on conflict (owner_id, operation, idempotency_key) do nothing
+         returning 1`,
+        [ownerId, operation, idempotencyKey, requestFingerprint, leaseToken, leaseMs]
+      );
+      if (inserted.rowCount === 1) return { state: "acquired" };
+
+      const existingResult = await client.query(
+        `select request_fingerprint, status, response_json,
+                lease_expires_at <= clock_timestamp() as lease_expired
+           from ${SCHEMA}.request_idempotency
+          where owner_id = $1 and operation = $2 and idempotency_key = $3
+          for update`,
+        [ownerId, operation, idempotencyKey]
+      );
+      if (existingResult.rowCount !== 1) {
+        throw new AppError(503, "IDEMPOTENCY_LEDGER_UNAVAILABLE", "The idempotency ledger changed while the request was being claimed.");
+      }
+      const existing = existingResult.rows[0];
+      if (existing.request_fingerprint !== requestFingerprint) {
+        throw new AppError(409, "IDEMPOTENCY_CONFLICT", "The idempotency key was already used with a different payload.");
+      }
+      if (existing.status === "completed") {
+        return { state: "completed", response: existing.response_json ?? null };
+      }
+      if (existing.lease_expired !== true) return { state: "pending", retryAfterMs: 50 };
+
+      const claimed = await client.query(
+        `update ${SCHEMA}.request_idempotency
+            set lease_token = $4,
+                lease_expires_at = clock_timestamp() + ($5::integer * interval '1 millisecond')
+          where owner_id = $1 and operation = $2 and idempotency_key = $3 and status = 'pending'
+          returning 1`,
+        [ownerId, operation, idempotencyKey, leaseToken, leaseMs]
+      );
+      return claimed.rowCount === 1 ? { state: "acquired" } : { state: "pending", retryAfterMs: 50 };
+    });
+  }
+
+  async renewIdempotencyLease({ ownerId, operation, idempotencyKey, leaseToken, leaseMs }) {
+    return this.withOwner(ownerId, async (client) => {
+      const result = await client.query(
+        `update ${SCHEMA}.request_idempotency
+            set lease_expires_at = clock_timestamp() + ($5::integer * interval '1 millisecond')
+          where owner_id = $1 and operation = $2 and idempotency_key = $3
+            and status = 'pending' and lease_token = $4
+          returning 1`,
+        [ownerId, operation, idempotencyKey, leaseToken, leaseMs]
+      );
+      return result.rowCount === 1;
+    });
+  }
+
+  async completeIdempotency({ ownerId, operation, idempotencyKey, leaseToken, response = null }) {
+    return this.withOwner(ownerId, async (client) => {
+      const result = await client.query(
+        `update ${SCHEMA}.request_idempotency
+            set status = 'completed', response_json = $5::jsonb, lease_token = null,
+                lease_expires_at = null, completed_at = clock_timestamp()
+          where owner_id = $1 and operation = $2 and idempotency_key = $3
+            and status = 'pending' and lease_token = $4
+          returning 1`,
+        [ownerId, operation, idempotencyKey, leaseToken, response === null ? null : JSON.stringify(response)]
+      );
+      return result.rowCount === 1;
+    });
+  }
+
+  async releaseIdempotency({ ownerId, operation, idempotencyKey, leaseToken }) {
+    return this.withOwner(ownerId, async (client) => {
+      const result = await client.query(
+        `delete from ${SCHEMA}.request_idempotency
+          where owner_id = $1 and operation = $2 and idempotency_key = $3
+            and status = 'pending' and lease_token = $4
+          returning 1`,
+        [ownerId, operation, idempotencyKey, leaseToken]
+      );
+      return result.rowCount === 1;
+    });
   }
 
   async createCampaign(campaign) {
@@ -214,6 +369,7 @@ export class PostgresStore {
       }
 
       const storedRun = { ...databaseRun, activeAreaId: areaId };
+      await synchronizeAuthoritativeRunProjection(client, storedRun);
       await persistInitialCodriaState(client, storedRun);
       await insertInitialProgressState(client, storedRun, generationPlanId);
       await bindInitialEntitiesToSlots(client, storedRun, generationPlanId, persistedWorld.slotIds);
@@ -239,16 +395,28 @@ export class PostgresStore {
       const result = await client.query(`select * from ${SCHEMA}.runs where id = $1 and owner_id = $2 for update`, [runId, ownerId]);
       if (result.rowCount === 0) throw notFound("Run");
       const current = rowToRun(result.rows[0]);
+      if (current.status !== "active") throw new AppError(409, "RUN_NOT_ACTIVE", "The run does not accept ambient movement.");
       if (current.version !== expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: current.version });
       const committed = resolve(clone(current));
       if (committed.movedEntityIds.length === 0) return committed;
       await updateRunRow(client, committed.run);
+      const areaRows = await loadDatabaseAreas(client, committed.run);
       for (const entityId of committed.movedEntityIds) {
         const entity = committed.run.entities.find((item) => item.id === entityId);
-        const area = areaAt(committed.run.world, entity.position);
-        await client.query(`update ${SCHEMA}.entity_positions set area_id = $4, x = $5, y = $6, revision = revision + 1, updated_at = $7 where entity_id = $1 and owner_id = $2 and run_id = $3 and removed_at is null`,
-          [entityId, ownerId, runId, area.id, entity.position.x, entity.position.y, committed.run.updatedAt]);
+        if (!entity) throw new AppError(500, "AMBIENT_ENTITY_MISSING", "Ambient wander referenced no authoritative entity.");
+        const placement = databasePlacementForGlobalPosition(committed.run, areaRows, entity.position);
+        const positionResult = await client.query(
+          `update ${SCHEMA}.entity_positions
+              set area_id = $4, x = $5, y = $6, revision = revision + 1, updated_at = $7
+            where entity_id = $1 and owner_id = $2 and run_id = $3 and removed_at is null`,
+          [entityId, ownerId, runId, placement.areaId,
+            placement.localPosition.x, placement.localPosition.y, committed.run.updatedAt]
+        );
+        if (positionResult.rowCount !== 1) {
+          throw new AppError(500, "AMBIENT_POSITION_MISSING", "Ambient wander could not update exactly one live entity position.");
+        }
       }
+      await synchronizeAuthoritativeRunProjection(client, committed.run);
       return committed;
     });
   }
@@ -263,6 +431,7 @@ export class PostgresStore {
       if (!committed?.run || committed.run.version !== current.version + 1 || committed.run.currentTurn !== current.currentTurn)
         throw new AppError(500, "RUN_MUTATION_INVARIANT_FAILED", "Run mutation violated version or turn invariants.");
       await updateRunRow(client, committed.run);
+      await synchronizeAuthoritativeRunProjection(client, committed.run);
       return committed;
     });
   }
@@ -311,6 +480,7 @@ export class PostgresStore {
           events: committed.navigation.events
         });
       }
+      await synchronizeAuthoritativeRunProjection(client, committed.run);
       const requestedDestination = committed.navigation.requestedDestination || committed.navigation.to;
       const requestedPlacement = databasePlacementForGlobalPosition(
         committed.run, activePlacement.areaRows, requestedDestination
@@ -387,6 +557,7 @@ export class PostgresStore {
       await synchronizeActiveArea(client, committed.run);
       await updateRunRow(client, committed.run);
       await synchronizeEntityState(client, committed.run, committed.turn);
+      await synchronizeAuthoritativeRunProjection(client, committed.run);
       const narrative = committed.turn.narrative;
       const committedArea = areaAt(
         committed.run.world,
@@ -519,21 +690,38 @@ export class PostgresStore {
   }
 
   async withOwner(ownerId, callback, { isolation = "read committed", readOnly = false } = {}) {
-    const client = await this.pool.connect();
-    try {
-      const mode = readOnly ? " read only" : "";
-      await client.query(`begin isolation level ${isolation}${mode}`);
-      await client.query("select set_config('app.user_id', $1, true)", [ownerId]);
-      const value = await callback(client);
-      await client.query("commit");
-      return value;
-    } catch (error) {
-      await client.query("rollback").catch(() => {});
-      throw mapDatabaseError(error);
-    } finally {
-      client.release();
+    for (let attempt = 1; attempt <= TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
+      const client = await this.pool.connect();
+      try {
+        const mode = readOnly ? " read only" : "";
+        await client.query(`begin isolation level ${isolation}${mode}`);
+        await client.query("select set_config('app.user_id', $1, true)", [ownerId]);
+        const value = await callback(client);
+        await client.query("commit");
+        return value;
+      } catch (error) {
+        await client.query("rollback").catch(() => {});
+        if (!isRetryableTransactionError(error) || attempt === TRANSACTION_MAX_ATTEMPTS)
+          throw mapDatabaseError(error);
+      } finally {
+        client.release();
+      }
+      // PostgreSQL can abort a SERIALIZABLE transaction even when two runs belong to
+      // different owners because both touch shared catalog/index pages. Retry the whole
+      // short transaction with a fresh connection; all model/network work is completed
+      // before this boundary and the callback is required to be deterministic.
+      await delay(TRANSACTION_RETRY_BASE_DELAY_MS * (2 ** (attempt - 1)));
     }
+    throw new AppError(500, "TRANSACTION_RETRY_EXHAUSTED", "The database transaction retry loop ended unexpectedly.");
   }
+}
+
+function isRetryableTransactionError(error) {
+  return error?.code === "40001" || error?.code === "40P01";
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function campaignSelect(suffix) {
@@ -1061,14 +1249,16 @@ async function bindInitialEntitiesToSlots(client, run, generationPlanId, slotIds
     if (!slotId) continue;
     const planNodeKey = String(gameEntity.state?.campaignRole || gameEntity.state?.evidenceKey
       || gameEntity.state?.finaleComponent || domainSlotId);
+    const status = gameEntity.active ? "active" : "reserved";
+    const activationTurn = gameEntity.active ? 0 : null;
     await client.query(
       `insert into ${SCHEMA}.run_slot_bindings
          (run_id, owner_id, world_id, generation_plan_id, slot_id, binding_key,
           binding_kind, plan_node_key, entity_id, status, activation_turn, binding_payload,
           created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,'entity',$7,$8,'active',0,$9::jsonb,$10,$10)`,
+       values ($1,$2,$3,$4,$5,$6,'entity',$7,$8,$9,$10,$11::jsonb,$12,$12)`,
       [run.id, run.ownerId, databaseWorldId(run), generationPlanId, slotId, `entity:${gameEntity.id}`,
-        planNodeKey, gameEntity.id,
+        planNodeKey, gameEntity.id, status, activationTurn,
         JSON.stringify({ domainSlotId, assetId: gameEntity.assetId, geometryOwnedByWorld: true }), run.createdAt]
     );
   }
@@ -1283,6 +1473,200 @@ async function synchronizeActiveArea(client, run) {
   return { areaRows, placement };
 }
 
+const PROJECTION_ACTOR_KINDS = new Set(["player", "npc", "enemy"]);
+const PROJECTION_FACINGS = new Set(["north", "south", "east", "west", "none"]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function projectionFacing(entity) {
+  const facing = String(entity.state?.facing || (PROJECTION_ACTOR_KINDS.has(entity.kind) ? "south" : "none")).toLowerCase();
+  return PROJECTION_FACINGS.has(facing) ? facing : "none";
+}
+
+function actorProjection(entity, run) {
+  const hp = Number.isInteger(entity.state?.hp) ? entity.state.hp : 1;
+  const maxHp = Number.isInteger(entity.state?.maxHp) ? entity.state.maxHp : Math.max(1, hp);
+  const energy = entity.id === run.playerEntityId
+    ? run.focus
+    : Number.isInteger(entity.state?.energy) ? entity.state.energy : 0;
+  const maxEnergy = entity.id === run.playerEntityId
+    ? (Number.isInteger(run.maxFocus) ? run.maxFocus : Math.max(0, energy))
+    : Number.isInteger(entity.state?.maxEnergy) ? entity.state.maxEnergy : Math.max(0, energy);
+  if (![hp, maxHp, energy, maxEnergy].every(Number.isInteger)
+      || maxHp < 1 || hp < 0 || hp > maxHp || maxEnergy < 0 || energy < 0 || energy > maxEnergy) {
+    throw new AppError(500, "ACTOR_PROJECTION_INVALID", "Authoritative actor health or energy cannot be represented in the database projection.");
+  }
+  return {
+    entity_id: entity.id,
+    hp,
+    max_hp: maxHp,
+    energy,
+    max_energy: maxEnergy,
+    ai_state_json: entity.state || {}
+  };
+}
+
+async function synchronizeInventoryProjection(client, run, actorEntities) {
+  const inventoryRows = actorEntities.map((entity) => ({
+    id: deterministicUuid(`${run.id}:projection-inventory:${entity.id}:backpack`),
+    actor_id: entity.id,
+    capacity: 500,
+    metadata: { authoritativeSource: "runs.world_state", inventoryKind: "backpack" }
+  }));
+  if (inventoryRows.length === 0) return;
+  const inventoryResult = await client.query(
+    `insert into ${SCHEMA}.inventories
+       (id, owner_id, run_id, actor_id, inventory_kind, capacity, metadata, created_at, updated_at)
+     select p.id, $2, $3, p.actor_id, 'backpack', p.capacity, p.metadata, $4, $4
+       from jsonb_to_recordset($1::jsonb)
+         as p(id uuid, actor_id uuid, capacity smallint, metadata jsonb)
+     on conflict (actor_id, inventory_kind) do update
+       set capacity = excluded.capacity, metadata = excluded.metadata, updated_at = excluded.updated_at`,
+    [JSON.stringify(inventoryRows), run.ownerId, run.id, run.updatedAt]
+  );
+  if (inventoryResult.rowCount !== inventoryRows.length) {
+    throw new AppError(500, "INVENTORY_PROJECTION_MISSING", "Authoritative inventories were not projected exactly once per actor.");
+  }
+  const persisted = await client.query(
+    `select id, actor_id from ${SCHEMA}.inventories
+      where owner_id = $1 and run_id = $2 and inventory_kind = 'backpack'`,
+    [run.ownerId, run.id]
+  );
+  const inventoryIdByActor = new Map(persisted.rows.map((row) => [row.actor_id, row.id]));
+  if (inventoryIdByActor.size !== actorEntities.length) {
+    throw new AppError(500, "INVENTORY_PROJECTION_MISSING", "The database inventory projection does not match the authoritative actor set.");
+  }
+
+  const projectedItems = [];
+  for (const entity of actorEntities) {
+    const inventory = entity.state?.inventory || [];
+    if (!Array.isArray(inventory) || inventory.length > 500) {
+      throw new AppError(500, "INVENTORY_PROJECTION_INVALID", "An authoritative actor inventory cannot be represented by the database projection.");
+    }
+    for (let slotIndex = 0; slotIndex < inventory.length; slotIndex += 1) {
+      const item = inventory[slotIndex];
+      const quantity = Number(item?.quantity || 1);
+      const acquiredTurn = Number(item?.acquiredTurn || 0);
+      if (!item || typeof item !== "object" || !UUID_PATTERN.test(String(item.id || ""))
+          || !Number.isInteger(quantity) || quantity < 1 || quantity > 500
+          || !Number.isInteger(acquiredTurn) || acquiredTurn < 0 || acquiredTurn > 32767) {
+        throw new AppError(500, "INVENTORY_PROJECTION_INVALID", "An authoritative item cannot be represented by the database projection.");
+      }
+      projectedItems.push({
+        // A partial transfer deliberately creates two authoritative stacks with
+        // the same logical item id. Give each normalized row an actor-scoped
+        // projection id and retain the domain id in state_json.
+        id: deterministicUuid(`${run.id}:projection-item:${entity.id}:${item.id}`),
+        inventory_id: inventoryIdByActor.get(entity.id),
+        slot_index: slotIndex,
+        quantity,
+        state_json: item,
+        acquired_turn: acquiredTurn
+      });
+    }
+  }
+  await client.query(
+    `delete from ${SCHEMA}.items
+      where owner_id = $1 and run_id = $2 and inventory_id is not null`,
+    [run.ownerId, run.id]
+  );
+  if (projectedItems.length === 0) return;
+  const itemResult = await client.query(
+    `insert into ${SCHEMA}.items
+       (id, owner_id, run_id, item_code, inventory_id, slot_index, quantity,
+        state_json, acquired_turn, created_at, updated_at)
+     select p.id, $2, $3, 'RUNTIME_ITEM', p.inventory_id, p.slot_index,
+            p.quantity, p.state_json, p.acquired_turn, $4, $4
+       from jsonb_to_recordset($1::jsonb)
+         as p(id uuid, inventory_id uuid, slot_index smallint, quantity integer,
+              state_json jsonb, acquired_turn smallint)`,
+    [JSON.stringify(projectedItems), run.ownerId, run.id, run.updatedAt]
+  );
+  if (itemResult.rowCount !== projectedItems.length) {
+    throw new AppError(500, "ITEM_PROJECTION_MISSING", "Authoritative items were not projected exactly once.");
+  }
+}
+
+// runs.world_state is the sole domain authority. These normalized tables are
+// query projections, so every committed mutation must update them in the same
+// transaction instead of allowing partial event-specific mirrors to drift.
+async function synchronizeAuthoritativeRunProjection(client, run) {
+  const entityRows = run.entities.map((entity) => ({
+    id: entity.id,
+    is_active: entity.active === true,
+    state_json: { blocking: entity.blocking === true, ...(entity.state || {}) },
+    despawned_turn: entity.active === true ? null : run.currentTurn
+  }));
+  const entityResult = await client.query(
+    `update ${SCHEMA}.entities e
+        set is_active = p.is_active, state_json = p.state_json,
+            despawned_turn = p.despawned_turn, updated_at = $4
+       from jsonb_to_recordset($1::jsonb)
+         as p(id uuid, is_active boolean, state_json jsonb, despawned_turn smallint)
+      where e.id = p.id and e.run_id = $2 and e.owner_id = $3`,
+    [JSON.stringify(entityRows), run.id, run.ownerId, run.updatedAt]
+  );
+  if (entityResult.rowCount !== entityRows.length) {
+    throw new AppError(500, "ENTITY_PROJECTION_MISSING", "The entity projection does not match the authoritative run.");
+  }
+
+  const actorEntities = run.entities.filter((entity) => PROJECTION_ACTOR_KINDS.has(entity.kind));
+  const actorRows = actorEntities.map((entity) => actorProjection(entity, run));
+  if (actorRows.length > 0) {
+    const actorResult = await client.query(
+      `update ${SCHEMA}.actors a
+          set hp = p.hp, max_hp = p.max_hp, energy = p.energy,
+              max_energy = p.max_energy, ai_state_json = p.ai_state_json, updated_at = $4
+         from jsonb_to_recordset($1::jsonb)
+           as p(entity_id uuid, hp integer, max_hp integer, energy integer,
+                max_energy integer, ai_state_json jsonb)
+        where a.entity_id = p.entity_id and a.run_id = $2 and a.owner_id = $3`,
+      [JSON.stringify(actorRows), run.id, run.ownerId, run.updatedAt]
+    );
+    if (actorResult.rowCount !== actorRows.length) {
+      throw new AppError(500, "ACTOR_PROJECTION_MISSING", "The actor projection does not match the authoritative run.");
+    }
+  }
+
+  const areaRows = await loadDatabaseAreas(client, run);
+  const positionRows = run.entities.map((entity) => {
+    const placement = databasePlacementForGlobalPosition(run, areaRows, entity.position);
+    return {
+      entity_id: entity.id,
+      area_id: placement.areaId,
+      x: placement.localPosition.x,
+      y: placement.localPosition.y,
+      facing: projectionFacing(entity),
+      blocks_movement: entity.blocking === true,
+      is_active: entity.active === true
+    };
+  });
+  const positionResult = await client.query(
+    `update ${SCHEMA}.entity_positions ep
+        set area_id = p.area_id, x = p.x, y = p.y, facing = p.facing,
+            blocks_movement = p.blocks_movement,
+            removed_at = case when p.is_active then null else $4::timestamptz end,
+            revision = ep.revision + 1,
+            updated_at = $4
+       from jsonb_to_recordset($1::jsonb)
+         as p(entity_id uuid, area_id uuid, x integer, y integer, facing text,
+              blocks_movement boolean, is_active boolean)
+      where ep.entity_id = p.entity_id and ep.run_id = $2 and ep.owner_id = $3
+        and row(ep.area_id, ep.x, ep.y, ep.facing, ep.blocks_movement, ep.removed_at is null)
+            is distinct from
+            row(p.area_id, p.x, p.y, p.facing, p.blocks_movement, p.is_active)`,
+    [JSON.stringify(positionRows), run.id, run.ownerId, run.updatedAt]
+  );
+  const positionCount = await client.query(
+    `select count(*)::int as count from ${SCHEMA}.entity_positions
+      where run_id = $1 and owner_id = $2 and entity_id = any($3::uuid[])`,
+    [run.id, run.ownerId, positionRows.map((position) => position.entity_id)]
+  );
+  if (Number(positionCount.rows[0]?.count) !== positionRows.length) {
+    throw new AppError(500, "POSITION_PROJECTION_MISSING", "The position projection does not match the authoritative run.");
+  }
+  await synchronizeInventoryProjection(client, run, actorEntities);
+}
+
 async function synchronizeEntityState(client, run, turn) {
   const areaRows = await loadDatabaseAreas(client, run);
   for (const event of turn.events) {
@@ -1294,14 +1678,59 @@ async function synchronizeEntityState(client, run, turn) {
           where entity_id = $1 and owner_id = $2 and run_id = $3 and removed_at is null`,
         [event.entityId, run.ownerId, run.id, placement.areaId, placement.localPosition.x, placement.localPosition.y, run.updatedAt]
       );
-    } else if (event.type === "entity_spawned" || event.type === "slot_enriched" || event.type === "entity_bound_to_slot") {
+    } else if (event.type === "entity_activated") {
+      const gameEntity = run.entities.find((candidate) => candidate.id === event.entityId);
+      if (!gameEntity || !gameEntity.active) {
+        throw new AppError(500, "ACTIVATED_ENTITY_MISSING", "An activation event has no active authoritative entity.");
+      }
+      const placement = databasePlacementForGlobalPosition(run, areaRows, gameEntity.position);
+      if (!gameEntity.state?.slotId) {
+        await insertEntity(client, { run, gameEntity, spawnedTurn: turn.turnNo, ...placement });
+        const relationship = run.npcRelationships.find((item) => item.npcId === gameEntity.id);
+        if (relationship) await upsertRelationshipProjection(client, run, relationship, run.updatedAt);
+        continue;
+      }
+      const entityResult = await client.query(
+        `update ${SCHEMA}.entities
+            set is_active = true, despawned_turn = null, state_json = $4::jsonb, updated_at = $5
+          where id = $1 and owner_id = $2 and run_id = $3`,
+        [gameEntity.id, run.ownerId, run.id,
+          JSON.stringify({ blocking: gameEntity.blocking, ...gameEntity.state }), run.updatedAt]
+      );
+      const positionResult = await client.query(
+        `update ${SCHEMA}.entity_positions
+            set area_id = $4, x = $5, y = $6, blocks_movement = $7,
+                removed_at = null, revision = revision + 1, updated_at = $8
+          where entity_id = $1 and owner_id = $2 and run_id = $3`,
+        [gameEntity.id, run.ownerId, run.id, placement.areaId,
+          placement.localPosition.x, placement.localPosition.y, gameEntity.blocking, run.updatedAt]
+      );
+      const bindingResult = await client.query(
+        `update ${SCHEMA}.run_slot_bindings
+            set status = 'active', activation_turn = $4, released_turn = null, updated_at = $5
+          where entity_id = $1 and owner_id = $2 and run_id = $3 and status = 'reserved'`,
+        [gameEntity.id, run.ownerId, run.id, turn.turnNo, run.updatedAt]
+      );
+      if (entityResult.rowCount !== 1 || positionResult.rowCount !== 1 || bindingResult.rowCount !== 1) {
+        throw new AppError(500, "ENTITY_ACTIVATION_PROJECTION_MISSING", "Entity activation did not update exactly one entity, position, and reserved slot binding.");
+      }
+      if (Number.isInteger(gameEntity.state?.hp)) {
+        await client.query(
+          `update ${SCHEMA}.actors set hp = $4, updated_at = $5
+            where entity_id = $1 and owner_id = $2 and run_id = $3`,
+          [gameEntity.id, run.ownerId, run.id, gameEntity.state.hp, run.updatedAt]
+        );
+      }
+    } else if (["entity_spawned", "slot_enriched", "entity_bound_to_slot", "debt_backflow_hostile_spawned"].includes(event.type)) {
       const gameEntity = run.entities.find((candidate) => candidate.id === event.entityId);
       if (!gameEntity) throw new AppError(500, "BOUND_ENTITY_MISSING", "A persisted spawn event has no authoritative entity.");
       await insertEntity(client, {
         run,
         gameEntity,
         spawnedTurn: turn.turnNo,
-        sourceEntityId: event.type === "entity_spawned" ? turn.request.targetEntityId : null,
+        sourceEntityId: event.type === "entity_spawned"
+          ? event.sourceEntityId || turn.request.targetEntityId || null
+          : null,
         ...databasePlacementForGlobalPosition(run, areaRows, gameEntity.position)
       });
       if (gameEntity.kind === "npc") {
@@ -1879,7 +2308,7 @@ function timestamp(value) {
 
 function mapDatabaseError(error) {
   if (error instanceof AppError) return error;
-  if (error?.code === "23505") return new AppError(409, "DATABASE_CONFLICT", "A unique database constraint was violated.");
+  if (error?.code === "23505") return new AppError(409, "DATABASE_CONFLICT", "A unique database constraint was violated.", { constraint: error.constraint, databaseMessage: error.message });
   if (error?.code === "23503") return new AppError(409, "DATABASE_REFERENCE_CONFLICT", "A sealed run, world, plan, or owner reference did not match.", { constraint: error.constraint, databaseMessage: error.message });
   if (error?.code === "23514") return new AppError(422, "DATABASE_CONTRACT_VIOLATION", "Persisted state violated a PostgreSQL authority contract.", { constraint: error.constraint, databaseMessage: error.message });
   if (error?.code === "40001" || error?.code === "40P01") return new AppError(409, "TRANSACTION_RETRY", "Concurrent state changed; retry the request with fresh run state.");

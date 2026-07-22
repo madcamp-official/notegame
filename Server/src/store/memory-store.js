@@ -8,10 +8,78 @@ export class MemoryStore {
     this.turnsByIdempotency = new Map();
     this.turnsByNumber = new Map();
     this.navigationByIdempotency = new Map();
+    this.idempotencyRequests = new Map();
   }
 
   async health() {
-    return { ok: true, storage: "memory" };
+    return { ok: true, storage: "memory", schemaVersion: null };
+  }
+
+  async claimIdempotency({ ownerId, operation, idempotencyKey, requestFingerprint, leaseToken, leaseMs }) {
+    const index = `${ownerId}:${operation}:${idempotencyKey}`;
+    const now = Date.now();
+    const existing = this.idempotencyRequests.get(index);
+    if (existing) {
+      if (existing.requestFingerprint !== requestFingerprint) {
+        throw new AppError(409, "IDEMPOTENCY_CONFLICT", "The idempotency key was already used with a different payload.");
+      }
+      if (existing.status === "completed") {
+        return { state: "completed", response: existing.response === null ? null : clone(existing.response) };
+      }
+      if (existing.leaseExpiresAt > now) {
+        return { state: "pending", retryAfterMs: 25 };
+      }
+    }
+    this.idempotencyRequests.set(index, {
+      ownerId,
+      operation,
+      idempotencyKey,
+      requestFingerprint,
+      status: "pending",
+      leaseToken,
+      leaseExpiresAt: now + leaseMs,
+      response: null
+    });
+    return { state: "acquired" };
+  }
+
+  async renewIdempotencyLease({ ownerId, operation, idempotencyKey, leaseToken, leaseMs }) {
+    const existing = this.idempotencyRequests.get(`${ownerId}:${operation}:${idempotencyKey}`);
+    if (!existing || existing.status !== "pending" || existing.leaseToken !== leaseToken) return false;
+    existing.leaseExpiresAt = Date.now() + leaseMs;
+    return true;
+  }
+
+  async completeIdempotency({ ownerId, operation, idempotencyKey, leaseToken, response = null }) {
+    const existing = this.idempotencyRequests.get(`${ownerId}:${operation}:${idempotencyKey}`);
+    if (!existing || existing.status !== "pending" || existing.leaseToken !== leaseToken) return false;
+    if (response === null && !this.hasAuthoritativeReplay(ownerId, operation, idempotencyKey)) {
+      throw new AppError(500, "IDEMPOTENCY_RESULT_MISSING", "A terminal idempotency marker requires an authoritative turn or travel result.");
+    }
+    existing.status = "completed";
+    existing.leaseToken = null;
+    existing.leaseExpiresAt = null;
+    existing.response = response === null ? null : clone(response);
+    return true;
+  }
+
+  hasAuthoritativeReplay(ownerId, operation, idempotencyKey) {
+    const separator = operation.indexOf(":");
+    const kind = separator === -1 ? operation : operation.slice(0, separator);
+    const runId = separator === -1 ? "" : operation.slice(separator + 1);
+    const run = this.runs.get(runId);
+    if (!run || run.ownerId !== ownerId) return false;
+    if (kind === "turn") return this.turnsByIdempotency.has(`${runId}:${idempotencyKey}`);
+    if (kind === "travel") return this.navigationByIdempotency.has(`${runId}:${idempotencyKey}`);
+    return false;
+  }
+
+  async releaseIdempotency({ ownerId, operation, idempotencyKey, leaseToken }) {
+    const index = `${ownerId}:${operation}:${idempotencyKey}`;
+    const existing = this.idempotencyRequests.get(index);
+    if (!existing || existing.status !== "pending" || existing.leaseToken !== leaseToken) return false;
+    this.idempotencyRequests.delete(index);
+    return true;
   }
 
   async createCampaign(campaign) {
@@ -46,6 +114,7 @@ export class MemoryStore {
   async commitAmbientWander({ ownerId, runId, expectedRunVersion, resolve }) {
     const run = this.runs.get(runId);
     if (!run || run.ownerId !== ownerId) throw notFound("Run");
+    if (run.status !== "active") throw new AppError(409, "RUN_NOT_ACTIVE", "The run does not accept ambient movement.");
     if (run.version !== expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: run.version });
     const committed = resolve(clone(run));
     if (committed.movedEntityIds.length > 0) this.runs.set(runId, clone(committed.run));

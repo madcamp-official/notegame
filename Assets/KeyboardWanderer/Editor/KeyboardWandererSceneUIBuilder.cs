@@ -4,6 +4,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -34,6 +35,9 @@ namespace KeyboardWanderer.Editor
             _font = LoadDefaultFont();
             _assets = AssetDatabase.LoadAssetAtPath<NinjaAdventureAssetManifest>(
                 "Assets/KeyboardWanderer/Resources/NinjaAdventureAssetManifest.asset");
+            // Dialogue choices and the large encounter subject are authored assets, not
+            // first-use runtime objects. Upgrade the nested panel before composing the HUD.
+            UpgradeDialoguePanelPrefab();
             Transform oldUi = controller.transform.Find("Authored UI");
             if (oldUi != null) Undo.DestroyObjectImmediate(oldUi.gameObject);
             GameObject oldEvents = GameObject.Find("EventSystem");
@@ -49,12 +53,30 @@ namespace KeyboardWanderer.Editor
             scaler.referenceResolution = new Vector2(1440f, 900f);
             scaler.matchWidthOrHeight = 0.5f;
 
-            BuildTitle(canvasObject.transform);
-            BuildGameHud(canvasObject.transform);
-            BuildSettings(canvasObject.transform);
-            BuildPause(canvasObject.transform);
-            BuildEnding(canvasObject.transform);
-            canvasObject.GetComponent<KeyboardWandererSceneUI>().AutoWire();
+            // The screen prefabs are the authoritative, componentized UI. Rebuilding the
+            // hierarchy from the legacy drawing helpers below silently drops every typed
+            // View and its serialized references, leaving the player on an inert title.
+            InstantiateScreenPrefab(canvasObject.transform,
+                ScreenFolderPath("TitleScreen.prefab"), "Title Screen", true);
+            InstantiateScreenPrefab(canvasObject.transform,
+                GameHudPrefabPath, "Game HUD", false);
+            InstantiateScreenPrefab(canvasObject.transform,
+                ScreenFolderPath("SettingsScreen.prefab"), "Settings Screen", false);
+            InstantiateScreenPrefab(canvasObject.transform,
+                ScreenFolderPath("PauseScreen.prefab"), "Pause Screen", false);
+            InstantiateScreenPrefab(canvasObject.transform,
+                ScreenFolderPath("EndingScreen.prefab"), "Ending Screen", false);
+
+            KeyboardWandererScreenFlowView flow = canvasObject.AddComponent<KeyboardWandererScreenFlowView>();
+            flow.Configure(FindDescendant(canvasObject.transform, "Title Screen").gameObject,
+                FindDescendant(canvasObject.transform, "Game HUD").gameObject,
+                FindDescendant(canvasObject.transform, "Settings Screen").gameObject,
+                FindDescendant(canvasObject.transform, "Pause Screen").gameObject,
+                FindDescendant(canvasObject.transform, "Ending Screen").gameObject);
+            KeyboardWandererSceneUI sceneUi = canvasObject.GetComponent<KeyboardWandererSceneUI>();
+            sceneUi.AutoWire();
+            if (!sceneUi.IsReady)
+                throw new UnityException("Rebuilt AuthoredUI has incomplete componentized View references.");
 
             EnsureFolder("Assets/KeyboardWanderer/Prefabs");
             EnsureFolder("Assets/KeyboardWanderer/Prefabs/UI");
@@ -70,6 +92,27 @@ namespace KeyboardWanderer.Editor
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             EditorSceneManager.SaveOpenScenes();
             Selection.activeGameObject = canvasObject;
+        }
+
+        private const string ScreenPrefabFolder = "Assets/KeyboardWanderer/Prefabs/UI/Screens";
+
+        private static string ScreenFolderPath(string fileName)
+        {
+            return ScreenPrefabFolder + "/" + fileName;
+        }
+
+        private static GameObject InstantiateScreenPrefab(Transform parent, string path, string objectName,
+            bool active)
+        {
+            GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (asset == null)
+                throw new UnityException("Componentized screen prefab is missing: " + path);
+            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(asset, parent);
+            instance.name = objectName;
+            instance.SetActive(active);
+            if (instance.GetComponent<KeyboardWandererSafeAreaFitter>() == null)
+                instance.AddComponent<KeyboardWandererSafeAreaFitter>();
+            return instance;
         }
 
         public static void EnsureExistingOrBuild()
@@ -554,11 +597,49 @@ namespace KeyboardWanderer.Editor
         private static void EnsureEventSystem()
         {
             EventSystem eventSystem = Object.FindAnyObjectByType<EventSystem>(FindObjectsInactive.Include);
-            if (eventSystem != null)
-                return;
-            GameObject eventObject = NewObject(
-                "EventSystem", null, typeof(EventSystem), typeof(InputSystemUIInputModule));
-            Undo.RegisterCreatedObjectUndo(eventObject, "Create Codria EventSystem");
+            if (eventSystem == null)
+            {
+                GameObject eventObject = NewObject(
+                    "EventSystem", null, typeof(EventSystem), typeof(InputSystemUIInputModule));
+                Undo.RegisterCreatedObjectUndo(eventObject, "Create Codria EventSystem");
+                eventSystem = eventObject.GetComponent<EventSystem>();
+            }
+
+            InputSystemUIInputModule module = eventSystem.GetComponent<InputSystemUIInputModule>();
+            if (module == null)
+                module = Undo.AddComponent<InputSystemUIInputModule>(eventSystem.gameObject);
+            ConfigureUiInputActions(module);
+        }
+
+        private static void ConfigureUiInputActions(InputSystemUIInputModule module)
+        {
+            const string inputActionsPath = "Assets/Settings/InputSystem_Actions.inputactions";
+            InputActionAsset actions = AssetDatabase.LoadAssetAtPath<InputActionAsset>(inputActionsPath);
+            if (actions == null)
+                throw new UnityException("UI InputActionAsset is missing: " + inputActionsPath);
+
+            Object[] subAssets = AssetDatabase.LoadAllAssetsAtPath(inputActionsPath);
+            InputActionReference Reference(string actionPath)
+            {
+                for (int i = 0; i < subAssets.Length; i++)
+                    if (subAssets[i] is InputActionReference candidate &&
+                        string.Equals(candidate.name, actionPath, System.StringComparison.Ordinal))
+                        return candidate;
+                throw new UnityException("UI input action reference is missing: " + actionPath);
+            }
+
+            module.actionsAsset = actions;
+            module.move = Reference("UI/Navigate");
+            module.submit = Reference("UI/Submit");
+            module.cancel = Reference("UI/Cancel");
+            module.point = Reference("UI/Point");
+            module.leftClick = Reference("UI/Click");
+            module.middleClick = Reference("UI/MiddleClick");
+            module.rightClick = Reference("UI/RightClick");
+            module.scrollWheel = Reference("UI/ScrollWheel");
+            module.trackedDevicePosition = Reference("UI/TrackedDevicePosition");
+            module.trackedDeviceOrientation = Reference("UI/TrackedDeviceOrientation");
+            EditorUtility.SetDirty(module);
         }
 
         private static TMP_FontAsset LoadDefaultFont()

@@ -6,6 +6,45 @@ import { SPECIAL_SKILL_MODIFIERS, specialSkillTemplate } from "./content-catalog
 const DIRECTIONS = Object.freeze([[1, 0], [0, 1], [-1, 0], [0, -1]]);
 const COOLDOWNS = Object.freeze({ START_DIALOGUE: 2, LOOT_PROP: 4, OPEN_PROP: 4, START_ENCOUNTER: 1, CHANGE_RELATIONSHIP: 2, GRANT_SPECIAL_REWARD: 6, SPAWN_FROM_SLOT: 8 });
 
+const PLAYER_FACING_ACTION_LABELS = Object.freeze({
+  MOVE_ACTOR: "이동",
+  ATTACK_ENTITY: "충돌",
+  DEFEND_ENTITY: "방어",
+  ASSIST_ENTITY: "도움",
+  FLEE_ENTITY: "후퇴",
+  START_DIALOGUE: "대화",
+  START_ENCOUNTER: "새로운 조우",
+  LOOT_PROP: "물체 조사",
+  OPEN_PROP: "물체 개방",
+  REVEAL_CLUE: "단서 발견",
+  CHANGE_RELATIONSHIP: "관계 변화",
+  ADD_NPC_MEMORY: "기억",
+  CREATE_HOOK: "남겨진 복선",
+  ADVANCE_QUEST: "이야기 진행",
+  START_QUEST: "새로운 이야기",
+  GRANT_SPECIAL_REWARD: "특별한 보상",
+  SPAWN_FROM_SLOT: "새로운 등장",
+  NARRATIVE_EVENT: "이야기 사건"
+});
+
+function koreanSubject(name) {
+  const text = String(name || "누군가").trim() || "누군가";
+  const code = text.codePointAt(text.length - 1);
+  const hasBatchim = code >= 0xac00 && code <= 0xd7a3 ? (code - 0xac00) % 28 !== 0 : false;
+  return `${text}${hasBatchim ? "이" : "가"}`;
+}
+
+function playerFacingActionLabel(type) {
+  return PLAYER_FACING_ACTION_LABELS[String(type || "").toUpperCase()] || "이전 선택";
+}
+
+export function sanitizePlayerFacingHookSummary(summary) {
+  const text = String(summary || "").trim();
+  const legacy = text.match(/^(.+?)(?:이|가) 전한 과거 선택의 역류:\s*([A-Z][A-Z0-9_]*)$/);
+  if (!legacy) return text;
+  return `${koreanSubject(legacy[1])} 전한 ${playerFacingActionLabel(legacy[2])}의 여파`;
+}
+
 function manhattan(left, right) {
   return Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
 }
@@ -96,11 +135,13 @@ function attack(run, candidate, decisionNo, sequence, events) {
   const berserk = (actor.state?.traits || []).includes("BERSERK") && Number(actor.state?.hp || 0) <= Math.max(1, Math.floor(Number(actor.state?.maxHp || 1) / 2));
   const rawDamage = (boss ? 2 : 1) + (berserk ? 1 : 0);
   const guardedDamage = defense > 0 ? Math.max(0, rawDamage - 1) : rawDamage;
-  const damage = hit ? Math.min(Number(target.state?.hp || 0), guardedDamage) : 0;
+  const minimumHp = target.id === run.playerEntityId ? 1 : 0;
+  const priorHp = Number(target.state?.hp || 0);
+  const nextHp = hit ? Math.max(minimumHp, priorHp - guardedDamage) : priorHp;
+  const damage = hit ? Math.max(0, priorHp - nextHp) : 0;
   let defeated = false;
   if (hit && damage > 0) {
-    const minimumHp = target.id === run.playerEntityId ? 1 : 0;
-    target.state.hp = Math.max(minimumHp, Number(target.state.hp || 0) - damage);
+    target.state.hp = nextHp;
     if (target.state.hp === 0) {
       defeated = true;
       target.state.disabled = true;
@@ -117,13 +158,13 @@ function attack(run, candidate, decisionNo, sequence, events) {
         events.push({ type: "npc_memory_expired", memoryId: memory.id, sourceEntityId: actor.id, sceneDecisionNo: decisionNo });
       }
     }
-  } else {
+  } else if (!hit) {
     events.push({ type: "scene_attack_missed", entityId: actor.id, targetEntityId: target.id, roll, sceneDecisionNo: decisionNo });
   }
   actor.state.lastActionTurn = run.currentTurn;
   sequence.push({ sequence: sequence.length + 1, type: "ATTACK", actorId: actor.id, targetId: target.id, actionStyle: candidate.actionStyle || "MELEE", roll, hit, damage, text: hit ? `${actor.name}의 공격이 ${target.name}에게 적중했다.` : `${actor.name}의 공격이 빗나갔다.` });
-  if (hit && damage > 0) sequence.push({ sequence: sequence.length + 1, type: "DAMAGE", actorId: target.id, targetId: actor.id, damage, text: `${target.name}이 ${damage}의 피해를 입었다.` });
-  if (defeated) sequence.push({ sequence: sequence.length + 1, type: "DEFEATED", actorId: target.id, targetId: actor.id, text: `${target.name}이 전투 불능 상태가 됐다.` });
+  if (hit && damage > 0) sequence.push({ sequence: sequence.length + 1, type: "DAMAGE", actorId: target.id, targetId: actor.id, damage, text: `${koreanSubject(target.name)} ${damage}의 피해를 입었다.` });
+  if (defeated) sequence.push({ sequence: sequence.length + 1, type: "DEFEATED", actorId: target.id, targetId: actor.id, text: `${koreanSubject(target.name)} 전투 불능 상태가 됐다.` });
   return null;
 }
 
@@ -284,7 +325,7 @@ function createHook(run, candidate, decisionNo, sequence, events) {
   if (candidate.pendingId && !pending) return "PENDING_CONSEQUENCE_MISSING";
   const hook = {
     id: deterministicUuid(`${run.id}:scene-hook:${decisionNo}:${npc.id}`),
-    summary: pending ? `${npc.name}이 전한 과거 선택의 역류: ${pending.sourceActionType}` : `${npc.name}이 남긴 미해결 신호`, status: "open", createdTurn: run.currentTurn,
+    summary: pending ? `${koreanSubject(npc.name)} 전한 ${playerFacingActionLabel(pending.sourceActionType)}의 여파` : `${koreanSubject(npc.name)} 남긴 미해결 신호`, status: "open", createdTurn: run.currentTurn,
     createdDecisionNo: decisionNo, expiresTurn: Math.min(run.turnLimit, run.currentTurn + 8), source: "scene_director"
   };
   run.openLoops.push(hook);

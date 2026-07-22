@@ -60,9 +60,14 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
   const npcs = actors.filter((entity) => entity.kind === "npc");
   const enemies = actors.filter((entity) => entity.kind === "enemy");
   const narrativeIntent = String(turn?.selectedChoice?.intentTag || "").toUpperCase();
+  const scheduledStoryEvent = decisionType === "TRAVEL" && run.storyEventDue === true;
 
-  if (run.activeEncounter?.status === "active") {
-    candidates.push(candidate(run, decisionNo, "START_ENCOUNTER", run.activeEncounter.sourceEntityId, run.playerEntityId, 100, 0, "안전 이동이 위험 요소 앞에서 멈추어 조우가 활성화되었다."));
+  const activeEncounterSourceId = run.activeEncounter?.sourceEntityId || run.activeEncounter?.entityId || null;
+  const encounterOpenedThisDecision = navigation?.encounterOpened === true ||
+    (turn?.events || []).some((event) => event?.type === "entity_activated" &&
+      (!activeEncounterSourceId || event.entityId === activeEncounterSourceId));
+  if (run.activeEncounter?.status === "active" && encounterOpenedThisDecision) {
+    candidates.push(candidate(run, decisionNo, "START_ENCOUNTER", run.activeEncounter.sourceEntityId || run.activeEncounter.entityId || null, run.playerEntityId, 100, 0, "안전 이동이 위험 요소 앞에서 멈추어 조우가 활성화되었다."));
   }
 
   for (const enemy of enemies) {
@@ -154,34 +159,35 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
     && entity.state?.activationState === "DORMANT" && entity.state?.dormant === true && predicate(entity)
     && run.world.placementSlots.some((slot) => slot.id === entity.state.activationSlotId && slot.areaId === currentArea.id)
     && !run.entities.some((other) => other.active && (other.state?.slotId === entity.state.activationSlotId || (other.position.x === entity.position.x && other.position.y === entity.position.y))));
-  if (!onCooldown(run, "SPAWN_FROM_SLOT") && (directorState.generatedCharacters || []).length < 3 && probabilityGate(run, decisionNo, `rare-npc:${currentArea.id}`, 7)) {
+  if (!onCooldown(run, "SPAWN_FROM_SLOT") && (directorState.generatedCharacters || []).length < 3 && (scheduledStoryEvent || probabilityGate(run, decisionNo, `rare-npc:${currentArea.id}`, 7))) {
     const dormant = dormantCandidate("npc");
     if (dormant) {
-      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 56, 2, "현재 지역의 휴면 NPC 후보가 활성화될 수 있다.", "ARRIVAL", {
+      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, scheduledStoryEvent ? 94 : 56, 2, scheduledStoryEvent ? "15~20칸 이동 주기의 서사 사건이다. 누적 이야기와 현재 목표에 도움이 되는 NPC라면 선택한다." : "현재 지역의 휴면 NPC 후보가 활성화될 수 있다.", "ARRIVAL", {
         entityId: dormant.id, slotId: dormant.state.activationSlotId, assetId: dormant.assetId, spawnKind: "npc", displayName: dormant.name, traitIds: [...(dormant.state.roleTags || [])]
       }));
     }
   }
-  if (!onCooldown(run, "SPAWN_FROM_SLOT") && enemies.length === 0 && probabilityGate(run, decisionNo, `monster-variant:${currentArea.id}`, 14)) {
+  if (!onCooldown(run, "SPAWN_FROM_SLOT") && enemies.length === 0 && (scheduledStoryEvent || probabilityGate(run, decisionNo, `monster-variant:${currentArea.id}`, 14))) {
     const dormant = dormantCandidate("enemy", (entity) => entity.state?.boss !== true);
     if (dormant) {
-      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 68, 2, "현재 지역의 휴면 몬스터 후보가 활성화될 수 있다.", "ENCOUNTER", {
+      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, scheduledStoryEvent ? 94 : 68, 2, scheduledStoryEvent ? "15~20칸 이동 주기의 서사 사건이다. 누적 이야기와 현재 목표에 도움이 되는 몬스터 조우라면 선택한다." : "현재 지역의 휴면 몬스터 후보가 활성화될 수 있다.", "ENCOUNTER", {
         entityId: dormant.id, slotId: dormant.state.activationSlotId, assetId: dormant.assetId, spawnKind: "enemy", displayName: dormant.name, traitIds: [...(dormant.state.traits || [])]
       }));
     }
   }
   const bossAlreadyGenerated = run.entities.some((entity) => entity.active && entity.state?.boss === true);
-  if (!onCooldown(run, "SPAWN_FROM_SLOT") && !bossAlreadyGenerated && Number(macroPhase.order || 1) >= 2 && probabilityGate(run, decisionNo, `rare-boss:${currentArea.id}`, 8)) {
+  if (!onCooldown(run, "SPAWN_FROM_SLOT") && !bossAlreadyGenerated && Number(macroPhase.order || 1) >= 2 && (scheduledStoryEvent || probabilityGate(run, decisionNo, `rare-boss:${currentArea.id}`, 8))) {
     const dormant = dormantCandidate("enemy", (entity) => entity.state?.boss === true && Number(entity.state?.minMacroOrder || 99) <= Number(macroPhase.order || 1)
       && (!Array.isArray(entity.state?.roles) || entity.state.roles.includes(currentArea.campaignRole)));
     if (dormant) {
-      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, 84, 3, "현재 지역과 캠페인 단계가 허용하는 휴면 보스 후보가 활성화될 수 있다.", "ENCOUNTER", {
+      candidates.push(candidate(run, decisionNo, "SPAWN_FROM_SLOT", null, player.id, scheduledStoryEvent ? 96 : 84, 3, scheduledStoryEvent ? "15~20칸 이동 주기의 서사 사건이다. 캠페인 단계와 누적 이야기가 보스 등장을 뒷받침할 때만 선택한다." : "현재 지역과 캠페인 단계가 허용하는 휴면 보스 후보가 활성화될 수 있다.", "ENCOUNTER", {
         entityId: dormant.id, slotId: dormant.state.activationSlotId, assetId: dormant.assetId, spawnKind: "enemy", displayName: dormant.name, traitIds: [...(dormant.state.traits || [])]
       }));
     }
   }
 
-  candidates.push(candidate(run, decisionNo, "NO_EVENT", null, null, 1, 0, "즉시 발생할 의미 있는 후속 사건 없이 세계가 다음 선택을 기다린다."));
+  if (scheduledStoryEvent) candidates.push(candidate(run, decisionNo, "NARRATIVE_EVENT", null, player.id, 90, 0, "등장 인물 없이도 현재 목표나 열린 복선을 진전시키는 15~20칸 주기의 서사 사건을 만든다.", "STORY_EVENT", { text: "이동 끝에서 현재 이야기와 연결되는 새로운 사건의 징후가 드러난다." }));
+  candidates.push(candidate(run, decisionNo, "NO_EVENT", null, null, scheduledStoryEvent ? 0 : 1, 0, "즉시 발생할 의미 있는 후속 사건 없이 세계가 다음 선택을 기다린다."));
   return {
     context: {
       schemaVersion: "1.0",

@@ -63,16 +63,30 @@ namespace KeyboardWanderer.Demo
             scaler.matchWidthOrHeight = 0.5f;
 
             Transform root = canvasObject.transform;
-            TMP_FontAsset font = Resources.Load<TMP_FontAsset>(FontResourcePath);
+            var safeAreaObject = new GameObject("Safe Area Content", typeof(RectTransform));
+            safeAreaObject.transform.SetParent(root, false);
+            StretchFull(safeAreaObject.GetComponent<RectTransform>());
+            safeAreaObject.AddComponent<KeyboardWandererSafeAreaFitter>();
+            Transform safeRoot = safeAreaObject.transform;
+            TMP_FontAsset font = KeyboardWandererRuntimeFontProvider.Get(
+                Resources.Load<TMP_FontAsset>(FontResourcePath));
+
+            // Cutscene art is authored at 1672×941. A black full-screen layer owns the
+            // unused area so 4:3 and ultrawide displays letterbox instead of stretching
+            // character faces and environment geometry.
+            Image letterboxBackground = FullRectImage(root, "Letterbox Background", Color.black);
+            letterboxBackground.raycastTarget = false;
 
             _frameBottom = FullRectImage(root, "Frame Bottom", Color.white);
-            _frameBottom.preserveAspect = false;
+            _frameBottom.preserveAspect = true;
+            _frameBottom.raycastTarget = false;
 
             _frameTop = FullRectImage(root, "Frame Top", new Color(1f, 1f, 1f, 0f));
-            _frameTop.preserveAspect = false;
+            _frameTop.preserveAspect = true;
+            _frameTop.raycastTarget = false;
 
             var catcherObject = new GameObject("Click Catcher", typeof(RectTransform), typeof(Image), typeof(Button));
-            catcherObject.transform.SetParent(root, false);
+            catcherObject.transform.SetParent(safeRoot, false);
             StretchFull(catcherObject.GetComponent<RectTransform>());
             Image catcherImage = catcherObject.GetComponent<Image>();
             catcherImage.color = Color.clear;
@@ -82,7 +96,7 @@ namespace KeyboardWanderer.Demo
             clickCatcher.onClick.AddListener(() => _advanceRequested = true);
 
             var hintObject = new GameObject("Continue Hint", typeof(RectTransform));
-            hintObject.transform.SetParent(root, false);
+            hintObject.transform.SetParent(safeRoot, false);
             RectTransform hintRect = hintObject.GetComponent<RectTransform>();
             hintRect.anchorMin = new Vector2(0.30f, 0.035f);
             hintRect.anchorMax = new Vector2(0.70f, 0.085f);
@@ -99,6 +113,11 @@ namespace KeyboardWanderer.Demo
 
             _fadeOverlay = FullRectImage(root, "Fade Overlay", Color.black);
             _fadeOverlay.raycastTarget = false;
+
+            // The artwork and fade layers are created after the safe-area controls.
+            // Restore the controls to the top of this Canvas so the delayed continue
+            // hint is visible instead of being drawn underneath the full-screen frame.
+            safeAreaObject.transform.SetAsLastSibling();
         }
 
         private static Image FullRectImage(Transform parent, string name, Color color)

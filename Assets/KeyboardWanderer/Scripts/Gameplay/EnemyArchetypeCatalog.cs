@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace KeyboardWanderer.Gameplay
 {
@@ -66,5 +67,22 @@ namespace KeyboardWanderer.Gameplay
 
         public static string RevealedFact(Guid entityId) => "DEPENDENCY_REVEALED:" + entityId.ToString("N");
         public static string ReplicatedFact(Guid entityId) => "CACHE_REPLICATED:" + entityId.ToString("N");
+
+        /// <summary>
+        /// Root Process의 Delete 선행 조건을 규칙 엔진과 presentation availability가 함께 사용한다.
+        /// 화면과 권위 커밋이 서로 다른 조건으로 같은 대상을 판정하지 않게 한다.
+        /// </summary>
+        public static bool RequiresSearchBeforeDelete(string assetId, long worldSeed, Guid entityId,
+            IReadOnlyList<string> canonicalFacts)
+        {
+            if (Resolve(assetId, worldSeed, entityId) != EnemyDependencyArchetype.RootProcess)
+                return false;
+            string revealedFact = RevealedFact(entityId);
+            if (canonicalFacts != null)
+                for (int i = 0; i < canonicalFacts.Count; i++)
+                    if (string.Equals(canonicalFacts[i], revealedFact, StringComparison.Ordinal))
+                        return false;
+            return true;
+        }
     }
 }

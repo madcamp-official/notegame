@@ -55,38 +55,38 @@ namespace KeyboardWanderer.Editor
                 throw new InvalidOperationException("기본 UI 폰트가 없습니다: " + SourceFontPath);
 
             TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontAssetPath);
+            bool created = font == null;
             if (font == null)
                 font = CreateFontAsset(sourceFont);
 
             string requiredCharacters = CollectRuntimeCharacters();
-            bool requiresRebuild = forceRebuild || RequiresRebuild(font);
+            // Never grow the persistent project font incrementally. TMP may attach a
+            // second atlas sub-asset during TryAddCharacters, changing NativeFormatImporter
+            // topology while the Editor still holds the previous artifact. Build the
+            // complete sorted corpus in a transient font and copy it atomically instead.
+            bool requiresRebuild = forceRebuild || RequiresRebuild(font) ||
+                                   !HasAllCharacters(font, requiredCharacters);
             if (requiresRebuild)
                 RebuildFontData(font, sourceFont, requiredCharacters);
-            else if (!HasAllCharacters(font, requiredCharacters))
+
+            bool changed = created || requiresRebuild || ConfigureSerializedSettings(font);
+            if (font.name != "NeoDunggeunmoPro-Regular SDF")
             {
-                bool allCharactersAdded = font.TryAddCharacters(requiredCharacters, out string missingCharacters, false);
-                if (!allCharactersAdded && !string.IsNullOrEmpty(missingCharacters))
-                    Debug.LogWarning("기본 폰트가 지원하지 않는 문자가 있습니다: " + missingCharacters, font);
+                font.name = "NeoDunggeunmoPro-Regular SDF";
+                changed = true;
             }
 
-            ConfigureSerializedSettings(font);
-            font.name = "NeoDunggeunmoPro-Regular SDF";
-            EditorUtility.SetDirty(font);
-            Texture2D[] atlases = font.atlasTextures;
-            if (atlases != null)
+            // Validation during ordinary editor/build startup must be a true no-op. Repeated
+            // dirty/save/import cycles create unnecessary NativeFormatImporter revisions and
+            // can make a previous live TMP topology look inconsistent even when bytes match.
+            if (changed)
             {
-                for (int i = 0; i < atlases.Length; i++)
-                {
-                    if (atlases[i] != null)
-                        EditorUtility.SetDirty(atlases[i]);
-                }
+                EditorUtility.SetDirty(font);
+                AssetDatabase.SaveAssets();
             }
 
-            AssetDatabase.SaveAssets();
-            AssetDatabase.ImportAsset(FontAssetPath, ImportAssetOptions.ForceSynchronousImport);
-            TMP_FontAsset imported = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontAssetPath);
-            imported?.ReadFontAssetDefinition();
-            return imported;
+            font.ReadFontAssetDefinition();
+            return font;
         }
 
         /// <summary>
@@ -178,8 +178,14 @@ namespace KeyboardWanderer.Editor
             try
             {
                 bool added = generated.TryAddCharacters(requiredCharacters, out string missingCharacters, false);
-                if (!added && !string.IsNullOrEmpty(missingCharacters))
-                    Debug.LogWarning("기본 폰트가 지원하지 않는 문자가 있습니다: " + missingCharacters, font);
+                if (!added)
+                {
+                    string detail = string.IsNullOrEmpty(missingCharacters)
+                        ? "알 수 없는 문자 또는 Atlas 용량 부족"
+                        : missingCharacters;
+                    throw new InvalidOperationException(
+                        "기본 폰트가 모든 런타임 문자를 렌더링할 수 없습니다: " + detail);
+                }
                 if (generated.atlasTextureCount != 1)
                     throw new InvalidOperationException("기본 게임 문자가 하나의 TMP Atlas에 들어가지 않습니다.");
 
@@ -230,7 +236,11 @@ namespace KeyboardWanderer.Editor
             bool changed = SetInt(serializedFont, "m_AtlasWidth", AtlasSize);
             changed |= SetInt(serializedFont, "m_AtlasHeight", AtlasSize);
             changed |= SetInt(serializedFont, "m_AtlasPadding", AtlasPadding);
-            changed |= SetInt(serializedFont, "m_AtlasPopulationMode", (int)AtlasPopulationMode.Dynamic);
+            // The project asset is a prewarmed, immutable template. Arbitrary player / LLM
+            // text is added only to KeyboardWandererRuntimeFontProvider's deep clone. Keeping
+            // the persistent asset Static prevents any missed binding from changing sub-asset
+            // topology and confusing NativeFormatImporter.
+            changed |= SetInt(serializedFont, "m_AtlasPopulationMode", (int)AtlasPopulationMode.Static);
             changed |= SetBool(serializedFont, "m_IsMultiAtlasTexturesEnabled", true);
             // 미리 채운 한글을 빌드에서 지우면 같은 첫 프레임 오류가 다시 발생한다.
             changed |= SetBool(serializedFont, "m_ClearDynamicDataOnBuild", false);

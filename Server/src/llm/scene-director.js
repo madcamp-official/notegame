@@ -64,12 +64,13 @@ export function validateSceneDirectorContext(input) {
   const candidateIds = new Set();
   for (const candidate of input.candidates) {
     assert(candidate && typeof candidate === "object" && !Array.isArray(candidate), 400, "SCENE_CONTEXT_INVALID", "Each candidate must be an object.");
-    exactKeys(candidate, ["candidateId", "type", "actorId", "targetId", "priority", "cost", "reason", "actionStyle", "slotId", "assetId", "spawnKind", "displayName", "traitIds", "rewardId", "questId", "pendingId", "delta", "text", "proposalIndex"], "SCENE_CONTEXT_INVALID", 400);
+    exactKeys(candidate, ["candidateId", "type", "actorId", "targetId", "priority", "cost", "reason", "actionStyle", "entityId", "slotId", "assetId", "spawnKind", "displayName", "traitIds", "rewardId", "questId", "pendingId", "delta", "text", "proposalIndex"], "SCENE_CONTEXT_INVALID", 400);
     assert(typeof candidate.candidateId === "string" && ID_PATTERN.test(candidate.candidateId) && !candidateIds.has(candidate.candidateId), 400, "SCENE_CONTEXT_INVALID", "candidateId must be a unique UUID.");
     candidateIds.add(candidate.candidateId);
     assert(SCENE_ACTION_TYPES.includes(candidate.type), 400, "SCENE_CONTEXT_INVALID", "Candidate type is unsupported.");
     assert(candidate.actorId === null || (typeof candidate.actorId === "string" && ID_PATTERN.test(candidate.actorId)), 400, "SCENE_CONTEXT_INVALID", "actorId must be null or a UUID.");
     assert(candidate.targetId === null || (typeof candidate.targetId === "string" && ID_PATTERN.test(candidate.targetId)), 400, "SCENE_CONTEXT_INVALID", "targetId must be null or a UUID.");
+    assert(candidate.entityId === undefined || (typeof candidate.entityId === "string" && ID_PATTERN.test(candidate.entityId)), 400, "SCENE_CONTEXT_INVALID", "entityId must be a UUID when supplied.");
     assert(Number.isInteger(candidate.priority) && candidate.priority >= 0 && candidate.priority <= 100, 400, "SCENE_CONTEXT_INVALID", "priority is invalid.");
     assert(Number.isInteger(candidate.cost) && candidate.cost >= 0 && candidate.cost <= 4, 400, "SCENE_CONTEXT_INVALID", "cost is invalid.");
     boundedString(candidate.reason, "candidate.reason", 1, 180);

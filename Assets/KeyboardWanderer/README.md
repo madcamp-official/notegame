@@ -20,11 +20,14 @@
 
 ```bash
 cd Server
-npm install
+npm ci
+test -e .env || cp .env.example .env
 npm start
 ```
 
-Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 열고 Play Mode를 시작합니다. 서버에 연결할 수 없거나 Gemini 응답이 유효하지 않으면 결정적 로컬 폴백으로 규칙 진행을 유지해야 합니다.
+Node.js 20 이상이 필요합니다. 기본 서버 주소는 `http://127.0.0.1:8787`입니다. 환경 변수, PostgreSQL과 LLM 설정은 [Server/README.md](../../Server/README.md), migration 001~012 적용 순서는 [Database/README.md](../../Database/README.md)를 따릅니다.
+
+Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 열고 Play Mode를 시작합니다. 서버에 연결할 수 없으면 클라이언트는 별도의 결정적 로컬 런과 로컬 저장으로 전환합니다. 서버는 Gemini가 없거나 응답이 유효하지 않아도 결정적 분류·서술 폴백으로 PostgreSQL 또는 memory 런을 계속 진행합니다. `STORAGE=memory`의 서버 런은 서버 재시작 시 사라지므로 지속 재개에는 PostgreSQL을 사용합니다.
 
 에셋 경로가 바뀌면 Unity 메뉴의 **Keyboard Wanderer > Rebuild Ninja Adventure Manifest**를 실행합니다. manifest는 넙죽이의 임시 `NinjaGreen` 표현과 환경 스프라이트만 해결하며 제품 식별자를 바꾸지 않습니다.
 
@@ -44,16 +47,19 @@ Unity 6000.5.4f1에서 `Assets/Scenes/SampleScene.unity`를 열고 Play Mode를 
 
 ## 입력
 
-클라이언트가 전송하는 신규 입력은 두 종류뿐입니다.
+서버가 저장하고 재생하는 권위 입력은 세 종류입니다.
 
 | 입력 | 선택 | 턴 규칙 |
 | --- | --- | --- |
 | `MOVE` | 검증 가능한 목적지 | 안전 이동은 D20·캠페인 턴을 소비하지 않으며 위험 이동은 조우만 활성화할 수 있음 |
 | `USE_SKILL` | `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`, `SEARCH`, `SELECT_ALL` | 전투·조사·협상·배치 맥락에서 의미 있는 결과를 확정하며 정확히 한 턴 소비 |
+| `NARRATIVE_CHOICE` | 서버가 봉인한 대화·태도 선택 | D20 없이 서사 선택을 한 턴으로 확정 |
 
-화면 스킬명은 단축키를 우선합니다. `Ctrl C`는 원본을 유지한 채 `Ctrl V`로 복제본을 빈 타일에 배치하고 조사 효과는 없습니다. `Delete`는 선택한 적 하나에게 피해 5를 주는 단일 공격, `Ctrl F`는 선택 대상 하나의 조사, `Ctrl Z`는 최근 의미 턴 2회의 기계 상태와 턴 카운터 역행, `Ctrl A`는 반경 4칸 모든 적에게 피해 3을 주는 범위 공격입니다.
+화면 스킬명은 단축키를 우선합니다. `Ctrl C`는 원본을 유지한 채 `Ctrl V`로 복제본을 빈 타일에 배치하고 조사 효과는 없습니다. `Delete`는 선택한 적 하나에게 피해 5를 주는 단일 공격, `Ctrl F`는 선택 대상 하나의 조사, `Ctrl Z`는 최근의 소비되지 않은 가역 턴 2회에 보상 연산을 적용하면서 현재 턴·version·D20 이력은 유지, `Ctrl A`는 반경 4칸 모든 적에게 피해 3을 주는 범위 공격입니다.
 
-Attack, Interact, Negotiate, Rest는 공개 기술이나 별도 입력이 아닙니다. 서버는 선택한 기술과 대상을 `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT` 중 하나로 분류합니다. `playerNote`는 선택 사항이며, 자연어 없이도 합법적인 턴이 완성되어야 합니다.
+Attack, Interact, Negotiate, Rest는 관리자 키보드 단축키나 별도 저장 입력 종류가 아닙니다. 자유 입력 UI는 `/v1/runs/:id/messages`로 문장을 보내고, 서버가 현재 위치·가시 대상·인벤토리·가능 목적지에 한정된 행동 제안으로 분류합니다. Rule Engine이 다시 검증한 대화·태도는 `NARRATIVE_CHOICE`, 판정 행동은 `USE_SKILL`로 정규화됩니다. 불가능한 입력은 상태를 바꾸지 않고 이유와 대안을 표시합니다.
+
+구조화 명령의 `playerNote`는 선택 사항이며 그 자체로 좌표, 대상, 합법성, D20 또는 결과를 바꾸지 않습니다. 자유 입력 분류에 모델을 사용할 수 없어도 결정적 한국어 의미 분석 폴백이 같은 검증 경계를 유지합니다.
 
 ## 화면 계약
 
@@ -71,4 +77,4 @@ Attack, Interact, Negotiate, Rest는 공개 기술이나 별도 입력이 아닙
 
 저장은 seed/version/`layoutHash`, 위치, 아홉 비트, 권한 획득 근거, `majorChoices`, `regionOutcomes`, `npcRelationships`, `canonicalFacts`, `unresolvedHooks`, `abilityUsageHistory`, `adminAccessAcquisitionHistory`, `technicalDebtEntries`를 왕복해야 합니다.
 
-Gemini 기본 프로필은 비용 절감을 위해 `gemini-2.5-flash-lite`, thinking budget 0, 작은 구조화 출력, 최대 1회 재시도와 결정적 폴백을 사용합니다. API 키는 Unity나 저장 파일이 아니라 서버 환경 변수 `GEMINI_API_KEY`에만 둡니다.
+Gemini 기본 프로필은 비용 절감을 위해 `gemini-3.1-flash-lite`, 최소 thinking level, 작은 구조화 출력, 최대 1회 repair와 결정적 폴백을 사용합니다. API 키는 Unity나 저장 파일이 아니라 서버 환경 변수 `GEMINI_API_KEY`에만 둡니다.

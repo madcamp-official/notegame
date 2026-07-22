@@ -7,8 +7,8 @@ import {
   macroPhaseForBeat
 } from "../src/domain/campaign.js";
 import { buildConsequenceCandidates } from "../src/domain/consequence-candidates.js";
-import { planDecisionScene } from "../src/domain/decision-orchestrator.js";
-import { applyScenePlan } from "../src/domain/consequence-resolver.js";
+import { planDecisionScene, planDeterministicDecisionScene } from "../src/domain/decision-orchestrator.js";
+import { applyScenePlan, sanitizePlayerFacingHookSummary } from "../src/domain/consequence-resolver.js";
 import {
   BOSS_CATALOG,
   CORE_NPC_CATALOG,
@@ -100,6 +100,53 @@ test("the deterministic fallback returns the same bounded legal scene", () => {
   assert.ok(cost <= 4);
 });
 
+test("deterministic travel scene planning is stable and keeps every action inside the server allowlist", () => {
+  const source = runFixture(218);
+  const first = planDeterministicDecisionScene({
+    run: structuredClone(source),
+    decisionType: "TRAVEL",
+    navigation: { from: { x: 1, y: 1 }, to: { x: 2, y: 1 }, encounterOpened: false }
+  });
+  const second = planDeterministicDecisionScene({
+    run: structuredClone(source),
+    decisionType: "TRAVEL",
+    navigation: { from: { x: 1, y: 1 }, to: { x: 2, y: 1 }, encounterOpened: false }
+  });
+  assert.deepEqual(first, second);
+  assert.equal(first.plan.fallbackUsed, true);
+  assert.match(first.plan.model, /^deterministic-scene-director-/);
+  const allowed = new Set(first.candidates.map((candidate) => candidate.candidateId));
+  assert.ok(first.plan.selectedActionIds.length >= 1);
+  assert.ok(first.plan.selectedActionIds.every((candidateId) => allowed.has(candidateId)));
+});
+
+test("an active encounter is presented once when opened, not replayed on every combat or recovery turn", () => {
+  const run = runFixture(20260722);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const enemy = run.entities.find((entity) => entity.kind === "enemy");
+  enemy.active = true;
+  enemy.position = { x: player.position.x + 1, y: player.position.y };
+  run.activeEncounter = {
+    id: "11111111-1111-4111-8111-111111111111",
+    status: "active",
+    kind: "COMBAT",
+    sourceEntityId: enemy.id,
+    description: `${enemy.name} 조우!`
+  };
+
+  const continued = buildConsequenceCandidates(run, {
+    decisionType: "ACTION",
+    turn: { events: [{ type: "encounter_continued", encounterId: run.activeEncounter.id }] }
+  });
+  assert.equal(continued.candidates.some((candidate) => candidate.type === "START_ENCOUNTER"), false);
+
+  const opened = buildConsequenceCandidates(run, {
+    decisionType: "ACTION",
+    turn: { events: [{ type: "entity_activated", entityId: enemy.id }] }
+  });
+  assert.equal(opened.candidates.some((candidate) => candidate.type === "START_ENCOUNTER"), true);
+});
+
 test("an assertive dialogue can legally escalate into a server-confirmed attack animation action", () => {
   const run = runFixture(219);
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
@@ -119,6 +166,80 @@ test("an assertive dialogue can legally escalate into a server-confirmed attack 
   assert.equal(result.sceneSequence[0].type, "ATTACK");
   assert.equal(result.sceneSequence[0].actionStyle, "DIALOGUE_BREAKDOWN");
   assert.match(result.sceneSequence[0].actionId, /^[0-9a-f-]{36}$/i);
+});
+
+test("the player HP floor never reports phantom scene damage", () => {
+  const run = runFixture(222);
+  run.id = "11111111-1111-4111-8111-111111111111";
+  run.resolutionSeed = "scene-director-test-seed";
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const enemy = run.entities.find((entity) => entity.kind === "enemy");
+  player.id = "33333333-3333-4333-8333-333333333333";
+  run.playerEntityId = player.id;
+  enemy.id = "22222222-2222-4222-8222-222222222222";
+  player.position = { x: 4, y: 4 };
+  enemy.position = { x: 5, y: 4 };
+  player.state.hp = 1;
+  player.state.maxHp = 12;
+  const attack = {
+    candidateId: "44444444-4444-4444-8444-444444444444",
+    type: "ATTACK_ENTITY",
+    actorId: enemy.id,
+    targetId: player.id,
+    priority: 96,
+    cost: 2,
+    reason: "인접한 적이 최후 저항 상태의 플레이어를 공격한다.",
+    actionStyle: "MELEE"
+  };
+
+  const result = applyScenePlan(run, {
+    candidates: [attack],
+    plan: { sceneGoal: "HP 보호 경계의 실제 변화량을 검증한다.", selectedActionIds: [attack.candidateId], dialogue: [] },
+    decisionType: "ACTION"
+  });
+
+  const attackAction = result.sceneSequence.find((action) => action.type === "ATTACK");
+  assert.equal(attackAction.hit, true);
+  assert.equal(attackAction.damage, 0);
+  assert.equal(player.state.hp, 1);
+  assert.equal(result.events.some((event) => event.type === "health_changed" && event.entityId === player.id), false);
+  assert.equal(result.sceneSequence.some((action) => action.type === "DAMAGE" && action.actorId === player.id), false);
+  assert.equal(result.events.some((event) => event.type === "scene_attack_missed"), false);
+});
+
+test("scene damage uses the correct Korean subject particle for the protagonist", () => {
+  const run = runFixture(222);
+  run.id = "11111111-1111-4111-8111-111111111111";
+  run.resolutionSeed = "scene-director-test-seed";
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const enemy = run.entities.find((entity) => entity.kind === "enemy");
+  player.id = "33333333-3333-4333-8333-333333333333";
+  run.playerEntityId = player.id;
+  enemy.id = "22222222-2222-4222-8222-222222222222";
+  player.name = "넙죽이";
+  player.position = { x: 4, y: 4 };
+  enemy.position = { x: 5, y: 4 };
+  player.state.hp = 12;
+  player.state.maxHp = 12;
+  const attack = {
+    candidateId: "44444444-4444-4444-8444-444444444444",
+    type: "ATTACK_ENTITY",
+    actorId: enemy.id,
+    targetId: player.id,
+    priority: 96,
+    cost: 2,
+    reason: "인접한 적이 플레이어를 공격한다.",
+    actionStyle: "MELEE"
+  };
+
+  const result = applyScenePlan(run, {
+    candidates: [attack],
+    plan: { sceneGoal: "피해 문장의 조사를 검증한다.", selectedActionIds: [attack.candidateId], dialogue: [] },
+    decisionType: "ACTION"
+  });
+
+  assert.equal(result.sceneSequence.find((action) => action.type === "DAMAGE")?.text,
+    "넙죽이가 1의 피해를 입었다.");
 });
 
 test("the model may propose a coherent action that was not in the recommendation list", async () => {
@@ -217,6 +338,10 @@ test("scene resolution is deterministic, bounded per actor, and never changes wo
     decisionType: "ACTION"
   });
   assert.equal(left.directorState.pendingConsequences.find((item) => item.id === pending.id).status, "resolved", JSON.stringify(callbackResult.rejectedActions));
+  const callbackHook = left.openLoops.find((item) => item.id === left.directorState.pendingConsequences.find((item) => item.id === pending.id).resolvedHookId);
+  assert.equal(callbackHook.summary, `${npc.name}가 전한 충돌의 여파`);
+  assert.doesNotMatch(callbackHook.summary, /[A-Z]+_[A-Z_]+/);
+  assert.equal(sanitizePlayerFacingHookSummary("코멘트이 전한 과거 선택의 역류: START_ENCOUNTER"), "코멘트가 전한 새로운 조우의 여파");
 });
 
 test("monster HP never forces a combat exit and a nearby monster can speak as a relationship actor", () => {
@@ -273,6 +398,10 @@ test("boss spawning and special-skill rewards are resolved from server catalogs 
     priority: 90, cost: 3, reason: "서버 카탈로그의 보스 조우", actionStyle: "ENCOUNTER",
     entityId: dormantBoss.id, slotId: dormantBoss.state.activationSlotId, assetId: boss.assetId, traitIds: [...boss.traits]
   };
+  assert.doesNotThrow(() => validateSceneDirectorContext({
+    ...buildConsequenceCandidates(run, { decisionType: "TRAVEL" }).context,
+    candidates: [bossCandidate]
+  }));
   const reward = SPECIAL_SKILL_TEMPLATES.find((entry) => entry.id === "RUN_SKILL_LIGHTWEIGHT_COPY");
   const rewardCandidate = {
     candidateId: randomUUID(), type: "GRANT_SPECIAL_REWARD", actorId: npc.id, targetId: player.id,

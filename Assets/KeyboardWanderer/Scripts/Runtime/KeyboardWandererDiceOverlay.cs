@@ -13,10 +13,12 @@ namespace KeyboardWanderer.Runtime
     public sealed class KeyboardWandererDiceOverlay : MonoBehaviour
     {
         private const float ShowDelaySeconds = 0.2f;
-        private const float MinimumSpinSeconds = 0.9f;
-        private const float ResultHoldSeconds = 1.25f;
+        private const float MinimumSpinSeconds = 1.2f;
+        private const float PostResponseHoldSeconds = 0.25f;
         private const int OverlaySortingOrder = 4500;
-        private const int TextureSize = 512;
+        // The die is displayed at 190 UI pixels. A 256px target with 2x MSAA keeps
+        // the edge clean without holding a 512px 4x surface for the entire session.
+        private const int TextureSize = 256;
         private const string FontResourcePath = "Fonts/NeoDunggeunmoPro-Regular SDF";
         private static readonly Vector3 CaptureOrigin = new Vector3(10000f, 10000f, 0f);
 
@@ -26,6 +28,7 @@ namespace KeyboardWanderer.Runtime
         private Camera _captureCamera;
         private RenderTexture _renderTexture;
         private IcosahedronDice _dice;
+        private Renderer[] _captureRenderers;
         private RawImage _diceImage;
         private TMP_Text _resultText;
         private Coroutine _showCoroutine;
@@ -34,6 +37,7 @@ namespace KeyboardWanderer.Runtime
         public bool IsVisible => _uiRoot != null && _uiRoot.activeSelf &&
                                  _diceImage != null && _diceImage.enabled;
         public bool IsRolling => _dice != null && _dice.IsRolling;
+        public bool HasSettledResult { get; private set; }
 
         public void Configure(Camera targetCamera, GameObject dicePrefab)
         {
@@ -50,6 +54,7 @@ namespace KeyboardWanderer.Runtime
             _captureCamera.enabled = false;
             _diceImage.enabled = false;
             _resultText.gameObject.SetActive(false);
+            HasSettledResult = false;
             FitCaptureCamera();
             _rollStartedAt = Time.realtimeSinceStartup;
             _dice.BeginPendingRoll();
@@ -57,7 +62,7 @@ namespace KeyboardWanderer.Runtime
             _showCoroutine = StartCoroutine(ShowAfterDelay());
         }
 
-        public IEnumerator ResolveAndHide(int authoritativeD20)
+        public IEnumerator ResolveAndWait(int authoritativeD20)
         {
             if (_dice == null || _uiRoot == null || !_uiRoot.activeSelf)
                 yield break;
@@ -70,6 +75,8 @@ namespace KeyboardWanderer.Runtime
             float remainingSpin = MinimumSpinSeconds - (Time.realtimeSinceStartup - _rollStartedAt);
             if (remainingSpin > 0f)
                 yield return new WaitForSecondsRealtime(remainingSpin);
+            if (_uiRoot == null || !_uiRoot.activeSelf)
+                yield break;
 
             ShowNow();
             _dice.ResolveTo(authoritativeD20);
@@ -77,7 +84,14 @@ namespace KeyboardWanderer.Runtime
                 yield return null;
             _resultText.text = "D20 · " + authoritativeD20;
             _resultText.gameObject.SetActive(true);
-            yield return new WaitForSecondsRealtime(ResultHoldSeconds);
+            HasSettledResult = true;
+        }
+
+        public IEnumerator HideAfterResponse()
+        {
+            while (_dice != null && _dice.IsRolling)
+                yield return null;
+            yield return new WaitForSecondsRealtime(PostResponseHoldSeconds);
             Hide();
         }
 
@@ -112,6 +126,9 @@ namespace KeyboardWanderer.Runtime
             }
 
             _dice.SetTargetCamera(_captureCamera);
+            // Cache once. GetComponentsInChildren allocates an array, so doing it from
+            // LateUpdate while the die spins creates avoidable per-frame GC pressure.
+            _captureRenderers = _instance.GetComponentsInChildren<Renderer>(true);
             _uiRoot.SetActive(false);
             return true;
         }
@@ -137,7 +154,7 @@ namespace KeyboardWanderer.Runtime
             _renderTexture = new RenderTexture(TextureSize, TextureSize, 24, RenderTextureFormat.ARGB32)
             {
                 name = "D20 UI Render Texture",
-                antiAliasing = 4,
+                antiAliasing = 2,
                 useMipMap = false,
                 autoGenerateMips = false
             };
@@ -166,8 +183,17 @@ namespace KeyboardWanderer.Runtime
             scaler.referenceResolution = new Vector2(1440f, 900f);
             scaler.matchWidthOrHeight = 0.5f;
 
+            var safeAreaObject = new GameObject("Safe Area Content", typeof(RectTransform));
+            safeAreaObject.transform.SetParent(canvasObject.transform, false);
+            RectTransform safeAreaRect = safeAreaObject.GetComponent<RectTransform>();
+            safeAreaRect.anchorMin = Vector2.zero;
+            safeAreaRect.anchorMax = Vector2.one;
+            safeAreaRect.offsetMin = Vector2.zero;
+            safeAreaRect.offsetMax = Vector2.zero;
+            safeAreaObject.AddComponent<global::KeyboardWanderer.Demo.KeyboardWandererSafeAreaFitter>();
+
             var imageObject = new GameObject("Rolling D20", typeof(RectTransform), typeof(RawImage));
-            imageObject.transform.SetParent(canvasObject.transform, false);
+            imageObject.transform.SetParent(safeAreaObject.transform, false);
             RectTransform rect = imageObject.GetComponent<RectTransform>();
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
@@ -181,7 +207,7 @@ namespace KeyboardWanderer.Runtime
             _diceImage = image;
 
             var resultObject = new GameObject("D20 Result", typeof(RectTransform), typeof(TextMeshProUGUI));
-            resultObject.transform.SetParent(canvasObject.transform, false);
+            resultObject.transform.SetParent(safeAreaObject.transform, false);
             RectTransform resultRect = resultObject.GetComponent<RectTransform>();
             resultRect.anchorMin = new Vector2(0.5f, 0.5f);
             resultRect.anchorMax = new Vector2(0.5f, 0.5f);
@@ -189,7 +215,8 @@ namespace KeyboardWanderer.Runtime
             resultRect.anchoredPosition = new Vector2(0f, -72f);
             resultRect.sizeDelta = new Vector2(220f, 42f);
             _resultText = resultObject.GetComponent<TextMeshProUGUI>();
-            _resultText.font = Resources.Load<TMP_FontAsset>(FontResourcePath);
+            _resultText.font = global::KeyboardWanderer.Demo.KeyboardWandererRuntimeFontProvider.Get(
+                Resources.Load<TMP_FontAsset>(FontResourcePath));
             _resultText.fontSize = 24f;
             _resultText.fontStyle = FontStyles.Bold;
             _resultText.alignment = TextAlignmentOptions.Center;
@@ -215,8 +242,8 @@ namespace KeyboardWanderer.Runtime
         private void FitCaptureCamera()
         {
             if (_captureCamera == null || _instance == null) return;
-            Renderer[] renderers = _instance.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0) return;
+            Renderer[] renderers = _captureRenderers;
+            if (renderers == null || renderers.Length == 0) return;
 
             Bounds bounds = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++)
@@ -244,6 +271,7 @@ namespace KeyboardWanderer.Runtime
             if (_captureCamera != null) _captureCamera.enabled = false;
             if (_diceImage != null) _diceImage.enabled = false;
             if (_resultText != null) _resultText.gameObject.SetActive(false);
+            HasSettledResult = false;
             if (_uiRoot != null) _uiRoot.SetActive(false);
         }
 
@@ -258,6 +286,7 @@ namespace KeyboardWanderer.Runtime
             _renderTexture.Release();
             Destroy(_renderTexture);
             _renderTexture = null;
+            _captureRenderers = null;
         }
     }
 }

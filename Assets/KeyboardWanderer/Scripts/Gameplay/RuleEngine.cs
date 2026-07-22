@@ -389,8 +389,8 @@ namespace KeyboardWanderer.Gameplay
             if (!EntityCapabilityCatalog.CanDelete(target.Kind, target.IsHostile, target.AssetId))
                 return RulePreparation.Invalid(TurnErrorCode.InvalidTarget,
                     "Delete requires a hostile enemy or a removable ROOT_SYSTEM component.");
-            if (EnemyArchetypeCatalog.Resolve(target.AssetId, state.WorldSeed, target.EntityId) == EnemyDependencyArchetype.RootProcess &&
-                !state.CanonicalFacts.Contains(EnemyArchetypeCatalog.RevealedFact(target.EntityId)))
+            if (EnemyArchetypeCatalog.RequiresSearchBeforeDelete(target.AssetId, state.WorldSeed,
+                    target.EntityId, state.CanonicalFacts))
                 return RulePreparation.Invalid(TurnErrorCode.QuestConditionMissing,
                     "Root Process dependency must be revealed with Search before Delete.");
             int requiredAdminAccess = EntityCapabilityCatalog.RequiredAdminAccessForDelete(target.AssetId);
@@ -479,7 +479,7 @@ namespace KeyboardWanderer.Gameplay
             }
             if (available < 2)
                 return RulePreparation.Invalid(TurnErrorCode.UndoUnavailable,
-                    "Ctrl Z requires two unconsumed meaningful turns to rewind.");
+                    "Z requires two unconsumed meaningful turns to rewind.");
             return RulePreparation.Valid("Rewind turns " + oldestTurn + "-" + newestTurn +
                 " and restore their mechanical state", 14, 5, 3);
         }

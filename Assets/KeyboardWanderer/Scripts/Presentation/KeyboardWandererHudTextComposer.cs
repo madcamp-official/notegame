@@ -128,7 +128,7 @@ namespace KeyboardWanderer.Presentation
         /// <summary>상태 패널 왼쪽 컬럼. <see cref="StatusValues"/>와 줄 순서가 일치해야 한다.</summary>
         public static string StatusLabels()
         {
-            return "권한\n의미 턴\nFOCUS\nXP\nGOLD";
+            return "HP\n권한\n의미 턴\nFOCUS\nXP\nGOLD";
         }
 
         /// <summary>상태 패널 오른쪽 컬럼. <see cref="StatusLabels"/>와 줄 순서가 일치해야 한다.</summary>
@@ -136,7 +136,8 @@ namespace KeyboardWanderer.Presentation
         {
             if (run == null)
                 return string.Empty;
-            return run.AdminAccess + " / 3\n" +
+            return run.Health + " / " + run.MaxHealth + "\n" +
+                   run.AdminAccess + " / 3\n" +
                    run.Core.Turn + " / " + run.TurnLimit + "\n" +
                    run.Focus + " / " + run.MaxFocus + "\n" +
                    run.Experience + "\n" +
@@ -174,11 +175,11 @@ namespace KeyboardWanderer.Presentation
             string name = string.IsNullOrWhiteSpace(targetName) ? "표시된 대상" : targetName.Trim();
             switch (ability)
             {
-                case AbilityKind.Search: return WithObjectParticle(name) + " 찾아 Ctrl F로 조사하세요.";
-                case AbilityKind.Delete: return WithObjectParticle(name) + " 찾아 Delete로 삭제하세요.";
-                case AbilityKind.Copy: return WithObjectParticle(name) + " 찾아 Ctrl C로 복제하세요.";
-                case AbilityKind.Connect: return name + "와 연결할 대상을 찾아 Ctrl K로 연결하세요.";
-                case AbilityKind.Restore: return WithObjectParticle(name) + " Ctrl R로 복구하세요.";
+                case AbilityKind.Search: return WithObjectParticle(name) + " 찾아 F로 조사하세요.";
+                case AbilityKind.Delete: return WithObjectParticle(name) + " 찾아 R로 공격하세요.";
+                case AbilityKind.Copy: return WithObjectParticle(name) + " 찾아 E로 복제하세요.";
+                case AbilityKind.Connect: return name + "와 연결할 대상을 찾아 C로 연결하세요.";
+                case AbilityKind.Restore: return WithObjectParticle(name) + " X로 복구하세요.";
                 default: return name + "에게 이동하세요.";
             }
         }
@@ -198,14 +199,46 @@ namespace KeyboardWanderer.Presentation
             switch (ability)
             {
                 case AbilityKind.Move: return "W 이동";
-                case AbilityKind.Copy: return "Ctrl C 복제";
-                case AbilityKind.Delete: return "Delete 단일 삭제";
-                case AbilityKind.Connect: return "Ctrl K 연결";
-                case AbilityKind.Restore: return "Ctrl R 복구";
-                case AbilityKind.Undo: return "Ctrl Z 2턴 역행";
-                case AbilityKind.Search: return "Ctrl F 조사";
+                case AbilityKind.Copy: return "E 복제";
+                case AbilityKind.Delete: return "R 단일 공격";
+                case AbilityKind.Connect: return "C 연결";
+                case AbilityKind.Restore: return "X 복구";
+                case AbilityKind.Undo: return "Z 2턴 역행";
+                case AbilityKind.Search: return "F 조사";
                 case AbilityKind.SelectAll: return "Ctrl A 범위 공격";
                 default: return ability.ToString();
+            }
+        }
+
+        public static string NarrativeChoicePlayerLabel(NarrativeChoiceOption choice)
+        {
+            if (choice == null)
+                return "서사 선택";
+            if (choice.IsSkill && string.Equals(choice.SkillId, "REST", StringComparison.OrdinalIgnoreCase))
+                return "휴식 회복";
+            if (choice.IsSkill && TryAbilityForSkillId(choice.SkillId, out AbilityKind ability))
+                return AbilityPlayerLabel(ability);
+            switch ((choice.ChoiceKind ?? string.Empty).Trim().ToUpperInvariant())
+            {
+                case "TRAVEL": return "이동 선택";
+                case "DIALOGUE": return "대화 선택";
+                case "ATTITUDE": return "태도 선택";
+                default: return "서사 선택";
+            }
+        }
+
+        private static bool TryAbilityForSkillId(string skillId, out AbilityKind ability)
+        {
+            switch ((skillId ?? string.Empty).Trim().ToUpperInvariant())
+            {
+                case "COPY": ability = AbilityKind.Copy; return true;
+                case "DELETE": ability = AbilityKind.Delete; return true;
+                case "CONNECT": ability = AbilityKind.Connect; return true;
+                case "RESTORE": ability = AbilityKind.Restore; return true;
+                case "UNDO": ability = AbilityKind.Undo; return true;
+                case "SEARCH": ability = AbilityKind.Search; return true;
+                case "SELECT_ALL": ability = AbilityKind.SelectAll; return true;
+                default: ability = AbilityKind.Move; return false;
             }
         }
 

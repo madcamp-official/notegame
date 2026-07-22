@@ -198,7 +198,7 @@ namespace KeyboardWanderer.Tests
             var client = new GameApiClient();
             GameApiClient.Result<GameApiClient.CommittedTurn> result = null;
             var request = client.SubmitAction("run", "legacy-network", 1, "ATTACK",
-                Array.Empty<string>(), null, value => result = value);
+                Array.Empty<string>(), null, 0, value => result = value);
 
             while (request.MoveNext()) { }
 

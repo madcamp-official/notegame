@@ -20,6 +20,8 @@ using Random = UnityEngine.Random;
 [RequireComponent(typeof(MeshFilter))]
 public class IcosahedronDice : MonoBehaviour
 {
+    private const float VisualSpinSpeedMultiplier = 0.2f;
+
     [Header("Roll dynamics")]
     [Tooltip("Initial angular speed at power = 0, degrees/second.")]
     [SerializeField] private float minStartSpeed = 1080f;
@@ -53,6 +55,8 @@ public class IcosahedronDice : MonoBehaviour
     private Vector3[] faceNormals;
     private Coroutine rollCoroutine;
     private int pendingResult;
+
+    private bool HasValidFaceNormals => faceNormals != null && faceNormals.Length == 20;
 
     private void Awake()
     {
@@ -100,6 +104,15 @@ public class IcosahedronDice : MonoBehaviour
             throw new InvalidOperationException("IcosahedronDice needs an icosahedron mesh on itself or a child.");
 
         Mesh mesh = filter.sharedMesh;
+        if (!mesh.isReadable)
+        {
+            faceNormals = Array.Empty<Vector3>();
+            Debug.LogError(
+                $"IcosahedronDice cannot read mesh '{mesh.name}'. Enable Read/Write on the model importer.",
+                this);
+            return;
+        }
+
         Vector3[] verts = mesh.vertices;
         int[] tris = mesh.triangles;
 
@@ -119,9 +132,18 @@ public class IcosahedronDice : MonoBehaviour
         }
 
         faceNormals = normals.ToArray();
-        Debug.Assert(faceNormals.Length == 20,
-            $"IcosahedronDice: expected 20 distinct faces, found {faceNormals.Length}. " +
-            "Check the mesh (it must be a flat-shaded icosahedron).");
+        if (!HasValidFaceNormals)
+            Debug.LogError(
+                $"IcosahedronDice: expected 20 distinct faces, found {faceNormals.Length}. " +
+                "Check the mesh (it must be a flat-shaded icosahedron).",
+                this);
+    }
+
+    private bool EnsureFaceNormals()
+    {
+        if (!HasValidFaceNormals)
+            ExtractFaceNormals();
+        return HasValidFaceNormals;
     }
 
     /// <summary>
@@ -131,6 +153,7 @@ public class IcosahedronDice : MonoBehaviour
     /// </summary>
     public int Roll(float power01 = 1f)
     {
+        if (!EnsureFaceNormals()) return 0;
         // --- Fairness lives entirely on this line: uniform over 20 faces. ---
         int faceIndex = Random.Range(0, faceNormals.Length);
         return RollTo(faceIndex + 1, power01);
@@ -144,6 +167,7 @@ public class IcosahedronDice : MonoBehaviour
     /// </summary>
     public int RollTo(int result, float power01 = 1f)
     {
+        if (!EnsureFaceNormals()) return 0;
         if (IsRolling) return LastResult;
         if (result < 1 || result > faceNormals.Length)
             throw new ArgumentOutOfRangeException(nameof(result), result,
@@ -163,6 +187,7 @@ public class IcosahedronDice : MonoBehaviour
     public void BeginPendingRoll(float power01 = 1f)
     {
         CancelRoll();
+        if (!EnsureFaceNormals()) return;
         pendingResult = 0;
         LastResult = 0;
         rollCoroutine = StartCoroutine(PendingRollRoutine(Mathf.Clamp01(power01)));
@@ -171,6 +196,11 @@ public class IcosahedronDice : MonoBehaviour
     /// <summary>Finishes a pending visual roll on the already-authoritative result.</summary>
     public void ResolveTo(int result)
     {
+        if (!EnsureFaceNormals())
+        {
+            CancelRoll();
+            return;
+        }
         if (result < 1 || result > faceNormals.Length)
             throw new ArgumentOutOfRangeException(nameof(result), result,
                 $"Expected a value between 1 and {faceNormals.Length}.");
@@ -267,7 +297,7 @@ public class IcosahedronDice : MonoBehaviour
     private IEnumerator PendingRollRoutine(float power01)
     {
         IsRolling = true;
-        float speed = Mathf.Lerp(minStartSpeed, maxStartSpeed, power01);
+        float speed = Mathf.Lerp(minStartSpeed, maxStartSpeed, power01) * VisualSpinSpeedMultiplier;
         Vector3 primaryAxis = new Vector3(0.72f, 1f, 0.38f).normalized;
         Vector3 secondaryAxis = new Vector3(-0.42f, 0.26f, 1f).normalized;
         float elapsed = 0f;
@@ -292,7 +322,9 @@ public class IcosahedronDice : MonoBehaviour
             elapsed += Time.unscaledDeltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
             float eased = 1f - Mathf.Pow(1f - t, 3f);
-            Quaternion extraTurns = Quaternion.AngleAxis((1f - eased) * 720f, settleAxis);
+            Quaternion extraTurns = Quaternion.AngleAxis(
+                (1f - eased) * 720f * VisualSpinSpeedMultiplier,
+                settleAxis);
             transform.rotation = extraTurns * Quaternion.Slerp(start, target, eased);
             yield return null;
         }
@@ -315,6 +347,7 @@ public class IcosahedronDice : MonoBehaviour
     /// </summary>
     public int GetFaceTowardCamera()
     {
+        if (!EnsureFaceNormals()) return 0;
         Vector3 toCamera = -ActiveCamera.transform.forward;
         int best = 0;
         float bestDot = float.NegativeInfinity;
