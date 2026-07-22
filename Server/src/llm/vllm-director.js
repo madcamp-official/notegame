@@ -1,6 +1,6 @@
 import { AppError } from "../errors.js";
 import { CAMPAIGN_PLAN_RESPONSE_JSON_SCHEMA, validateCampaignPlanContext, validateCampaignPlanOutput } from "./campaign-planning.js";
-import { createFallbackNarration, responseSchemaForContext, validateNarrationContext, validateNarrationOutput } from "./narration.js";
+import { createFallbackNarration, repairDirectorOutput, responseSchemaForContext, validateNarrationContext, validateNarrationOutput } from "./narration.js";
 import { CAMPAIGN_SYSTEM_PROMPT, NARRATIVE_TARGET_POLICY_PROMPT, TURN_SYSTEM_PROMPT } from "./gemini-narrator.js";
 import { createProviderRequestScope, ProviderConcurrencyGate } from "./request-budget.js";
 import {
@@ -116,7 +116,7 @@ export class VllmNarrator {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
         const raw = await this.generateOnce(context, profile);
-        const output = validateNarrationOutput(raw, context);
+        const output = validateNarrationOutput(repairDirectorOutput(raw, context), context);
         return { ...output, fallbackUsed: false, model: profile.model, modelProfile: profileName };
       } catch (error) {
         // Never log prompts, model responses, request headers, raw intent, or the API key.

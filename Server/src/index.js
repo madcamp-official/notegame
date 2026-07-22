@@ -9,8 +9,13 @@ application.server.listen(application.config.port, application.config.host, () =
     host: application.config.host,
     port: application.config.port,
     storage: application.config.storage,
-    narrationModel: application.config.geminiFastModel,
-    geminiConfigured: Boolean(application.config.geminiApiKey)
+    llmProvider: application.config.llmProvider,
+    narrationModel: application.config.llmProvider === "vllm"
+      ? application.config.vllmModel
+      : application.config.geminiFastModel,
+    llmConfigured: application.config.llmProvider === "vllm"
+      ? Boolean(application.config.vllmBaseUrl)
+      : Boolean(application.config.geminiApiKey)
   });
 });
 

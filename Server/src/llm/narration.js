@@ -106,6 +106,51 @@ function validateDirectorContext(input) {
   return { mode: "director", ...input, ...base, allowedEffects: [...new Set(input.allowedEffects)] };
 }
 
+// A small local model reliably produces structurally valid JSON but occasionally fills fields
+// with values that violate the game's semantic rules in cosmetic, non-authoritative ways:
+// choiceIds like "1"/"2" instead of the required identifier format, or a WORLD_ACTION beat on a
+// turn with no confirmed server action to back it. Rather than reject the whole turn to the
+// deterministic fallback for these, normalize only the presentation so the rest of the output can
+// still reach Unity. This never fabricates or hides game state — authority checks (mechanics,
+// inventory, entity references, budget) still run afterward in validateNarrationOutput and any
+// genuine violation there still falls back.
+export function repairDirectorOutput(input, contextInput) {
+  const context = contextInput?.mode ? contextInput : validateNarrationContext(contextInput);
+  if (context.mode !== "director" || !input || typeof input !== "object" || Array.isArray(input)) return input;
+  const output = { ...input };
+  const player = (context.visibleEntities || []).find((item) => item.kind === "player");
+  const allowedActionIds = new Set((context.sceneSequence || []).map((action) => action.actionId).filter(Boolean));
+  if (Array.isArray(output.storySequence)) {
+    output.storySequence = output.storySequence.map((beat) => {
+      if (!beat || typeof beat !== "object" || Array.isArray(beat)) return beat;
+      const next = { ...beat };
+      const type = typeof next.type === "string" ? next.type.toUpperCase() : next.type;
+      // A world action with no confirmed server action behind it is just narration.
+      if (type === "WORLD_ACTION" && (!next.actionId || !allowedActionIds.has(next.actionId))) {
+        next.type = "NARRATION";
+        next.actionId = null;
+        next.speakerId = null;
+      } else if (type === "NARRATION") {
+        next.speakerId = null;
+      } else if (type === "MONOLOGUE" && next.speakerId && next.speakerId !== player?.id) {
+        // The model tends to write PROTAGONIST_NUPJUKYI here; the monologue is the player's regardless.
+        next.speakerId = null;
+      }
+      return next;
+    });
+  }
+  const choices = output.nextIntervention?.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const allValid = choices.every((choice) => typeof choice?.choiceId === "string" && /^[a-z][a-z0-9_.:-]{2,63}$/.test(choice.choiceId));
+    const allUnique = new Set(choices.map((choice) => choice?.choiceId)).size === choices.length;
+    if (!allValid || !allUnique) {
+      // choiceId is an opaque per-set identifier, so reassigning it changes nothing the player sees.
+      output.nextIntervention = { ...output.nextIntervention, choices: choices.map((choice, index) => ({ ...choice, choiceId: `choice.${index + 1}` })) };
+    }
+  }
+  return output;
+}
+
 export function validateNarrationOutput(input, contextInput) {
   const context = contextInput.mode ? contextInput : validateNarrationContext(contextInput);
   assert(input && typeof input === "object" && !Array.isArray(input), 502, "LLM_OUTPUT_INVALID", "Narration output must be a JSON object.");
@@ -463,12 +508,18 @@ export function responseSchemaForContext(context) {
       }
     }
   } : undefined;
+  // Elemental effects are legal only for attack skills, so structurally forbid them elsewhere
+  // instead of letting the model emit one and failing post-hoc validation.
+  const elementalEffectId = context.mode === "director" && !["ATTACK", "DELETE", "SELECT_ALL"].includes(context.skillId)
+    ? { type: "null" }
+    : undefined;
   return {
     ...base,
     properties: {
       ...base.properties,
       ...(storySequence ? { storySequence } : {}),
       ...(nextIntervention ? { nextIntervention } : {}),
+      ...(elementalEffectId ? { elementalEffectId } : {}),
       proposedOps: {
         ...baseOps,
         maxItems: allowed.length > 0 ? baseOps.maxItems : 0,

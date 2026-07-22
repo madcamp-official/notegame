@@ -169,7 +169,6 @@ namespace KeyboardWanderer.Networking
             public ProgressionNodeSnapshot[] nodes;
             public ProgressionEdgeSnapshot[] edges;
             public ProgressionRootGateSnapshot rootGate;
-            public ProgressionRootGateSnapshot rootSystemGate;
         }
 
         [Serializable]
@@ -426,9 +425,6 @@ namespace KeyboardWanderer.Networking
             public string fixtureType;
             public string requiredSkillId;
             public string finaleComponent;
-            public string candidateId;
-            public string adminAccessLevelId;
-            public bool adminAccessResolved;
         }
 
         [Serializable]
@@ -662,7 +658,6 @@ namespace KeyboardWanderer.Networking
             public string description;
             public int level;
             public int adminLevel;
-            public int progressLevel;
             public string sourceRole;
         }
 
@@ -784,9 +779,7 @@ namespace KeyboardWanderer.Networking
             public string endingCode;
             public RootResolutionSnapshot rootResolution;
             public int adminLevel;
-            public int progressLevel;
             public string[] accessTokens;
-            public string[] progressTokens;
             public AccessTokenSnapshot[] accessTokenDefinitions;
             public CampaignMetricsSnapshot metrics;
             public int navigationSequence;
@@ -797,8 +790,6 @@ namespace KeyboardWanderer.Networking
             public string[] visitedPoiIds;
             public string[] discoveredAreaIds;
             public RootGateSnapshot rootGate;
-            public RootGateSnapshot rootSystemGate;
-            public RootGateSnapshot finaleGate;
             public ActiveEncounterSnapshot activeEncounter;
             public ActiveEncounterSnapshot[] encounterHistory;
             public RootPuzzleSnapshot rootPuzzle;
@@ -825,13 +816,6 @@ namespace KeyboardWanderer.Networking
             // the scene response and the player's next sealed narrative choice.
             public NextInterventionSnapshot pendingChoiceSet;
             public NarrativeSnapshot openingNarrative;
-        }
-
-        [Serializable]
-        public sealed class PreparedD20Snapshot
-        {
-            public int d20;
-            public long expectedRunVersion;
         }
 
         [Serializable]
@@ -1403,13 +1387,6 @@ namespace KeyboardWanderer.Networking
         }
 
         [Serializable]
-        private sealed class PreparedD20Envelope
-        {
-            public int d20;
-            public long expectedRunVersion;
-        }
-
-        [Serializable]
         private sealed class TurnEnvelope
         {
             public TurnSnapshot turn;
@@ -1527,7 +1504,7 @@ namespace KeyboardWanderer.Networking
 
         public GameApiClient(string baseUrl = null, string userId = null)
         {
-            _baseUrl = KeyboardWandererEndpointResolver.ResolveBaseUrl(baseUrl, DefaultBaseUrl);
+            _baseUrl = (string.IsNullOrWhiteSpace(baseUrl) ? DefaultBaseUrl : baseUrl.Trim()).TrimEnd('/');
             _userId = string.IsNullOrWhiteSpace(userId) ? null : userId.Trim();
         }
 
@@ -1550,18 +1527,6 @@ namespace KeyboardWanderer.Networking
 
         public IEnumerator CreateCampaign(long worldSeed, int turnLimit, Action<Result<CampaignSnapshot>> completed)
         {
-            yield return CreateCampaign(worldSeed, turnLimit, null, completed);
-        }
-
-        public IEnumerator CreateCampaign(long worldSeed, int turnLimit, string idempotencyKey,
-            Action<Result<CampaignSnapshot>> completed)
-        {
-            if (!IsValidOptionalIdempotencyKey(idempotencyKey))
-            {
-                completed?.Invoke(Result<CampaignSnapshot>.Failure(0, "INVALID_IDEMPOTENCY_KEY",
-                    "Idempotency-Key must contain 8-128 characters."));
-                yield break;
-            }
             string body = "{\"worldSeed\":" + worldSeed.ToString(CultureInfo.InvariantCulture) +
                           ",\"turnLimit\":" + turnLimit.ToString(CultureInfo.InvariantCulture) + "}";
             yield return Send("POST", "/v1/campaigns", body, raw =>
@@ -1575,23 +1540,11 @@ namespace KeyboardWanderer.Networking
                 }
                 PopulateTileCodes(envelope.campaign.world, raw.Json);
                 completed?.Invoke(Result<CampaignSnapshot>.Success(raw.StatusCode, envelope.campaign));
-            }, idempotencyKey);
+            });
         }
 
         public IEnumerator CreateRun(string campaignId, Action<Result<RunSnapshot>> completed)
         {
-            yield return CreateRun(campaignId, null, completed);
-        }
-
-        public IEnumerator CreateRun(string campaignId, string idempotencyKey,
-            Action<Result<RunSnapshot>> completed)
-        {
-            if (!IsValidOptionalIdempotencyKey(idempotencyKey))
-            {
-                completed?.Invoke(Result<RunSnapshot>.Failure(0, "INVALID_IDEMPOTENCY_KEY",
-                    "Idempotency-Key must contain 8-128 characters."));
-                yield break;
-            }
             yield return Send("POST", "/v1/campaigns/" + EscapePath(campaignId) + "/runs", "{}", raw =>
             {
                 RunEnvelope envelope = raw.Success ? SafeParse<RunEnvelope>(raw.Json) : null;
@@ -1603,7 +1556,7 @@ namespace KeyboardWanderer.Networking
                 }
                 PopulateTileCodes(envelope.run.world, raw.Json);
                 completed?.Invoke(Result<RunSnapshot>.Success(raw.StatusCode, envelope.run));
-            }, idempotencyKey);
+            });
         }
 
         public IEnumerator GetRun(string runId, Action<Result<RunSnapshot>> completed)
@@ -1659,26 +1612,7 @@ namespace KeyboardWanderer.Networking
             if (!string.IsNullOrWhiteSpace(targetEntityId)) targetIds.Add(targetEntityId);
             if (!string.IsNullOrWhiteSpace(secondaryTargetEntityId)) targetIds.Add(secondaryTargetEntityId);
             yield return SubmitAction(runId, idempotencyKey, expectedRunVersion, ability,
-                targetIds.ToArray(), destination, 0, completed);
-        }
-
-        public IEnumerator PrepareD20(string runId, long expectedRunVersion,
-            Action<Result<PreparedD20Snapshot>> completed)
-        {
-            string body = "{\"expectedRunVersion\":" +
-                          expectedRunVersion.ToString(CultureInfo.InvariantCulture) + "}";
-            yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/dice", body, raw =>
-            {
-                PreparedD20Envelope envelope = raw.Success ? SafeParse<PreparedD20Envelope>(raw.Json) : null;
-                if (envelope == null || envelope.d20 < 1 || envelope.d20 > 20)
-                {
-                    completed?.Invoke(Result<PreparedD20Snapshot>.Failure(raw.StatusCode, raw.ErrorCode,
-                        raw.Success ? "D20 준비 응답을 해석할 수 없습니다." : raw.ErrorMessage, raw.CurrentVersion));
-                    return;
-                }
-                completed?.Invoke(Result<PreparedD20Snapshot>.Success(raw.StatusCode,
-                    new PreparedD20Snapshot { d20 = envelope.d20, expectedRunVersion = envelope.expectedRunVersion }));
-            });
+                targetIds.ToArray(), destination, completed);
         }
 
         public IEnumerator SubmitAction(
@@ -1688,20 +1622,6 @@ namespace KeyboardWanderer.Networking
             string skillId,
             string[] targetIds,
             PositionSnapshot destination,
-            Action<Result<CommittedTurn>> completed)
-        {
-            yield return SubmitAction(runId, idempotencyKey, expectedRunVersion, skillId,
-                targetIds, destination, 0, completed);
-        }
-
-        public IEnumerator SubmitAction(
-            string runId,
-            string idempotencyKey,
-            long expectedRunVersion,
-            string skillId,
-            string[] targetIds,
-            PositionSnapshot destination,
-            int preparedD20,
             Action<Result<CommittedTurn>> completed)
         {
             if (!IsCanonicalSkillId(skillId) &&
@@ -1711,7 +1631,7 @@ namespace KeyboardWanderer.Networking
                     "USE_SKILL accepts a keyboard skill or INTERACT."));
                 yield break;
             }
-            string body = BuildActionJson(idempotencyKey, expectedRunVersion, skillId, targetIds, destination, preparedD20);
+            string body = BuildActionJson(idempotencyKey, expectedRunVersion, skillId, targetIds, destination);
             yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/actions", body, raw =>
             {
                 TurnEnvelope envelope = raw.Success ? SafeParse<TurnEnvelope>(raw.Json) : null;
@@ -1740,26 +1660,13 @@ namespace KeyboardWanderer.Networking
             long expectedRunVersion,
             Action<Result<CommittedTurn>> completed)
         {
-            yield return SubmitNarrativeChoice(runId, choiceSetId, choiceId, idempotencyKey,
-                expectedRunVersion, 0, completed);
-        }
-
-        public IEnumerator SubmitNarrativeChoice(
-            string runId,
-            string choiceSetId,
-            string choiceId,
-            string idempotencyKey,
-            long expectedRunVersion,
-            int preparedD20,
-            Action<Result<CommittedTurn>> completed)
-        {
             if (string.IsNullOrWhiteSpace(choiceSetId) || string.IsNullOrWhiteSpace(choiceId))
             {
                 completed?.Invoke(Result<CommittedTurn>.Failure(0, "INVALID_CHOICE",
                     "A sealed choiceSetId and choiceId are required."));
                 yield break;
             }
-            string body = BuildChoiceJson(choiceSetId, choiceId, idempotencyKey, expectedRunVersion, preparedD20);
+            string body = BuildChoiceJson(choiceSetId, choiceId, idempotencyKey, expectedRunVersion);
             yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/choices", body, raw =>
             {
                 TurnEnvelope envelope = raw.Success ? SafeParse<TurnEnvelope>(raw.Json) : null;
@@ -1778,12 +1685,6 @@ namespace KeyboardWanderer.Networking
         public IEnumerator SubmitPlayerMessage(string runId, string text, string idempotencyKey,
             long expectedRunVersion, Action<Result<CommittedTurn>> completed)
         {
-            yield return SubmitPlayerMessage(runId, text, idempotencyKey, expectedRunVersion, 0, completed);
-        }
-
-        public IEnumerator SubmitPlayerMessage(string runId, string text, string idempotencyKey,
-            long expectedRunVersion, int preparedD20, Action<Result<CommittedTurn>> completed)
-        {
             if (string.IsNullOrWhiteSpace(text))
             {
                 completed?.Invoke(Result<CommittedTurn>.Failure(0, "PLAYER_MESSAGE_INVALID", "대화 내용을 입력해 주세요."));
@@ -1791,8 +1692,7 @@ namespace KeyboardWanderer.Networking
             }
             string body = "{\"text\":\"" + EscapeJson(text.Trim()) + "\"," +
                           "\"idempotencyKey\":\"" + EscapeJson(idempotencyKey) + "\"," +
-                          "\"expectedRunVersion\":" + expectedRunVersion.ToString(CultureInfo.InvariantCulture) +
-                          (preparedD20 >= 1 && preparedD20 <= 20 ? ",\"preparedD20\":" + preparedD20 : string.Empty) + "}";
+                          "\"expectedRunVersion\":" + expectedRunVersion.ToString(CultureInfo.InvariantCulture) + "}";
             yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/messages", body, raw =>
             {
                 TurnEnvelope envelope = raw.Success ? SafeParse<TurnEnvelope>(raw.Json) : null;
@@ -1890,8 +1790,7 @@ namespace KeyboardWanderer.Networking
             public PositionSnapshot StopPosition;
         }
 
-        private IEnumerator Send(string method, string path, string body, Action<RawResult> completed,
-            string idempotencyKey = null)
+        private IEnumerator Send(string method, string path, string body, Action<RawResult> completed)
         {
             using (var request = new UnityWebRequest(_baseUrl + path, method))
             {
@@ -1902,10 +1801,9 @@ namespace KeyboardWanderer.Networking
                     request.SetRequestHeader("Content-Type", "application/json");
                 }
                 request.SetRequestHeader("Accept", "application/json");
-                ApplyIdempotencyKey(request, idempotencyKey);
                 if (_userId != null)
                     request.SetRequestHeader("x-user-id", _userId);
-                request.timeout = 30;
+                request.timeout = 45;
                 yield return request.SendWebRequest();
 
                 string json = request.downloadHandler?.text ?? string.Empty;
@@ -1933,17 +1831,6 @@ namespace KeyboardWanderer.Networking
             }
         }
 
-        private static bool IsValidOptionalIdempotencyKey(string value)
-        {
-            return string.IsNullOrWhiteSpace(value) || (value.Length >= 8 && value.Length <= 128);
-        }
-
-        private static void ApplyIdempotencyKey(UnityWebRequest request, string value)
-        {
-            if (request != null && !string.IsNullOrWhiteSpace(value))
-                request.SetRequestHeader("Idempotency-Key", value);
-        }
-
         private static T SafeParse<T>(string json) where T : class
         {
             if (string.IsNullOrWhiteSpace(json))
@@ -1963,8 +1850,7 @@ namespace KeyboardWanderer.Networking
             long expectedVersion,
             string skillId,
             string[] targetIds,
-            PositionSnapshot destination,
-            int preparedD20)
+            PositionSnapshot destination)
         {
             var fields = new List<string>
             {
@@ -1981,8 +1867,6 @@ namespace KeyboardWanderer.Networking
                         encodedTargets.Add("\"" + EscapeJson(targetIds[i]) + "\"");
             }
             fields.Add("\"targetIds\":[" + string.Join(",", encodedTargets) + "]");
-            if (preparedD20 >= 1 && preparedD20 <= 20)
-                fields.Add("\"preparedD20\":" + preparedD20.ToString(CultureInfo.InvariantCulture));
             if (destination != null)
             {
                 fields.Add("\"destination\":{\"x\":" + destination.x.ToString(CultureInfo.InvariantCulture) +
@@ -1992,13 +1876,12 @@ namespace KeyboardWanderer.Networking
         }
 
         private static string BuildChoiceJson(string choiceSetId, string choiceId,
-            string idempotencyKey, long expectedVersion, int preparedD20)
+            string idempotencyKey, long expectedVersion)
         {
             return "{\"choiceSetId\":\"" + EscapeJson(choiceSetId) + "\"," +
                    "\"choiceId\":\"" + EscapeJson(choiceId) + "\"," +
                    "\"idempotencyKey\":\"" + EscapeJson(idempotencyKey) + "\"," +
-                   "\"expectedRunVersion\":" + expectedVersion.ToString(CultureInfo.InvariantCulture) +
-                   (preparedD20 >= 1 && preparedD20 <= 20 ? ",\"preparedD20\":" + preparedD20 : string.Empty) + "}";
+                   "\"expectedRunVersion\":" + expectedVersion.ToString(CultureInfo.InvariantCulture) + "}";
         }
 
         private static bool IsCanonicalSkillId(string skillId)
