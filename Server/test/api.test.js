@@ -306,7 +306,7 @@ class ContinuityNarrator {
   }
 }
 
-async function startServer({ d20Source = new FixedD20Source(20), narrator = new FakeNarrator(), configEnv = {} } = {}) {
+async function startServer({ d20Source = new FixedD20Source(20), narrator = new FakeNarrator(), configEnv = {}, logger = silentLogger } = {}) {
   const config = loadConfig({ AUTH_MODE: "required", STORAGE: "memory", LOG_LEVEL: "silent", ...configEnv });
   const store = new MemoryStore();
   const application = await createApplication({
@@ -314,7 +314,7 @@ async function startServer({ d20Source = new FixedD20Source(20), narrator = new 
     store,
     narrator,
     d20Source,
-    logger: silentLogger
+    logger
   });
   await new Promise((resolve) => application.server.listen(0, "127.0.0.1", resolve));
   const address = application.server.address();
@@ -1378,9 +1378,30 @@ test("localhost CORS is allowed and non-local browser origins are rejected", asy
   const local = await fetch(`${baseUrl}/health`, { method: "OPTIONS", headers: { origin: "http://localhost:5173" } });
   assert.equal(local.status, 204);
   assert.equal(local.headers.get("access-control-allow-origin"), "http://localhost:5173");
+  assert.match(local.headers.get("access-control-allow-headers"), /x-client-input-id/);
+  assert.match(local.headers.get("access-control-allow-headers"), /x-client-input-session/);
 
   const remote = await fetch(`${baseUrl}/health`, { headers: { origin: "https://example.com" } });
   assert.equal(remote.status, 403);
+});
+
+test("HTTP audit logs preserve validated client input correlation headers", async (t) => {
+  const records = [];
+  const logger = { debug() {}, warn() {}, error() {}, info(value) { records.push(value); } };
+  const { application, baseUrl } = await startServer({ logger });
+  t.after(() => application.close());
+  const response = await fetch(`${baseUrl}/health`, {
+    headers: {
+      "x-client-input-id": "42",
+      "x-client-input-session": "0123456789abcdef0123456789abcdef",
+      "x-request-id": "kw-0123456789abcdef0123456789abcdef-42"
+    }
+  });
+  assert.equal(response.status, 200);
+  const requestLog = records.find((item) => item?.event === "http_request");
+  assert.equal(requestLog.clientInputId, "42");
+  assert.equal(requestLog.clientInputSession, "0123456789abcdef0123456789abcdef");
+  assert.equal(requestLog.requestId, "kw-0123456789abcdef0123456789abcdef-42");
 });
 
 test("HTTP guards close debug and public development tools by default", async (t) => {

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using KeyboardWanderer.Runtime;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -1921,6 +1922,8 @@ namespace KeyboardWanderer.Networking
         private IEnumerator Send(string method, string path, string body, Action<RawResult> completed,
             string idempotencyKey = null)
         {
+            long clientInputId = KeyboardWandererInputAudit.CurrentInputId;
+            string clientInputSession = KeyboardWandererInputAudit.CurrentSessionId;
             using (var request = new UnityWebRequest(_baseUrl + path, method))
             {
                 request.downloadHandler = new DownloadHandlerBuffer();
@@ -1933,11 +1936,23 @@ namespace KeyboardWanderer.Networking
                 ApplyIdempotencyKey(request, idempotencyKey);
                 if (_userId != null)
                     request.SetRequestHeader("x-user-id", _userId);
+                if (clientInputId > 0)
+                {
+                    request.SetRequestHeader("x-client-input-id", clientInputId.ToString(CultureInfo.InvariantCulture));
+                    request.SetRequestHeader("x-client-input-session", clientInputSession);
+                    request.SetRequestHeader("x-request-id", "kw-" + clientInputSession + "-" +
+                        clientInputId.ToString(CultureInfo.InvariantCulture));
+                }
+                Debug.Log("[KW.Network] event=Request method=" + method + " path=" + path +
+                          " inputId=" + clientInputId + " inputSession=" + clientInputSession);
                 request.timeout = 65;
                 yield return request.SendWebRequest();
 
                 string json = request.downloadHandler?.text ?? string.Empty;
                 bool ok = request.result == UnityWebRequest.Result.Success && request.responseCode >= 200 && request.responseCode < 300;
+                Debug.Log("[KW.Network] event=Response method=" + method + " path=" + path +
+                          " status=" + request.responseCode + " success=" + ok + " inputId=" + clientInputId +
+                          " requestId=" + (request.GetResponseHeader("x-request-id") ?? string.Empty));
                 if (ok)
                 {
                     completed?.Invoke(new RawResult { Success = true, StatusCode = request.responseCode, Json = json });

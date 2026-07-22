@@ -611,11 +611,12 @@ namespace KeyboardWanderer.Demo
                 "\n\n당신의 선택이 코드리아에 남긴 결말입니다.");
         }
 
-        public void UiStartNewRun() => StartNewRun();
-        public void UiContinueRun() => ContinueRun();
-        public void UiCyclePoi(int direction) => CyclePoi(direction);
+        public void UiStartNewRun() { AuditUi("StartNewRun"); StartNewRun(); }
+        public void UiContinueRun() { AuditUi("ContinueRun"); ContinueRun(); }
+        public void UiCyclePoi(int direction) { AuditUi("CyclePoi", direction.ToString()); CyclePoi(direction); }
         public void UiSetAbility(AbilityKind ability)
         {
+            AuditUi("SetAbility", ability.ToString());
             string blocked = AbilityInputBlockReason(ability);
             if (!string.IsNullOrEmpty(blocked))
             {
@@ -637,6 +638,7 @@ namespace KeyboardWanderer.Demo
         /// <summary>Mouse/UI entry point. The choice id must match the currently displayed sealed set.</summary>
         public void UiSelectNarrativeChoice(string choiceId)
         {
+            AuditUi("SelectNarrativeChoice", choiceId);
             NarrativeChoiceOption[] choices = CurrentNarrativeChoices();
             NarrativeChoiceOption selected = null;
             for (int i = 0; i < choices.Length; i++)
@@ -656,16 +658,18 @@ namespace KeyboardWanderer.Demo
         /// <summary>Keyboard accessibility entry point for number keys 1-4.</summary>
         public void UiSelectNarrativeChoiceIndex(int index)
         {
+            AuditUi("SelectNarrativeChoiceIndex", index.ToString());
             NarrativeChoiceOption[] choices = CurrentNarrativeChoices();
             if (index < 0 || index >= choices.Length || index >= 4) return;
             SelectNarrativeChoice(choices[index]);
         }
 
-        public void UiMoveNarrativeChoice(int direction) => _sceneUi?.MoveDialogueChoiceSelection(direction);
-        public void UiConfirmNarrativeChoice() => _sceneUi?.ConfirmDialogueChoiceSelection();
+        public void UiMoveNarrativeChoice(int direction) { AuditUi("MoveNarrativeChoice", direction.ToString()); _sceneUi?.MoveDialogueChoiceSelection(direction); }
+        public void UiConfirmNarrativeChoice() { AuditUi("ConfirmNarrativeChoice"); _sceneUi?.ConfirmDialogueChoiceSelection(); }
 
         public void UiToggleInventory()
         {
+            AuditUi("ToggleInventory");
             if (_screenMode != ScreenMode.Playing || _showPause) return;
             bool open = _sceneUi != null && _sceneUi.ToggleInventory();
             _inputRouter?.SetUiOverlayMode(open);
@@ -673,6 +677,7 @@ namespace KeyboardWanderer.Demo
 
         public void UiToggleQuests()
         {
+            AuditUi("ToggleQuests");
             if (_screenMode != ScreenMode.Playing || _showPause) return;
             bool open = _sceneUi != null && _sceneUi.ToggleQuests();
             _inputRouter?.SetUiOverlayMode(open);
@@ -680,6 +685,7 @@ namespace KeyboardWanderer.Demo
 
         public void UiSelectInventoryItem(string itemName)
         {
+            AuditUi("SelectInventoryItem", itemName);
             if (_sceneUi == null || !_sceneUi.InsertInventoryItemIntoDialogue(itemName)) return;
             _sceneUi.CloseInventoryQuestOverlay();
             _inputRouter?.SetUiOverlayMode(false);
@@ -687,6 +693,7 @@ namespace KeyboardWanderer.Demo
 
         public void UiSubmitPlayerMessage(string text)
         {
+            KeyboardWandererInputAudit.RecordTextSubmission("FreeformInput", text, InputAuditState());
             if (string.IsNullOrWhiteSpace(text) || _choiceSubmissionPending || TurnPending) return;
             if (!ContainsMeaningfulPlayerText(text))
             {
@@ -760,9 +767,10 @@ namespace KeyboardWanderer.Demo
             _selectionController.ResetSelection(ability);
             _pendingPresentationChanges |= PresentationChange.Selection | PresentationChange.Hud;
         }
-        public void UiSubmit() => Submit();
+        public void UiSubmit() { AuditUi("Submit"); Submit(); }
         public void UiAdvanceDialogue()
         {
+            AuditUi("AdvanceDialogue");
             if (WorldPresentationPlaying) return;
             if (_tutorialPresenter.IsActive)
             {
@@ -799,10 +807,23 @@ namespace KeyboardWanderer.Demo
         }
         public void UiResume()
         {
+            AuditUi("Resume");
             SetPauseState(false);
             PublishPresentationState(PresentationChange.Screen | PresentationChange.Hud);
         }
-        public void UiShowTitle() => ShowTitle();
+        public void UiShowTitle() { AuditUi("ShowTitle"); ShowTitle(); }
+
+        private void AuditUi(string control, string value = null)
+        {
+            KeyboardWandererInputAudit.Record("UI", control, "Activated", "UiAction", InputAuditState(), value);
+        }
+
+        private string InputAuditState()
+        {
+            return "screen=" + _screenMode + ";pause=" + _showPause + ";flow=" +
+                   (_flowStateMachine == null ? "null" : _flowStateMachine.Phase.ToString()) +
+                   ";serverOnline=" + _serverOnline + ";turnPending=" + TurnPending;
+        }
 
         private void SetAbilityButton(AbilityKind ability)
         {
@@ -1051,6 +1072,7 @@ namespace KeyboardWanderer.Demo
 
         public void UiOpenSettings()
         {
+            AuditUi("OpenSettings");
             _settingsReturn = _screenMode;
             _settingsReturnToPause = false;
             _screenMode = ScreenMode.Settings;
@@ -1060,6 +1082,7 @@ namespace KeyboardWanderer.Demo
 
         public void UiOpenSettingsFromPause()
         {
+            AuditUi("OpenSettingsFromPause");
             _settingsReturnToPause = true;
             _settingsReturn = ScreenMode.Playing;
             _screenMode = ScreenMode.Settings;
@@ -1069,6 +1092,7 @@ namespace KeyboardWanderer.Demo
 
         public void UiCloseSettings()
         {
+            AuditUi("CloseSettings");
             _screenMode = _settingsReturn;
             bool restorePause = _screenMode == ScreenMode.Playing && _settingsReturnToPause;
             _settingsReturnToPause = false;
@@ -1081,21 +1105,25 @@ namespace KeyboardWanderer.Demo
 
         public void UiDeleteSave()
         {
+            AuditUi("DeleteSave");
             _runSessionController?.DeleteSave();
         }
 
         public void UiSetMusicVolume(float value)
         {
+            AuditUi("SetMusicVolume", value.ToString("0.000"));
             _settingsController?.SetMusicVolume(value);
         }
 
         public void UiSetSfxVolume(float value)
         {
+            AuditUi("SetSfxVolume", value.ToString("0.000"));
             _settingsController?.SetSfxVolume(value);
         }
 
         public void UiSetGmEnabled(bool value)
         {
+            AuditUi("SetGmEnabled", value.ToString());
             _settingsController?.SetGmEnabled(value);
         }
 
@@ -1473,11 +1501,13 @@ namespace KeyboardWanderer.Demo
             string blocked = AbilityInputBlockReason(ability);
             if (!string.IsNullOrEmpty(blocked))
             {
-                Debug.LogWarning("[KW.Input] event=AbilityRequested ability=" + ability + " result=blocked reason=" + blocked);
+                Debug.LogWarning("[KW.Input] event=AbilityRequested ability=" + ability + " result=blocked reason=" + blocked +
+                                 " inputId=" + KeyboardWandererInputAudit.CurrentInputId);
                 RejectBlockedGameplayInput(null);
                 return;
             }
-            Debug.Log("[KW.Input] event=AbilityRequested ability=" + ability + " result=accepted");
+            Debug.Log("[KW.Input] event=AbilityRequested ability=" + ability + " result=accepted inputId=" +
+                      KeyboardWandererInputAudit.CurrentInputId);
             SetAbility(ability);
             if (CanSubmitCurrentSelection()) SubmitImmediately();
         }
@@ -1539,7 +1569,8 @@ namespace KeyboardWanderer.Demo
             }
 
             Debug.Log("[KW.Input] event=AbilityRequested ability=" + ability +
-                      " result=sealed-choice choiceId=" + match.ChoiceId);
+                      " result=sealed-choice choiceId=" + match.ChoiceId + " inputId=" +
+                      KeyboardWandererInputAudit.CurrentInputId);
             SynchronizeSelectionWithNarrativeChoice(match);
             _choiceStatusMessage = string.Empty;
             StartCoroutine(SubmitServerNarrativeChoice(match));
@@ -1695,12 +1726,14 @@ namespace KeyboardWanderer.Demo
                     _hasBufferedDirectionalMove = true;
                     _selectionController?.Reject("연속 이동 예약 · 현재 칸이 끝나면 다음 방향으로 이어갑니다.");
                     PublishPresentationState(PresentationChange.Hud | PresentationChange.Selection);
-                    Debug.Log("[KW.Input] event=DirectionalMove result=buffered direction=" + direction);
+                    Debug.Log("[KW.Input] event=DirectionalMove result=buffered direction=" + direction +
+                              " inputId=" + KeyboardWandererInputAudit.CurrentInputId);
                     return;
                 }
                 ClearBufferedDirectionalMove();
                 Debug.LogWarning("[KW.Input] event=DirectionalMove result=blocked reason=" +
-                                 (string.IsNullOrEmpty(blocked) ? "run-not-ready" : blocked));
+                                 (string.IsNullOrEmpty(blocked) ? "run-not-ready" : blocked) +
+                                 " inputId=" + KeyboardWandererInputAudit.CurrentInputId);
                 RejectBlockedGameplayInput(null);
                 return;
             }
@@ -1730,7 +1763,8 @@ namespace KeyboardWanderer.Demo
             UpdateSelectionVisual(view);
             PlaySfx(AssetClip("UiMoveSound"));
             PublishPresentationState(PresentationChange.Hud | PresentationChange.Selection);
-            Debug.Log("[KW.Input] event=DirectionalMove result=submitted destination=" + destination);
+            Debug.Log("[KW.Input] event=DirectionalMove result=submitted destination=" + destination +
+                      " inputId=" + KeyboardWandererInputAudit.CurrentInputId);
             SubmitImmediately();
         }
 
@@ -1818,19 +1852,22 @@ namespace KeyboardWanderer.Demo
             if (!string.IsNullOrEmpty(blocked))
             {
                 Debug.LogWarning("[KW.Input] event=WorldClick ability=" + _selectionController?.Ability +
-                                 " result=blocked reason=" + blocked);
+                                 " result=blocked reason=" + blocked + " inputId=" +
+                                 KeyboardWandererInputAudit.CurrentInputId);
                 RejectBlockedGameplayInput(null);
                 return;
             }
             if (_cameraController == null || !_cameraController.IsReady)
             {
-                Debug.LogWarning("[KW.Input] event=WorldClick result=blocked reason=camera-not-ready");
+                Debug.LogWarning("[KW.Input] event=WorldClick result=blocked reason=camera-not-ready inputId=" +
+                                 KeyboardWandererInputAudit.CurrentInputId);
                 RejectBlockedGameplayInput("화면과 월드 좌표를 아직 동기화하고 있습니다. 잠시 후 다시 선택해 주세요.");
                 return;
             }
             if (!_cameraController.ContainsScreenPoint(mousePosition))
             {
-                Debug.Log("[KW.Input] event=WorldClick result=ignored reason=outside-game-viewport");
+                Debug.Log("[KW.Input] event=WorldClick result=ignored reason=outside-game-viewport inputId=" +
+                          KeyboardWandererInputAudit.CurrentInputId);
                 return;
             }
 
@@ -1858,7 +1895,8 @@ namespace KeyboardWanderer.Demo
             if (clickedEntity.HasValue && TryGetEntityPosition(view, clickedEntity.Value, out GridCoord entityCoord))
                 coord = entityCoord;
             Debug.Log("[KW.Input] event=WorldClick ability=" + _selectionController.Ability +
-                      " coord=" + coord + " entity=" + (clickedEntity.HasValue ? clickedEntity.Value.ToString() : "none"));
+                      " coord=" + coord + " entity=" + (clickedEntity.HasValue ? clickedEntity.Value.ToString() : "none") +
+                      " inputId=" + KeyboardWandererInputAudit.CurrentInputId);
             string abilityName = _selectionController.Ability.ToString();
             if (abilityName == "Move")
             {

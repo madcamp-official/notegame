@@ -1,15 +1,105 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using System.Threading;
 using Game.Client.UI;
 using KeyboardWanderer.Gameplay;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 using UnityEngine.UI;
 
 namespace KeyboardWanderer.Runtime
 {
+    /// <summary>
+    /// Records game-window inputs as structured JSONL in addition to Player.log.
+    /// Each launch gets its own append-only file under Application.persistentDataPath/InputAudit.
+    /// </summary>
+    public static class KeyboardWandererInputAudit
+    {
+        private static readonly object Gate = new object();
+        private static readonly string SessionId = Guid.NewGuid().ToString("N");
+        private static long _sequence;
+        private static StreamWriter _writer;
+        private static string _logPath;
+        private static bool _writeFailureReported;
+
+        public static long CurrentInputId { get; private set; }
+        public static string CurrentSessionId => SessionId;
+        public static string CurrentLogPath => _logPath;
+
+        public static long Record(string device, string control, string phase, string semantic,
+            string context = null, string value = null)
+        {
+            long inputId = Interlocked.Increment(ref _sequence);
+            CurrentInputId = inputId;
+            string json = "{\"sessionId\":\"" + SessionId + "\",\"inputId\":" + inputId +
+                          ",\"utc\":\"" + DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture) +
+                          "\",\"realtime\":" + Time.realtimeSinceStartupAsDouble.ToString("0.000000", CultureInfo.InvariantCulture) +
+                          ",\"frame\":" + Time.frameCount + ",\"device\":\"" + Escape(device) +
+                          "\",\"control\":\"" + Escape(control) + "\",\"phase\":\"" + Escape(phase) +
+                          "\",\"semantic\":\"" + Escape(semantic) + "\",\"context\":\"" + Escape(context) +
+                          "\",\"value\":\"" + Escape(value) + "\"}";
+            Debug.Log("[KW.Input.Raw] " + json);
+            Append(json);
+            return inputId;
+        }
+
+        public static void RecordTextSubmission(string source, string text, string context)
+        {
+            Record("UI", source, "Submitted", "PlayerText", context,
+                text == null ? string.Empty : "chars=" + text.Length + ";text=" + text);
+        }
+
+        private static void Append(string json)
+        {
+            try
+            {
+                lock (Gate)
+                {
+                    if (_writer == null)
+                    {
+                        string directory = Path.Combine(Application.persistentDataPath, "InputAudit");
+                        Directory.CreateDirectory(directory);
+                        _logPath = Path.Combine(directory, "input-audit-" +
+                            DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-" +
+                            SessionId + ".jsonl");
+                        _writer = new StreamWriter(_logPath, true, new UTF8Encoding(false)) { AutoFlush = true };
+                        Application.quitting += Close;
+                        Debug.Log("[KW.Input.Audit] sessionId=" + SessionId + " path=" + _logPath);
+                    }
+                    _writer.WriteLine(json);
+                }
+            }
+            catch (Exception error)
+            {
+                if (_writeFailureReported) return;
+                _writeFailureReported = true;
+                Debug.LogWarning("[KW.Input.Audit] result=write-failed error=" + error.GetType().Name);
+            }
+        }
+
+        private static void Close()
+        {
+            lock (Gate)
+            {
+                _writer?.Dispose();
+                _writer = null;
+            }
+        }
+
+        private static string Escape(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                .Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t");
+        }
+    }
+
     /// <summary>
     /// Input System의 키보드와 포인터 입력을 게임 의미 이벤트로 변환한다.
     /// 게임 상태와 규칙은 알지 못하며 Pause, 스킬 선택, 실행, 월드 클릭 요청만 전달한다.
@@ -109,6 +199,9 @@ namespace KeyboardWanderer.Runtime
             if (keyboard == null)
                 return;
 
+            bool textInputFocused = IsTextInputFocused();
+            RecordKeyboardEdges(keyboard, textInputFocused);
+
             // Escape는 텍스트 입력 상태에서도 항상 일시정지/닫기 동작으로 전달한다.
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
@@ -120,7 +213,7 @@ namespace KeyboardWanderer.Runtime
             // TMP 입력창이 선택된 동안 문자키, 숫자키, Space, Enter는 모두
             // 텍스트 편집기가 소유한다. 선택지 모드가 이전 프레임에 켜져
             // 있더라도 W/S 이동이나 선택 확정으로 가로채지 않는다.
-            if (IsTextInputFocused())
+            if (textInputFocused)
             {
                 ResetDirectionalMovement(true);
                 return;
@@ -273,6 +366,21 @@ namespace KeyboardWanderer.Runtime
             Gamepad gamepad = Gamepad.current;
             if (gamepad == null)
                 return;
+            string context = InputContext(IsTextInputFocused());
+            RecordButtonEdge(gamepad.startButton, "Start", context);
+            RecordButtonEdge(gamepad.selectButton, "Select", context);
+            RecordButtonEdge(gamepad.buttonSouth, "South", context);
+            RecordButtonEdge(gamepad.buttonNorth, "North", context);
+            RecordButtonEdge(gamepad.buttonEast, "East", context);
+            RecordButtonEdge(gamepad.buttonWest, "West", context);
+            RecordButtonEdge(gamepad.dpad.up, "DpadUp", context);
+            RecordButtonEdge(gamepad.dpad.down, "DpadDown", context);
+            RecordButtonEdge(gamepad.dpad.left, "DpadLeft", context);
+            RecordButtonEdge(gamepad.dpad.right, "DpadRight", context);
+            RecordButtonEdge(gamepad.leftStick.up, "LeftStickUp", context);
+            RecordButtonEdge(gamepad.leftStick.down, "LeftStickDown", context);
+            RecordButtonEdge(gamepad.leftStick.left, "LeftStickLeft", context);
+            RecordButtonEdge(gamepad.leftStick.right, "LeftStickRight", context);
             if (gamepad.startButton.wasPressedThisFrame)
             {
                 ResetDirectionalMovement(true);
@@ -367,8 +475,81 @@ namespace KeyboardWanderer.Runtime
             else if (now >= _nextDirectionalMoveAt)
             {
                 _nextDirectionalMoveAt = now + HeldMoveRepeatInterval;
+                KeyboardWandererInputAudit.Record("Keyboard", DirectionName(direction), "Repeated",
+                    "DirectionalMoveRequested", InputContext(false), direction.ToString());
                 DirectionalMoveRequested?.Invoke(direction);
             }
+        }
+
+        private void RecordKeyboardEdges(Keyboard keyboard, bool textInputFocused)
+        {
+            string context = InputContext(textInputFocused);
+            RecordKeyEdge(keyboard.escapeKey, "Escape", context);
+            RecordKeyEdge(keyboard.wKey, "W", context);
+            RecordKeyEdge(keyboard.aKey, "A", context);
+            RecordKeyEdge(keyboard.sKey, "S", context);
+            RecordKeyEdge(keyboard.dKey, "D", context);
+            RecordKeyEdge(keyboard.eKey, "E", context);
+            RecordKeyEdge(keyboard.rKey, "R", context);
+            RecordKeyEdge(keyboard.cKey, "C", context);
+            RecordKeyEdge(keyboard.xKey, "X", context);
+            RecordKeyEdge(keyboard.zKey, "Z", context);
+            RecordKeyEdge(keyboard.fKey, "F", context);
+            RecordKeyEdge(keyboard.iKey, "I", context);
+            RecordKeyEdge(keyboard.qKey, "Q", context);
+            RecordKeyEdge(keyboard.tKey, "T", context);
+            RecordKeyEdge(keyboard.vKey, "V", context);
+            RecordKeyEdge(keyboard.kKey, "K", context);
+            RecordKeyEdge(keyboard.deleteKey, "Delete", context);
+            RecordKeyEdge(keyboard.enterKey, "Enter", context);
+            RecordKeyEdge(keyboard.numpadEnterKey, "NumpadEnter", context);
+            RecordKeyEdge(keyboard.spaceKey, "Space", context);
+            RecordKeyEdge(keyboard.digit1Key, "1", context);
+            RecordKeyEdge(keyboard.digit2Key, "2", context);
+            RecordKeyEdge(keyboard.digit3Key, "3", context);
+            RecordKeyEdge(keyboard.digit4Key, "4", context);
+            RecordKeyEdge(keyboard.leftArrowKey, "LeftArrow", context);
+            RecordKeyEdge(keyboard.rightArrowKey, "RightArrow", context);
+            RecordKeyEdge(keyboard.upArrowKey, "UpArrow", context);
+            RecordKeyEdge(keyboard.downArrowKey, "DownArrow", context);
+            RecordKeyEdge(keyboard.leftBracketKey, "LeftBracket", context);
+            RecordKeyEdge(keyboard.rightBracketKey, "RightBracket", context);
+            RecordKeyEdge(keyboard.leftCtrlKey, "LeftCtrl", context);
+            RecordKeyEdge(keyboard.rightCtrlKey, "RightCtrl", context);
+        }
+
+        private static void RecordKeyEdge(KeyControl key, string control, string context)
+        {
+            if (key == null) return;
+            if (key.wasPressedThisFrame)
+                KeyboardWandererInputAudit.Record("Keyboard", control, "Pressed", "RawKey", context);
+            if (key.wasReleasedThisFrame)
+                KeyboardWandererInputAudit.Record("Keyboard", control, "Released", "RawKey", context);
+        }
+
+        private static void RecordButtonEdge(ButtonControl button, string control, string context)
+        {
+            if (button == null) return;
+            if (button.wasPressedThisFrame)
+                KeyboardWandererInputAudit.Record("Gamepad", control, "Pressed", "RawButton", context);
+            if (button.wasReleasedThisFrame)
+                KeyboardWandererInputAudit.Record("Gamepad", control, "Released", "RawButton", context);
+        }
+
+        private string InputContext(bool textInputFocused)
+        {
+            return "textFocused=" + textInputFocused + ";uiOverlay=" + _uiOverlayMode +
+                   ";narrativeOverlay=" + _narrativeOverlayMode +
+                   ";choiceMode=" + _narrativeChoiceMode;
+        }
+
+        private static string DirectionName(Vector2Int direction)
+        {
+            if (direction == Vector2Int.up) return "W";
+            if (direction == Vector2Int.down) return "S";
+            if (direction == Vector2Int.left) return "A";
+            if (direction == Vector2Int.right) return "D";
+            return "Unknown";
         }
 
         private void ResetDirectionalMovement(bool requireRelease)
@@ -397,7 +578,15 @@ namespace KeyboardWanderer.Runtime
         private void ReadPointer()
         {
             Mouse mouse = Mouse.current;
-            if (_uiOverlayMode || _narrativeOverlayMode || mouse == null)
+            if (mouse == null)
+                return;
+            if (mouse.leftButton.wasPressedThisFrame)
+                KeyboardWandererInputAudit.Record("Mouse", "LeftButton", "Pressed", "Pointer",
+                    InputContext(IsTextInputFocused()), mouse.position.ReadValue().ToString());
+            if (mouse.leftButton.wasReleasedThisFrame)
+                KeyboardWandererInputAudit.Record("Mouse", "LeftButton", "Released", "Pointer",
+                    InputContext(IsTextInputFocused()), mouse.position.ReadValue().ToString());
+            if (_uiOverlayMode || _narrativeOverlayMode)
                 return;
             if (_suppressPointerAfterOverlayUntilRelease)
             {
