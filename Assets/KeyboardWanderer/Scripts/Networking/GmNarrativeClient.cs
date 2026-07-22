@@ -149,7 +149,7 @@ namespace KeyboardWanderer.Networking
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
                 request.SetRequestHeader("Accept", "application/json");
-                request.timeout = 45;
+                request.timeout = 65;
 
                 yield return request.SendWebRequest();
 
