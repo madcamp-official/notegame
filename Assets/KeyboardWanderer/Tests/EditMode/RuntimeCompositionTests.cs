@@ -98,14 +98,14 @@ namespace KeyboardWanderer.Tests.EditMode
         }
 
         [Test]
-        public void GameFlowStateMachine_EncounterAllowsSkillsButRejectsMove()
+        public void GameFlowStateMachine_EncounterAllowsSkillsAndD20DisengageMove()
         {
             var flow = new GameFlowStateMachine();
             flow.Refresh(Signals(encounter: true, intervention: true));
             Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.AwaitingEncounterChoice));
             Assert.That(flow.CanIssueAbility(AbilityKind.Search), Is.True);
-            Assert.That(flow.CanIssueAbility(AbilityKind.Move), Is.False);
-            Assert.That(flow.BlockReason(AbilityKind.Move), Does.Contain("AwaitingEncounterChoice"));
+            Assert.That(flow.CanIssueAbility(AbilityKind.Move), Is.True);
+            Assert.That(flow.BlockReason(AbilityKind.Move), Is.Empty);
         }
 
         [Test]
@@ -599,12 +599,15 @@ namespace KeyboardWanderer.Tests.EditMode
             const string musicKey = "keyboard-wanderer.music-volume";
             const string sfxKey = "keyboard-wanderer.sfx-volume";
             const string gmKey = "keyboard-wanderer.gm-enabled";
+            const string geminiKey = "keyboard-wanderer.gemini-api-key";
             bool hadMusic = KeyboardWandererPreferences.HasKey(musicKey);
             bool hadSfx = KeyboardWandererPreferences.HasKey(sfxKey);
             bool hadGm = KeyboardWandererPreferences.HasKey(gmKey);
+            bool hadGemini = KeyboardWandererPreferences.HasKey(geminiKey);
             float oldMusic = KeyboardWandererPreferences.GetFloat(musicKey, 0.65f);
             float oldSfx = KeyboardWandererPreferences.GetFloat(sfxKey, 0.8f);
             int oldGm = KeyboardWandererPreferences.GetInt(gmKey, 1);
+            string oldGemini = KeyboardWandererPreferences.GetString(geminiKey, string.Empty);
             var root = new GameObject("Settings Controller Test");
             try
             {
@@ -619,10 +622,13 @@ namespace KeyboardWanderer.Tests.EditMode
                 settings.SetMusicVolume(0.2f);
                 settings.SetSfxVolume(0.3f);
                 settings.SetGmEnabled(false);
+                settings.SetGeminiApiKey("  test-player-gemini-key  ");
 
                 Assert.That(settings.MusicVolume, Is.EqualTo(0.2f).Within(0.001f));
                 Assert.That(settings.SfxVolume, Is.EqualTo(0.3f).Within(0.001f));
                 Assert.That(settings.GmEnabled, Is.False);
+                Assert.That(settings.GeminiKey, Is.EqualTo("test-player-gemini-key"));
+                Assert.That(KeyboardWandererGeminiKeyStore.Current, Is.EqualTo("test-player-gemini-key"));
                 Assert.That(music.volume, Is.EqualTo(0.09f).Within(0.001f));
                 Assert.That(sfxObject.GetComponent<AudioSource>().volume, Is.EqualTo(0.3f).Within(0.001f));
             }
@@ -632,6 +638,8 @@ namespace KeyboardWanderer.Tests.EditMode
                 RestorePlayerPref(sfxKey, hadSfx, oldSfx);
                 if (hadGm) KeyboardWandererPreferences.SetInt(gmKey, oldGm);
                 else KeyboardWandererPreferences.DeleteKey(gmKey);
+                if (hadGemini) KeyboardWandererPreferences.SetString(geminiKey, oldGemini);
+                else KeyboardWandererPreferences.DeleteKey(geminiKey);
                 KeyboardWandererPreferences.Save();
                 UnityEngine.Object.DestroyImmediate(root);
             }

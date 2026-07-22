@@ -11,11 +11,11 @@ namespace KeyboardWanderer.Presentation
         public HudPresenter(KeyboardWandererSceneUI view) => _view = view;
 
         public void PresentScreen(bool title, bool settings, bool playing, bool paused, bool ended,
-            float musicVolume, float sfxVolume, bool gmEnabled)
+            float musicVolume, float sfxVolume, bool gmEnabled, string geminiApiKey)
         {
             if (_view == null || !_view.IsReady) return;
             _view.Show(title, settings, playing, paused, ended);
-            _view.PresentSettings(musicVolume, sfxVolume, gmEnabled);
+            _view.PresentSettings(musicVolume, sfxVolume, gmEnabled, geminiApiKey);
         }
     }
 

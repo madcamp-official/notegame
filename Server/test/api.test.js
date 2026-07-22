@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createApplication } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { FixedD20Source } from "../src/domain/turn-engine.js";
+import { FixedD20Source, tryForceMonsterEncounter } from "../src/domain/turn-engine.js";
 import { createInitialChoiceSet } from "../src/domain/narrative-choices.js";
 import { MemoryStore } from "../src/store/memory-store.js";
 import { GeminiNarrator } from "../src/llm/gemini-narrator.js";
@@ -66,6 +66,18 @@ class FakeNarrator {
       fallbackUsed: false,
       model: "fake-narrator"
     };
+  }
+}
+
+class ScopedKeyNarrator extends FakeNarrator {
+  constructor() {
+    super();
+    this.keys = [];
+  }
+
+  withApiKey(apiKey, work) {
+    this.keys.push(apiKey);
+    return work();
   }
 }
 
@@ -321,10 +333,11 @@ async function startServer({ d20Source = new FixedD20Source(20), narrator = new 
   return { application, store, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
-async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_ID, origin } = {}) {
+async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_ID, origin, geminiApiKey } = {}) {
   const headers = { "x-user-id": userId };
   if (body !== undefined) headers["content-type"] = "application/json";
   if (origin) headers.origin = origin;
+  if (geminiApiKey) headers["x-gemini-api-key"] = geminiApiKey;
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers,
@@ -333,6 +346,21 @@ async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_
   const payload = response.status === 204 ? null : await response.json();
   return { response, payload };
 }
+
+test("HTTP requests scope a player-provided Gemini key to the narrator", async (t) => {
+  const narrator = new ScopedKeyNarrator();
+  const { application, baseUrl } = await startServer({ narrator });
+  t.after(() => application.close());
+
+  const created = await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST",
+    geminiApiKey: "player-request-token",
+    body: { title: "Scoped key", worldSeed: 20260722, turnLimit: 40 }
+  });
+
+  assert.equal(created.response.status, 201);
+  assert.deepEqual(narrator.keys, ["player-request-token"]);
+});
 
 test("duplicate generated choice text falls back before sealing instead of rolling back the selected turn", async (t) => {
   const { application, baseUrl } = await startServer({ narrator: new DuplicateChoiceNarrator() });
@@ -472,6 +500,44 @@ test("the mandatory opening attack cannot be bypassed with freeform input", asyn
   assert.equal(unchanged.currentTurn, 0);
   assert.equal(unchanged.activeEncounter.reason, "opening_keyboard_tutorial");
   assert.equal(unchanged.pendingChoiceSet.choices[0].choiceId, "opening.attack");
+});
+
+test("the mandatory opening attack defeats its tutorial target even on the lowest roll", async (t) => {
+  const { application, baseUrl } = await startServer({ d20Source: new FixedD20Source(1) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Opening combat result", worldSeed: 9920, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, {
+    method: "POST", body: {}
+  })).payload.run;
+  const tutorialEnemy = run.entities.find((entity) => entity.state?.tutorialEncounter === true);
+
+  const selected = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
+    method: "POST",
+    body: {
+      choiceSetId: run.pendingChoiceSet.choiceSetId,
+      choiceId: "opening.attack",
+      idempotencyKey: "opening-lowest-roll-0001",
+      expectedRunVersion: run.version
+    }
+  });
+
+  assert.equal(selected.response.status, 201, JSON.stringify(selected.payload));
+  assert.equal(selected.payload.turn.d20, 1);
+  assert.equal(selected.payload.turn.dice.difficulty, 3);
+  assert.equal(selected.payload.turn.outcome, "success");
+  assert.equal(selected.payload.run.activeEncounter, null);
+  assert.equal(selected.payload.run.pendingChoiceSet, null);
+  assert.equal(selected.payload.run.entities.some((entity) => entity.id === tutorialEnemy.id), false);
+  const healthChanged = selected.payload.turn.stateDelta.events.find((event) =>
+    event.type === "health_changed" && event.entityId === tutorialEnemy.id);
+  assert.equal(healthChanged.hp, 0);
+  assert.equal(healthChanged.defeated, true);
+  assert.ok(selected.payload.turn.stateDelta.events.some((event) =>
+    event.type === "enemy_defeated" && event.entityId === tutorialEnemy.id));
+  assert.match(selected.payload.turn.narrative.body, /적중했다/);
+  assert.equal(selected.payload.turn.narrative.continuesWithMovement, true);
 });
 
 test("ambient wander authoritatively moves visible NPCs on the grid", async (t) => {
@@ -1118,6 +1184,60 @@ test("seed 20260718 seals a mismatched DELETE choice onto the nearby active enco
   assert.equal(selected.response.status, 201, JSON.stringify(selected.payload));
   assert.equal(selected.payload.turn.request.targetEntityId, enemy.id);
   assert.ok(selected.payload.turn.events.some((event) => event.type === "health_changed" && event.entityId === enemy.id));
+});
+
+test("WASD-style MOVE skips an encounter choice and resolves a successful disengage", async (t) => {
+  const { application, baseUrl } = await startServer({ d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Encounter disengage", worldSeed: 20260722, turnLimit: 40 }
+  })).payload.campaign;
+  const created = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, {
+    method: "POST", body: {}
+  })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, created.id);
+  const stored = application.store.runs.get(created.id);
+  assert.ok(tryForceMonsterEncounter(stored, "눈앞에 몬스터가 나타난다", stored.currentTurn + 1,
+    "encounter-before-wasd-disengage-0001"));
+  application.store.runs.set(created.id, stored);
+  const encountered = await jsonRequest(baseUrl, `/v1/runs/${created.id}`);
+  assert.equal(encountered.response.status, 200, JSON.stringify(encountered.payload));
+  assert.equal(encountered.payload.run.activeEncounter.status, "active");
+  assert.notEqual(encountered.payload.run.pendingChoiceSet, null);
+
+  const run = encountered.payload.run;
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const occupied = new Set(run.entities.filter((entity) => entity.id !== player.id && entity.active && entity.blocking)
+    .map((entity) => `${entity.position.x},${entity.position.y}`));
+  const destination = [
+    { x: player.position.x + 1, y: player.position.y },
+    { x: player.position.x, y: player.position.y + 1 },
+    { x: player.position.x - 1, y: player.position.y },
+    { x: player.position.x, y: player.position.y - 1 }
+  ].find((point) => !occupied.has(`${point.x},${point.y}`) &&
+    point.x >= 0 && point.y >= 0 && point.x < run.world.width && point.y < run.world.height &&
+    !["wall", "water"].includes(run.world.tileLegend[decodeTiles(run.world)[point.y * run.world.width + point.x]]));
+  assert.ok(destination);
+
+  const escaped = await jsonRequest(baseUrl, `/v1/runs/${run.id}/actions`, {
+    method: "POST",
+    body: {
+      inputType: "USE_SKILL",
+      idempotencyKey: "wasd-disengage-0001",
+      expectedRunVersion: run.version,
+      skillId: "MOVE",
+      targetIds: [],
+      destination
+    }
+  });
+  assert.equal(escaped.response.status, 201, JSON.stringify(escaped.payload));
+  assert.equal(escaped.payload.turn.outcome, "critical_success");
+  assert.equal(escaped.payload.run.activeEncounter, null);
+  assert.equal(escaped.payload.run.pendingChoiceSet, null);
+  assert.equal(escaped.payload.turn.narrative.continuesWithMovement, true);
+  assert.ok(escaped.payload.turn.events.some((event) => event.type === "narrative_choice_skipped"));
+  assert.ok(escaped.payload.turn.events.some((event) =>
+    event.type === "encounter_resolved" && event.resolution === "escaped"));
 });
 
 test("one HTTP turn shares an overall LLM deadline and remains playable through fallback", async (t) => {

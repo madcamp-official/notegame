@@ -17,7 +17,7 @@ import {
   SPECIAL_SKILL_TEMPLATES
 } from "../src/domain/content-catalog.js";
 import { FixedD20Source, createRunState, normalizeTurnRequest, publicRun, resolveTurn } from "../src/domain/turn-engine.js";
-import { generateWorld, isWalkable } from "../src/domain/world.js";
+import { areaAt, generateWorld, isWalkable } from "../src/domain/world.js";
 import {
   createFallbackScenePlan,
   validateSceneDirectorContext,
@@ -118,6 +118,40 @@ test("deterministic travel scene planning is stable and keeps every action insid
   const allowed = new Set(first.candidates.map((candidate) => candidate.candidateId));
   assert.ok(first.plan.selectedActionIds.length >= 1);
   assert.ok(first.plan.selectedActionIds.every((candidateId) => allowed.has(candidateId)));
+});
+
+test("scene spawn candidates are never offered outside the player's visible neighborhood", () => {
+  const run = runFixture(20260722);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const dormant = run.entities.find((entity) => entity.active === false && entity.kind === "enemy" &&
+    entity.state?.activationState === "DORMANT" && entity.state?.dormant === true);
+  const slot = run.world.placementSlots.find((item) => item.id === dormant?.state?.activationSlotId);
+  assert.ok(dormant && slot);
+
+  let distantWalkable = null;
+  for (let y = slot.y - 20; y <= slot.y + 20 && !distantWalkable; y += 1) {
+    for (let x = slot.x - 20; x <= slot.x + 20 && !distantWalkable; x += 1) {
+      const point = { x, y };
+      const distance = Math.abs(x - slot.x) + Math.abs(y - slot.y);
+      if (distance > 6 && x >= 0 && y >= 0 && x < run.world.width && y < run.world.height &&
+          isWalkable(run.world, point) && areaAt(run.world, point).id === slot.areaId)
+        distantWalkable = point;
+    }
+  }
+  assert.ok(distantWalkable, "fixture must provide a walkable tile in the same area outside camera range");
+  player.position = distantWalkable;
+  run.storyEventDue = true;
+
+  const { candidates } = buildConsequenceCandidates(run, { decisionType: "TRAVEL" });
+  for (const candidate of candidates.filter((item) => item.type === "SPAWN_FROM_SLOT")) {
+    const activationSlot = run.world.placementSlots.find((item) => item.id === candidate.slotId);
+    const distance = Math.abs(activationSlot.x - player.position.x) + Math.abs(activationSlot.y - player.position.y);
+    assert.ok(distance <= 6, `spawn ${candidate.displayName || candidate.entityId} was offered ${distance} tiles away`);
+  }
+  assert.equal(candidates.some((candidate) => candidate.type === "SPAWN_FROM_SLOT" &&
+    candidate.entityId === dormant.id), false);
+  assert.equal(candidates.some((candidate) => candidate.type === "NARRATIVE_EVENT"), true,
+    "a scheduled checkpoint must still have a visible, non-spawn story fallback");
 });
 
 test("an active encounter is presented once when opened, not replayed on every combat or recovery turn", () => {

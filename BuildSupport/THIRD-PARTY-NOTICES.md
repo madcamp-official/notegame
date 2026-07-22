@@ -2,7 +2,8 @@
 
 Ninja Adventure includes the following third-party assets and fonts. The full
 license texts are shipped inside the macOS app at
-`Contents/Resources/ThirdPartyLicenses/`.
+`Contents/Resources/ThirdPartyLicenses/` and beside the Windows player in
+`ThirdPartyLicenses/`.
 
 ## Ninja Adventure Asset Pack
 

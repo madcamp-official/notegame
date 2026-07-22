@@ -148,6 +148,7 @@ namespace KeyboardWanderer.Demo
         private bool _directionalInputHeld;
         private bool _hasBufferedDirectionalMove;
         private Vector2Int _bufferedMoveDirection;
+        private bool _awaitDirectionalReleaseAfterStory;
         private bool _reopenDialogueAfterWalk;
         private bool _runEndCutscenePlayed;
         private bool _suppressDialogueReopenAfterWalk;
@@ -186,6 +187,7 @@ namespace KeyboardWanderer.Demo
         private float MusicVolume => _settingsController != null ? _settingsController.MusicVolume : 0.65f;
         private float SfxVolume => _settingsController != null ? _settingsController.SfxVolume : 0.8f;
         private bool GmEnabled => _settingsController == null || _settingsController.GmEnabled;
+        private string GeminiApiKey => _settingsController?.GeminiKey ?? string.Empty;
         internal bool OptionalNarrativePending => _gmPending;
         private bool TurnPending => _serverPending || _choiceSubmissionPending ||
                                     (_turnCoordinator != null && _turnCoordinator.IsPending);
@@ -505,7 +507,8 @@ namespace KeyboardWanderer.Demo
             _inputRouter?.SetUiOverlayMode(_screenMode != ScreenMode.Playing || _showPause || ended ||
                                             (_sceneUi?.IsInventoryQuestOverlayOpen ?? false));
             _hudPresenter.PresentScreen(_screenMode == ScreenMode.Title, _screenMode == ScreenMode.Settings,
-                _screenMode == ScreenMode.Playing, _showPause, ended, MusicVolume, SfxVolume, GmEnabled);
+                _screenMode == ScreenMode.Playing, _showPause, ended, MusicVolume, SfxVolume, GmEnabled,
+                GeminiApiKey);
             long nextSeed = _runSessionController != null ? _runSessionController.NextSeed : 20260718L;
             _sceneUi.PresentTitle(CampaignCatalog.CampaignTitle,
                 "관리자 키보드로 붕괴한 코드리아를 복구하는 탐험 RPG",
@@ -1127,6 +1130,13 @@ namespace KeyboardWanderer.Demo
             _settingsController?.SetGmEnabled(value);
         }
 
+        public void UiSetGeminiApiKey(string value)
+        {
+            AuditUi("SetGeminiApiKey", string.IsNullOrWhiteSpace(value) ? "cleared" : "configured");
+            _settingsController?.SetGeminiApiKey(value);
+            PublishPresentationState(PresentationChange.Screen);
+        }
+
         private bool CanSubmitCurrentSelection()
         {
             RefreshFlowPhase();
@@ -1518,13 +1528,20 @@ namespace KeyboardWanderer.Demo
                 _lastNarrativeChoices.Length == 0 || _dialoguePresenter == null)
                 return false;
 
+            // The mandatory opening page explicitly teaches the R key. Requiring an
+            // extra Next/Enter before that key works contradicts the instruction on
+            // screen and makes the very first input feel ignored. This single sealed
+            // tutorial choice is safe to resolve from any visible opening story page;
+            // ordinary multi-choice interventions still require their final page.
+            bool mandatoryOpeningAttack = IsMandatoryOpeningAttackChoice();
+
             // POI cycling deliberately lets the player leave a sealed choice surface
             // and continue moving; safe travel atomically records that choice as
             // skipped on the server. A keyboard skill is different: the action API
             // preserves the story boundary and rejects it with CHOICE_REQUIRED. Do
             // not send a request that the authoritative server must reject, and do
             // not let a hidden choice look like a silent, usable world shortcut.
-            if (_dialoguePresenter.IsDismissed)
+            if (_dialoguePresenter.IsDismissed && !mandatoryOpeningAttack)
             {
                 if (!HasPendingServerNarrativeChoice())
                     return false;
@@ -1535,7 +1552,7 @@ namespace KeyboardWanderer.Demo
 
             // A shortcut may only resolve the final, visibly presented intervention.
             // Earlier story pages must remain readable and own their input boundary.
-            if (!IsVisibleInterventionPage())
+            if (!mandatoryOpeningAttack && !IsVisibleInterventionPage())
                 return false;
 
             NarrativeChoiceOption match = null;
@@ -1705,6 +1722,17 @@ namespace KeyboardWanderer.Demo
                 RejectOpeningTutorialBypass();
                 return;
             }
+            // A distance checkpoint can arrive while the player is still holding a
+            // movement key. Auto-repeat from that same hold must not dismiss the new
+            // story in the next frame. Once the player releases the key, the next
+            // deliberate press closes the non-choice story and resumes movement.
+            if (_awaitDirectionalReleaseAfterStory)
+            {
+                ClearBufferedDirectionalMove();
+                Debug.Log("[KW.Input] event=DirectionalMove result=held-for-story reason=release-required" +
+                          " inputId=" + KeyboardWandererInputAudit.CurrentInputId);
+                return;
+            }
             // Optional narrative choices must not steal the primary movement keys.
             // A fresh WASD press explicitly hands control back to exploration before
             // the flow-state ability guard is evaluated.
@@ -1750,6 +1778,9 @@ namespace KeyboardWanderer.Demo
                 _selectionController.Reject("그 방향으로는 이동할 수 없습니다.");
                 PlaySfx(AssetClip("UiCancelSound"));
                 PublishPresentationState(PresentationChange.Hud);
+                Debug.LogWarning("[KW.Input] event=DirectionalMove result=blocked reason=destination-unwalkable" +
+                                 " destination=" + destination +
+                                 " inputId=" + KeyboardWandererInputAudit.CurrentInputId);
                 return;
             }
 
@@ -1771,6 +1802,7 @@ namespace KeyboardWanderer.Demo
         private void HandleDirectionalMoveReleased()
         {
             _directionalInputHeld = false;
+            _awaitDirectionalReleaseAfterStory = false;
             ClearBufferedDirectionalMove();
         }
 
@@ -2098,7 +2130,11 @@ namespace KeyboardWanderer.Demo
 
             if (_serverOnline && _serverRun != null && _gameApi != null)
             {
-                StartCoroutine(request.Ability == AbilityKind.Move
+                // Ordinary WASD steps are zero-turn navigation. Inside an active
+                // encounter the same key is an intentional D20 disengage attempt;
+                // sending it to /travel would be rejected before mechanics run.
+                bool encounterDisengage = request.Ability == AbilityKind.Move && _encounterMoveRequired;
+                StartCoroutine(request.Ability == AbilityKind.Move && !encounterDisengage
                     ? SubmitServerTravel(request)
                     : SubmitServerAction(request));
                 return;
@@ -2618,9 +2654,32 @@ namespace KeyboardWanderer.Demo
             GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
             int turnBeforeSubmit = _serverRun.currentTurn;
             TurnGatewayResult gatewayResult = null;
-            yield return _turnCoordinator.Submit(request, value => gatewayResult = value);
-            GameApiClient.Result<GameApiClient.CommittedTurn> result =
-                gatewayResult?.TransportResponse as GameApiClient.Result<GameApiClient.CommittedTurn>;
+            GameApiClient.Result<GameApiClient.CommittedTurn> result = null;
+            if (request.Ability == AbilityKind.Move)
+            {
+                // ServerTurnGateway deliberately maps ordinary MOVE to zero-turn
+                // /travel. Encounter disengage is different: it must consume D20
+                // mechanics through /actions so the server can resolve `escaped`.
+                GameApiClient.PositionSnapshot destination = request.Destination.HasValue
+                    ? new GameApiClient.PositionSnapshot
+                    {
+                        x = request.Destination.Value.X,
+                        y = request.Destination.Value.Y
+                    }
+                    : null;
+                yield return _gameApi.SubmitAction(_serverRun.id, request.IdempotencyKey,
+                    request.ExpectedRunVersion, "MOVE", Array.Empty<string>(), destination,
+                    request.PreparedD20, value => result = value);
+                gatewayResult = result != null && result.IsSuccess && result.Value != null
+                    ? TurnGatewayResult.FromPayload(result.Value)
+                    : TurnGatewayResult.Failure(result?.ErrorCode ?? "NETWORK_ERROR",
+                        result?.ErrorMessage ?? "Authoritative server returned no response.", result);
+            }
+            else
+            {
+                yield return _turnCoordinator.Submit(request, value => gatewayResult = value);
+                result = gatewayResult?.TransportResponse as GameApiClient.Result<GameApiClient.CommittedTurn>;
+            }
 
             if (gatewayResult == null || !gatewayResult.IsSuccess)
             {
@@ -2703,6 +2762,7 @@ namespace KeyboardWanderer.Demo
         private void PresentActionRejection(string errorCode, string technicalMessage)
         {
             string playerMessage = PlayerFacingRejection(errorCode, technicalMessage);
+            bool dialogueWasDismissed = _dialoguePresenter.IsDismissed;
             _selectionController.Reject(playerMessage);
             _serverStatus = "행동 불가 · " + playerMessage;
             bool choiceRequired = string.Equals(errorCode, "CHOICE_REQUIRED", StringComparison.OrdinalIgnoreCase) &&
@@ -2717,8 +2777,10 @@ namespace KeyboardWanderer.Demo
             }
             else
             {
-                _dialoguePresenter.Dismiss();
-                _sceneUi?.SetStoryVisible(false);
+                // A rejected shortcut must not erase the story context the player was
+                // reading. Preserve the existing visibility; CHOICE_REQUIRED above is
+                // the only rejection that intentionally reopens the final choice page.
+                _sceneUi?.SetStoryVisible(!dialogueWasDismissed);
             }
             AddLog("행동 거부 · " + (errorCode ?? "UNKNOWN") + " · " +
                    (technicalMessage ?? string.Empty));
@@ -5812,8 +5874,32 @@ namespace KeyboardWanderer.Demo
         {
             _lastServerSceneSequence = turn?.sceneSequence ?? Array.Empty<GameApiClient.SceneActionSnapshot>();
             _pendingRuntimeRenderSequence = ServerTurnPresentationAdapter.BuildRuntimeRenderSequence(turn, _serverRun);
+            CaptureAuthoritativeImpactTarget(_lastServerSceneSequence);
             ApplyTurnPresentation(ServerTurnPresentationAdapter.FromTurn(turn, _serverRun, GmEnabled));
             RecoverPendingChoiceSet(_serverRun?.pendingChoiceSet, false);
+        }
+
+        private void CaptureAuthoritativeImpactTarget(GameApiClient.SceneActionSnapshot[] sequence)
+        {
+            if (sequence == null || sequence.Length == 0)
+                return;
+            string playerId = _serverRun?.playerEntityId;
+            for (int i = 0; i < sequence.Length; i++)
+            {
+                GameApiClient.SceneActionSnapshot action = sequence[i];
+                string type = (action?.type ?? string.Empty).ToUpperInvariant();
+                string targetId = null;
+                if (type == "ATTACK")
+                    targetId = action.targetId;
+                else if ((type == "DAMAGE" || type == "DEFEATED") &&
+                         !string.Equals(action.actorId, playerId, StringComparison.OrdinalIgnoreCase))
+                    targetId = action.actorId;
+                if (string.IsNullOrWhiteSpace(targetId))
+                    continue;
+                CapturePendingImpactTarget(targetId);
+                if (_hasPendingImpactTargetPosition)
+                    return;
+            }
         }
 
         private void PlayCurrentStoryWorldAction(int page)
@@ -6097,6 +6183,12 @@ namespace KeyboardWanderer.Demo
             _lastChoiceSetId = presentation.ChoiceSetId;
             _lastNarrativeChoices = presentation.NarrativeChoices ?? Array.Empty<NarrativeChoiceOption>();
             _lastPresentationContinuesWithMovement = presentation.ContinuesWithMovement;
+            if (reopenDialogue && presentation.ContinuesWithMovement && _directionalInputHeld)
+            {
+                _awaitDirectionalReleaseAfterStory = true;
+                ClearBufferedDirectionalMove();
+                Debug.Log("[KW.Input] event=DirectionalMove result=paused-for-story reason=checkpoint-arrived-during-hold");
+            }
             if (!string.IsNullOrWhiteSpace(_lastChoiceSetId) && _lastNarrativeChoices.Length >= 2 &&
                 string.IsNullOrWhiteSpace(_lastNextInterventionReason))
                 _lastNextInterventionReason = "이야기가 잠시 멈췄다. 어떤 말이나 행동으로 다음 장면을 이어 갈까?";

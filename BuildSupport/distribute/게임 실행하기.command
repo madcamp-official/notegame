@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 
 KEY="./tunnel/notegame_tunnel"
 SERVER_HOST="172.10.5.138"
+APP="NUPJUK-The-Last-Commit.app"
 
 echo "▶ Ninja Adventure 준비 중..."
 
@@ -33,7 +34,11 @@ fi
 
 # 3) 게임 실행 (창이 닫힐 때까지 대기)
 echo "  ✓ 게임을 시작합니다."
-open -W "Ninja Adventure.app"
+# The launcher itself may require one Finder right-click > Open after download.
+# Once it runs, clear the same archive quarantine from the ad-hoc signed game so
+# users are not forced through a second, apparently unresponsive launch attempt.
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+open -W "$APP"
 
 # 4) 게임 종료 후 통로 정리
 pkill -f "8787:127.0.0.1:8787" 2>/dev/null

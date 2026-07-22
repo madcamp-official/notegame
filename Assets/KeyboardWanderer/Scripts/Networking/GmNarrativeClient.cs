@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using KeyboardWanderer.Gameplay;
+using KeyboardWanderer.Runtime;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -11,8 +12,8 @@ using UnityEngine.Networking;
 namespace KeyboardWanderer.Networking
 {
     /// <summary>
-    /// Optional narration-only bridge. The Unity client never receives or stores a Gemini key;
-    /// it talks to the local authoritative service and keeps the deterministic fallback on error.
+    /// Optional narration-only bridge. A settings key is forwarded only to the local service as a header;
+    /// the deterministic fallback remains available on error.
     /// </summary>
     public sealed class GmNarrativeClient
     {
@@ -149,6 +150,9 @@ namespace KeyboardWanderer.Networking
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
                 request.SetRequestHeader("Accept", "application/json");
+                string geminiApiKey = KeyboardWandererGeminiKeyStore.Current;
+                if (!string.IsNullOrWhiteSpace(geminiApiKey))
+                    request.SetRequestHeader("x-gemini-api-key", geminiApiKey);
                 request.timeout = 65;
 
                 yield return request.SendWebRequest();

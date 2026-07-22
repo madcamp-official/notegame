@@ -237,6 +237,16 @@ function destinationForText(context, text) {
   }
   const directed = context.destinations.find((candidate) => candidate.ref === directionRef) || null;
   if (directed) return directed;
+  if (/(?:도망|달아나|후퇴|물러나|벗어나|빠져나가|disengage|flee|escape|retreat)/u.test(text)) {
+    const threat = [...context.visibleEntities]
+      .filter((entity) => entity.hostile && !entity.disabled)
+      .sort((left, right) => left.distance - right.distance || String(left.id).localeCompare(String(right.id)))[0];
+    const opposite = { NORTH: "step.south", EAST: "step.west", SOUTH: "step.north", WEST: "step.east" }[threat?.direction];
+    return context.destinations.find((candidate) => candidate.ref === opposite)
+      || context.destinations.find((candidate) => candidate.ref.startsWith("step.") && candidate.direction !== threat?.direction)
+      || context.destinations.find((candidate) => candidate.ref.startsWith("step."))
+      || null;
+  }
   if (/(?:가까운|안전한|이동\s*가능한).{0,12}방향|한\s*걸음/u.test(text)) {
     return context.destinations.find((candidate) => candidate.ref.startsWith("step.")) || null;
   }
@@ -245,7 +255,7 @@ function destinationForText(context, text) {
 
 export function playerTextRequestsMovement(value) {
   const text = semanticText(value);
-  return /(?:이동|향하|간다|가자|가고\s*싶|도착|찾아가|걸어|북쪽|남쪽|동쪽|서쪽|왼쪽|오른쪽|위로|아래로|move|go\s|travel)/u.test(text);
+  return /(?:이동|향하|간다|가자|가고\s*싶|도착|찾아가|걸어|도망|달아나|후퇴|물러나|벗어나|빠져나가|북쪽|남쪽|동쪽|서쪽|왼쪽|오른쪽|위로|아래로|move|go\s|travel|disengage|flee|escape|retreat)/u.test(text);
 }
 
 export function requestedPlayerMovementDestination(context) {
@@ -296,7 +306,7 @@ export function fallbackPlayerActionProposal(context) {
   else if (/(?:상호\s*작용|말\s*걸|대화해|열어|만져|확인해|interact|talk\s*to)/u.test(text)) kind = "INTERACT";
   else if (/(?:휴식|쉬자|쉬어|쉰다|숨\s*고르|회복하|rest)/u.test(text)) kind = "REST";
   else if (/(?:탐색|조사|수색|살펴|찾아|둘러보|search|inspect)/u.test(text) && !/(?:묻|질문|말해)/u.test(text)) kind = "SEARCH";
-  else if (/(?:이동|향하|간다|가자|다가가|걸어|북쪽|남쪽|동쪽|서쪽|왼쪽|오른쪽|위로|아래로|move|go\s)/u.test(text)) kind = "MOVE";
+  else if (/(?:이동|향하|간다|가자|다가가|걸어|도망|달아나|후퇴|물러나|벗어나|빠져나가|북쪽|남쪽|동쪽|서쪽|왼쪽|오른쪽|위로|아래로|move|go\s|disengage|flee|escape|retreat)/u.test(text)) kind = "MOVE";
 
   const target = kind === "ATTACK"
     ? closestEntity(context, (entity) => entity.hostile && !entity.disabled && entity.distance <= 1, text)

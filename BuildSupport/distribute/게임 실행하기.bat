@@ -32,7 +32,7 @@ timeout /t 3 >nul
 
 REM 3) 게임 실행 (종료될 때까지 대기)
 echo   게임을 시작합니다.
-start /wait "" "Ninja Adventure.exe"
+start /wait "" "NUPJUK-The-Last-Commit.exe"
 
 REM 4) 게임 종료 후 통로 정리
 taskkill /FI "WINDOWTITLE eq notegame-tunnel*" /F >nul 2>&1

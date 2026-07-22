@@ -112,7 +112,7 @@ Gemini 요청은 구조화 JSON, 제한된 출력, 최소 thinking level, 최대
 - 가격: <https://ai.google.dev/gemini-api/docs/pricing>
 - 모델 수명주기: <https://ai.google.dev/gemini-api/docs/deprecations>
 
-Gemini 키는 `GEMINI_API_KEY` 환경 변수에만 둡니다. `.env`, Unity 클라이언트, API 응답, 로그, PostgreSQL plan과 snapshot에 키를 기록하지 않습니다.
+Gemini 키는 서버 환경 변수 `GEMINI_API_KEY`를 기본값으로 사용합니다. 로컬 Unity 클라이언트는 설정 화면에서 입력한 키를 `x-gemini-api-key` 요청 헤더로 전달해 해당 요청에서만 기본값을 덮어쓸 수 있습니다. 서버는 요청 키를 API 응답, 로그, PostgreSQL plan 또는 snapshot에 기록하지 않습니다. 클라이언트 키는 해당 기기의 Unity `PlayerPrefs`에 저장됩니다.
 
 ## 실행
 
@@ -156,9 +156,9 @@ DATABASE_SSL=false
 
 ### LLM 선택
 
-`LLM_PROVIDER=gemini`에서 `GEMINI_API_KEY`가 비어 있거나 공급자가 실패하면 결정적 폴백을 사용합니다. 기본 fast/quality 모델은 모두 `gemini-3.1-flash-lite`이며 `GEMINI_FAST_MODEL`, `GEMINI_QUALITY_MODEL`로만 교체합니다. 한 플레이어 턴의 모든 분류·계획·검수·서술 호출은 기본 20초/6회라는 하나의 예산을 공유합니다. 예산이 끝나면 진행 중 요청을 취소하고 남은 단계는 즉시 결정적 폴백으로 끝냅니다.
+`LLM_PROVIDER=gemini`에서 요청 헤더 키와 `GEMINI_API_KEY`가 모두 비어 있거나 공급자가 실패하면 결정적 폴백을 사용합니다. 기본 fast/quality 모델은 모두 `gemini-3.1-flash-lite`이며 `GEMINI_FAST_MODEL`, `GEMINI_QUALITY_MODEL`로만 교체합니다. 한 플레이어 턴의 모든 분류·계획·검수·서술 호출은 기본 20초/6회라는 하나의 예산을 공유합니다. 예산이 끝나면 진행 중 요청을 취소하고 남은 단계는 즉시 결정적 폴백으로 끝냅니다.
 
-로컬 OpenAI 호환 vLLM을 쓰려면 `LLM_PROVIDER=vllm`, `VLLM_BASE_URL=http://127.0.0.1:8000/v1`, `VLLM_MODEL=game-director`를 설정합니다. URL이 비어 있거나 요청이 실패해도 결정적 폴백으로 진행합니다. 반복 전송 장애에는 cooldown circuit breaker가 열리고, cooldown 뒤에는 단 하나의 half-open 복구 probe만 허용합니다. 모든 공급자의 동시 요청 수도 전역 상한으로 제한됩니다. Gemini와 vLLM 키는 Unity, 응답 payload, DB snapshot 또는 저장소에 넣지 않습니다.
+로컬 OpenAI 호환 vLLM을 쓰려면 `LLM_PROVIDER=vllm`, `VLLM_BASE_URL=http://127.0.0.1:8000/v1`, `VLLM_MODEL=game-director`를 설정합니다. URL이 비어 있거나 요청이 실패해도 결정적 폴백으로 진행합니다. 반복 전송 장애에는 cooldown circuit breaker가 열리고, cooldown 뒤에는 단 하나의 half-open 복구 probe만 허용합니다. 모든 공급자의 동시 요청 수도 전역 상한으로 제한됩니다. 서버는 Gemini와 vLLM 키를 응답 payload, DB snapshot 또는 저장소에 넣지 않습니다.
 
 ### 환경 변수
 

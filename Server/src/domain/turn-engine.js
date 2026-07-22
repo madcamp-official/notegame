@@ -281,6 +281,20 @@ function narrativeChoiceRecord(run, request, turnNo, events) {
   return record;
 }
 
+function skipPendingChoiceForDisengage(run, request, turnNo, events) {
+  if (request.narrativeChoice || request.ability !== "move" || !run.pendingChoiceSet) return;
+  const choiceSetId = run.pendingChoiceSet.choiceSetId;
+  run.choiceHistory ||= [];
+  run.choiceHistory.push({
+    type: "NARRATIVE_CHOICE_SKIPPED",
+    choiceSetId,
+    text: "플레이어가 WASD로 거리를 벌리며 이동을 계속했다.",
+    turnNo
+  });
+  run.pendingChoiceSet = null;
+  events.push({ type: "narrative_choice_skipped", choiceSetId, reason: "player_disengage_move" });
+}
+
 function closestNarrativeActor(run, selected) {
   const player = entityById(run, run.playerEntityId);
   const explicit = selected.targetEntityId ? entityById(run, selected.targetEntityId) : null;
@@ -1434,10 +1448,16 @@ function prepare(run, request, skillSelection = null) {
       assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all three administrator access levels, the essential clue, and physical Root System entry.");
     }
     assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Delete target must be within 3 tiles.");
-    const committedCost = target.state?.tutorialEncounter === true
+    const tutorialEncounter = target.state?.tutorialEncounter === true;
+    const committedCost = tutorialEncounter
       ? { ...specialCost, focusCost: 0 }
       : specialCost;
-    return { difficulty: 12, modifier: 3 + committedCost.modifierBonus, ...committedCost, target,
+    // The opening fight teaches a deterministic input/result contract. With the
+    // normal difficulty a low roll applied no damage while the tutorial copy
+    // still announced a hit, leaving an invisible progression contradiction.
+    // Difficulty 3 makes even d20=1 a real success with DELETE's +3 modifier,
+    // so the one-hit target, encounter lifecycle, and narrative stay aligned.
+    return { difficulty: tutorialEncounter ? 3 : 12, modifier: 3 + committedCost.modifierBonus, ...committedCost, target,
       normalizedAttempt: `Apply decisive DELETE pressure to ${target.name} without assuming destruction` };
   }
 
@@ -2565,6 +2585,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     resolution: reconciledEncounter.resolution,
     sourceEntityId: reconciledEncounter.sourceEntityId || reconciledEncounter.entityId || null
   });
+  skipPendingChoiceForDisengage(run, request, turnNo, events);
   const selectedChoiceRecord = narrativeChoiceRecord(run, request, turnNo, events);
   if (supportBonus > 0) events.push({ type: "companion_support_applied", modifier: supportBonus });
 
@@ -2736,6 +2757,12 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
       continuesWithMovement: true,
       fallbackUsed: false,
       model: "deterministic-opening-tutorial"
+    };
+  } else if (request.ability === "move" && SUCCESS_OUTCOMES.has(outcome)) {
+    narrative = {
+      ...narrative,
+      nextIntervention: null,
+      continuesWithMovement: true
     };
   }
   persistCommittedNarrativeDigest(run, turnNo, narrative, directorOutput, {
