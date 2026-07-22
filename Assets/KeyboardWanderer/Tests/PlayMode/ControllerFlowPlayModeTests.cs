@@ -332,10 +332,13 @@ namespace KeyboardWanderer.Tests.PlayMode
             Assert.That(restored.CurrentView.PlayerPosition, Is.EqualTo(destination),
                 "The committed tile must be present in the save immediately, not at a later checkpoint.");
 
+            GridCoord afterFirstStep = service.CurrentView.PlayerPosition;
+            Vector2Int nextDirection = FindSafeDirectionalStep(service, afterFirstStep,
+                out GridCoord nextDestination);
             long committedVersion = service.CurrentView.Version;
-            Invoke(controller, "HandleDirectionalMoveRequested", direction);
+            Invoke(controller, "HandleDirectionalMoveRequested", nextDirection);
             Assert.That(service.CurrentView.Version, Is.EqualTo(committedVersion),
-                "A held/repeated direction may not create a second request while the first tile is animating.");
+                "A held direction must buffer at most one tile while the first tile is animating.");
             Assert.That(Selection(controller).Feedback, Does.Contain("이동"));
 
             float timeout = Time.realtimeSinceStartup + 2f;
@@ -344,27 +347,45 @@ namespace KeyboardWanderer.Tests.PlayMode
             {
                 Invoke(controller, "RefreshFlowPhase");
                 if (!(bool)GetField(controller, "_playerWalking") &&
-                    moveFlow.Phase == GameFlowPhase.AwaitingChoice)
+                    moveFlow.Phase == GameFlowPhase.AwaitingChoice &&
+                    service.CurrentView.Version == committedVersion + 1)
                     break;
                 yield return null;
             }
             while (Time.realtimeSinceStartup < timeout);
             Assert.That(GetField(controller, "_playerWalking"), Is.False);
             Assert.That(moveFlow.Phase, Is.EqualTo(GameFlowPhase.AwaitingChoice));
+            Assert.That(service.CurrentView.PlayerPosition, Is.EqualTo(nextDestination),
+                "누르고 있는 방향은 첫 칸이 끝나는 즉시 버퍼의 다음 한 칸으로 이어져야 합니다.");
+            Assert.That(service.CurrentView.Version, Is.EqualTo(committedVersion + 1));
             DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
             Assert.That(dialogue.IsDismissed, Is.True,
                 "한 칸 이동마다 대화창을 다시 열어 연속 WASD를 막으면 안 됩니다.");
+        }
 
-            GridCoord afterFirstStep = service.CurrentView.PlayerPosition;
-            Vector2Int nextDirection = FindSafeDirectionalStep(service, afterFirstStep, out GridCoord nextDestination);
-            long nextVersion = service.CurrentView.Version;
-            Invoke(controller, "HandleDirectionalMoveRequested", nextDirection);
+        [UnityTest]
+        public IEnumerator OpeningAttackTutorial_BlocksMovementAndFreeformUntilRChoice()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(73410);
+            KeyboardWandererDemoController controller = CreateAuthoredController("Opening Attack Gate Test");
             yield return null;
-            yield return null;
-            Assert.That(service.CurrentView.PlayerPosition, Is.EqualTo(nextDestination),
-                "두 번째 방향 이동 피드백: " + Selection(controller).Feedback);
-            Assert.That(service.CurrentView.Version, Is.EqualTo(nextVersion + 1),
-                "이전 한 칸의 걷기 연출이 끝나면 다음 방향 입력을 즉시 커밋해야 합니다.");
+            Invoke(controller, "StartRun", service, false);
+            ((TutorialPresenter)GetField(controller, "_tutorialPresenter")).Start(false);
+            SetField(controller, "_lastNarrativeChoices", new[]
+            {
+                new NarrativeChoiceOption("opening.attack", "R 키로 몬스터를 공격한다.", "SKILL",
+                    skillId: "DELETE")
+            });
+
+            long versionBefore = service.CurrentView.Version;
+            Invoke(controller, "HandleDirectionalMoveRequested", Vector2Int.right);
+            Assert.That(service.CurrentView.Version, Is.EqualTo(versionBefore));
+            Assert.That(Selection(controller).Feedback, Does.Contain("R 키"));
+
+            Invoke(controller, "HandleNaturalLanguageRequested");
+            Assert.That(GetField(controller, "_naturalLanguageComposeMode"), Is.False,
+                "첫 전투 중 T 입력이 자유입력으로 우회되면 안 됩니다.");
+            Assert.That(Selection(controller).Feedback, Does.Contain("R 키"));
         }
 
         [UnityTest]
@@ -1050,13 +1071,13 @@ namespace KeyboardWanderer.Tests.PlayMode
         [Test]
         public void RunDto_ParsesCodriaCampaignAndSharedEndingState()
         {
-            const string json = "{\"campaignTitle\":\"Ninja Adventure\"," +
+            const string json = "{\"campaignTitle\":\"NUPJUK : The Last Commit\"," +
                                 "\"premise\":\"코드리아 붕괴 복구\",\"safeTravelCount\":4," +
                                 "\"currentBeat\":\"관리자 통제 시스템 내부 원인 확인\"," +
                                 "\"endingCode\":\"ENDING_PRESERVE_THE_SCARS\"}";
             GameApiClient.RunSnapshot run = JsonUtility.FromJson<GameApiClient.RunSnapshot>(json);
 
-            Assert.That(run.campaignTitle, Is.EqualTo("Ninja Adventure"));
+            Assert.That(run.campaignTitle, Is.EqualTo("NUPJUK : The Last Commit"));
             Assert.That(run.premise, Is.EqualTo("코드리아 붕괴 복구"));
             Assert.That(run.safeTravelCount, Is.EqualTo(4));
             Assert.That(run.currentBeat, Does.Contain("내부 원인"));

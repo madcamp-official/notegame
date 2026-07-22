@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using Game.Client.UI;
 using KeyboardWanderer.Demo;
@@ -182,6 +183,45 @@ namespace KeyboardWanderer.Tests.PlayMode
         }
 
         [Test]
+        public void WorldMode_WasdDispatchesFourOneTileDirectionsAndNeverLeaksFromTextInput()
+        {
+            var directions = new List<Vector2Int>();
+            int choiceMovement = 0;
+            int releases = 0;
+            _router.DirectionalMoveRequested += direction => directions.Add(direction);
+            _router.NarrativeChoiceMoveRequested += direction => choiceMovement += direction;
+            _router.DirectionalMoveReleased += () => releases++;
+
+            _router.SetNarrativeChoiceMode(true);
+            InvokeReadKeyboard();
+            PressAndRead(_keyboard.wKey);
+            PressAndRead(_keyboard.aKey);
+            PressAndRead(_keyboard.sKey);
+            PressAndRead(_keyboard.dKey);
+
+            CollectionAssert.AreEqual(new[]
+            {
+                Vector2Int.up, Vector2Int.left, Vector2Int.down, Vector2Int.right
+            }, directions, "WASD must map to exactly one cardinal tile per fresh key press.");
+            Assert.That(choiceMovement, Is.Zero,
+                "Visible choices use arrow keys; W/S must not silently change a choice instead of moving.");
+            Assert.That(releases, Is.EqualTo(4),
+                "Each released movement key must clear any queued continuation tile.");
+
+            EnsureEventSystem();
+            _inputObject = new GameObject("Focused WASD Text Input", typeof(RectTransform),
+                typeof(TMP_InputField), typeof(InputFocusTracker));
+            EventSystem.current.SetSelectedGameObject(_inputObject);
+            PressAndRead(_keyboard.wKey);
+            PressAndRead(_keyboard.aKey);
+            PressAndRead(_keyboard.sKey);
+            PressAndRead(_keyboard.dKey);
+
+            Assert.That(directions.Count, Is.EqualTo(4),
+                "WASD typed in the natural-language field must not move the world behind it.");
+        }
+
+        [Test]
         public void ReturnFrame_DeselectedTextFieldStillOwnsSubmitAndChoiceShortcuts()
         {
             int worldSubmits = 0;
@@ -271,11 +311,13 @@ namespace KeyboardWanderer.Tests.PlayMode
         public void ChoiceMode_MatchingSkillShortcutDispatchesAbilityWithoutConfirmingAChoiceTwice()
         {
             int search = 0;
+            int delete = 0;
             int confirmations = 0;
             int choiceMovement = 0;
             _router.AbilityRequested += ability =>
             {
                 if (ability == AbilityKind.Search) search++;
+                if (ability == AbilityKind.Delete) delete++;
             };
             _router.NarrativeChoiceConfirmRequested += () => confirmations++;
             _router.NarrativeChoiceMoveRequested += value => choiceMovement += value;
@@ -284,8 +326,13 @@ namespace KeyboardWanderer.Tests.PlayMode
             Press(_keyboard.fKey);
             InvokeReadKeyboard();
             Release(_keyboard.fKey);
+            Press(_keyboard.rKey);
+            InvokeReadKeyboard();
+            Release(_keyboard.rKey);
 
             Assert.That(search, Is.EqualTo(1));
+            Assert.That(delete, Is.EqualTo(1),
+                "첫 전투의 R 공격은 선택 확정과 중복되지 않고 정확히 한 번 전달돼야 합니다.");
             Assert.That(confirmations, Is.Zero);
             Assert.That(choiceMovement, Is.Zero);
         }

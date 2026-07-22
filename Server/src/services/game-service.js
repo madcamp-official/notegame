@@ -13,7 +13,7 @@ import { choiceSelectionFingerprint, choicesFromLegacySkills, narrationNoteFromP
 import { selectRelevantMemories } from "../llm/prompt-composer.js";
 import { normalizeInventoryRequest, resolveInventoryAction } from "../domain/inventory.js";
 import { deterministicUuid, fingerprint } from "../domain/serialization.js";
-import { fallbackPlayerActionProposal, playerActionContext, playerActionRejectionReason, resolvePlayerActionDestination, validatePlayerActionProposal } from "../llm/player-action.js";
+import { fallbackPlayerActionProposal, playerActionContext, playerActionRejectionReason, playerTextRequestsMovement, requestedPlayerMovementDestination, resolvePlayerActionDestination, validatePlayerActionProposal } from "../llm/player-action.js";
 import { withLlmTurnBudget } from "../llm/request-budget.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -499,7 +499,12 @@ export class GameService {
       ownerId,
       operation: `turn:${runId}`,
       idempotencyKey: message.idempotencyKey,
-      requestFingerprint: requestHash
+      requestFingerprint: requestHash,
+      // A natural-language message can now resolve to either a campaign turn or
+      // an authoritative navigation ledger. Persist the discriminated response
+      // so both shapes replay safely under the message fingerprint.
+      persistResponse: true,
+      markReplay: true
     }, () => this._runLlmTurn(() => this._submitPlayerMessageOnce(ownerId, runId, message, requestHash)));
   }
 
@@ -511,6 +516,15 @@ export class GameService {
     }
     const snapshot = await this.store.getRun(ownerId, runId);
     if (snapshot.version !== message.expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: snapshot.version });
+    if (snapshot.activeEncounter?.reason === "opening_keyboard_tutorial" &&
+        snapshot.pendingChoiceSet?.choices?.some((choice) => choice.choiceId === "opening.attack")) {
+      throw new AppError(409, "OPENING_TUTORIAL_ACTION_REQUIRED",
+        "첫 전투에서는 R 키로 관리자 키보드의 공격을 먼저 실행해야 합니다.", {
+          choiceSetId: snapshot.pendingChoiceSet.choiceSetId,
+          requiredChoiceId: "opening.attack",
+          requiredSkillId: "DELETE"
+        });
+    }
     if (isMonsterEncounterRequest(message.text)) {
       const request = playerMessageRequest({ run: snapshot, message, requestFingerprint: requestHash });
       request.narrativeChoice = {
@@ -528,11 +542,38 @@ export class GameService {
       return this._submitPureNarrativeChoice(ownerId, runId, request, snapshot);
     }
     const proposalContext = playerActionContext(snapshot, message.text);
+    const requestedDestination = requestedPlayerMovementDestination(proposalContext);
+    if (requestedDestination?.travelMode === "SAFE_TRAVEL") {
+      const destinationPoint = resolvePlayerActionDestination(snapshot, requestedDestination.ref);
+      assert(destinationPoint, 422, "TRAVEL_PATH_BLOCKED", "The named destination has no unoccupied walkable arrival tile.");
+      const travelRequest = normalizeTravelRequest({
+        inputType: "MOVE",
+        idempotencyKey: message.idempotencyKey,
+        expectedRunVersion: message.expectedRunVersion,
+        destination: {
+          areaId: requestedDestination.ref.slice("area:".length),
+          x: destinationPoint.x,
+          y: destinationPoint.y
+        },
+        playerNote: message.text.slice(0, 240)
+      });
+      // A named world destination is navigation, not a D20 combat move. Commit it
+      // through the same authoritative path/gate transaction used by map clicks so
+      // prose can never move farther than the stored coordinates.
+      return this._travelOnce(ownerId, runId, travelRequest, travelFingerprint(travelRequest));
+    }
     let actionProposal;
     try {
-      const proposed = typeof this.narrator?.planPlayerAction === "function"
-        ? await this.narrator.planPlayerAction(proposalContext)
-        : fallbackPlayerActionProposal(proposalContext);
+      const proposed = requestedDestination
+        ? {
+          kind: "MOVE", targetEntityIds: [], itemIds: [], destinationRef: requestedDestination.ref,
+          resultItem: null, reason: "플레이어가 월드의 명시된 목적지를 지목했다."
+        }
+        : playerTextRequestsMovement(proposalContext.playerText)
+          ? fallbackPlayerActionProposal(proposalContext)
+          : typeof this.narrator?.planPlayerAction === "function"
+          ? await this.narrator.planPlayerAction(proposalContext)
+          : fallbackPlayerActionProposal(proposalContext);
       actionProposal = proposed?.requiresRoll === undefined
         ? validatePlayerActionProposal(proposed, proposalContext)
         : proposed;
@@ -772,7 +813,9 @@ export class GameService {
     // wait for a remote scene planner. The same server-owned candidate system
     // supplies a bounded deterministic scene and preserves the narrative/event
     // contract without putting authoritative coordinates behind an LLM timeout.
-    const sceneDecision = planDeterministicDecisionScene({ run: preview.run, decisionType: "TRAVEL", navigation: preview.navigation, logger: this.logger });
+    const sceneDecision = preview.run.storyEventDue || preview.navigation.encounterOpened
+      ? planDeterministicDecisionScene({ run: preview.run, decisionType: "TRAVEL", navigation: preview.navigation, logger: this.logger })
+      : null;
     const committed = await this.store.commitNavigation({
       ownerId, runId, idempotencyKey: request.idempotencyKey, requestFingerprint: requestHash, expectedRunVersion: request.expectedRunVersion,
       resolve: (run) => resolveTravelDecision({ run, request, d20Source: this.d20Source, sceneDecision, now })
@@ -825,7 +868,8 @@ function resolveAmbientWander(run, bounds, now) {
   const movedEntityIds = [];
   const directions = [[1, 0], [0, 1], [-1, 0], [0, -1]];
   const occupied = (point, exceptId) => run.entities.some((item) => item.active && item.blocking && item.id !== exceptId && item.position.x === point.x && item.position.y === point.y);
-  const npcs = run.entities.filter((item) => item.active && item.kind === "npc").sort((a, b) => a.id.localeCompare(b.id));
+  const npcs = run.entities.filter((item) => item.active && item.kind === "npc" &&
+    !item.state?.adminAccessLevelId).sort((a, b) => a.id.localeCompare(b.id));
   for (const npc of npcs) {
     if (npc.position.x < bounds.minX || npc.position.x > bounds.maxX || npc.position.y < bounds.minY || npc.position.y > bounds.maxY) continue;
     npc.state ||= {};

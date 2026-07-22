@@ -222,8 +222,21 @@ namespace KeyboardWanderer.Demo
         {
             if (!_choiceInputLocked)
                 return;
+            ResolveChoiceReferences();
+            ResolveFreeformReferences();
             _choiceInputLocked = false;
             SetText(_freeformSubmitLabel, "전송");
+            if (_freeformInput != null && _freeformInput.gameObject.activeInHierarchy)
+                _freeformInput.interactable = true;
+            if (_freeformSubmit != null && _freeformSubmit.gameObject.activeInHierarchy)
+                _freeformSubmit.interactable = true;
+            for (int i = 0; i < _choiceButtons.Length; i++)
+            {
+                if (_choiceButtons[i] == null) continue;
+                _choiceButtons[i].interactable = i < _choiceOptions.Length &&
+                                                  _choiceOptions[i] != null &&
+                                                  !string.IsNullOrWhiteSpace(_choiceOptions[i].ChoiceId);
+            }
             // SubmitFreeform/Choose update the live Button state without going through
             // PresentChoices, so the remembered presentation still describes the
             // pre-submit (interactive) frame. Force the next authoritative presentation

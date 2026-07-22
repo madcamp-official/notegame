@@ -1,7 +1,7 @@
 import { assert } from "../errors.js";
 import { clone } from "./serialization.js";
 
-export const GAME_TITLE = "Ninja Adventure";
+export const GAME_TITLE = "NUPJUK : The Last Commit";
 export const WORLD_CODRIA = "WORLD_CODRIA";
 export const WORLD_NAME_KO = "코드리아";
 export const PROTAGONIST_NUPJUKYI = "PROTAGONIST_NUPJUKYI";

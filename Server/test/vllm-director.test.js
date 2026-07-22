@@ -58,6 +58,8 @@ test("vLLM adapter retries one semantically invalid response and sends OpenAI st
   assert.equal(requestBody.response_format.json_schema.strict, true);
   assert.equal(requestBody.response_format.json_schema.schema.additionalProperties, false);
   assert.equal(requestBody.messages[0].role, "system");
+  assert.match(requestBody.messages[0].content, /NUPJUK : The Last Commit/);
+  assert.doesNotMatch(requestBody.messages[0].content, /Ninja Adventure/);
   assert.equal(requests[0].options.headers.authorization, "Bearer unit-test-token");
   assert.equal(requests[0].options.body.includes("unit-test-token"), false);
 });

@@ -15,6 +15,18 @@ const STEP_DIRECTIONS = Object.freeze([
   { ref: "step.west", name: "서쪽으로 한 걸음", dx: -1, dy: 0 }
 ]);
 
+const CAMPAIGN_DESTINATION_LABELS = Object.freeze({
+  ARRIVAL_CONTEXT: Object.freeze({ name: "코드리아 추락 지점", aliases: ["도착 지점", "추락 지점", "arrival"] }),
+  LOCAL_STAKES: Object.freeze({ name: "현지 위기 지역", aliases: ["현지 위기", "local stakes"] }),
+  RELATIONSHIP_CONFLICT: Object.freeze({ name: "관계 갈등 지역", aliases: ["관계 갈등", "relationship conflict"] }),
+  HIDDEN_TRUTH: Object.freeze({ name: "감춰진 진실 지역", aliases: ["감춰진 진실", "숨겨진 진실", "hidden truth"] }),
+  CONSEQUENCE_RETURN: Object.freeze({ name: "귀환과 대가 지역", aliases: ["귀환과 대가", "consequence return"] }),
+  FINAL_CONVERGENCE: Object.freeze({
+    name: "루트 시스템 최종 수렴점",
+    aliases: ["루트 시스템", "루트", "root system", "root_system", "final convergence", "final convergence point", "최종 수렴", "최종 수렴점"]
+  })
+});
+
 function distance(left, right) {
   return Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
 }
@@ -59,11 +71,34 @@ export function playerActionContext(run, text) {
     .map((direction) => ({ ...direction, position: { x: player.position.x + direction.dx, y: player.position.y + direction.dy } }))
     .filter((destination) => isWalkable(run.world, destination.position) && !occupied.has(`${destination.position.x},${destination.position.y}`))
     .map(({ ref, name, position }) => ({ ref, name, distance: 1, direction: direction(player.position, position) }));
-  const namedDestinations = (run.world?.points || [])
+  const nearbyPointDestinations = (run.world?.points || [])
     .filter((point) => distance(point, player.position) > 0 && distance(point, player.position) <= 5)
-    .map((point) => ({ ref: point.id, name: point.name || point.nameKo || point.id, distance: distance(point, player.position), direction: direction(player.position, point) }))
-    .slice(0, 12);
-  const destinations = [...stepDestinations, ...namedDestinations].slice(0, 16);
+    .map((point) => ({
+      ref: point.id,
+      name: point.nameKo || point.name || point.id,
+      aliases: [point.nameKo, point.name, point.id].filter(Boolean),
+      distance: distance(point, player.position),
+      direction: direction(player.position, point),
+      travelMode: "BOUNDED_MOVE"
+    }))
+    .slice(0, 6);
+  // Campaign areas are authoritative semantic destinations, even when they are
+  // outside the five-point combat movement budget. Exposing their stable refs
+  // lets free-form input distinguish a named journey from an arbitrary step.
+  const campaignDestinations = (run.world?.areas || [])
+    .filter((candidate) => candidate.campaignRole && candidate.id !== areaAt(run.world, player.position)?.id)
+    .map((candidate) => {
+      const label = CAMPAIGN_DESTINATION_LABELS[candidate.campaignRole] || { name: candidate.nameKo || candidate.name, aliases: [] };
+      return {
+        ref: `area:${candidate.id}`,
+        name: label.name || candidate.nameKo || candidate.name || candidate.id,
+        aliases: [label.name, ...(label.aliases || []), candidate.nameKo, candidate.name, candidate.id, candidate.campaignRole].filter(Boolean),
+        distance: distance(candidate.anchor, player.position),
+        direction: direction(player.position, candidate.anchor),
+        travelMode: "SAFE_TRAVEL"
+      };
+    });
+  const destinations = [...stepDestinations, ...nearbyPointDestinations, ...campaignDestinations].slice(0, 16);
   const area = areaAt(run.world, player.position);
   const biome = (run.world?.biomes || []).find((item) => item.id === area?.biomeId);
   return {
@@ -186,7 +221,9 @@ function closestEntity(context, predicate, text = "") {
 
 function destinationForText(context, text) {
   const named = context.destinations.find((candidate) =>
-    candidate.name && text.includes(semanticText(candidate.name)));
+    [candidate.name, ...(candidate.aliases || [])]
+      .filter(Boolean)
+      .some((alias) => text.includes(semanticText(alias))));
   if (named) return named;
 
   let directionRef = null;
@@ -198,9 +235,23 @@ function destinationForText(context, text) {
     const facing = String(context.spatialContext?.facing || "").toLowerCase();
     directionRef = ["north", "east", "south", "west"].includes(facing) ? `step.${facing}` : null;
   }
-  return context.destinations.find((candidate) => candidate.ref === directionRef)
-    || context.destinations[0]
-    || null;
+  const directed = context.destinations.find((candidate) => candidate.ref === directionRef) || null;
+  if (directed) return directed;
+  if (/(?:가까운|안전한|이동\s*가능한).{0,12}방향|한\s*걸음/u.test(text)) {
+    return context.destinations.find((candidate) => candidate.ref.startsWith("step.")) || null;
+  }
+  return null;
+}
+
+export function playerTextRequestsMovement(value) {
+  const text = semanticText(value);
+  return /(?:이동|향하|간다|가자|가고\s*싶|도착|찾아가|걸어|북쪽|남쪽|동쪽|서쪽|왼쪽|오른쪽|위로|아래로|move|go\s|travel)/u.test(text);
+}
+
+export function requestedPlayerMovementDestination(context) {
+  const text = semanticText(context?.playerText);
+  if (!playerTextRequestsMovement(text)) return null;
+  return destinationForText(context, text);
 }
 
 function rejectedFallback(kind, reason, alternative) {
@@ -301,5 +352,22 @@ export function resolvePlayerActionDestination(run, destinationRef) {
   const direction = STEP_DIRECTIONS.find((candidate) => candidate.ref === destinationRef);
   if (direction) return { x: player.position.x + direction.dx, y: player.position.y + direction.dy };
   const point = (run.world?.points || []).find((candidate) => candidate.id === destinationRef);
-  return point ? { x: point.x, y: point.y } : null;
+  if (point) return { x: point.x, y: point.y };
+  if (!String(destinationRef || "").startsWith("area:")) return null;
+  const areaId = String(destinationRef).slice("area:".length);
+  const area = (run.world?.areas || []).find((candidate) => candidate.id === areaId);
+  if (!area) return null;
+  const occupied = new Set((run.entities || [])
+    .filter((entity) => entity.active && entity.id !== player.id && (entity.blocking || entity.kind === "prop"))
+    .map((entity) => `${entity.position.x},${entity.position.y}`));
+  const candidates = [];
+  for (let y = area.bounds.y; y < area.bounds.y + area.bounds.height; y += 1) {
+    for (let x = area.bounds.x; x < area.bounds.x + area.bounds.width; x += 1) {
+      candidates.push({ x, y });
+    }
+  }
+  candidates.sort((left, right) => distance(left, area.anchor) - distance(right, area.anchor)
+    || left.y - right.y || left.x - right.x);
+  return candidates.find((candidate) => isWalkable(run.world, candidate)
+    && !occupied.has(`${candidate.x},${candidate.y}`)) || null;
 }

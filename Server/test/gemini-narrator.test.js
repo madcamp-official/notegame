@@ -56,6 +56,8 @@ test("Gemini adapter retries one semantically invalid response and sends bounded
   assert.equal(requestBody.generationConfig.responseMimeType, "application/json");
   assert.equal(requestBody.generationConfig.responseJsonSchema.additionalProperties, false);
   assert.match(requestBody.systemInstruction.parts[0].text, /may be explicitly targeted/);
+  assert.match(requestBody.systemInstruction.parts[0].text, /NUPJUK : The Last Commit/);
+  assert.doesNotMatch(requestBody.systemInstruction.parts[0].text, /Ninja Adventure/);
   assert.deepEqual(requestBody.generationConfig.responseJsonSchema.properties.proposedOps.items.properties.type.enum,
     ["ambient_cue", "fact_hint"]);
   assert.equal(requests[0].headers["x-goog-api-key"], "unit-test-token");

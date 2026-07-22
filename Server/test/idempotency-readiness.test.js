@@ -95,7 +95,7 @@ test("concurrent identical turns execute narration once and replay one committed
   const narrator = new CountingNarrator();
   const service = new GameService({ store, narrator, logger: silentLogger });
   const { run } = await createKeyedRun(service);
-  const choice = run.pendingChoiceSet.choices.find((item) => item.choiceId === "opening.listen");
+  const choice = run.pendingChoiceSet.choices.find((item) => item.choiceId === "opening.attack");
   const input = {
     choiceSetId: run.pendingChoiceSet.choiceSetId,
     choiceId: choice.choiceId,
@@ -111,7 +111,7 @@ test("concurrent identical turns execute narration once and replay one committed
   assert.equal((await service.getRun(OWNER_ID, run.id)).currentTurn, 1);
 
   await assert.rejects(
-    service.submitChoice(OWNER_ID, run.id, { ...input, choiceId: "opening.cautious" }),
+    service.submitChoice(OWNER_ID, run.id, { ...input, choiceId: "opening.fabricated" }),
     (error) => error instanceof AppError && error.code === "IDEMPOTENCY_CONFLICT"
   );
   assert.equal(narrator.narrateCalls, 1);

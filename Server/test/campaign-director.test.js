@@ -66,7 +66,7 @@ test("campaign seeds preserve the nine-beat Codria contract while varying bounde
     roleMappings.add(world.areas.filter((area) => area.campaignRole)
       .map((area) => `${area.campaignRole}:${area.biomeId}`).sort().join("|"));
   }
-  assert.deepEqual([...titles], ["Ninja Adventure"]);
+  assert.deepEqual([...titles], ["NUPJUK : The Last Commit"]);
   assert.ok(premises.size > 1);
   assert.ok(npcSignatures.size > 1);
   assert.ok(questSignatures.size > 1);

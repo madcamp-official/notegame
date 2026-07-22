@@ -220,6 +220,7 @@ export class VllmNarrator {
   }
 
   async requestOnce({ systemText, userPayload, responseJsonSchema, schemaName, profile, temperature, topP, errorLabel }) {
+    systemText = systemText.replaceAll("Ninja Adventure", "NUPJUK : The Last Commit");
     const circuitToken = this._acquireCircuitToken();
     let scope;
     try {

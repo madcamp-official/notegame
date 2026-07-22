@@ -1,6 +1,6 @@
 import { buildConsequenceCandidates, materializeProposedSceneActions } from "./consequence-candidates.js";
 import { applyScenePlan } from "./consequence-resolver.js";
-import { resolveSafeTravel } from "./turn-engine.js";
+import { resolveSafeTravel, storyEventInterval } from "./turn-engine.js";
 import { createFallbackScenePlan, validateScenePlan } from "../llm/scene-director.js";
 
 function finalizeSceneDecision({ run, bundle, rawPlan, logger }) {
@@ -38,18 +38,31 @@ export async function planDecisionScene({ narrator, run, decisionType, navigatio
 
 export function resolveTravelDecision({ run, request, d20Source, sceneDecision, now = new Date().toISOString() }) {
   const committed = resolveSafeTravel({ run, request, d20Source, now });
+  const storyEventTriggered = committed.run.storyEventDue === true;
+  const sceneRequired = storyEventTriggered || committed.navigation.encounterOpened === true;
+  if (!sceneRequired) {
+    committed.navigation.storyEventTriggered = false;
+    committed.navigation.sceneDecision = null;
+    committed.navigation.sceneSequence = [];
+    committed.navigation.events = [...(committed.navigation.events || []), ...(committed.events || [])];
+    committed.navigation.narrative = null;
+    return committed;
+  }
+  if (!sceneDecision) throw new Error("A scheduled travel event requires a server scene decision.");
   const scene = applyScenePlan(committed.run, {
     candidates: sceneDecision.candidates,
     plan: sceneDecision.plan,
     decisionType: "TRAVEL",
     now
   });
-  if (committed.run.storyEventDue) {
+  if (storyEventTriggered) {
     committed.run.storyEventSequence = Number(committed.run.storyEventSequence || 0) + 1;
-    committed.run.nextStoryEventDistance = Number(committed.run.travelDistance || 0) + 15 +
-      (Number.parseInt(committed.run.id.replace(/-/g, "").slice(0, 8), 16) + committed.run.storyEventSequence) % 6;
+    committed.run.nextStoryEventDistance = Number(committed.run.travelDistance || 0) +
+      storyEventInterval(committed.run, committed.run.storyEventSequence + 1);
     committed.run.storyEventDue = false;
   }
+  committed.navigation.storyEventTriggered = storyEventTriggered;
+  committed.navigation.nextStoryEventDistance = committed.run.nextStoryEventDistance;
   committed.navigation.sceneDecision = scene;
   committed.navigation.sceneSequence = scene.sceneSequence;
   committed.navigation.events = [...(committed.navigation.events || []), ...(committed.events || []), ...scene.events];

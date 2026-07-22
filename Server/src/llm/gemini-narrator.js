@@ -383,6 +383,9 @@ export class GeminiNarrator {
   }
 
   async requestJson({ systemText, userPayload, contents = null, responseJsonSchema, profile, temperature, errorLabel }) {
+    // Normalize the product identity at the final provider boundary so stale
+    // wording in any long-lived prompt fragment cannot leak to the model.
+    systemText = systemText.replaceAll("Ninja Adventure", "NUPJUK : The Last Commit");
     const scope = createProviderRequestScope({
       timeoutMs: this.timeoutMs,
       timeoutCode: "GEMINI_TIMEOUT",

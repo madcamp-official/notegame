@@ -39,7 +39,7 @@ function adjacentWalkable(run) {
 function minimalProposal() {
   return {
     campaign: {
-      title: "Ninja Adventure",
+      title: "NUPJUK : The Last Commit",
       description: "마을 사람들은 오래된 서약의 의미를 함께 다시 정해야 한다.",
       tone: ["신비", "따뜻함"]
     },
@@ -86,7 +86,7 @@ test("same seeds reproduce campaign and map data while different seeds diversify
   }));
   assert.equal(new Set(samples.map(({ world }) => world.layoutHash)).size, samples.length);
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.contentHash)).size > 1);
-  assert.deepEqual([...new Set(samples.map(({ blueprint }) => blueprint.generatedTitle))], ["Ninja Adventure"]);
+  assert.deepEqual([...new Set(samples.map(({ blueprint }) => blueprint.generatedTitle))], ["NUPJUK : The Last Commit"]);
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.npcRoles.map((npc) => npc.displayName).join("|"))).size > 1);
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.questSeeds.map((quest) => quest.title).join("|"))).size > 1);
   assert.ok(new Set(samples.map(({ blueprint }) => blueprint.endingCandidates.map((ending) => ending.id).sort().join("|"))).size > 1);

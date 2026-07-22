@@ -286,7 +286,10 @@ test("a fresh campaign reaches a non-emergency ending through only GameService p
   assert.equal(run.status, "active");
   assert.equal(run.currentTurn, 0);
   assert(run.pendingChoiceSet);
-  const opening = run.pendingChoiceSet.choices.find((choice) => choice.choiceId === "opening.listen");
+  const openingFocus = run.focus;
+  const openingMetrics = structuredClone(run.metrics);
+  const openingEnemyId = run.activeEncounter?.sourceEntityId;
+  const opening = run.pendingChoiceSet.choices.find((choice) => choice.choiceId === "opening.attack");
   assert(opening);
   const openingResult = await service.submitChoice(OWNER_ID, run.id, {
     choiceSetId: run.pendingChoiceSet.choiceSetId,
@@ -296,6 +299,19 @@ test("a fresh campaign reaches a non-emergency ending through only GameService p
   });
   run = openingResult.run;
   assert(openingResult.turn.events.some((event) => event.type === "narrative_choice_selected"));
+  assert(openingResult.turn.events.some((event) => event.type === "health_changed" &&
+    event.entityId === openingEnemyId && event.delta === -5));
+  assert.equal(run.activeEncounter, null);
+  assert.equal(run.pendingChoiceSet, null,
+    "The tutorial result must release the player to move instead of forcing another choice.");
+  assert.equal(openingResult.turn.narrative.continuesWithMovement, true);
+  assert.match(openingResult.turn.narrative.storySequence.at(-1).text, /WASD/u);
+  assert.equal(run.focus, openingFocus, "The mandatory tutorial attack must not spend campaign focus.");
+  assert.deepEqual(run.metrics, openingMetrics,
+    "The mandatory tutorial attack must not bias any later ending metric.");
+  assert.equal(run.progressLevel, 0,
+    "The keyboard tutorial must not grant administrator access or advance the campaign arc.");
+  assert.equal(run.adminAccessAcquisitionHistory.length, 0);
 
   const encounterMessage = {
     text: "주변을 수색해 숨어 있는 몬스터와 조우한다.",
@@ -381,22 +397,23 @@ test("a fresh campaign reaches a non-emergency ending through only GameService p
     await useSkill("CONNECT", [run.playerEntityId, openingCompanion.id], "connect-opening-companion");
   }
 
-  const initialAccessEntities = new Map(run.adminAccessCandidates.map((candidate) => {
-    const entity = run.entities.find((item) => item.state?.candidateId === candidate.id);
-    return [candidate.id, entity];
-  }));
   const accessTargets = [1, 2, 3].map((level) => {
     const candidate = run.adminAccessCandidates.find((item) => item.accessLevelId === `ADMIN_ACCESS_LEVEL_${level}`
       && item.skillId === "SEARCH");
     assert(candidate, `Seed 27 must expose a public SEARCH path for administrator access ${level}.`);
-    const entity = initialAccessEntities.get(candidate.id);
-    assert(entity, `Administrator access ${level} has no public candidate entity.`);
-    return { level, candidate, entity };
+    return { level, candidate };
   });
 
+  const currentAccessEntity = (accessTarget) => {
+    const entity = run.entities.find((item) => item.state?.candidateId === accessTarget.candidate.id);
+    assert(entity, `Administrator access ${accessTarget.level} is not visible when it becomes the next level.`);
+    return entity;
+  };
+
   await discoverArea(accessTargets[0].candidate.areaId, "access-level-1");
-  await moveWithin([accessTargets[0].entity], [6], "access-level-1-target");
-  const accessOne = await useSkill("SEARCH", [accessTargets[0].entity.id], "acquire-access-1");
+  const firstAccessEntity = currentAccessEntity(accessTargets[0]);
+  await moveWithin([firstAccessEntity], [6], "access-level-1-target");
+  const accessOne = await useSkill("SEARCH", [firstAccessEntity.id], "acquire-access-1");
   assert(accessOne.turn.events.some((event) => event.type === "admin_access_acquired"
     && event.accessLevelId === "ADMIN_ACCESS_LEVEL_1"));
   assert.equal(run.progressLevel, 1);
@@ -408,8 +425,9 @@ test("a fresh campaign reaches a non-emergency ending through only GameService p
 
   for (const accessTarget of accessTargets.slice(1)) {
     await discoverArea(accessTarget.candidate.areaId, `access-level-${accessTarget.level}`);
-    await moveWithin([accessTarget.entity], [6], `access-level-${accessTarget.level}-target`);
-    const accessResult = await useSkill("SEARCH", [accessTarget.entity.id], `acquire-access-${accessTarget.level}`);
+    const accessEntity = currentAccessEntity(accessTarget);
+    await moveWithin([accessEntity], [6], `access-level-${accessTarget.level}-target`);
+    const accessResult = await useSkill("SEARCH", [accessEntity.id], `acquire-access-${accessTarget.level}`);
     assert(accessResult.turn.events.some((event) => event.type === "admin_access_acquired"
       && event.accessLevelId === `ADMIN_ACCESS_LEVEL_${accessTarget.level}`));
     assert.equal(run.progressLevel, accessTarget.level);

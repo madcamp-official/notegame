@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createApplication } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { FixedD20Source } from "../src/domain/turn-engine.js";
+import { createInitialChoiceSet } from "../src/domain/narrative-choices.js";
 import { MemoryStore } from "../src/store/memory-store.js";
 import { GeminiNarrator } from "../src/llm/gemini-narrator.js";
 
@@ -29,6 +30,30 @@ function adjacentWalkable(world, origin) {
     if (!blocked.has(tileName)) return point;
   }
   assert.fail("Generated entry must have an adjacent walkable tile.");
+}
+
+function replaceOpeningTutorialWithDialogueFixture(application, runId) {
+  const stored = application.store.runs.get(runId);
+  const player = stored.entities.find((entity) => entity.id === stored.playerEntityId);
+  const npc = stored.entities.find((entity) => entity.kind === "npc" && entity.active);
+  const tutorialEnemy = stored.entities.find((entity) => entity.state?.tutorialEncounter === true);
+  if (tutorialEnemy?.state?.originPosition) {
+    tutorialEnemy.position = structuredClone(tutorialEnemy.state.originPosition);
+    tutorialEnemy.state.slotId = tutorialEnemy.state.originSlotId;
+    tutorialEnemy.state.revealed = false;
+    tutorialEnemy.state.tutorialEncounter = false;
+  }
+  stored.activeEncounter = null;
+  stored.encounterHistory = [];
+  stored.pendingChoiceSet = createInitialChoiceSet({
+    runId: stored.id,
+    runVersion: stored.version,
+    turnNo: stored.currentTurn,
+    openingNpcId: npc.id,
+    openingNpcName: npc.name
+  });
+  application.store.runs.set(runId, stored);
+  return { stored, player, npc };
 }
 
 class FakeNarrator {
@@ -283,16 +308,17 @@ class ContinuityNarrator {
 
 async function startServer({ d20Source = new FixedD20Source(20), narrator = new FakeNarrator(), configEnv = {} } = {}) {
   const config = loadConfig({ AUTH_MODE: "required", STORAGE: "memory", LOG_LEVEL: "silent", ...configEnv });
+  const store = new MemoryStore();
   const application = await createApplication({
     config,
-    store: new MemoryStore(),
+    store,
     narrator,
     d20Source,
     logger: silentLogger
   });
   await new Promise((resolve) => application.server.listen(0, "127.0.0.1", resolve));
   const address = application.server.address();
-  return { application, baseUrl: `http://127.0.0.1:${address.port}` };
+  return { application, store, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
 async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_ID, origin } = {}) {
@@ -319,15 +345,17 @@ test("duplicate generated choice text falls back before sealing instead of rolli
     method: "POST",
     body: {}
   })).payload.run;
-  const choice = created.pendingChoiceSet.choices[0];
+  replaceOpeningTutorialWithDialogueFixture(application, created.id);
+  const ordinary = (await jsonRequest(baseUrl, `/v1/runs/${created.id}`)).payload.run;
+  const choice = ordinary.pendingChoiceSet.choices.find((item) => item.choiceId === "opening.search");
 
   const selected = await jsonRequest(baseUrl, `/v1/runs/${created.id}/choices`, {
     method: "POST",
     body: {
-      choiceSetId: created.pendingChoiceSet.choiceSetId,
+      choiceSetId: ordinary.pendingChoiceSet.choiceSetId,
       choiceId: choice.choiceId,
       idempotencyKey: "duplicate-choice-seal-fallback-0001",
-      expectedRunVersion: created.version
+      expectedRunVersion: ordinary.version
     }
   });
 
@@ -364,7 +392,7 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.ok(created.payload.campaign.world.routes.length >= 13);
   assert.equal(created.payload.campaign.world.generationReport.status, "valid");
   assert.equal(created.payload.campaign.archetype, "codria-admin-keyboard-roguelike");
-  assert.equal(created.payload.campaign.gameTitle, "Ninja Adventure");
+  assert.equal(created.payload.campaign.gameTitle, "NUPJUK : The Last Commit");
   assert.equal(created.payload.campaign.worldId, "WORLD_CODRIA");
   assert.ok(created.payload.campaign.premise.length > 20);
   assert.equal(created.payload.campaign.requiredStoryBeats.length, 9);
@@ -389,7 +417,7 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.notEqual(runCreated.payload.run.world.layoutHash, created.payload.campaign.world.layoutHash);
   assert.equal(runCreated.payload.run.currentBeat, runCreated.payload.run.currentStoryBeat.title);
   assert.equal(runCreated.payload.run.currentMacroPhase.id, "MACRO_ARRIVAL_AWAKENING");
-  assert.equal(runCreated.payload.run.campaignTitle, "Ninja Adventure");
+  assert.equal(runCreated.payload.run.campaignTitle, "NUPJUK : The Last Commit");
   assert.notEqual(runCreated.payload.run.campaignContentHash, created.payload.campaign.contentHash);
   assert.equal(runCreated.payload.run.generationPlan.generationMetadata.fallbackUsed, true);
   assert.equal(runCreated.payload.run.canonicalFacts.length, 7);
@@ -401,8 +429,10 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.deepEqual(runCreated.payload.run.abilities, ["copy", "delete", "connect", "restore", "undo", "search", "select_all"]);
   assert.deepEqual(runCreated.payload.run.inputTypes, ["MOVE", "USE_SKILL", "NARRATIVE_CHOICE"]);
   assert.match(runCreated.payload.run.pendingChoiceSet.choiceSetId, /^[0-9a-f-]{36}$/i);
-  assert.ok(runCreated.payload.run.pendingChoiceSet.choices.length >= 2);
-  assert.ok(runCreated.payload.run.pendingChoiceSet.choices.some((choice) => choice.choiceKind !== "SKILL"));
+  assert.equal(runCreated.payload.run.pendingChoiceSet.choices.length, 1);
+  assert.equal(runCreated.payload.run.pendingChoiceSet.choices[0].choiceId, "opening.attack");
+  assert.equal(runCreated.payload.run.pendingChoiceSet.choices[0].skillId, "DELETE");
+  assert.equal(runCreated.payload.run.activeEncounter.kind, "COMBAT");
 
   const inheritedSeedRun = await jsonRequest(baseUrl, `/v1/campaigns/${campaignId}/runs`, {
     method: "POST",
@@ -414,6 +444,34 @@ test("health and campaign endpoints expose deterministic previews while each run
 
   const hidden = await jsonRequest(baseUrl, `/v1/campaigns/${campaignId}`, { userId: OTHER_USER_ID });
   assert.equal(hidden.response.status, 404);
+});
+
+test("the mandatory opening attack cannot be bypassed with freeform input", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Opening combat gate", worldSeed: 9919, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, {
+    method: "POST", body: {}
+  })).payload.run;
+
+  const bypass = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: {
+      text: "몬스터는 무시하고 다른 곳으로 이동한다",
+      idempotencyKey: "opening-bypass-message-0001",
+      expectedRunVersion: run.version
+    }
+  });
+
+  assert.equal(bypass.response.status, 409);
+  assert.equal(bypass.payload.error.code, "OPENING_TUTORIAL_ACTION_REQUIRED");
+  const unchanged = (await jsonRequest(baseUrl, `/v1/runs/${run.id}`)).payload.run;
+  assert.equal(unchanged.version, run.version);
+  assert.equal(unchanged.currentTurn, 0);
+  assert.equal(unchanged.activeEncounter.reason, "opening_keyboard_tutorial");
+  assert.equal(unchanged.pendingChoiceSet.choices[0].choiceId, "opening.attack");
 });
 
 test("ambient wander authoritatively moves visible NPCs on the grid", async (t) => {
@@ -470,7 +528,10 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
     method: "POST",
     body: { title: "Turns", worldSeed: 12345, turnLimit: 30 }
   })).payload.campaign;
-  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const createdRun = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, createdRun.id);
+  const run = (await jsonRequest(baseUrl, `/v1/runs/${createdRun.id}`)).payload.run;
+  const firstChoice = run.pendingChoiceSet.choices.find((item) => item.choiceId === "opening.search");
   const playerBefore = run.entities.find((entity) => entity.id === run.playerEntityId);
   const entry = run.world.points.find((point) => point.id === "entry");
   assert.deepEqual(playerBefore.position, { x: entry.x, y: entry.y });
@@ -487,7 +548,7 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   target.position = { ...storedPlayer.position };
   target.state.hp = 5;
   target.state.revealed = true;
-  stored.pendingChoiceSet.choices[2] = {
+  stored.pendingChoiceSet.choices[0] = {
     choiceId: "test.delete",
     text: "지금 길을 막는 존재에게 삭제 명령으로 경계를 분명히 한다.",
     choiceKind: "SKILL",
@@ -748,6 +809,15 @@ test("sealed dialogue choices do not prepare, expose, or apply D20 and survive a
   const player = stored.entities.find((entity) => entity.id === stored.playerEntityId);
   const npc = stored.entities.find((entity) => entity.kind === "npc" && entity.active);
   npc.position = { x: player.position.x + 1, y: player.position.y };
+  stored.activeEncounter = null;
+  stored.pendingChoiceSet = createInitialChoiceSet({
+    runId: stored.id,
+    runVersion: stored.version,
+    turnNo: stored.currentTurn,
+    openingNpcId: npc.id,
+    openingNpcName: npc.name
+  });
+  const dialogueChoiceSet = structuredClone(stored.pendingChoiceSet);
   application.store.runs.set(run.id, stored);
 
   const wandered = await jsonRequest(baseUrl, `/v1/runs/${run.id}/ambient-wander`, {
@@ -756,10 +826,10 @@ test("sealed dialogue choices do not prepare, expose, or apply D20 and survive a
   });
   assert.equal(wandered.response.status, 200);
   assert.equal(wandered.payload.run.version, 2);
-  assert.equal(wandered.payload.run.pendingChoiceSet.choiceSetId, run.pendingChoiceSet.choiceSetId);
+  assert.equal(wandered.payload.run.pendingChoiceSet.choiceSetId, dialogueChoiceSet.choiceSetId);
 
   const request = {
-    choiceSetId: run.pendingChoiceSet.choiceSetId,
+    choiceSetId: dialogueChoiceSet.choiceSetId,
     choiceId: "opening.listen",
     idempotencyKey: "dialogue-choice-0001",
     expectedRunVersion: 2
@@ -778,10 +848,10 @@ test("sealed dialogue choices do not prepare, expose, or apply D20 and survive a
   assert.equal(selected.payload.run.currentTurn, 1);
   assert.equal(selected.payload.run.version, 3);
   assert.equal(selected.payload.run.choiceHistory.length, 1);
-  assert.equal(selected.payload.run.choiceHistory[0].text, run.pendingChoiceSet.choices[0].text);
+  assert.equal(selected.payload.run.choiceHistory[0].text, dialogueChoiceSet.choices[0].text);
   assert.ok(selected.payload.run.npcMemories.some((memory) => memory.sourceChoiceId === selected.payload.run.choiceHistory[0].id));
   assert.ok(selected.payload.run.npcRelationships.find((relationship) => relationship.npcId === npc.id).trust >= 1);
-  assert.notEqual(selected.payload.run.pendingChoiceSet.choiceSetId, run.pendingChoiceSet.choiceSetId);
+  assert.notEqual(selected.payload.run.pendingChoiceSet.choiceSetId, dialogueChoiceSet.choiceSetId);
   assert.equal(selected.payload.turn.narrative.nextIntervention.choiceSetId, selected.payload.run.pendingChoiceSet.choiceSetId);
   assert.ok(selected.payload.turn.narrative.nextIntervention.choices.length >= 2);
 
@@ -806,6 +876,7 @@ test("a freeform item search uses SEARCH resolution and commits the discovered i
     method: "POST", body: { title: "Natural search", worldSeed: 1701, turnLimit: 40 }
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
     method: "POST",
     body: {
@@ -831,6 +902,7 @@ test("a structured action proposal, not an input keyword, commits the exact narr
     method: "POST", body: { title: "Context acquisition", worldSeed: 1702, turnLimit: 40 }
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
     method: "POST",
     body: {
@@ -853,6 +925,7 @@ test("failed acquisition rejects false success prose and leaves inventory unchan
     method: "POST", body: { title: "Failed acquisition", worldSeed: 1703, turnLimit: 40 }
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
     method: "POST",
     body: { text: "균열 속에 손을 넣어 닿은 것을 꺼낸다", idempotencyKey: "failed-acquire-0001", expectedRunVersion: run.version }
@@ -872,6 +945,7 @@ test("a free-form one-step destination resolves as an authoritative D20 MOVE", a
     method: "POST", body: { title: "Natural move", worldSeed: 1704, turnLimit: 40 }
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
     method: "POST",
     body: { text: "가까운 안전한 방향으로 한 걸음 이동한다", idempotencyKey: "freeform-move-0001", expectedRunVersion: run.version }
@@ -883,6 +957,75 @@ test("a free-form one-step destination resolves as an authoritative D20 MOVE", a
   assert.equal(result.payload.turn.runtime.unity.events[0].type, "MOVE");
 });
 
+test("a named Root System message uses authoritative travel and cannot fake arrival through a nearby step", async (t) => {
+  const { application, baseUrl } = await startServer({ narrator: new MoveActionNarrator(), d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Named Root travel", worldSeed: 17042, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
+  const playerBefore = run.entities.find((entity) => entity.id === run.playerEntityId).position;
+
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: {
+      text: "move to the Root System final convergence point",
+      idempotencyKey: "named-root-travel-0001",
+      expectedRunVersion: run.version
+    }
+  });
+
+  assert.equal(result.response.status, 422, JSON.stringify(result.payload));
+  assert.equal(result.payload.error.code, "ROOT_SYSTEM_ACCESS_DENIED");
+  const refreshed = (await jsonRequest(baseUrl, `/v1/runs/${run.id}`)).payload.run;
+  const playerAfter = refreshed.entities.find((entity) => entity.id === refreshed.playerEntityId).position;
+  assert.deepEqual(playerAfter, playerBefore);
+  assert.equal(refreshed.version, run.version);
+  assert.equal(refreshed.currentTurn, run.currentTurn);
+});
+
+test("an eligible named Root System message commits and replays one authoritative navigation", async (t) => {
+  const { application, store, baseUrl } = await startServer({ narrator: new MoveActionNarrator(), d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Eligible Root travel", worldSeed: 17043, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
+  const authoritative = store.runs.get(run.id);
+  authoritative.adminAccessAcquisitionHistory = authoritative.adminAccessLevels
+    .map((access, index) => ({ accessLevelId: access.id, turnNo: index + 1 }));
+  authoritative.canonicalFacts.find((fact) => fact.subject === "collapse_origin").value = true;
+  const body = {
+    text: "루트 시스템 최종 수렴점으로 이동한다",
+    idempotencyKey: "eligible-root-travel-0001",
+    expectedRunVersion: run.version
+  };
+
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, { method: "POST", body });
+
+  assert.equal(result.response.status, 201, JSON.stringify(result.payload));
+  assert.ok(result.payload.navigation);
+  assert.equal(result.payload.turn, undefined);
+  assert.equal(result.payload.navigation.campaignTurnConsumed, false);
+  assert.equal(result.payload.run.currentTurn, run.currentTurn);
+  assert.equal(result.payload.run.version, run.version + 1);
+  const finaleArea = result.payload.run.world.areas.find((area) => area.campaignRole === "FINAL_CONVERGENCE");
+  const requested = result.payload.navigation.requestedDestination;
+  assert.equal(requested.areaId, finaleArea.id);
+  assert.equal(requested.x >= finaleArea.bounds.x && requested.x < finaleArea.bounds.x + finaleArea.bounds.width, true);
+  assert.equal(requested.y >= finaleArea.bounds.y && requested.y < finaleArea.bounds.y + finaleArea.bounds.height, true);
+  const player = result.payload.run.entities.find((entity) => entity.id === result.payload.run.playerEntityId);
+  assert.deepEqual(player.position, { x: result.payload.navigation.to.x, y: result.payload.navigation.to.y });
+
+  const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, { method: "POST", body });
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.payload));
+  assert.equal(replay.payload.fromIdempotencyCache, true);
+  assert.equal(replay.payload.navigation.id, result.payload.navigation.id);
+  assert.equal(replay.payload.run.version, result.payload.run.version);
+});
+
 test("a 1,000-character free-form action keeps the full intent and a bounded narration note", async (t) => {
   const narrator = new MoveActionNarrator();
   const { application, baseUrl } = await startServer({ narrator, d20Source: new FixedD20Source(20) });
@@ -891,6 +1034,7 @@ test("a 1,000-character free-form action keeps the full intent and a bounded nar
     method: "POST", body: { title: "Long Natural Action", worldSeed: 17041, turnLimit: 40 }
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const suffix = "마지막으로 가까운 안전한 방향으로 한 걸음 이동한다";
   const text = `${"가".repeat(1000 - suffix.length)}${suffix}`;
   assert.equal(text.length, 1000);
@@ -915,6 +1059,7 @@ test("seed 20260718 seals a mismatched DELETE choice onto the nearby active enco
   })).payload.campaign;
   const created = await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} });
   const run = created.payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const suffix = "몬스터를 찾아 주변을 수색하고 적과 조우한다.";
   const text = `${"가".repeat(133 - suffix.length)}${suffix}`;
   assert.equal(text.length, 133);
@@ -982,6 +1127,7 @@ test("one HTTP turn shares an overall LLM deadline and remains playable through 
     method: "POST", body: { title: "Deadline Recovery", worldSeed: 17042, turnLimit: 40 }
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   let calls = 0;
   application.service.narrator = new GeminiNarrator({
     apiKey: "deadline-test-key",
@@ -1021,6 +1167,7 @@ test("an impossible protected-item combination returns narrated failure instead 
     method: "POST", body: { title: "Narrated rejection", worldSeed: 1705, turnLimit: 40 }
   })).payload.campaign;
   let run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const acquired = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
     method: "POST",
     body: { text: "땅의 빛나는 파편을 줍는다", idempotencyKey: "protected-combine-acquire", expectedRunVersion: run.version }
@@ -1052,13 +1199,16 @@ test("committed LLM scene text remains in the bounded ledger supplied to the fol
   const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
     method: "POST", body: { title: "Narrative continuity", worldSeed: 1777, turnLimit: 40 }
   })).payload.campaign;
-  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const createdRun = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, createdRun.id);
+  const run = (await jsonRequest(baseUrl, `/v1/runs/${createdRun.id}`)).payload.run;
+  const firstChoice = run.pendingChoiceSet.choices.find((item) => item.choiceId === "opening.search");
 
   const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
     method: "POST",
     body: {
       choiceSetId: run.pendingChoiceSet.choiceSetId,
-      choiceId: "opening.listen",
+      choiceId: firstChoice.choiceId,
       idempotencyKey: "continuity-choice-0001",
       expectedRunVersion: run.version
     }
@@ -1088,7 +1238,7 @@ test("committed LLM scene text remains in the bounded ledger supplied to the fol
   assert.ok(suppliedPriorLedger.narrativeFragments.some((fragment) => fragment.includes("청록 종소리 장면 표식 1")));
 });
 
-test("safe travel bypasses a slow remote planner and commits one deterministic butterfly-effect scene without consuming a campaign turn", async (t) => {
+test("one-tile safe travel bypasses all scene planners until the server distance checkpoint", async (t) => {
   const narrator = new SlowSceneNarrator();
   const { application, baseUrl } = await startServer({ narrator });
   t.after(() => application.close());
@@ -1097,6 +1247,7 @@ test("safe travel bypasses a slow remote planner and commits one deterministic b
     body: { title: "Travel scene", worldSeed: 24680, turnLimit: 30 }
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
   const occupied = new Set(run.entities.filter((entity) => entity.id !== player.id && entity.blocking)
     .map((entity) => `${entity.position.x},${entity.position.y}`));
@@ -1124,12 +1275,12 @@ test("safe travel bypasses a slow remote planner and commits one deterministic b
   assert.equal(first.payload.navigation.campaignTurnBefore, 0);
   assert.equal(first.payload.navigation.campaignTurnAfter, 0);
   assert.equal(first.payload.run.version, 2);
-  assert.equal(first.payload.navigation.sceneDecision.decisionNo, 1);
-  assert.ok(first.payload.navigation.sceneSequence.length >= 1);
-  assert.equal(first.payload.navigation.narrative.summary, first.payload.navigation.sceneDecision.sceneGoal);
-  assert.equal(first.payload.navigation.narrative.fallbackUsed, true);
-  assert.match(first.payload.navigation.narrative.model, /^deterministic-scene-director-/);
-  assert.equal(first.payload.run.directorState.decisionNo, 1);
+  assert.equal(first.payload.navigation.storyEventTriggered, false);
+  assert.equal(first.payload.navigation.sceneDecision, null);
+  assert.deepEqual(first.payload.navigation.sceneSequence, []);
+  assert.equal(first.payload.navigation.narrative, null);
+  assert.equal(first.payload.run.directorState.decisionNo, 0);
+  assert.ok(first.payload.run.nextStoryEventDistance - first.payload.run.travelDistance >= 14);
   assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
   assert.equal(narrator.planSceneCalls, 0, "non-consuming safe travel must never invoke the remote scene planner");
 
@@ -1137,8 +1288,8 @@ test("safe travel bypasses a slow remote planner and commits one deterministic b
   assert.equal(replay.response.status, 200);
   assert.equal(replay.payload.fromIdempotencyCache, true);
   assert.equal(replay.payload.navigation.id, first.payload.navigation.id);
-  assert.deepEqual(replay.payload.navigation.narrative, first.payload.navigation.narrative);
-  assert.equal(replay.payload.run.directorState.decisionNo, 1);
+  assert.deepEqual(replay.payload.navigation.sceneSequence, first.payload.navigation.sceneSequence);
+  assert.equal(replay.payload.run.directorState.decisionNo, 0);
   assert.equal(narrator.planSceneCalls, 0, "an idempotent replay must not invoke the remote scene planner");
 });
 
@@ -1150,6 +1301,7 @@ test("free-form input remains valid after safe travel dismisses the optional cho
     body: { title: "Travel then free-form", worldSeed: 24680, turnLimit: 30 }
   })).payload.campaign;
   const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  replaceOpeningTutorialWithDialogueFixture(application, run.id);
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
   const occupied = new Set(run.entities.filter((entity) => entity.id !== player.id && entity.blocking)
     .map((entity) => `${entity.position.x},${entity.position.y}`));

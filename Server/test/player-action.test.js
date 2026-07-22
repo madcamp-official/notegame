@@ -4,15 +4,25 @@ import { randomUUID } from "node:crypto";
 import { createCampaignBlueprint } from "../src/domain/campaign.js";
 import { createRunState } from "../src/domain/turn-engine.js";
 import { generateWorld } from "../src/domain/world.js";
-import { fallbackPlayerActionProposal, playerActionContext, playerActionRejectionReason, resolvePlayerActionDestination, validatePlayerActionProposal } from "../src/llm/player-action.js";
+import { fallbackPlayerActionProposal, playerActionContext, playerActionRejectionReason, requestedPlayerMovementDestination, resolvePlayerActionDestination, validatePlayerActionProposal } from "../src/llm/player-action.js";
 
 function runFixture(seed = 91001) {
   const blueprint = createCampaignBlueprint({ worldSeed: seed, turnLimit: 40 });
-  return createRunState({
+  const run = createRunState({
     campaign: { id: randomUUID(), ownerId: randomUUID(), title: "Player action fixture", turnLimit: 40, ...blueprint, world: generateWorld(seed) },
     ownerId: randomUUID(),
     resolutionSeed: `player-action-${seed}`
   });
+  const tutorialEnemy = run.entities.find((item) => item.state?.tutorialEncounter === true);
+  if (tutorialEnemy) {
+    tutorialEnemy.position = structuredClone(tutorialEnemy.state.originPosition);
+    tutorialEnemy.state.slotId = tutorialEnemy.state.originSlotId;
+    tutorialEnemy.state.revealed = false;
+    tutorialEnemy.state.tutorialEncounter = false;
+  }
+  run.activeEncounter = null;
+  run.encounterHistory = [];
+  return run;
 }
 
 test("player action context exposes a real area and legal one-step movement without leaking coordinates", () => {
@@ -73,6 +83,31 @@ test("deterministic natural-language fallback respects the requested movement di
   const typoFallback = fallbackPlayerActionProposal(typoContext);
   assert.equal(typoFallback.kind, "MOVE");
   assert.equal(typoFallback.destinationRef, "step.east");
+});
+
+test("a Root System request resolves to the authoritative finale area instead of an arbitrary step", () => {
+  const run = runFixture(91007);
+  const context = playerActionContext(run, "move to the Root System final convergence point");
+  const destination = requestedPlayerMovementDestination(context);
+  const finaleArea = run.world.areas.find((area) => area.campaignRole === "FINAL_CONVERGENCE");
+
+  assert.ok(destination);
+  assert.equal(destination.ref, `area:${finaleArea.id}`);
+  assert.equal(destination.travelMode, "SAFE_TRAVEL");
+  const point = resolvePlayerActionDestination(run, destination.ref);
+  assert.ok(point);
+  assert.equal(point.x >= finaleArea.bounds.x && point.x < finaleArea.bounds.x + finaleArea.bounds.width, true);
+  assert.equal(point.y >= finaleArea.bounds.y && point.y < finaleArea.bounds.y + finaleArea.bounds.height, true);
+});
+
+test("an underspecified move never falls back to the first unrelated destination", () => {
+  const run = runFixture(91008);
+  const proposal = fallbackPlayerActionProposal(playerActionContext(run, "어딘가로 이동할게"));
+
+  assert.equal(proposal.kind, "DIALOGUE");
+  assert.equal(proposal.requiresRoll, false);
+  assert.equal(proposal.rejectedAction.kind, "MOVE");
+  assert.match(proposal.rejectedAction.reason, /방향/u);
 });
 
 test("the complete accepted long message reaches player-action classification", () => {

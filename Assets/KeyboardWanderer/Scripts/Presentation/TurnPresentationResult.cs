@@ -87,6 +87,7 @@ namespace KeyboardWanderer.Presentation
         public NarrativeChoiceOption[] NarrativeChoices { get; }
         public string[] SuggestedSkillIds { get; }
         public string ElementalEffectId { get; }
+        public bool ContinuesWithMovement { get; }
 
         public TurnPresentationResult(
             int d20,
@@ -111,7 +112,8 @@ namespace KeyboardWanderer.Presentation
             string elementalEffectId = null,
             string choiceSetId = null,
             NarrativeChoiceOption[] narrativeChoices = null,
-            string dialogueSpeaker = null)
+            string dialogueSpeaker = null,
+            bool continuesWithMovement = false)
         {
             D20 = d20;
             Modifier = modifier;
@@ -136,6 +138,7 @@ namespace KeyboardWanderer.Presentation
             NarrativeChoices = narrativeChoices ?? Array.Empty<NarrativeChoiceOption>();
             SuggestedSkillIds = suggestedSkillIds ?? Array.Empty<string>();
             ElementalEffectId = elementalEffectId ?? string.Empty;
+            ContinuesWithMovement = continuesWithMovement;
         }
     }
 

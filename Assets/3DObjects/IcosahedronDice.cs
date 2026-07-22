@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
@@ -21,6 +20,34 @@ using Random = UnityEngine.Random;
 public class IcosahedronDice : MonoBehaviour
 {
     private const float VisualSpinSpeedMultiplier = 0.2f;
+    private const float MaxFaceUvDistance = 0.05f;
+
+    // UV centres of the numbered faces in d20_net_texture.png, indexed by the
+    // number painted on the face (value - 1). Mesh triangle order is not a D20
+    // numbering convention, so the texture atlas is the authoritative mapping.
+    private static readonly Vector2[] FaceUvCentersByValue =
+    {
+        new Vector2(0.775805f, 0.702380f), // 1
+        new Vector2(0.619921f, 0.703037f), // 2
+        new Vector2(0.464036f, 0.703692f), // 3
+        new Vector2(0.308152f, 0.704346f), // 4
+        new Vector2(0.152270f, 0.705001f), // 5
+        new Vector2(0.775122f, 0.535473f), // 6
+        new Vector2(0.852722f, 0.451691f), // 7
+        new Vector2(0.619238f, 0.536130f), // 8
+        new Vector2(0.696838f, 0.452348f), // 9
+        new Vector2(0.463354f, 0.536785f), // 10
+        new Vector2(0.540955f, 0.453004f), // 11
+        new Vector2(0.307471f, 0.537440f), // 12
+        new Vector2(0.385072f, 0.453659f), // 13
+        new Vector2(0.151587f, 0.538094f), // 14
+        new Vector2(0.229188f, 0.454313f), // 15
+        new Vector2(0.852038f, 0.284784f), // 16
+        new Vector2(0.696155f, 0.285441f), // 17
+        new Vector2(0.540272f, 0.286097f), // 18
+        new Vector2(0.384390f, 0.286752f), // 19
+        new Vector2(0.228506f, 0.287406f), // 20
+    };
 
     [Header("Roll dynamics")]
     [Tooltip("Initial angular speed at power = 0, degrees/second.")]
@@ -49,9 +76,8 @@ public class IcosahedronDice : MonoBehaviour
     public bool IsRolling { get; private set; }
     public int LastResult { get; private set; }
 
-    // Local-space outward unit normal of each face. Index i corresponds to value i+1.
-    // IMPORTANT: reorder (or expose) this array so index matches the number painted
-    // on your texture for that face — see ExtractFaceNormals().
+    // Dice-root-local outward unit normal of each face. Index i corresponds to the
+    // value i+1 painted on d20_net_texture.png.
     private Vector3[] faceNormals;
     private Coroutine rollCoroutine;
     private int pendingResult;
@@ -83,9 +109,9 @@ public class IcosahedronDice : MonoBehaviour
     }
 
     /// <summary>
-    /// Builds the list of 20 face normals directly from the mesh, merging coplanar
-    /// triangles (some icosahedron meshes are unwrapped with more than one triangle
-    /// or duplicated vertices per face).
+    /// Builds the 20 face normals directly from the mesh and orders them by the
+    /// number painted at each triangle's UV centre. The mesh is on a rotated child
+    /// of the dice prefab, so normals are also converted into dice-root-local space.
     /// </summary>
     private void ExtractFaceNormals()
     {
@@ -114,29 +140,78 @@ public class IcosahedronDice : MonoBehaviour
         }
 
         Vector3[] verts = mesh.vertices;
+        Vector2[] uvs = mesh.uv;
         int[] tris = mesh.triangles;
-
-        var normals = new List<Vector3>(20);
-        for (int t = 0; t < tris.Length; t += 3)
+        if (uvs == null || uvs.Length != verts.Length)
         {
-            Vector3 n = Vector3.Cross(
-                verts[tris[t + 1]] - verts[tris[t]],
-                verts[tris[t + 2]] - verts[tris[t]]).normalized;
-
-            bool known = false;
-            for (int i = 0; i < normals.Count; i++)
-            {
-                if (Vector3.Dot(normals[i], n) > 0.999f) { known = true; break; }
-            }
-            if (!known) normals.Add(n);
+            faceNormals = Array.Empty<Vector3>();
+            Debug.LogError(
+                $"IcosahedronDice cannot map mesh '{mesh.name}' to D20 values because its UVs are missing.",
+                this);
+            return;
         }
 
-        faceNormals = normals.ToArray();
-        if (!HasValidFaceNormals)
+        var normalsByValue = new Vector3[20];
+        var assigned = new bool[20];
+        for (int t = 0; t < tris.Length; t += 3)
+        {
+            Vector3 meshLocalNormal = Vector3.Cross(
+                verts[tris[t + 1]] - verts[tris[t]],
+                verts[tris[t + 2]] - verts[tris[t]]).normalized;
+            Vector2 uvCenter = (uvs[tris[t]] + uvs[tris[t + 1]] + uvs[tris[t + 2]]) / 3f;
+            int faceIndex = FaceIndexForUv(uvCenter);
+            if (faceIndex < 0)
+            {
+                faceNormals = Array.Empty<Vector3>();
+                Debug.LogError(
+                    $"IcosahedronDice could not match triangle {t / 3} UV centre {uvCenter} " +
+                    "to a numbered face in d20_net_texture.png.",
+                    this);
+                return;
+            }
+
+            Vector3 rootLocalNormal = transform.worldToLocalMatrix.MultiplyVector(
+                filter.transform.localToWorldMatrix.MultiplyVector(meshLocalNormal)).normalized;
+            if (assigned[faceIndex] && Vector3.Dot(normalsByValue[faceIndex], rootLocalNormal) < 0.999f)
+            {
+                faceNormals = Array.Empty<Vector3>();
+                Debug.LogError(
+                    $"IcosahedronDice found conflicting triangles for painted value {faceIndex + 1}.",
+                    this);
+                return;
+            }
+
+            normalsByValue[faceIndex] = rootLocalNormal;
+            assigned[faceIndex] = true;
+        }
+
+        for (int i = 0; i < assigned.Length; i++)
+        {
+            if (assigned[i]) continue;
+            faceNormals = Array.Empty<Vector3>();
             Debug.LogError(
-                $"IcosahedronDice: expected 20 distinct faces, found {faceNormals.Length}. " +
-                "Check the mesh (it must be a flat-shaded icosahedron).",
+                $"IcosahedronDice did not find the face painted with value {i + 1}. " +
+                "Check the D20 mesh and texture UV layout.",
                 this);
+            return;
+        }
+
+        faceNormals = normalsByValue;
+    }
+
+    private static int FaceIndexForUv(Vector2 uv)
+    {
+        int closest = -1;
+        float closestDistanceSq = float.PositiveInfinity;
+        for (int i = 0; i < FaceUvCentersByValue.Length; i++)
+        {
+            float distanceSq = (uv - FaceUvCentersByValue[i]).sqrMagnitude;
+            if (distanceSq >= closestDistanceSq) continue;
+            closest = i;
+            closestDistanceSq = distanceSq;
+        }
+
+        return closestDistanceSq <= MaxFaceUvDistance * MaxFaceUvDistance ? closest : -1;
     }
 
     private bool EnsureFaceNormals()
