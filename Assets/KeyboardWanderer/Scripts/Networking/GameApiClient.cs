@@ -1803,7 +1803,7 @@ namespace KeyboardWanderer.Networking
                 request.SetRequestHeader("Accept", "application/json");
                 if (_userId != null)
                     request.SetRequestHeader("x-user-id", _userId);
-                request.timeout = 12;
+                request.timeout = 45;
                 yield return request.SendWebRequest();
 
                 string json = request.downloadHandler?.text ?? string.Empty;

@@ -59,8 +59,6 @@ export function loadConfig(env = process.env) {
     vllmTimeoutMs: integer(env.VLLM_TIMEOUT_MS, 8000, 250, 30000, "VLLM_TIMEOUT_MS"),
     vllmFastOutputTokens: integer(env.VLLM_FAST_OUTPUT_TOKENS, 768, 128, 2048, "VLLM_FAST_OUTPUT_TOKENS"),
     vllmQualityOutputTokens: integer(env.VLLM_QUALITY_OUTPUT_TOKENS, 1024, 256, 2048, "VLLM_QUALITY_OUTPUT_TOKENS"),
-    llmResponseTrace: boolean(env.LLM_RESPONSE_TRACE, environment === "development"),
-    llmResponseTraceFile: env.LLM_RESPONSE_TRACE_FILE || "logs/llm-responses.jsonl",
     corsOrigins: (env.CORS_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean)
   });
 }

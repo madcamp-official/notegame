@@ -5,7 +5,6 @@ import { createRequestHandler } from "./http/handler.js";
 import { GeminiNarrator } from "./llm/gemini-narrator.js";
 import { LlmResponseTrace } from "./llm/response-trace.js";
 import { VllmNarrator } from "./llm/vllm-director.js";
-import { LlmResponseTrace } from "./llm/response-trace.js";
 import { MemoryStore } from "./store/memory-store.js";
 import { createPostgresStore } from "./store/postgres-store.js";
 import { GameService } from "./services/game-service.js";
