@@ -295,15 +295,17 @@ namespace KeyboardWanderer.Tests.PlayMode
             SetField(controller, "_playerWalking", true);
             Invoke(controller, "StartRun", service, false);
             Assert.That(GetField(controller, "_playerWalking"), Is.False);
+            MoveToLegacyChoiceBoundary(controller);
             long version = service.CurrentView.Version;
+            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
+            bool dialogueWasDismissed = dialogue.IsDismissed;
 
             Assert.DoesNotThrow(controller.UiSubmit);
             Assert.That(service.CurrentView.Version, Is.EqualTo(version));
-            Assert.That(Selection(controller).Feedback, Does.Contain("대화"),
-                "Blocked gameplay input must immediately explain why it was not accepted.");
-            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
-            Assert.That(dialogue.IsDismissed, Is.False,
-                "A blocked gameplay shortcut must not dismiss the current dialogue page.");
+            Assert.That(Selection(controller).Feedback, Does.Contain("사용할 수 없습니다"),
+                "Blocked gameplay input must immediately explain why the current selection was not accepted.");
+            Assert.That(dialogue.IsDismissed, Is.EqualTo(dialogueWasDismissed),
+                "A blocked gameplay shortcut must not change the current dialogue visibility.");
         }
 
         [UnityTest]
@@ -364,6 +366,51 @@ namespace KeyboardWanderer.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator Controller_StoryCheckpointRequiresReleaseBeforeHeldMovementCanContinue()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(73412);
+            KeyboardWandererDemoController controller = CreateAuthoredController("Held Move Story Boundary Test");
+            yield return null;
+            Invoke(controller, "StartRun", service, false);
+            ((TutorialPresenter)GetField(controller, "_tutorialPresenter")).Start(false);
+            MoveToLegacyChoiceBoundary(controller);
+
+            SetField(controller, "_directionalInputHeld", true);
+            SetField(controller, "_hasBufferedDirectionalMove", true);
+            SetField(controller, "_bufferedMoveDirection", Vector2Int.right);
+            var checkpoint = new TurnPresentationResult(
+                0, 0, 0, 0, "이동", "--", "안전 이동", "계속 이동", "--",
+                "바람이 다음 경로를 가리킨다. WASD로 계속 이동하자.", "상태 변화 없음",
+                Array.Empty<string>(), false, "deterministic", 0f, Array.Empty<string>(),
+                continuesWithMovement: true);
+
+            Invoke(controller, "ApplyTurnPresentation", checkpoint, true);
+
+            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
+            Assert.That(GetField(controller, "_awaitDirectionalReleaseAfterStory"), Is.True);
+            Assert.That(GetField(controller, "_hasBufferedDirectionalMove"), Is.False);
+            Assert.That(dialogue.IsDismissed, Is.False,
+                "A checkpoint that arrives during a hold must remain readable instead of being consumed by key repeat.");
+
+            long versionAtStory = service.CurrentView.Version;
+            Vector2Int direction = FindSafeDirectionalStep(service, service.CurrentView.PlayerPosition,
+                out GridCoord destination);
+            Invoke(controller, "HandleDirectionalMoveRequested", direction);
+            Assert.That(service.CurrentView.Version, Is.EqualTo(versionAtStory));
+            Assert.That(dialogue.IsDismissed, Is.False);
+
+            Invoke(controller, "HandleDirectionalMoveReleased");
+            Invoke(controller, "HandleDirectionalMoveRequested", direction);
+            yield return null;
+            yield return null;
+
+            Assert.That(service.CurrentView.PlayerPosition, Is.EqualTo(destination));
+            Assert.That(service.CurrentView.Version, Is.EqualTo(versionAtStory + 1));
+            Assert.That(dialogue.IsDismissed, Is.True,
+                "The first fresh press after release must resume exploration without a choice modal.");
+        }
+
+        [UnityTest]
         public IEnumerator OpeningAttackTutorial_BlocksMovementAndFreeformUntilRChoice()
         {
             LocalTurnService service = LocalTurnService.CreateDemo(73410);
@@ -386,6 +433,33 @@ namespace KeyboardWanderer.Tests.PlayMode
             Assert.That(GetField(controller, "_naturalLanguageComposeMode"), Is.False,
                 "첫 전투 중 T 입력이 자유입력으로 우회되면 안 됩니다.");
             Assert.That(Selection(controller).Feedback, Does.Contain("R 키"));
+        }
+
+        [UnityTest]
+        public IEnumerator OpeningAttackTutorial_RClaimsTheSealedChoiceBeforeTheFinalStoryPage()
+        {
+            LocalTurnService service = LocalTurnService.CreateDemo(73411);
+            KeyboardWandererDemoController controller = CreateAuthoredController("Opening Attack Immediate R Test");
+            yield return null;
+            Invoke(controller, "StartRun", service, false);
+            ((TutorialPresenter)GetField(controller, "_tutorialPresenter")).Start(false);
+            SetField(controller, "_lastChoiceSetId", "opening-choice-set");
+            SetField(controller, "_lastNarrativeChoices", new[]
+            {
+                new NarrativeChoiceOption("opening.attack", "R 키로 몬스터를 공격한다.", "SKILL",
+                    skillId: "DELETE")
+            });
+            SetField(controller, "_choiceSubmissionPending", true);
+            DialoguePresenter dialogue = (DialoguePresenter)GetField(controller, "_dialoguePresenter");
+            string[] pages = (string[])Invoke(controller, "BuildDialoguePages", "opening");
+            dialogue.Restore(0, false);
+
+            bool claimed = (bool)Invoke(controller, "TrySubmitSealedSkillChoice", AbilityKind.Delete);
+
+            Assert.That(claimed, Is.True,
+                "The R shortcut shown on the opening page must claim its sealed server choice immediately.");
+            Assert.That(Selection(controller).Feedback, Does.Contain("처리"),
+                "A duplicate R while the choice is pending must provide immediate processing feedback.");
         }
 
         [UnityTest]
@@ -829,6 +903,7 @@ namespace KeyboardWanderer.Tests.PlayMode
             KeyboardWandererDemoController controller = CreateAuthoredController("Fallback Choice POI Test");
             yield return null;
             Invoke(controller, "StartRun", service, false);
+            MoveToLegacyChoiceBoundary(controller);
             SetField(controller, "_lastStorySequence", new[]
             {
                 new StorySequencePage("MONOLOGUE", "넙죽이", "다음 이동을 정하자.")
@@ -863,6 +938,7 @@ namespace KeyboardWanderer.Tests.PlayMode
             KeyboardWandererDemoController controller = CreateAuthoredController("Sealed Choice Map Navigation Test");
             yield return null;
             Invoke(controller, "StartRun", service, false);
+            MoveToLegacyChoiceBoundary(controller);
             SetField(controller, "_lastStorySequence", new[]
             {
                 new StorySequencePage("MONOLOGUE", "넙죽이", "선택하거나 다른 지역으로 이동하자.")

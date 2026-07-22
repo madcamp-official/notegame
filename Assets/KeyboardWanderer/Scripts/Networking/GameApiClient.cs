@@ -2054,7 +2054,8 @@ namespace KeyboardWanderer.Networking
                 case "RESTORE":
                 case "UNDO":
                 case "SEARCH":
-                case "SELECT_ALL": return true;
+                case "SELECT_ALL":
+                case "MOVE": return true;
                 default: return false;
             }
         }

@@ -649,7 +649,17 @@ export class GameService {
 
     const snapshot = knownSnapshot || await this.store.getRun(ownerId, runId);
     if (snapshot.version !== request.expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: snapshot.version });
-    if (snapshot.pendingChoiceSet && !request.narrativeChoice) {
+    const openingAttackPending = snapshot.activeEncounter?.reason === "opening_keyboard_tutorial" &&
+      snapshot.pendingChoiceSet?.choices?.some((choice) => choice.choiceId === "opening.attack");
+    if (snapshot.pendingChoiceSet && !request.narrativeChoice && request.skillId === "MOVE" && openingAttackPending) {
+      throw new AppError(409, "OPENING_TUTORIAL_ACTION_REQUIRED",
+        "첫 전투에서는 R 키로 관리자 키보드의 공격을 먼저 실행해야 합니다.", {
+          choiceSetId: snapshot.pendingChoiceSet.choiceSetId,
+          requiredChoiceId: "opening.attack",
+          requiredSkillId: "DELETE"
+        });
+    }
+    if (snapshot.pendingChoiceSet && !request.narrativeChoice && request.skillId !== "MOVE") {
       throw new AppError(409, "CHOICE_REQUIRED", "The current story boundary requires one server-sealed narrative choice.", {
         choiceSetId: snapshot.pendingChoiceSet.choiceSetId,
         currentVersion: snapshot.version

@@ -85,6 +85,26 @@ test("deterministic natural-language fallback respects the requested movement di
   assert.equal(typoFallback.destinationRef, "step.east");
 });
 
+test("natural-language retreat chooses a legal step away from the nearest hostile", () => {
+  const context = {
+    playerText: "몬스터에게서 도망간다",
+    spatialContext: { facing: "EAST" },
+    destinations: [
+      { ref: "step.north", name: "북쪽으로 한 걸음", distance: 1, direction: "NORTH" },
+      { ref: "step.west", name: "서쪽으로 한 걸음", distance: 1, direction: "WEST" }
+    ],
+    inventory: [],
+    visibleEntities: [
+      { id: "enemy", name: "버퍼 카파 변종", kind: "enemy", distance: 1, direction: "EAST", disabled: false, hostile: true }
+    ]
+  };
+
+  assert.equal(requestedPlayerMovementDestination(context).ref, "step.west");
+  const proposal = fallbackPlayerActionProposal(context);
+  assert.equal(proposal.kind, "MOVE");
+  assert.equal(proposal.destinationRef, "step.west");
+});
+
 test("a Root System request resolves to the authoritative finale area instead of an arbitrary step", () => {
   const run = runFixture(91007);
   const context = playerActionContext(run, "move to the Root System final convergence point");

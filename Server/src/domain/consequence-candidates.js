@@ -12,6 +12,13 @@ const FIXED_CANON = Object.freeze([
   "최종 결말 ID는 루트 시스템의 서버 레시피가 확정한다."
 ]);
 
+// A SPAWN scene is player-facing: if the activated slot is outside the current
+// camera neighborhood, the narration says that somebody appeared while the
+// player cannot actually see or interact with them. Keep scene-driven spawns
+// inside the same radius used for nearby scene actors. Distant dormant slots
+// remain available when exploration brings the player close to them.
+const SCENE_SPAWN_VISIBILITY_DISTANCE = 6;
+
 function manhattan(left, right) {
   return Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
 }
@@ -155,10 +162,16 @@ export function buildConsequenceCandidates(run, { decisionType, navigation = nul
 
   const macroPhase = run.currentMacroPhase || macroPhaseForBeat(run.currentStoryBeat);
   const currentArea = areaAt(run.world, player.position);
-  const dormantCandidate = (kind, predicate = () => true) => run.entities.find((entity) => entity.kind === kind && entity.active === false
-    && entity.state?.activationState === "DORMANT" && entity.state?.dormant === true && predicate(entity)
-    && run.world.placementSlots.some((slot) => slot.id === entity.state.activationSlotId && slot.areaId === currentArea.id)
-    && !run.entities.some((other) => other.active && (other.state?.slotId === entity.state.activationSlotId || (other.position.x === entity.position.x && other.position.y === entity.position.y))));
+  const dormantCandidate = (kind, predicate = () => true) => run.entities.find((entity) => {
+    if (entity.kind !== kind || entity.active !== false || entity.state?.activationState !== "DORMANT" ||
+        entity.state?.dormant !== true || !predicate(entity)) return false;
+    const slot = run.world.placementSlots.find((item) => item.id === entity.state.activationSlotId &&
+      item.areaId === currentArea.id);
+    if (!slot || manhattan(slot, player.position) > SCENE_SPAWN_VISIBILITY_DISTANCE) return false;
+    return !run.entities.some((other) => other.active &&
+      (other.state?.slotId === entity.state.activationSlotId ||
+       (other.position.x === slot.x && other.position.y === slot.y)));
+  });
   if (!onCooldown(run, "SPAWN_FROM_SLOT") && (directorState.generatedCharacters || []).length < 3 && (scheduledStoryEvent || probabilityGate(run, decisionNo, `rare-npc:${currentArea.id}`, 7))) {
     const dormant = dormantCandidate("npc");
     if (dormant) {

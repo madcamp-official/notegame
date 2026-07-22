@@ -92,7 +92,12 @@ namespace KeyboardWanderer.Runtime
         {
             if (Phase == GameFlowPhase.AwaitingChoice) return true;
             if (Phase == GameFlowPhase.AwaitingNarrativeChoice) return ability == AbilityKind.Move;
-            return Phase == GameFlowPhase.AwaitingEncounterChoice && ability != AbilityKind.Move;
+            // WASD is also the player's explicit disengage action. During a normal
+            // encounter it is submitted as an authoritative D20 MOVE, so success
+            // closes the encounter and held input can continue into exploration.
+            // The mandatory opening attack is guarded separately by the controller
+            // and server and therefore cannot be bypassed through this permission.
+            return Phase == GameFlowPhase.AwaitingEncounterChoice;
         }
 
         public string BlockReason(AbilityKind? ability = null)

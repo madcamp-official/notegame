@@ -98,14 +98,14 @@ namespace KeyboardWanderer.Tests.EditMode
         }
 
         [Test]
-        public void GameFlowStateMachine_EncounterAllowsSkillsButRejectsMove()
+        public void GameFlowStateMachine_EncounterAllowsSkillsAndD20DisengageMove()
         {
             var flow = new GameFlowStateMachine();
             flow.Refresh(Signals(encounter: true, intervention: true));
             Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.AwaitingEncounterChoice));
             Assert.That(flow.CanIssueAbility(AbilityKind.Search), Is.True);
-            Assert.That(flow.CanIssueAbility(AbilityKind.Move), Is.False);
-            Assert.That(flow.BlockReason(AbilityKind.Move), Does.Contain("AwaitingEncounterChoice"));
+            Assert.That(flow.CanIssueAbility(AbilityKind.Move), Is.True);
+            Assert.That(flow.BlockReason(AbilityKind.Move), Is.Empty);
         }
 
         [Test]
