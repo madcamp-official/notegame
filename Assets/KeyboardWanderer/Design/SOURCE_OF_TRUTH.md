@@ -22,11 +22,12 @@
 - 월드: 런 시작 시 한 번 생성·검증·봉인하는 160×160 맵; 이후에는 재생성 없이 이동·활성화만 수행
 - 지역 축: `REGION_BUG_FOREST`, `REGION_BUFFER_VILLAGE`, `REGION_DEADLOCK_CITY`, `REGION_DATA_GRAND_LIBRARY`, `REGION_LEGACY_CITADEL`, `REGION_ROOT_SYSTEM`
 - 여섯 지역 축과 여섯 물리 바이옴은 독립된 차원
-- 입력: `MOVE`, `USE_SKILL`만 사용
+- 저장되는 권위 입력: `MOVE`, `USE_SKILL`, `NARRATIVE_CHOICE`
 - 기술: `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`, `SEARCH`, `SELECT_ALL`만 사용하며 MOVE는 기술이 아님
 - 소비 맥락: `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, `DEPLOYMENT`
 - 안전 MOVE: D20과 캠페인 턴을 소비하지 않음; 위험 이동은 조우 활성화와 실제 행동을 분리
 - `playerNote`: 선택적 flavor이며 규칙 권위가 없음
+- 자유 입력: 문장 자체는 권위 상태가 아니며 서버의 제한된 행동 제안과 Rule Engine 검증을 거쳐 `NARRATIVE_CHOICE` 또는 `USE_SKILL`로만 커밋
 - 관리자 권한: `ADMIN_ACCESS_LEVEL_1..3` 정확히 세 단계; 단계별로 서로 다른 영역·맥락의 후보 최소 2개
 - 루트 게이트: 권한 3/3과 내부 통제 원인 핵심 단서 모두 필요
 
@@ -48,7 +49,7 @@
 
 저장·재개는 `majorChoices`, `regionOutcomes`, `npcRelationships`, `canonicalFacts`, `unresolvedHooks`, `abilityUsageHistory`, `adminAccessAcquisitionHistory`, `technicalDebtEntries`를 보존합니다. 기술 부채는 원인·지연 결과·해소 근거를 가진 ledger이며 일반 성공으로 자동 감소하지 않습니다.
 
-Rule Engine이 geometry, 경로, 점유, 합법성, D20, 자원, 권한, 사실, 부채와 `endingId`를 확정합니다. Gemini는 bounded structured output과 확정 결과의 짧은 서술만 제안하며, 1회 재시도 후 결정적 폴백을 사용합니다. 비용 기본값은 `gemini-2.5-flash-lite`, thinking budget 0, 작은 context와 출력입니다.
+Rule Engine이 geometry, 경로, 점유, 합법성, D20, 자원, 권한, 사실, 부채와 `endingId`를 확정합니다. Gemini는 bounded structured player-action proposal과 확정 결과의 짧은 서술만 제안하며, 최대 1회 repair 후 결정적 폴백을 사용합니다. 비용 기본값은 `gemini-3.1-flash-lite`, 최소 thinking level, 작은 context와 출력입니다.
 
 ## 레퍼런스 이미지 경계
 
@@ -58,7 +59,7 @@ Rule Engine이 geometry, 경로, 점유, 합법성, D20, 자원, 권한, 사실,
 
 - 매 턴 LLM이 타일, 경로, POI 또는 지역을 생성하는 구조
 - 지역 축과 물리 바이옴을 같은 열거형으로 취급하는 구조
-- Attack, Interact, Negotiate, Rest 또는 자유 입력을 새 권위 행동으로 추가하는 구조
+- Attack, Interact, Negotiate, Rest 또는 자유 입력이 서버 검증을 우회해 상태를 직접 바꾸는 구조
 - 자연어 메모가 없으면 행동할 수 없는 UI
 - LLM이 권한, 핵심 사실, 기술 부채 해소, D20 또는 결말을 직접 확정하는 구조
 - `NinjaGreen`이나 레퍼런스 이미지의 콘텐츠를 제품 컨셉으로 사용하는 구조

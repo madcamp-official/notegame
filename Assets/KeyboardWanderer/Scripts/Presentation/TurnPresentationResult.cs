@@ -22,6 +22,7 @@ namespace KeyboardWanderer.Presentation
 
         public bool IsSkill => string.Equals(ChoiceKind, "SKILL", StringComparison.OrdinalIgnoreCase) &&
                                !string.IsNullOrWhiteSpace(SkillId);
+        public bool RequiresD20 => string.Equals(ResolutionMode, "D20", StringComparison.OrdinalIgnoreCase);
 
         public NarrativeChoiceOption(string choiceId, string text, string choiceKind,
             string intentTag = null, string skillId = null, string destinationRef = null,

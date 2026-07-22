@@ -51,6 +51,11 @@ namespace KeyboardWanderer.Presentation
                 EntityCapabilities capabilities = EntityCapabilityCatalog.Resolve(source.Kind,
                     source.MaxHealth <= 0 || source.Health > 0, source.IsHostile, source.IsProtected,
                     source.IsCloneable, source.AssetId);
+                string requiredSkillId = source.Kind == EntityKind.Enemy &&
+                                         EnemyArchetypeCatalog.RequiresSearchBeforeDelete(source.AssetId,
+                                             fallback.WorldSeed, source.EntityId, fallback.CanonicalFacts)
+                    ? "SEARCH"
+                    : string.Empty;
                 entities[i] = new RunPresentationEntity
                 {
                     Id = source.EntityId,
@@ -70,7 +75,8 @@ namespace KeyboardWanderer.Presentation
                     CanConnect = capabilities.CanConnect,
                     CanRestore = capabilities.CanRestore,
                     CanInteract = capabilities.CanInteract,
-                    DeleteRequiredAdminAccess = capabilities.RequiredAdminAccess
+                    DeleteRequiredAdminAccess = capabilities.RequiredAdminAccess,
+                    RequiredSkillId = requiredSkillId
                 };
             }
 

@@ -5,7 +5,6 @@ import { createRequestHandler } from "./http/handler.js";
 import { GeminiNarrator } from "./llm/gemini-narrator.js";
 import { LlmResponseTrace } from "./llm/response-trace.js";
 import { VllmNarrator } from "./llm/vllm-director.js";
-import { LlmResponseTrace } from "./llm/response-trace.js";
 import { MemoryStore } from "./store/memory-store.js";
 import { createPostgresStore } from "./store/postgres-store.js";
 import { GameService } from "./services/game-service.js";
@@ -16,6 +15,8 @@ function createNarrator(config, logger) {
       baseUrl: config.vllmBaseUrl,
       apiKey: config.vllmApiKey,
       timeoutMs: config.vllmTimeoutMs,
+      circuitCooldownMs: config.vllmCircuitCooldownMs,
+      maxConcurrentRequests: config.llmMaxConcurrentRequests,
       modelProfiles: {
         fast: { model: config.vllmModel, maxOutputTokens: config.vllmFastOutputTokens },
         quality: { model: config.vllmModel, maxOutputTokens: config.vllmQualityOutputTokens }
@@ -26,6 +27,8 @@ function createNarrator(config, logger) {
   return new GeminiNarrator({
     apiKey: config.geminiApiKey,
     timeoutMs: config.geminiTimeoutMs,
+    circuitCooldownMs: config.geminiCircuitCooldownMs,
+    maxConcurrentRequests: config.llmMaxConcurrentRequests,
     modelProfiles: {
       fast: { model: config.geminiFastModel, maxOutputTokens: config.geminiFastOutputTokens },
       quality: { model: config.geminiQualityModel, maxOutputTokens: config.geminiQualityOutputTokens }
@@ -51,7 +54,11 @@ export async function createApplication(options = {}) {
     narrator,
     d20Source: options.d20Source,
     clock: options.clock,
-    logger
+    logger,
+    idempotencyLeaseMs: config.idempotencyLeaseMs,
+    idempotencyWaitTimeoutMs: config.idempotencyWaitTimeoutMs,
+    llmTurnDeadlineMs: config.llmTurnDeadlineMs,
+    llmTurnMaxCalls: config.llmTurnMaxCalls
   });
   const server = createServer(createRequestHandler({ service, config, logger }));
   return {

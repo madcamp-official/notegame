@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.IO;
 using KeyboardWanderer.Editor;
 using KeyboardWanderer.Editor.Validation;
 using KeyboardWanderer.Demo;
@@ -23,7 +25,8 @@ namespace KeyboardWanderer.Tests.EditMode
             TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
                 KeyboardWandererFontAssetAuthoring.FontAssetPath);
             Assert.That(font, Is.Not.Null, "기본 한글 TMP 폰트 에셋이 없습니다.");
-            Assert.That(font.atlasPopulationMode, Is.EqualTo(AtlasPopulationMode.Dynamic));
+            Assert.That(font.atlasPopulationMode, Is.EqualTo(AtlasPopulationMode.Static),
+                "Resources의 persistent 폰트는 런타임 텍스트 때문에 변경될 수 없는 템플릿이어야 합니다.");
             Assert.That(font.isMultiAtlasTexturesEnabled, Is.True);
             Assert.That(font.atlasWidth, Is.EqualTo(KeyboardWandererFontAssetAuthoring.AtlasSize));
             Assert.That(font.atlasHeight, Is.EqualTo(KeyboardWandererFontAssetAuthoring.AtlasSize));
@@ -48,6 +51,53 @@ namespace KeyboardWanderer.Tests.EditMode
                 Assert.That(atlases[glyph.atlasIndex], Is.Not.Null,
                     "글리프가 비어 있는 Atlas 슬롯을 참조하고 있습니다.");
             }
+        }
+
+        [Test]
+        public void KoreanTmpFont_RepeatedForceImportKeepsSerializedStateAndDependencyHashStable()
+        {
+            string path = KeyboardWandererFontAssetAuthoring.FontAssetPath;
+            string absolutePath = Path.Combine(Directory.GetCurrentDirectory(), path);
+            string absoluteMetaPath = absolutePath + ".meta";
+            Assert.That(File.Exists(absolutePath), Is.True);
+            Assert.That(File.Exists(absoluteMetaPath), Is.True);
+            byte[] initialBytes = File.ReadAllBytes(absolutePath);
+            byte[] initialMetaBytes = File.ReadAllBytes(absoluteMetaPath);
+            Hash128 initialDependency = AssetDatabase.GetAssetDependencyHash(path);
+            var importerDiagnostics = new List<string>();
+            Application.LogCallback captureImporterDiagnostic = (condition, _, __) =>
+            {
+                if (condition.Contains("generated inconsistent result") && condition.Contains(path))
+                    importerDiagnostics.Add(condition);
+            };
+
+            TMP_FontAsset ensured;
+            Application.logMessageReceived += captureImporterDiagnostic;
+            try
+            {
+                ensured = KeyboardWandererFontAssetAuthoring.EnsureProjectFontAsset(false);
+                Assert.That(KeyboardWandererFontAssetAuthoring.EnsureProjectFontAsset(false), Is.SameAs(ensured),
+                    "변경 없는 폰트 검증은 같은 persistent 템플릿을 그대로 반환해야 합니다.");
+                AssetDatabase.ImportAsset(path,
+                    ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                AssetDatabase.ImportAsset(path,
+                    ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+            }
+            finally
+            {
+                Application.logMessageReceived -= captureImporterDiagnostic;
+            }
+
+            CollectionAssert.AreEqual(initialBytes, File.ReadAllBytes(absolutePath),
+                "NativeFormatImporter 재실행이 TMP 프로젝트 에셋을 다시 직렬화하면 안 됩니다.");
+            CollectionAssert.AreEqual(initialMetaBytes, File.ReadAllBytes(absoluteMetaPath),
+                "반복 검증이나 임포트가 폰트 GUID/meta를 변경하면 안 됩니다.");
+            Assert.That(AssetDatabase.GetAssetDependencyHash(path), Is.EqualTo(initialDependency),
+                "같은 TMP 에셋의 연속 강제 임포트는 동일한 dependency hash를 생성해야 합니다.");
+            Assert.That(EditorUtility.IsDirty(ensured), Is.False,
+                "변경 없는 검증이 persistent 폰트를 dirty 상태로 남기면 안 됩니다.");
+            Assert.That(importerDiagnostics, Is.Empty,
+                "동일 에셋의 반복 검증/강제 임포트가 consistency 진단을 내면 테스트를 통과시키면 안 됩니다.");
         }
 
         [Test]

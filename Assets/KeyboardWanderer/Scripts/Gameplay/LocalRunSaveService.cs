@@ -16,10 +16,39 @@ namespace KeyboardWanderer.Gameplay
     {
         private const string FileName = "codria-save-v4.json";
         private const int CurrentSchemaVersion = 9;
+#if UNITY_EDITOR
+        private static string _editorSaveDirectory = string.Empty;
+#endif
 
-        public static string SavePath => Path.Combine(Application.persistentDataPath, FileName);
+        public static string SavePath => Path.Combine(SaveDirectory, FileName);
         public static string BackupPath => SavePath + ".bak";
         public static bool HasSave => File.Exists(SavePath) || File.Exists(BackupPath);
+
+        private static string SaveDirectory
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (!string.IsNullOrEmpty(_editorSaveDirectory))
+                    return _editorSaveDirectory;
+#endif
+                return Application.persistentDataPath;
+            }
+        }
+
+#if UNITY_EDITOR
+        internal static void SetEditorSaveDirectory(string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+                throw new ArgumentException("An isolated save directory is required.", nameof(directory));
+            _editorSaveDirectory = Path.GetFullPath(directory);
+        }
+
+        internal static void ClearEditorSaveDirectory()
+        {
+            _editorSaveDirectory = string.Empty;
+        }
+#endif
 
         public static void Save(LocalTurnService service)
         {

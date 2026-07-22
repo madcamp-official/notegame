@@ -387,13 +387,13 @@ namespace KeyboardWanderer.Networking
         {
             switch (skillId)
             {
-                case "COPY": return "Ctrl C 복제로 가능성을 하나 더 만들어 본다.";
-                case "DELETE": return "Delete로 이 흐름을 단호하게 밀어낸다.";
-                case "CONNECT": return "Ctrl K 연결로 상대와 흔적 사이의 관계를 이어 본다.";
-                case "RESTORE": return "Ctrl R 복구로 잃어버린 상태를 되돌려 본다.";
-                case "UNDO": return "Ctrl Z 되돌리기로 직전 선택의 흔적을 상쇄한다.";
+                case "COPY": return "E 복제로 가능성을 하나 더 만들어 본다.";
+                case "DELETE": return "R 공격으로 이 흐름을 단호하게 밀어낸다.";
+                case "CONNECT": return "C 연결로 상대와 흔적 사이의 관계를 이어 본다.";
+                case "RESTORE": return "X 복구로 잃어버린 상태를 되돌려 본다.";
+                case "UNDO": return "Z 되돌리기로 직전 선택의 흔적을 상쇄한다.";
                 case "SELECT_ALL": return "Ctrl A 전체 개입으로 장면 전체에 손을 댄다.";
-                case "SEARCH": return "Ctrl F 조사로 아직 드러나지 않은 사정을 살펴본다.";
+                case "SEARCH": return "F 조사로 아직 드러나지 않은 사정을 살펴본다.";
                 default: return skillId + "을 사용해 상황에 개입한다.";
             }
         }
@@ -594,12 +594,12 @@ namespace KeyboardWanderer.Networking
         {
             switch (ability)
             {
-                case AbilityKind.Copy: return "Ctrl C 복제";
-                case AbilityKind.Delete: return "Delete 단일 공격";
-                case AbilityKind.Connect: return "Ctrl K 연결";
-                case AbilityKind.Restore: return "Ctrl R 복구";
-                case AbilityKind.Undo: return "Ctrl Z 2턴 역행";
-                case AbilityKind.Search: return "Ctrl F 조사";
+                case AbilityKind.Copy: return "E 복제";
+                case AbilityKind.Delete: return "R 단일 공격";
+                case AbilityKind.Connect: return "C 연결";
+                case AbilityKind.Restore: return "X 복구";
+                case AbilityKind.Undo: return "Z 2턴 역행";
+                case AbilityKind.Search: return "F 조사";
                 case AbilityKind.SelectAll: return "Ctrl A 범위 공격";
                 case AbilityKind.Interact: return "상호작용";
                 default: return "W 이동";

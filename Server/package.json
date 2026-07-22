@@ -1,15 +1,16 @@
 {
-  "name": "keyboard-wanderer-server",
+  "name": "narrative-game-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Authoritative Codria v4 game server for Ninja Adventure",
   "type": "module",
+  "description": "Server for the narrative game project",
   "engines": {
-    "node": ">=20.11"
+    "node": ">=20"
   },
   "scripts": {
-    "start": "node --env-file=.env src/index.js",
-    "dev": "node --env-file=.env --watch src/index.js",
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "check": "node scripts/static-check.mjs",
     "test": "node --test --test-reporter=spec",
     "world:generate": "node scripts/generate-world.js",
     "world:validate": "node scripts/generate-world.js --count 32 --summary-only"

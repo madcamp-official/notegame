@@ -2,12 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { AppError } from "../src/errors.js";
-import { createCampaignBlueprint } from "../src/domain/campaign.js";
+import { createCampaignBlueprint, prioritizedFinaleConnectionPairs, prioritizedFinaleRemovalTargets } from "../src/domain/campaign.js";
 import { areaAt, generateWorld, isWalkable } from "../src/domain/world.js";
-import { FixedD20Source, createRunState, normalizeTravelRequest, normalizeTurnRequest, publicRun, publicTurn, resolveSafeTravel, resolveTurn } from "../src/domain/turn-engine.js";
+import { FixedD20Source, createRunState, isMonsterEncounterRequest, normalizeCommittedNarrative, normalizeTravelRequest, normalizeTurnRequest, publicRun, publicTurn, resolveSafeTravel, resolveTurn, tryForceMonsterEncounter } from "../src/domain/turn-engine.js";
 import { capabilitiesFor } from "../src/domain/entity-capabilities.js";
 import { enemyArchetype } from "../src/domain/enemy-archetypes.js";
 import { detectIntentActions } from "../src/domain/intent.js";
+import { buildSkillTargetContext, planSkillTarget } from "../src/domain/skill-target-orchestrator.js";
 
 test("Korean investigation language maps to SEARCH rather than generic interaction", () => {
   assert.deepEqual(detectIntentActions("관리자 키보드로 숲의 균열을 조사해 본다"), ["search"]);
@@ -26,7 +27,7 @@ test("seeded enemy dependencies are deterministic and vary while explicit archet
 
 const OWNER_ID = "33333333-3333-4333-8333-333333333333";
 
-function runFixture(seed = 44) {
+function runFixture(seed = 44, runId = randomUUID()) {
   const now = "2026-07-17T00:00:00.000Z";
   const campaign = {
     id: randomUUID(),
@@ -35,25 +36,107 @@ function runFixture(seed = 44) {
     ...createCampaignBlueprint({ worldSeed: seed, turnLimit: 30 }),
     world: generateWorld(seed)
   };
-  return createRunState({ campaign, ownerId: OWNER_ID, now, resolutionSeed: "private-test-seed" });
+  return createRunState({ campaign, ownerId: OWNER_ID, runId, now, resolutionSeed: "private-test-seed" });
 }
+
+test("committed narrative keeps one authoritative page when the model repeats a confirmed action as narration", () => {
+  const actionId = "11111111-1111-4111-8111-111111111111";
+  const actionText = "넙죽이가 1의 피해를 입었다.";
+  const narrative = normalizeCommittedNarrative({
+    summary: "피격 직후의 선택",
+    body: "공격의 여파가 남았다.",
+    dialogue: [],
+    storySequence: [
+      { type: "NARRATION", speakerId: null, actionId: null, text: actionText },
+      { type: "MONOLOGUE", speakerId: null, actionId: null, text: "이대로 물러설 수는 없다." }
+    ]
+  }, { appliedOps: [], rejectedOps: [] }, "fallback", {
+    sceneSequence: [{ type: "DAMAGE", actionId, text: actionText }]
+  });
+
+  assert.deepEqual(narrative.storySequence, [
+    { type: "WORLD_ACTION", speakerId: null, actionId, text: actionText },
+    { type: "MONOLOGUE", speakerId: null, actionId: null, text: "이대로 물러설 수는 없다." }
+  ]);
+});
+
+test("campaign initial records receive deterministic run-scoped identities", () => {
+  const firstRunId = "11111111-1111-4111-8111-111111111111";
+  const secondRunId = "22222222-2222-4222-8222-222222222222";
+  const first = runFixture(20260718, firstRunId);
+  const repeated = runFixture(20260718, firstRunId);
+  const second = runFixture(20260718, secondRunId);
+  const withoutIds = (records) => records.map(({ id, ...record }) => record);
+
+  assert.deepEqual(first.canonicalFacts, repeated.canonicalFacts,
+    "the same run identity and seed must reproduce exactly the same fact identities");
+  assert.deepEqual(first.rumors, repeated.rumors,
+    "the same run identity and seed must reproduce exactly the same rumor identities");
+  assert.deepEqual(withoutIds(first.canonicalFacts), withoutIds(second.canonicalFacts));
+  assert.deepEqual(withoutIds(first.rumors), withoutIds(second.rumors));
+
+  const firstIds = new Set([...first.canonicalFacts, ...first.rumors].map((record) => record.id));
+  const secondIds = new Set([...second.canonicalFacts, ...second.rumors].map((record) => record.id));
+  assert.equal(firstIds.size, first.canonicalFacts.length + first.rumors.length);
+  assert.equal(secondIds.size, second.canonicalFacts.length + second.rumors.length);
+  assert.deepEqual([...firstIds].filter((id) => secondIds.has(id)), [],
+    "different runs from one campaign seed must never share a run-owned record UUID");
+});
+
+test("forced monster encounter deterministically spawns when no dormant enemy remains", () => {
+  const exhaustedRun = (seed) => {
+    const run = runFixture(seed);
+    const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+    run.entities = run.entities.filter((entity) => !(entity.kind === "enemy" && entity.active === false
+      && entity.state?.activationState === "DORMANT"));
+    for (const entity of run.entities) {
+      if (entity.id === player.id || !entity.active || !entity.blocking) continue;
+      if (Math.abs(entity.position.x - player.position.x) + Math.abs(entity.position.y - player.position.y) <= 1) entity.active = false;
+    }
+    return run;
+  };
+  const firstRun = exhaustedRun(31);
+  const secondRun = exhaustedRun(32);
+  const first = tryForceMonsterEncounter(firstRun, "몬스터와 조우한다", 1, "forced-monster-fallback-1");
+  const second = tryForceMonsterEncounter(secondRun, "몬스터와 조우한다", 1, "forced-monster-fallback-1");
+
+  assert.ok(first);
+  assert.ok(second);
+  assert.equal(first.assetId, second.assetId);
+  assert.equal(first.state.activationState, "ACTIVE");
+  assert.equal(firstRun.activeEncounter.entityId, first.id);
+  assert.equal(firstRun.activeEncounter.spawnKind, "enemy");
+});
+
+test("natural Korean encounter conjugations match without treating 목적지 as an enemy", () => {
+  for (const text of ["몬스터를 만난다", "괴물과 마주쳤다", "적을 찾아 대결한다", "마물이 나타났다"])
+    assert.equal(isMonsterEncounterRequest(text), true, text);
+  for (const text of ["summon a monster nearby", "spawn an enemy", "find a monster to fight"])
+    assert.equal(isMonsterEncounterRequest(text), true, text);
+  for (const text of ["목적지를 찾는다", "이 목적에 맞는 기록을 수색한다", "적절한 길을 발견한다"])
+    assert.equal(isMonsterEncounterRequest(text), false, text);
+});
 
 test("entity capabilities expose world-editing rules independently from entity kind", () => {
   const removable = capabilitiesFor({ kind: "prop", active: true, protected: false, cloneable: false, state: { finaleComponent: "threat" } });
+  const finaleAnchor = capabilitiesFor({ kind: "prop", active: true, protected: true, cloneable: false, state: { finaleComponent: "anchor" } });
   const ambient = capabilitiesFor({ kind: "prop", active: true, protected: false, cloneable: true, state: {} });
   const hostile = capabilitiesFor({ kind: "enemy", active: true, protected: false, cloneable: false, state: {} });
   assert.deepEqual({ canDelete: removable.canDelete, requiredAdminAccess: removable.requiredAdminAccess, reward: removable.grantsDefeatReward }, { canDelete: true, requiredAdminAccess: 3, reward: false });
+  assert.equal(removable.canConnect, true);
+  assert.equal(finaleAnchor.canConnect, true);
   assert.equal(ambient.canCopy, true);
   assert.equal(ambient.canInteract, true);
+  assert.equal(ambient.canConnect, false);
   assert.equal(hostile.canConnect, true);
   assert.equal(hostile.grantsDefeatReward, true);
 });
 
-test("Delete changes a monster relationship without reducing HP", () => {
+test("Delete deals five damage, records defeat, and changes the monster relationship", () => {
   const run = runFixture(5701);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const target = run.entities.find((item) => item.kind === "enemy" && item.active);
-  player.position = { x: target.position.x - 1, y: target.position.y };
+  player.position = { x: target.position.x - 3, y: target.position.y };
   target.state.revealed = true;
   const hpBefore = target.state.hp;
   const result = resolveTurn({
@@ -62,7 +145,13 @@ test("Delete changes a monster relationship without reducing HP", () => {
       ability: "delete", targetEntityId: target.id }),
     d20Source: new FixedD20Source(20)
   });
-  assert.equal(result.run.entities.find((item) => item.id === target.id).state.hp, hpBefore);
+  const committedTarget = result.run.entities.find((item) => item.id === target.id);
+  assert.equal(committedTarget.state.hp, Math.max(0, hpBefore - 5));
+  assert.ok(result.turn.events.some((event) => event.type === "health_changed" && event.entityId === target.id));
+  if (hpBefore <= 5) {
+    assert.equal(committedTarget.active, false);
+    assert.ok(result.turn.events.some((event) => event.type === "entity_removed" && event.entityId === target.id));
+  }
   const relationship = result.run.npcRelationships.find((item) => item.npcId === target.id);
   assert.equal(relationship.encounterStatus, "withdrawn");
   assert.ok(result.turn.events.some((event) => event.type === "encounter_intervention"));
@@ -115,6 +204,84 @@ test("an encounter persists across uncertain actions and closes only on a confir
   });
   assert.equal(closed.run.activeEncounter, null);
   assert.ok(closed.turn.events.some((event) => event.type === "encounter_resolved" && event.resolution === "defeated_or_withdrawn"));
+});
+
+test("a lethal partial success closes combat instead of targeting a removed enemy", () => {
+  const run = runFixture(5712);
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const enemy = run.entities.find((item) => item.kind === "enemy" && item.active);
+  player.position = { x: enemy.position.x - 1, y: enemy.position.y };
+  enemy.state.revealed = true;
+  enemy.state.hp = 1;
+  run.activeEncounter = {
+    id: "encounter-partial-defeat-test", status: "active", mode: "combat", escalation: "stable",
+    kind: "COMBAT", sourceEntityId: enemy.id, title: "부분 성공 처치 시험"
+  };
+  run.encounterHistory = [structuredClone(run.activeEncounter)];
+
+  const defeated = resolveTurn({
+    run,
+    request: normalizeSkillRequest({ idempotencyKey: "encounter-partial-defeat-5712", expectedRunVersion: run.version, ability: "delete", targetEntityId: enemy.id }),
+    d20Source: new FixedD20Source(8)
+  });
+
+  assert.equal(defeated.turn.outcome, "partial_success");
+  assert.equal(defeated.run.activeEncounter, null);
+  assert.ok(defeated.turn.events.some((event) => event.type === "enemy_defeated" && event.entityId === enemy.id));
+  assert.ok(defeated.turn.events.some((event) => event.type === "encounter_resolved" && event.resolution === "defeated_or_withdrawn"));
+  assert.ok(!defeated.turn.events.some((event) => event.type === "encounter_continued"));
+});
+
+test("a legacy save with an orphaned combat encounter self-heals on the next action", () => {
+  const run = runFixture(5713);
+  const enemy = run.entities.find((item) => item.kind === "enemy" && item.active);
+  enemy.active = false;
+  enemy.state.disabled = true;
+  run.focus = Math.max(0, run.maxFocus - 1);
+  run.activeEncounter = {
+    id: "legacy-orphaned-encounter", status: "active", mode: "combat", escalation: "stable",
+    kind: "COMBAT", sourceEntityId: enemy.id, title: "이미 끝난 조우", lastAction: "delete",
+    lastOutcome: "partial_success"
+  };
+  run.encounterHistory = [structuredClone(run.activeEncounter)];
+
+  const recovered = resolveTurn({
+    run,
+    request: normalizeSkillRequest({ idempotencyKey: "legacy-orphaned-recovery-5713", expectedRunVersion: run.version, ability: "rest" }),
+    d20Source: new FixedD20Source(20)
+  });
+
+  assert.equal(recovered.run.activeEncounter, null);
+  assert.ok(recovered.turn.events.some((event) => event.type === "encounter_state_reconciled"
+    && event.encounterId === "legacy-orphaned-encounter"));
+  assert.ok(!recovered.turn.events.some((event) => event.type === "encounter_continued"));
+});
+
+test("an exhausted player can recover focus without escaping an active encounter", () => {
+  const run = runFixture(5711);
+  const enemy = run.entities.find((item) => item.kind === "enemy" && item.active);
+  run.activeEncounter = {
+    id: "encounter-rest-test", status: "active", mode: "combat", escalation: "stable",
+    kind: "COMBAT", sourceEntityId: enemy.id, title: "회복 시험 조우"
+  };
+  run.encounterHistory = [structuredClone(run.activeEncounter)];
+
+  assert.throws(() => resolveTurn({
+    run: structuredClone(run),
+    request: normalizeSkillRequest({ idempotencyKey: "encounter-rest-blocked-5711", expectedRunVersion: run.version, ability: "rest" }),
+    d20Source: new FixedD20Source(20)
+  }), (error) => error instanceof AppError && error.code === "ENCOUNTER_ACTION_REQUIRED");
+
+  run.focus = 0;
+  const recovered = resolveTurn({
+    run,
+    request: normalizeSkillRequest({ idempotencyKey: "encounter-rest-recovery-5711", expectedRunVersion: run.version, ability: "rest" }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.equal(recovered.run.focus, 3);
+  assert.equal(recovered.run.activeEncounter?.status, "active");
+  assert.equal(recovered.run.activeEncounter?.lastAction, "rest");
+  assert.ok(recovered.turn.events.some((event) => event.type === "encounter_continued" && event.action === "rest"));
 });
 
 test("technical debt thresholds mutate authoritative state exactly once", () => {
@@ -178,7 +345,7 @@ test("connecting an NPC creates a persistent promise and nearby support bonus", 
   assert.equal(searched.turn.dice.modifier, 6);
 });
 
-test("Root Process requires Search before Delete can change its encounter relationship", () => {
+test("Root Process rejects an explicit Delete target until Search reveals it", () => {
   const run = runFixture(61);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const target = run.entities.find((item) => item.kind === "enemy");
@@ -188,8 +355,10 @@ test("Root Process requires Search before Delete can change its encounter relati
   assert.equal(enemyArchetype(target.assetId), "root_process");
   const deleteRequest = normalizeSkillRequest({ idempotencyKey: "root-process-delete-1",
     expectedRunVersion: run.version, ability: "delete", targetEntityId: target.id });
-  const skipped = resolveTurn({ run, request: deleteRequest, d20Source: new FixedD20Source(20) });
-  assert.ok(skipped.turn.events.some((event) => event.type === "ambient_fallback_applied" && event.ability === "delete"));
+  assert.throws(
+    () => resolveTurn({ run, request: deleteRequest, d20Source: new FixedD20Source(20) }),
+    (error) => error instanceof AppError && error.code === "DEPENDENCY_NOT_REVEALED"
+  );
   const searched = resolveTurn({ run, request: normalizeSkillRequest({ idempotencyKey: "root-process-search",
     expectedRunVersion: run.version, ability: "search", targetEntityId: target.id }), d20Source: new FixedD20Source(20),
     skillSelection: { kind: "entity", entityIds: [target.id] } });
@@ -198,12 +367,13 @@ test("Root Process requires Search before Delete can change its encounter relati
     idempotencyKey: "root-process-delete-2", expectedRunVersion: searched.run.version,
     ability: "delete", targetEntityId: target.id }), d20Source: new FixedD20Source(20),
     skillSelection: { kind: "entity", entityIds: [target.id] } });
-  assert.equal(deleted.run.entities.find((item) => item.id === target.id).state.hp, hpBefore);
+  assert.equal(deleted.run.entities.find((item) => item.id === target.id).state.hp, Math.max(0, hpBefore - 5));
+  assert.ok(deleted.turn.events.some((event) => event.type === "health_changed" && event.entityId === target.id));
   assert.ok(deleted.turn.events.some((event) => event.type === "encounter_intervention" && event.entityId === target.id));
   assert.ok(deleted.turn.events.some((event) => event.type === "relationship_changed" && event.npcId === target.id));
 });
 
-test("Delete pressures an unsearched Cache Replicator without forced HP damage or replication", () => {
+test("Delete deals five damage and an unrevealed defeated Cache Replicator reproduces once", () => {
   const run = runFixture(62);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
   const target = run.entities.find((item) => item.kind === "enemy");
@@ -214,9 +384,29 @@ test("Delete pressures an unsearched Cache Replicator without forced HP damage o
   const result = resolveTurn({ run, request: normalizeSkillRequest({ idempotencyKey: "cache-replicator-delete",
     expectedRunVersion: run.version, ability: "delete", targetEntityId: target.id }), d20Source: new FixedD20Source(20),
     skillSelection: { kind: "entity", entityIds: [target.id] } });
-  assert.equal(result.run.entities.find((item) => item.id === target.id).state.hp, hpBefore);
-  assert.equal(result.run.entities.filter((item) => item.state?.sourceEntityId === target.id && item.state?.cacheReplica).length, 0);
+  const defeated = result.run.entities.find((item) => item.id === target.id);
+  assert.equal(defeated.state.hp, Math.max(0, hpBefore - 5));
+  assert.equal(defeated.active, false);
+  assert.equal(result.run.entities.filter((item) => item.state?.sourceEntityId === target.id && item.state?.cacheReplica).length, 1);
+  const spawned = result.turn.events.find((event) => event.type === "entity_spawned" && event.sourceEntityId === target.id);
+  assert.ok(spawned, "a cache replica must use the generic authoritative spawn lifecycle");
+  assert.equal(result.run.entities.some((item) => item.id === spawned.entityId && item.state?.cacheReplica), true);
+  assert.ok(result.turn.events.some((event) => event.type === "entity_removed" && event.entityId === target.id));
+  assert.ok(result.turn.events.some((event) => event.type === "defeat_reward_granted" && event.entityId === target.id));
   assert.ok(result.turn.events.some((event) => event.type === "relationship_changed" && event.npcId === target.id));
+
+  const replica = result.run.entities.find((item) => item.state?.sourceEntityId === target.id && item.state?.cacheReplica);
+  const livePlayer = result.run.entities.find((item) => item.id === result.run.playerEntityId);
+  livePlayer.position = { x: replica.position.x - 1, y: replica.position.y };
+  replica.state.hp = Math.min(5, replica.state.hp);
+  const second = resolveTurn({ run: result.run, request: normalizeSkillRequest({
+    idempotencyKey: "cache-replicator-delete-copy", expectedRunVersion: result.run.version,
+    ability: "delete", targetEntityId: replica.id }), d20Source: new FixedD20Source(20),
+    skillSelection: { kind: "entity", entityIds: [replica.id] } });
+  assert.equal(second.run.entities.find((item) => item.id === replica.id).active, false);
+  assert.equal(second.turn.events.some((event) => event.type === "cache_enemy_replicated"), false,
+    "a cache copy must not create an unbounded replication chain when defeated");
+  assert.equal(second.run.entities.filter((item) => item.state?.cacheReplica).length, 1);
 });
 
 function adjacentWalkable(run) {
@@ -242,7 +432,7 @@ function normalizeSkillRequest({ ability, targetEntityId = null, secondaryTarget
   });
 }
 
-test("Ctrl F investigates one target and Ctrl A changes nearby encounter relationships without HP damage", () => {
+test("Ctrl F investigates one target and Ctrl A deals three damage within four tiles", () => {
   const run = runFixture(117);
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
   const nearby = run.entities.find((entity) => entity.kind === "enemy" && entity.active);
@@ -269,7 +459,8 @@ test("Ctrl F investigates one target and Ctrl A changes nearby encounter relatio
     request: normalizeSkillRequest({ ability: "select_all", idempotencyKey: "ctrl-a-area-0001", expectedRunVersion: 2 }),
     d20Source: new FixedD20Source(20)
   });
-  assert.equal(selected.run.entities.find((entity) => entity.id === nearby.id).state.hp, hpBefore);
+  assert.equal(selected.run.entities.find((entity) => entity.id === nearby.id).state.hp, Math.max(0, hpBefore - 3));
+  assert.ok(selected.turn.events.some((event) => event.type === "health_changed" && event.entityId === nearby.id && event.delta === -3));
   assert.ok(selected.turn.events.some((event) => event.type === "group_intervention_resolved"));
   assert.ok(selected.turn.events.some((event) => event.type === "relationship_changed" && event.npcId === nearby.id));
 });
@@ -303,7 +494,7 @@ test("NPC investigation reveals one persistent clue and subsequent empty search 
 
   const repeat = resolveTurn({
     run: first.run,
-    request: normalizeSkillRequest({ ability: "search", targetEntityId: npc.id,
+    request: normalizeSkillRequest({ ability: "search",
       idempotencyKey: "npc-investigation-0002", expectedRunVersion: first.run.version }),
     d20Source: new FixedD20Source(20)
   });
@@ -411,7 +602,7 @@ test("copy validates and mutates only the cloned committed state", () => {
   assert.equal(repeatedDto.runtime.gameplayResult.result.rejectionReason, "COPY_LINEAGE_LOCKED");
 });
 
-test("Delete ignores a supplied protected entity and resolves as an ambient action", () => {
+test("Delete rejects a supplied protected entity instead of silently changing the target", () => {
   const run = runFixture(45);
   const player = run.entities.find((entity) => entity.id === run.playerEntityId);
   const warden = run.entities.find((entity) => entity.kind === "npc");
@@ -425,9 +616,10 @@ test("Delete ignores a supplied protected entity and resolves as an ambient acti
   });
 
   run.entities = run.entities.filter((entity) => [player.id, warden.id].includes(entity.id));
-  const resolved = resolveTurn({ run, request, d20Source: new FixedD20Source(20) });
-  assert.ok(resolved.turn.events.some((event) => event.type === "ambient_fallback_applied" && event.ability === "delete"));
-  assert.equal(resolved.run.gold, run.gold + 20);
+  assert.throws(
+    () => resolveTurn({ run, request, d20Source: new FixedD20Source(20) }),
+    (error) => error instanceof AppError && error.code === "TARGET_NOT_HOSTILE"
+  );
   assert.equal(run.currentTurn, 0);
   assert.equal(run.version, 1);
   assert.equal(warden.active, true);
@@ -482,6 +674,79 @@ test("MOVE can be D20-resolved while blocked safe travel still never consumes a 
   assert.deepEqual(run.entities.find((entity) => entity.id === run.playerEntityId).position, playerBefore);
   assert.equal(run.currentTurn, 0);
   assert.equal(run.version, 1);
+});
+
+test("one-tile safe travel atomically invalidates the pending narrative choice without consuming a turn", () => {
+  const run = runFixture(4600);
+  const pendingChoiceSetId = run.pendingChoiceSet.choiceSetId;
+  const destination = adjacentWalkable(run);
+  const resolved = resolveSafeTravel({
+    run,
+    request: normalizeTravelRequest({
+      inputType: "MOVE",
+      idempotencyKey: "short-travel-clears-choice-0001",
+      expectedRunVersion: run.version,
+      destination
+    })
+  });
+
+  assert.equal(resolved.navigation.path.length, 2);
+  assert.deepEqual(resolved.run.entities.find((entity) => entity.id === run.playerEntityId).position,
+    destination);
+  assert.equal(resolved.run.pendingChoiceSet, null);
+  assert.equal(resolved.run.choiceHistory.filter((entry) => entry.type === "NARRATIVE_CHOICE_SKIPPED"
+    && entry.choiceSetId === pendingChoiceSetId).length, 1);
+  assert.equal(resolved.run.currentTurn, run.currentTurn);
+  assert.equal(resolved.run.version, run.version + 1);
+  assert.equal(run.pendingChoiceSet.choiceSetId, pendingChoiceSetId,
+    "safe-travel resolution must not mutate the caller's pre-commit snapshot");
+});
+
+test("long safe POI travel invalidates the pending choice and reaches its destination across a story checkpoint", () => {
+  const run = runFixture(4601);
+  run.nextStoryEventDistance = 1;
+  const pendingChoiceSetId = run.pendingChoiceSet.choiceSetId;
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  let resolved = null;
+  let destination = null;
+  for (const point of run.world.points) {
+    if (Math.abs(point.x - player.position.x) + Math.abs(point.y - player.position.y) < 8)
+      continue;
+    try {
+      const candidate = resolveSafeTravel({
+        run,
+        request: normalizeTravelRequest({
+          inputType: "MOVE",
+          idempotencyKey: `long-safe-travel-${point.id}`,
+          expectedRunVersion: run.version,
+          destination: { x: point.x, y: point.y }
+        })
+      });
+      if (!candidate.navigation.encounterOpened && candidate.navigation.path.length >= 8) {
+        resolved = candidate;
+        destination = { x: point.x, y: point.y };
+        break;
+      }
+    } catch {
+      // Some generated POIs are intentionally behind a gate or unsafe encounter.
+    }
+  }
+  assert.ok(resolved && destination, "fixture must expose at least one distant safe POI");
+  assert.deepEqual(resolved.navigation.to, {
+    areaId: resolved.navigation.to.areaId,
+    ...destination
+  });
+  assert.deepEqual(resolved.run.entities.find((entity) => entity.id === run.playerEntityId).position,
+    destination);
+  assert.equal(resolved.run.storyEventDue, true,
+    "crossing the checkpoint still schedules one destination scene without truncating travel");
+  assert.equal(resolved.run.pendingChoiceSet, null);
+  assert.equal(resolved.run.choiceHistory.filter((entry) => entry.type === "NARRATIVE_CHOICE_SKIPPED"
+    && entry.choiceSetId === pendingChoiceSetId).length, 1);
+  assert.equal(resolved.run.currentTurn, run.currentTurn);
+  assert.equal(resolved.run.version, run.version + 1);
+  assert.equal(run.pendingChoiceSet.choiceSetId, pendingChoiceSetId,
+    "long travel must leave the pre-commit snapshot intact for optimistic concurrency");
 });
 
 test("public runs hide pre-generated dormant actors while reporting their bounded pool", () => {
@@ -602,40 +867,55 @@ test("Restore compensates a recent investigation snapshot without introducing HP
   assert.ok(restored.turn.events.some((event) => event.type === "entity_state_restored"));
 });
 
-test("ambient skills ignore client target and destination payloads", () => {
+test("ambient-capable skills validate and preserve explicit targets and destinations", () => {
   const run = runFixture(1);
-  const player = run.entities.find((item) => item.id === run.playerEntityId);
-  const target = run.entities.find((item) => item.kind === "prop" && !item.protected && !item.blocking
-    && run.world.placementSlots.some((slot) => slot.id === item.state?.slotId && slot.purpose === "ambient"));
-  assert.ok(target, "the fixture must contain an ambient prop");
-  player.position = { x: target.position.x - 1, y: target.position.y };
+  const targets = run.entities.filter((item) => item.id !== run.playerEntityId).slice(0, 2);
+  const destination = { x: 10, y: 11 };
+  assert.throws(() => normalizeTurnRequest({
+    inputType: "USE_SKILL", idempotencyKey: "delete-invalid-1", expectedRunVersion: 1,
+    skillId: "DELETE", targetIds: ["not-a-uuid"]
+  }), (error) => error instanceof AppError && error.code === "TARGET_INVALID");
 
-  run.entities = run.entities.filter((entity) => [player.id, target.id].includes(entity.id));
-  const request = normalizeTurnRequest({
-    inputType: "USE_SKILL", idempotencyKey: "delete-ambient-1", expectedRunVersion: 1,
-    skillId: "DELETE", targetIds: ["not-a-uuid"], destination: { invalid: true }
+  const copy = normalizeTurnRequest({
+    inputType: "USE_SKILL", idempotencyKey: "copy-explicit-1", expectedRunVersion: 1,
+    skillId: "COPY", targetIds: [targets[0].id], destination
   });
-  assert.equal(request.targetEntityId, null);
-  assert.equal(request.destination, null);
-  const resolved = resolveTurn({ run, request, d20Source: new FixedD20Source(20) });
-  assert.ok(resolved.turn.events.some((event) => event.type === "ambient_fallback_applied"));
-  assert.equal(target.active, true);
-  assert.equal(run.currentTurn, 0);
+  assert.equal(copy.targetEntityId, targets[0].id);
+  assert.deepEqual(copy.destination, destination);
+  assert.equal(copy.abilitySource, "structured_selection");
+
+  const connect = normalizeTurnRequest({
+    inputType: "USE_SKILL", idempotencyKey: "connect-explicit-1", expectedRunVersion: 1,
+    skillId: "CONNECT", targetIds: targets.map((item) => item.id)
+  });
+  assert.equal(connect.targetEntityId, targets[0].id);
+  assert.equal(connect.secondaryTargetEntityId, targets[1].id);
+
+  const ambient = normalizeTurnRequest({
+    inputType: "USE_SKILL", idempotencyKey: "search-ambient-1", expectedRunVersion: 1,
+    skillId: "SEARCH", targetIds: []
+  });
+  assert.equal(ambient.targetEntityId, null);
+  assert.equal(ambient.abilitySource, "server_auto_target");
+
+  assert.throws(() => normalizeTurnRequest({
+    inputType: "USE_SKILL", idempotencyKey: "delete-dest-1", expectedRunVersion: 1,
+    skillId: "DELETE", targetIds: [targets[0].id], destination
+  }), (error) => error instanceof AppError && error.code === "DESTINATION_INVALID");
 });
 
 test("Restore repairs recent active-target damage but never rewinds the roll, turn, or map", () => {
   const run = runFixture(49);
   const player = run.entities.find((item) => item.id === run.playerEntityId);
-  const npc = run.entities.find((item) => item.kind === "npc");
-  const prop = run.entities.find((item) => item.kind === "prop");
+  const [npc, secondNpc] = run.entities.filter((item) => item.kind === "npc").slice(0, 2);
   player.position = { x: 2, y: 2 };
   npc.position = { x: 3, y: 2 };
-  prop.position = { x: 4, y: 2 };
+  secondNpc.position = { x: 4, y: 2 };
   const damaged = resolveTurn({
     run,
     request: normalizeSkillRequest({
       idempotencyKey: "damage-connect-1", expectedRunVersion: 1, ability: "connect",
-      targetEntityId: npc.id, secondaryTargetEntityId: prop.id, intent: "위험한 연결을 시도한다"
+      targetEntityId: npc.id, secondaryTargetEntityId: secondNpc.id, intent: "위험한 연결을 시도한다"
     }),
     d20Source: new FixedD20Source(1)
   });
@@ -660,6 +940,112 @@ test("all five ambient keyboard skills resolve without client targets", () => {
     const request = normalizeSkillRequest({ idempotencyKey: `ambient-${index + 1000}`, expectedRunVersion: 1, ability });
     const resolved = resolveTurn({ run, request, d20Source: new FixedD20Source(20) });
     assert.ok(resolved.turn.events.some((event) => event.type === "ambient_fallback_applied" && event.ability === ability));
+  }
+});
+
+test("SEARCH establishes the essential collapse clue used by the Root System gate", () => {
+  const run = runFixture(72);
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const clueEntity = run.entities.find((item) => item.active && item.state?.evidenceKey === "STORY_REVELATION");
+  const clueFact = run.canonicalFacts.find((fact) => fact.subject === "collapse_origin" && fact.predicate === "inside_admin_control_system");
+  assert.ok(clueEntity);
+  assert.equal(clueFact.value, false);
+  player.position = { x: 2, y: 2 };
+  clueEntity.position = { x: 3, y: 2 };
+
+  const searched = resolveTurn({
+    run,
+    request: normalizeSkillRequest({
+      idempotencyKey: "essential-clue-search-1", expectedRunVersion: 1,
+      ability: "search", targetEntityId: clueEntity.id
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+
+  assert.equal(searched.run.canonicalFacts.find((fact) => fact.id === clueFact.id).value, true);
+  assert.ok(searched.turn.events.some((event) => event.type === "canonical_fact_confirmed" && event.factId === clueFact.id));
+  assert.ok(searched.turn.events.some((event) => event.type === "essential_clue_acquired" && event.entityId === clueEntity.id));
+  searched.run.adminAccessAcquisitionHistory = searched.run.adminAccessLevels.map((access, index) => ({ accessLevelId: access.id, turnNo: index + 1 }));
+  assert.equal(publicRun(searched.run).finaleGate.eligible, true);
+});
+
+test("finale component props connect only as authorized Root puzzle endpoints", () => {
+  const run = runFixture(27);
+  const player = run.entities.find((item) => item.id === run.playerEntityId);
+  const anchor = run.entities.find((item) => item.state?.finaleComponent === "anchor");
+  const freedom = run.entities.find((item) => item.state?.finaleComponent === "freedom");
+  const ordinaryProp = run.entities.find((item) => item.active && item.kind === "prop"
+    && !item.state?.finaleComponent && !item.state?.adminAccessLevelId);
+  const npc = run.entities.find((item) => item.active && item.kind === "npc" && !item.state?.adminAccessLevelId);
+  assert.ok(anchor && freedom && ordinaryProp && npc);
+  player.position = { ...anchor.position };
+  freedom.position = { ...anchor.position };
+  ordinaryProp.position = { ...anchor.position };
+  npc.position = { ...anchor.position };
+  const connect = (left, right, key) => normalizeSkillRequest({
+    idempotencyKey: key, expectedRunVersion: run.version, ability: "connect",
+    targetEntityId: left.id, secondaryTargetEntityId: right.id
+  });
+
+  assert.throws(
+    () => resolveTurn({ run, request: connect(ordinaryProp, npc, "ordinary-prop-connect-1"), d20Source: new FixedD20Source(20) }),
+    (error) => error instanceof AppError && error.code === "TARGET_NOT_CONNECTABLE"
+  );
+  assert.throws(
+    () => resolveTurn({ run, request: connect(anchor, freedom, "gated-finale-connect-1"), d20Source: new FixedD20Source(20) }),
+    (error) => error instanceof AppError && error.code === "FINALE_ACCESS_DENIED"
+  );
+
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({ accessLevelId: access.id, turnNo: index + 1 }));
+  run.canonicalFacts.find((fact) => fact.subject === "collapse_origin").value = true;
+  assert.throws(
+    () => resolveTurn({ run, request: connect(anchor, npc, "mixed-finale-connect-1"), d20Source: new FixedD20Source(20) }),
+    (error) => error instanceof AppError && error.code === "FINALE_ACCESS_DENIED"
+  );
+
+  const resolved = resolveTurn({
+    run,
+    request: connect(anchor, freedom, "open-frontier-connect-1"),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.equal(resolved.turn.actionContext, "DEPLOYMENT");
+  assert.ok(resolved.turn.events.some((event) => event.type === "connection_created"
+    && event.fromId === anchor.id && event.toId === freedom.id));
+  assert.ok(resolved.run.connections.some((connection) => connection.active
+    && connection.fromId === anchor.id && connection.toId === freedom.id));
+});
+
+test("finale threat props never inherit the enemy-only Root Process reveal gate across seeded runs", () => {
+  for (const seed of [3, 7, 10, 11]) {
+    const runId = `00000000-0000-4000-8000-${String(seed).padStart(12, "0")}`;
+    const run = runFixture(seed, runId);
+    const player = run.entities.find((item) => item.id === run.playerEntityId);
+    const threat = run.entities.find((item) => item.state?.finaleComponent === "threat");
+    assert.ok(player && threat);
+    assert.equal(threat.kind, "prop");
+    assert.equal(enemyArchetype(threat.assetId, run.worldSeed ?? run.world?.worldSeed, threat.id), "root_process",
+      `Seed ${seed} must preserve the formerly failing hash classification.`);
+    player.position = { ...threat.position };
+    run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+      accessLevelId: access.id,
+      turnNo: index + 1
+    }));
+    run.canonicalFacts.find((fact) => fact.subject === "collapse_origin").value = true;
+
+    const resolved = resolveTurn({
+      run,
+      request: normalizeSkillRequest({
+        idempotencyKey: `finale-threat-delete-${seed}`,
+        expectedRunVersion: run.version,
+        ability: "delete",
+        targetEntityId: threat.id
+      }),
+      d20Source: new FixedD20Source(20)
+    });
+
+    assert.ok(resolved.turn.events.some((event) => event.type === "entity_removed"
+      && event.entityId === threat.id));
+    assert.equal(resolved.run.entities.find((item) => item.id === threat.id).active, false);
   }
 });
 
@@ -771,4 +1157,750 @@ test("smart non-targeted skills auto-target the closest valid entity", () => {
   const resolvedProp = resolved.run.entities.find(e => e.id === prop.id);
   assert.equal(resolvedProp.state.revealed, true); // Auto-targeted and successfully revealed!
   assert.ok(resolved.turn.events.some(e => e.type === "entity_investigated" && e.entityId === prop.id));
+});
+
+test("legacy-disabled emergent runs expose and resolve the next administrator access candidate", async () => {
+  const run = runFixture(7401);
+  run.currentArcQuestion = null;
+  for (const arc of run.arcQuestions) arc.status = "legacy_disabled";
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const candidateRecord = run.adminAccessCandidates.find((candidate) =>
+    candidate.accessLevelId === "ADMIN_ACCESS_LEVEL_1" && candidate.skillId === "SEARCH");
+  const target = run.entities.find((entity) => entity.state?.candidateId === candidateRecord.id);
+  assert.ok(player && target);
+  player.position = { x: target.position.x - 1, y: target.position.y };
+
+  const context = buildSkillTargetContext(run, { skillId: "SEARCH", playerNote: null }, 15);
+  assert.ok(context.candidates.some((candidate) => candidate.entityIds?.[0] === target.id),
+    "mechanically legal access must remain visible when the retired arc scheduler is null");
+
+  const resolved = resolveTurn({
+    run,
+    request: normalizeTurnRequest({
+      inputType: "USE_SKILL",
+      idempotencyKey: "legacy-null-admin-search-1",
+      expectedRunVersion: run.version,
+      skillId: "SEARCH",
+      targetIds: []
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.deepEqual(resolved.run.progressTokens, ["ADMIN_ACCESS_LEVEL_1"]);
+  assert.equal(resolved.run.progressLevel, 1);
+  const consumedTarget = resolved.run.entities.find((entity) => entity.id === target.id);
+  assert.equal(consumedTarget.state.adminAccessResolved, true);
+  assert.equal(consumedTarget.state.disabled, true,
+    "acquired access anchors must leave the active world and target set");
+  assert.ok(resolved.turn.events.some((event) => event.type === "admin_access_acquired"
+    && event.candidateId === candidateRecord.id));
+  assert.deepEqual(resolved.turn.request.targetEntityId, target.id,
+    "the committed request must expose the authoritative auto-selected target");
+  assert.deepEqual(resolved.run.abilityUsageHistory.at(-1).targetIds, [target.id],
+    "usage history must agree with the entity changed by the turn");
+
+  const llmTriedAmbient = {
+    planSkillTarget: async () => ({
+      candidateId: "ambient_resource_trace",
+      rationale: "주변 신호를 먼저 살핀다."
+    })
+  };
+  const planned = await planSkillTarget({
+    narrator: llmTriedAmbient,
+    run,
+    request: { skillId: "SEARCH", playerNote: null },
+    d20: 15
+  });
+  assert.equal(planned.selection.entityIds[0], target.id,
+    "a nearby next access level must outrank an LLM-selected ambient event");
+  assert.equal(planned.selection.model, "deterministic-campaign-target");
+
+  const outOfOrder = runFixture(7402);
+  outOfOrder.currentArcQuestion = null;
+  const outOfOrderPlayer = outOfOrder.entities.find((entity) => entity.id === outOfOrder.playerEntityId);
+  const levelTwoRecord = outOfOrder.adminAccessCandidates.find((candidate) =>
+    candidate.accessLevelId === "ADMIN_ACCESS_LEVEL_2" && candidate.skillId === "RESTORE");
+  const levelTwoTarget = outOfOrder.entities.find((entity) => entity.state?.candidateId === levelTwoRecord.id);
+  outOfOrderPlayer.position = { x: levelTwoTarget.position.x - 1, y: levelTwoTarget.position.y };
+  assert.throws(() => resolveTurn({
+    run: outOfOrder,
+    request: normalizeSkillRequest({
+      idempotencyKey: "out-of-order-admin-search-1",
+      expectedRunVersion: outOfOrder.version,
+      ability: "restore",
+      targetEntityId: levelTwoTarget.id
+    }),
+    d20Source: new FixedD20Source(20)
+  }), (error) => error instanceof AppError && error.code === "ADMIN_ACCESS_SEQUENCE_INVALID");
+});
+
+test("administrator access entities always use an asset compatible with their public kind", () => {
+  const run = runFixture(7404);
+  const accessEntities = run.entities.filter((entity) => entity.state?.candidateId);
+  assert.ok(accessEntities.length >= 6);
+  for (const entity of accessEntities) {
+    if (entity.kind === "enemy")
+      assert.match(entity.assetId, /^(?:enemy|boss)\./, `${entity.name} exposed ${entity.assetId}`);
+    else if (entity.kind === "npc")
+      assert.match(entity.assetId, /^npc\./, `${entity.name} exposed ${entity.assetId}`);
+    else
+      assert.match(entity.assetId, /^(?:item|prop)\./, `${entity.name} exposed ${entity.assetId}`);
+  }
+});
+
+test("targetless CONNECT binds an eligible administrator-access NPC to the player when no second NPC is nearby", async () => {
+  const run = runFixture(7403);
+  run.progressTokens = ["ADMIN_ACCESS_LEVEL_1"];
+  run.progressLevel = 1;
+  run.adminAccessAcquisitionHistory = [{
+    id: randomUUID(), accessLevelId: "ADMIN_ACCESS_LEVEL_1", turnNo: 1,
+    candidateId: "prior-level-one", skillId: "RESTORE", targetIds: []
+  }];
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const candidateRecord = run.adminAccessCandidates.find((candidate) =>
+    candidate.accessLevelId === "ADMIN_ACCESS_LEVEL_2" && candidate.skillId === "CONNECT");
+  const target = run.entities.find((entity) => entity.state?.candidateId === candidateRecord?.id);
+  assert.ok(player && target);
+  player.position = target.position.x >= 5
+    ? { x: target.position.x - 5, y: target.position.y }
+    : { x: target.position.x + 5, y: target.position.y };
+  for (const entity of run.entities) {
+    if (entity.id === player.id || entity.id === target.id) continue;
+    if (Math.abs(entity.position.x - player.position.x) + Math.abs(entity.position.y - player.position.y) <= 5)
+      entity.active = false;
+  }
+
+  const context = buildSkillTargetContext(run, { skillId: "CONNECT", playerNote: null }, 20);
+  const pair = context.candidates.find((candidate) => candidate.candidateId.startsWith("admin_pair_"));
+  assert.deepEqual(pair?.entityIds, [target.id, player.id]);
+
+  const planned = await planSkillTarget({
+    narrator: { planSkillTarget: async () => ({ candidateId: "ambient_dormant_signal", rationale: "주변 신호를 고른다." }) },
+    run,
+    request: { skillId: "CONNECT", playerNote: null },
+    d20: 20
+  });
+  assert.deepEqual(planned.selection.entityIds, [target.id, player.id]);
+  assert.equal(planned.selection.model, "deterministic-campaign-target");
+
+  const resolved = resolveTurn({
+    run,
+    request: normalizeTurnRequest({
+      inputType: "USE_SKILL", idempotencyKey: "targetless-admin-connect-1",
+      expectedRunVersion: run.version, skillId: "CONNECT", targetIds: []
+    }),
+    d20Source: new FixedD20Source(20),
+    skillSelection: planned.selection
+  });
+  assert.equal(resolved.run.progressLevel, 2);
+  assert.deepEqual(resolved.run.progressTokens, ["ADMIN_ACCESS_LEVEL_1", "ADMIN_ACCESS_LEVEL_2"]);
+  assert.deepEqual(resolved.turn.request.targetEntityId, target.id);
+  assert.deepEqual(resolved.turn.request.secondaryTargetEntityId, player.id);
+  assert.ok(resolved.turn.events.some((event) => event.type === "admin_access_acquired"
+    && event.candidateId === candidateRecord.id));
+});
+
+test("targetless SEARCH binds required HIDDEN_TRUTH evidence at the six-tile boundary", async () => {
+  const run = runFixture(7405);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const clue = run.entities.find((entity) => entity.active
+    && entity.state?.designatedCampaignEvidence === true
+    && entity.state?.campaignRole === "HIDDEN_TRUTH"
+    && entity.state?.evidenceKey === "STORY_REVELATION");
+  const clueFact = run.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system");
+  assert.ok(player && clue && clueFact);
+  assert.equal(clueFact.value, false);
+
+  const boundaryPosition = clue.position.x >= 6
+    ? { x: clue.position.x - 6, y: clue.position.y }
+    : { x: clue.position.x + 6, y: clue.position.y };
+  player.position = boundaryPosition;
+  assert.equal(Math.abs(player.position.x - clue.position.x) + Math.abs(player.position.y - clue.position.y), 6);
+  const nextAdminRecord = run.adminAccessCandidates.find((candidate) =>
+    candidate.accessLevelId === "ADMIN_ACCESS_LEVEL_1" && candidate.skillId === "SEARCH");
+  const nextAdminEntity = run.entities.find((entity) => entity.state?.candidateId === nextAdminRecord?.id);
+  assert.ok(nextAdminEntity);
+  nextAdminEntity.position = { ...player.position };
+
+  // More than eight nearer generic candidates reproduce the cap that could
+  // previously hide campaign evidence before the LLM target decision.
+  for (let index = 0; index < 9; index += 1) {
+    run.entities.push({
+      id: `00000000-0000-4000-8000-${String(740500 + index).padStart(12, "0")}`,
+      kind: "prop",
+      assetId: "item.rune-book.v1",
+      name: `일반 조사 대상 ${index + 1}`,
+      active: true,
+      blocking: false,
+      protected: false,
+      cloneable: false,
+      position: { x: player.position.x, y: player.position.y },
+      state: { revealed: false }
+    });
+  }
+
+  const request = normalizeTurnRequest({
+    inputType: "USE_SKILL",
+    idempotencyKey: "required-story-revelation-boundary-1",
+    expectedRunVersion: run.version,
+    skillId: "SEARCH",
+    targetIds: []
+  });
+  const narrator = {
+    planSkillTarget: async () => ({
+      candidateId: "ambient_resource_trace",
+      rationale: "주변의 일반 신호를 조사한다."
+    })
+  };
+  const planned = await planSkillTarget({ narrator, run, request, d20: 20 });
+  assert.equal(planned.selection.kind, "entity");
+  assert.deepEqual(planned.selection.entityIds, [clue.id]);
+  assert.equal(planned.selection.distance, 6);
+  assert.equal(planned.selection.model, "deterministic-campaign-target");
+  assert.ok(planned.context.candidates.some((candidate) => candidate.entityIds?.[0] === nextAdminEntity.id),
+    "the missing Root clue must preempt even a nearer eligible administrator-access candidate");
+
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+  run.progressLevel = 3;
+  run.progressTokens = run.adminAccessLevels.map((access) => access.id);
+
+  const searched = resolveTurn({
+    run,
+    request,
+    d20Source: new FixedD20Source(20),
+    skillSelection: planned.selection
+  });
+  assert.equal(searched.turn.request.targetEntityId, clue.id);
+  assert.deepEqual(searched.run.abilityUsageHistory.at(-1).targetIds, [clue.id]);
+  assert.equal(searched.run.entities.find((entity) => entity.id === clue.id).state.revealed, true);
+  assert.ok(searched.turn.events.some((event) => event.type === "essential_clue_acquired"
+    && event.entityId === clue.id));
+  assert.equal(publicRun(searched.run).rootSystemGate.requiredClueEstablished, true);
+  assert.equal(publicRun(searched.run).rootSystemGate.eligible, true);
+});
+
+test("targetless SEARCH does not promote out-of-range story evidence or nearby non-evidence", async () => {
+  const run = runFixture(7406);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const requiredEvidence = run.entities.filter((entity) => entity.active
+    && entity.state?.designatedCampaignEvidence === true
+    && entity.state?.campaignRole === "HIDDEN_TRUTH"
+    && entity.state?.evidenceKey === "STORY_REVELATION");
+  assert.ok(player && requiredEvidence.length > 0);
+  const reference = requiredEvidence[0];
+  player.position = reference.position.x >= 7
+    ? { x: reference.position.x - 7, y: reference.position.y }
+    : { x: reference.position.x + 7, y: reference.position.y };
+  for (const entity of requiredEvidence) entity.position = { ...reference.position };
+  const ordinary = {
+    id: "00000000-0000-4000-8000-000000007406",
+    kind: "prop",
+    assetId: "item.rune-book.v1",
+    name: "가까운 일반 기록",
+    active: true,
+    blocking: false,
+    protected: false,
+    cloneable: false,
+    position: { x: player.position.x + 1, y: player.position.y },
+    state: { revealed: false, evidenceKey: "OPTIONAL_RECORD" }
+  };
+  run.entities.push(ordinary);
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+
+  const planned = await planSkillTarget({
+    narrator: {
+      planSkillTarget: async () => ({ candidateId: "ambient_resource_trace", rationale: "주변 신호를 택한다." })
+    },
+    run,
+    request: { skillId: "SEARCH", playerNote: null },
+    d20: 15
+  });
+  assert.ok(planned.context.candidates.some((candidate) => candidate.entityIds?.[0] === ordinary.id));
+  assert.equal(planned.context.candidates.some((candidate) => requiredEvidence.some((entity) => candidate.entityIds?.[0] === entity.id)), false);
+  assert.equal(planned.selection.kind, "ambient");
+  assert.deepEqual(planned.selection.entityIds, []);
+});
+
+test("targetless SEARCH stops forcing HIDDEN_TRUTH evidence after the clue is established", async () => {
+  const run = runFixture(7407);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const clue = run.entities.find((entity) => entity.active
+    && entity.state?.designatedCampaignEvidence === true
+    && entity.state?.campaignRole === "HIDDEN_TRUTH"
+    && entity.state?.evidenceKey === "STORY_REVELATION");
+  const clueFact = run.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system");
+  assert.ok(player && clue && clueFact);
+  player.position = clue.position.x >= 6
+    ? { x: clue.position.x - 6, y: clue.position.y }
+    : { x: clue.position.x + 6, y: clue.position.y };
+  clue.state.revealed = false;
+  clueFact.value = true;
+  clueFact.establishedTurn = 1;
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+
+  const planned = await planSkillTarget({
+    narrator: {
+      planSkillTarget: async () => ({ candidateId: "ambient_resource_trace", rationale: "이미 확보한 단서는 건너뛴다." })
+    },
+    run,
+    request: { skillId: "SEARCH", playerNote: null },
+    d20: 15
+  });
+  assert.ok(planned.context.candidates.some((candidate) => candidate.entityIds?.[0] === clue.id),
+    "the revealed state, not candidate deletion, should control ordinary post-clue selection");
+  assert.equal(planned.selection.kind, "ambient");
+  assert.deepEqual(planned.selection.entityIds, []);
+});
+
+test("targetless Root CONNECT prioritizes missing ending-recipe pairs before the eight-pair cap", () => {
+  const run = runFixture(7403);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const components = Object.fromEntries(run.entities
+    .filter((entity) => entity.state?.finaleComponent)
+    .map((entity) => [entity.state.finaleComponent, entity]));
+  const staging = run.world.validation.finaleInteractionAnchor;
+  assert.ok(player && components.anchor && components.safeguard && components.memory && staging);
+  player.position = { ...staging };
+
+  const lockedContext = buildSkillTargetContext(run, { skillId: "CONNECT", playerNote: null }, 15);
+  assert.equal(lockedContext.candidates.some((candidate) => candidate.candidateId.startsWith("finale_pair_")), false,
+    "recipe priority must not bypass the Root permission gate");
+
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+  run.progressLevel = 3;
+  run.progressTokens = run.adminAccessLevels.map((access) => access.id);
+  run.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system").value = true;
+
+  const context = buildSkillTargetContext(run, { skillId: "CONNECT", playerNote: null }, 15);
+  const mechanicalCandidates = context.candidates.filter((candidate) => candidate.kind === "entity_pair");
+  const pairKey = (left, right) => [left, right].sort().join(":");
+  const candidateKeys = new Set(mechanicalCandidates.map((candidate) => pairKey(...candidate.entityIds)));
+  assert.ok(mechanicalCandidates.length <= 8);
+  assert.ok(candidateKeys.has(pairKey(components.anchor.id, components.safeguard.id)));
+  assert.ok(candidateKeys.has(pairKey(player.id, components.memory.id)),
+    "player-component recipes must not be lost because generic endpoints exclude the player");
+  assert.deepEqual(mechanicalCandidates[0].entityIds, [components.anchor.id, components.safeguard.id]);
+
+  const resolved = resolveTurn({
+    run,
+    request: normalizeTurnRequest({
+      inputType: "USE_SKILL",
+      idempotencyKey: "targetless-finale-connect-1",
+      expectedRunVersion: run.version,
+      skillId: "CONNECT",
+      targetIds: []
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+  assert.ok(resolved.turn.events.some((event) => event.type === "connection_created"
+    && pairKey(event.fromId, event.toId) === pairKey(components.anchor.id, components.safeguard.id)),
+    "deterministic fallback must consume the same prioritized recipe pair as the LLM context");
+});
+
+test("targetless Root CONNECT continues one viable ending recipe and records the selected pair", async () => {
+  const run = runFixture(7403);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const components = Object.fromEntries(run.entities
+    .filter((entity) => entity.state?.finaleComponent)
+    .map((entity) => [entity.state.finaleComponent, entity]));
+  const staging = run.world.validation.finaleInteractionAnchor;
+  assert.ok(player && components.anchor && components.safeguard && components.memory && staging);
+  player.position = { ...staging };
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+  run.progressLevel = 3;
+  run.progressTokens = run.adminAccessLevels.map((access) => access.id);
+  run.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system").value = true;
+  const reconciliation = run.endingCandidates.find((ending) => ending.id === "ENDING_REWEAVE_TOGETHER");
+  assert.ok(reconciliation, "The fixture must expose the preferred reconciliation route.");
+  run.endingCandidates = [
+    ...run.endingCandidates.filter((ending) => ending.id !== reconciliation.id),
+    reconciliation
+  ];
+  run.connections.push({
+    id: "00000000-0000-4000-8000-000000007403",
+    fromId: components.anchor.id,
+    toId: components.safeguard.id,
+    relation: "temporary_link",
+    createdTurn: 0,
+    expiresTurn: 5,
+    active: true
+  });
+
+  const pairs = prioritizedFinaleConnectionPairs(run, 5);
+  assert.equal(pairs.length, 1, "Only the next missing pair from the chosen recipe should be offered.");
+  assert.deepEqual(pairs[0].components, ["player", "memory"]);
+  assert.deepEqual(pairs[0].endingIds, ["ENDING_REWEAVE_TOGETHER"]);
+
+  const request = normalizeTurnRequest({
+    inputType: "USE_SKILL",
+    idempotencyKey: "targetless-finale-connect-next-1",
+    expectedRunVersion: run.version,
+    skillId: "CONNECT",
+    targetIds: []
+  });
+  const planned = await planSkillTarget({
+    narrator: {
+      planSkillTarget: async () => ({
+        candidateId: "ambient_dormant_signal",
+        rationale: "주변의 일반 신호를 연결한다."
+      })
+    },
+    run,
+    request,
+    d20: 20
+  });
+  assert.deepEqual(planned.selection.entityIds, [player.id, components.memory.id]);
+  assert.equal(planned.selection.model, "deterministic-campaign-target");
+
+  const resolved = resolveTurn({
+    run,
+    request,
+    d20Source: new FixedD20Source(20),
+    skillSelection: planned.selection
+  });
+  assert.equal(resolved.turn.request.targetEntityId, player.id);
+  assert.equal(resolved.turn.request.secondaryTargetEntityId, components.memory.id);
+  assert.deepEqual(resolved.run.abilityUsageHistory.at(-1).targetIds, [player.id, components.memory.id]);
+  assert.ok(resolved.turn.events.some((event) => event.type === "connection_created"
+    && event.fromId === player.id && event.toId === components.memory.id));
+});
+
+test("targetless Root DELETE selects the required threat at range three and never a nearer component", async () => {
+  const run = runFixture(7403);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const components = Object.fromEntries(run.entities
+    .filter((entity) => entity.state?.finaleComponent)
+    .map((entity) => [entity.state.finaleComponent, entity]));
+  const staging = run.world.validation.finaleInteractionAnchor;
+  assert.ok(player && components.anchor && components.threat && staging);
+  player.position = { ...staging };
+  components.anchor.position = { ...player.position };
+  components.threat.position = { x: player.position.x + 3, y: player.position.y };
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+  run.progressLevel = 3;
+  run.progressTokens = run.adminAccessLevels.map((access) => access.id);
+  run.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system").value = true;
+
+  const removals = prioritizedFinaleRemovalTargets(run, 3);
+  assert.equal(removals[0].target.id, components.threat.id);
+  assert.equal(removals[0].component, "threat");
+  assert.deepEqual(removals[0].endingIds, ["ENDING_REWEAVE_TOGETHER"]);
+
+  const request = normalizeTurnRequest({
+    inputType: "USE_SKILL",
+    idempotencyKey: "targetless-finale-delete-boundary-1",
+    expectedRunVersion: run.version,
+    skillId: "DELETE",
+    targetIds: []
+  });
+  const planned = await planSkillTarget({
+    narrator: {
+      planSkillTarget: async () => ({
+        candidateId: "ambient_system_residue",
+        rationale: "가까운 잔류 신호를 지운다."
+      })
+    },
+    run,
+    request,
+    d20: 20
+  });
+  assert.deepEqual(planned.selection.entityIds, [components.threat.id]);
+  assert.equal(planned.selection.distance, 3);
+  assert.equal(planned.selection.model, "deterministic-campaign-target");
+
+  const resolved = resolveTurn({
+    run,
+    request,
+    d20Source: new FixedD20Source(20),
+    skillSelection: planned.selection
+  });
+  assert.equal(resolved.turn.request.targetEntityId, components.threat.id);
+  assert.deepEqual(resolved.run.abilityUsageHistory.at(-1).targetIds, [components.threat.id]);
+  assert.ok(resolved.turn.events.some((event) => event.type === "entity_removed"
+    && event.entityId === components.threat.id));
+  assert.equal(resolved.run.entities.find((entity) => entity.id === components.anchor.id).active, true);
+});
+
+test("targetless Root keyboard sequence reaches REWEAVE with exactly five focus", () => {
+  let run = runFixture(7403);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const components = Object.fromEntries(run.entities
+    .filter((entity) => entity.state?.finaleComponent)
+    .map((entity) => [entity.state.finaleComponent, entity]));
+  const staging = run.world.validation.finaleInteractionAnchor;
+  assert.ok(player && components.anchor && components.safeguard
+    && components.memory && components.threat && staging);
+  player.position = { ...staging };
+  components.anchor.position = { x: player.position.x + 1, y: player.position.y };
+  components.safeguard.position = { x: player.position.x + 2, y: player.position.y };
+  components.memory.position = { x: player.position.x, y: player.position.y + 2 };
+  components.threat.position = { x: player.position.x - 1, y: player.position.y };
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+  run.progressLevel = 3;
+  run.progressTokens = run.adminAccessLevels.map((access) => access.id);
+  run.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system").value = true;
+  run.storyLedger = Array.from({ length: 8 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${String(750000 + index).padStart(12, "0")}`,
+    turnNo: index - 8,
+    skillId: "SEARCH",
+    outcome: "success",
+    campaignRole: "HIDDEN_TRUTH",
+    targetEvidenceKeys: ["STORY_REVELATION"],
+    eventTypes: ["entity_investigated"],
+    meaningful: true
+  }));
+  run.majorChoices = Array.from({ length: 3 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${String(760000 + index).padStart(12, "0")}`,
+    turnNo: index - 3,
+    choiceType: "NARRATIVE_CHOICE"
+  }));
+  run.focus = 10;
+
+  const useTargetless = (current, skillId, key) => resolveTurn({
+    run: current,
+    request: normalizeTurnRequest({
+      inputType: "USE_SKILL",
+      idempotencyKey: key,
+      expectedRunVersion: current.version,
+      skillId,
+      targetIds: []
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+  const firstConnect = useTargetless(run, "CONNECT", "reweave-sequence-connect-anchor-1");
+  assert.deepEqual(firstConnect.run.abilityUsageHistory.at(-1).targetIds,
+    [components.anchor.id, components.safeguard.id]);
+  assert.equal(firstConnect.run.focus, 8);
+  run = firstConnect.run;
+
+  const secondConnect = useTargetless(run, "CONNECT", "reweave-sequence-connect-memory-1");
+  assert.deepEqual(secondConnect.run.abilityUsageHistory.at(-1).targetIds,
+    [player.id, components.memory.id]);
+  assert.equal(secondConnect.run.focus, 6);
+  run = secondConnect.run;
+
+  const deleteThreat = useTargetless(run, "DELETE", "reweave-sequence-delete-threat-1");
+  assert.deepEqual(deleteThreat.run.abilityUsageHistory.at(-1).targetIds, [components.threat.id]);
+  assert.equal(deleteThreat.run.focus, 5);
+  assert.equal(deleteThreat.run.finalePuzzle.matchedEndingId, "ENDING_REWEAVE_TOGETHER");
+  assert.equal(deleteThreat.run.status, "completed");
+  assert.equal(deleteThreat.run.endingCode, "ENDING_REWEAVE_TOGETHER");
+  assert.ok(deleteThreat.turn.events.some((event) => event.type === "run_completed"
+    && event.endingCode === "ENDING_REWEAVE_TOGETHER"));
+});
+
+test("Root recipe links survive the turn-25 expiry boundary until REWEAVE resolves", () => {
+  let run = runFixture(7403);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const components = Object.fromEntries(run.entities
+    .filter((entity) => entity.state?.finaleComponent)
+    .map((entity) => [entity.state.finaleComponent, entity]));
+  const staging = run.world.validation.finaleInteractionAnchor;
+  assert.ok(player && components.anchor && components.safeguard
+    && components.memory && components.threat && staging);
+  player.position = { ...staging };
+  player.state.hp = 1;
+  components.anchor.position = { x: player.position.x + 1, y: player.position.y };
+  components.safeguard.position = { x: player.position.x + 2, y: player.position.y };
+  components.memory.position = { x: player.position.x, y: player.position.y + 2 };
+  components.threat.position = { x: player.position.x - 1, y: player.position.y };
+  run.currentTurn = 19;
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+  run.progressLevel = 3;
+  run.progressTokens = run.adminAccessLevels.map((access) => access.id);
+  run.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system").value = true;
+  run.storyLedger = Array.from({ length: 8 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${String(770000 + index).padStart(12, "0")}`,
+    turnNo: index + 1,
+    skillId: "SEARCH",
+    outcome: "success",
+    campaignRole: "HIDDEN_TRUTH",
+    targetEvidenceKeys: ["STORY_REVELATION"],
+    eventTypes: ["entity_investigated"],
+    meaningful: true
+  }));
+  run.majorChoices = Array.from({ length: 3 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${String(780000 + index).padStart(12, "0")}`,
+    turnNo: index + 10,
+    choiceType: "NARRATIVE_CHOICE"
+  }));
+
+  const use = (current, skillId, key, targetIds = []) => resolveTurn({
+    run: current,
+    request: normalizeTurnRequest({
+      inputType: "USE_SKILL",
+      idempotencyKey: key,
+      expectedRunVersion: current.version,
+      skillId,
+      targetIds
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+
+  const anchorLink = use(run, "CONNECT", "expiry-root-connect-anchor-20",
+    [components.anchor.id, components.safeguard.id]);
+  const anchorConnectionId = anchorLink.turn.events
+    .find((event) => event.type === "connection_created")?.id;
+  assert.ok(anchorConnectionId);
+  assert.equal(anchorLink.run.currentTurn, 20);
+  assert.equal(anchorLink.run.connections.find((item) => item.id === anchorConnectionId).relation,
+    "finale_recipe_link");
+  assert.equal(anchorLink.run.connections.find((item) => item.id === anchorConnectionId).expiresTurn,
+    null);
+  run = use(anchorLink.run, "REST", "expiry-root-rest-21").run;
+
+  const memoryLink = use(run, "CONNECT", "expiry-root-connect-memory-22",
+    [player.id, components.memory.id]);
+  const memoryConnectionId = memoryLink.turn.events
+    .find((event) => event.type === "connection_created")?.id;
+  assert.ok(memoryConnectionId);
+  assert.equal(memoryLink.run.currentTurn, 22);
+  assert.equal(memoryLink.run.connections.find((item) => item.id === memoryConnectionId).relation,
+    "finale_recipe_link");
+  assert.equal(memoryLink.run.connections.find((item) => item.id === memoryConnectionId).expiresTurn,
+    null);
+  run = memoryLink.run;
+
+  for (const turnNo of [23, 24, 25]) {
+    const rested = use(run, "REST", `expiry-root-rest-${turnNo}`);
+    assert.equal(rested.run.currentTurn, turnNo);
+    assert.ok(!rested.turn.events.some((event) => event.type === "connection_expired"));
+    assert.equal(rested.run.connections.find((item) => item.id === anchorConnectionId).active, true);
+    assert.equal(rested.run.connections.find((item) => item.id === memoryConnectionId).active, true);
+    run = rested.run;
+  }
+
+  const resolved = use(run, "DELETE", "expiry-root-delete-threat-26", [components.threat.id]);
+  assert.equal(resolved.run.currentTurn, 26);
+  assert.equal(resolved.run.status, "completed");
+  assert.equal(resolved.run.endingCode, "ENDING_REWEAVE_TOGETHER");
+  assert.equal(resolved.run.connections.find((item) => item.id === anchorConnectionId).active, true);
+  assert.equal(resolved.run.connections.find((item) => item.id === memoryConnectionId).active, true);
+  assert.ok(!resolved.turn.events.some((event) => event.type === "connection_expired"));
+});
+
+test("non-Root connections retain the ordinary five-turn expiry", () => {
+  let run = runFixture(7404);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const npc = run.entities.find((entity) => entity.active && entity.kind === "npc");
+  assert.ok(player && npc);
+  player.position = { x: npc.position.x - 1, y: npc.position.y };
+  player.state.hp = 1;
+
+  const connected = resolveTurn({
+    run,
+    request: normalizeTurnRequest({
+      inputType: "USE_SKILL",
+      idempotencyKey: "expiry-non-root-connect-1",
+      expectedRunVersion: run.version,
+      skillId: "CONNECT",
+      targetIds: [player.id, npc.id]
+    }),
+    d20Source: new FixedD20Source(20)
+  });
+  const connection = connected.run.connections.at(-1);
+  assert.equal(connection.relation, "temporary_link");
+  assert.equal(connection.createdTurn, 1);
+  assert.equal(connection.expiresTurn, 6);
+  run = connected.run;
+
+  for (const turnNo of [2, 3, 4, 5, 6]) {
+    const rested = resolveTurn({
+      run,
+      request: normalizeTurnRequest({
+        inputType: "USE_SKILL",
+        idempotencyKey: `expiry-non-root-rest-${turnNo}`,
+        expectedRunVersion: run.version,
+        skillId: "REST",
+        targetIds: []
+      }),
+      d20Source: new FixedD20Source(20)
+    });
+    run = rested.run;
+    if (turnNo < 6) {
+      assert.equal(run.connections.find((item) => item.id === connection.id).active, true);
+      assert.ok(!rested.turn.events.some((event) => event.type === "connection_expired"));
+    } else {
+      assert.equal(run.connections.find((item) => item.id === connection.id).active, false);
+      assert.ok(rested.turn.events.some((event) => event.type === "connection_expired"
+        && event.connectionId === connection.id));
+    }
+  }
+});
+
+test("targetless Root finale actions reject out-of-range recipe targets without mutating nearer components", () => {
+  const run = runFixture(7403);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const components = Object.fromEntries(run.entities
+    .filter((entity) => entity.state?.finaleComponent)
+    .map((entity) => [entity.state.finaleComponent, entity]));
+  const staging = run.world.validation.finaleInteractionAnchor;
+  assert.ok(player && components.anchor && components.safeguard && components.threat && staging);
+  player.position = { ...staging };
+  components.anchor.position = { ...player.position };
+  components.safeguard.position = { x: player.position.x + 6, y: player.position.y };
+  components.threat.position = { x: player.position.x + 4, y: player.position.y };
+  run.adminAccessAcquisitionHistory = run.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+  run.progressLevel = 3;
+  run.progressTokens = run.adminAccessLevels.map((access) => access.id);
+  run.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system").value = true;
+  const before = structuredClone(run);
+
+  assert.throws(() => resolveTurn({
+    run,
+    request: normalizeTurnRequest({
+      inputType: "USE_SKILL",
+      idempotencyKey: "targetless-finale-delete-out-of-range-1",
+      expectedRunVersion: run.version,
+      skillId: "DELETE",
+      targetIds: []
+    }),
+    d20Source: new FixedD20Source(20)
+  }), (error) => error instanceof AppError && error.code === "OUT_OF_RANGE");
+  assert.throws(() => resolveTurn({
+    run,
+    request: normalizeTurnRequest({
+      inputType: "USE_SKILL",
+      idempotencyKey: "targetless-finale-connect-out-of-range-1",
+      expectedRunVersion: run.version,
+      skillId: "CONNECT",
+      targetIds: []
+    }),
+    d20Source: new FixedD20Source(20)
+  }), (error) => error instanceof AppError && error.code === "OUT_OF_RANGE");
+  assert.deepEqual(run, before, "Rejected targetless finale actions must not consume focus or change entities.");
 });
