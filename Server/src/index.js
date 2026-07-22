@@ -1,5 +1,7 @@
 import { createApplication } from "./app.js";
+import { loadLocalEnv } from "./load-env.js";
 
+loadLocalEnv();
 const application = await createApplication();
 application.server.listen(application.config.port, application.config.host, () => {
   application.logger.info({

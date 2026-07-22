@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: "${NINJA_POSTGRES_USER:?NINJA_POSTGRES_USER is required}"
+      POSTGRES_DB: "${NINJA_POSTGRES_DB:?NINJA_POSTGRES_DB is required}"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --data-checksums
+    secrets:
+      - postgres_password
+    ports:
+      - "127.0.0.1:${NINJA_POSTGRES_PORT:?NINJA_POSTGRES_PORT is required}:5432"
+    volumes:
+      - ninja_adventure_postgres_data:/var/lib/postgresql/data
+      - ../Database/migrations/001_core_schema.sql:/docker-entrypoint-initdb.d/001_core_schema.sql:ro
+      - ../Database/migrations/002_row_security_and_views.sql:/docker-entrypoint-initdb.d/002_row_security_and_views.sql:ro
+      - ../Database/migrations/003_campaign_director_state.sql:/docker-entrypoint-initdb.d/003_campaign_director_state.sql:ro
+      - ../Database/migrations/004_codria_world_and_travel.sql:/docker-entrypoint-initdb.d/004_codria_world_and_travel.sql:ro
+      - ../Database/migrations/005_generative_run_state.sql:/docker-entrypoint-initdb.d/005_generative_run_state.sql:ro
+      - ../Database/migrations/006_codria_product_contract.sql:/docker-entrypoint-initdb.d/006_codria_product_contract.sql:ro
+      - ../Database/migrations/007_codria_actions_and_access.sql:/docker-entrypoint-initdb.d/007_codria_actions_and_access.sql:ro
+      - ../Database/migrations/008_codria_narrative_history.sql:/docker-entrypoint-initdb.d/008_codria_narrative_history.sql:ro
+      - ../Database/migrations/009_codria_narrative_choice_turns.sql:/docker-entrypoint-initdb.d/009_codria_narrative_choice_turns.sql:ro
+      - ../Database/migrations/010_soft_turn_horizon_and_slot_reservations.sql:/docker-entrypoint-initdb.d/010_soft_turn_horizon_and_slot_reservations.sql:ro
+      - ../Database/migrations/011_player_action_skill_contract.sql:/docker-entrypoint-initdb.d/011_player_action_skill_contract.sql:ro
+      - ../Database/migrations/012_request_idempotency_and_schema_readiness.sql:/docker-entrypoint-initdb.d/012_request_idempotency_and_schema_readiness.sql:ro
+      - ../Database/seeds/001_reference_catalogs.sql:/docker-entrypoint-initdb.d/013_reference_catalogs.sql:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" >/dev/null &&
+          test "$$(psql -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -Atq -c
+          "select count(*) from keyboard_wanderer.schema_migrations
+          where version = '012_request_idempotency_and_schema_readiness'
+          and exists (select 1 from keyboard_wanderer.event_type_catalog
+          where code = 'DEFERRED_CONSEQUENCE_RESOLVED')")" = "1"
+      start_period: 90s
+      start_interval: 2s
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  ninja_adventure_postgres_data:
+    name: ninja_adventure_release_postgres_data
+
+secrets:
+  postgres_password:
+    file: "${NINJA_POSTGRES_PASSWORD_FILE:?NINJA_POSTGRES_PASSWORD_FILE is required}"

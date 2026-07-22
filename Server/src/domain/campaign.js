@@ -10,9 +10,11 @@ import {
   PROTAGONIST_NUPJUKYI,
   WORLD_CODRIA,
   WORLD_NAME_KO,
-  endingFactors
+  endingFactors,
+  rootSystemGate
 } from "./codria-contract.js";
 import { clone, deterministicUuid, fingerprint } from "./serialization.js";
+import { areaAt } from "./world.js";
 
 export const CAMPAIGN_TEMPLATE_VERSION = "codria-campaign.v4";
 export const CAMPAIGN_ARCHETYPE = "codria-admin-keyboard-roguelike";
@@ -645,7 +647,11 @@ export function advanceArcDirector(run, turnNo, events, evidence = {}) {
   const phase = meaningfulTurns >= 12 ? "convergence_available"
     : meaningfulTurns >= 7 ? "entangled"
       : meaningfulTurns >= 3 ? "unfolding" : "opening";
-  const endingEligible = meaningfulTurns >= 8 && majorChoiceCount >= 3
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const currentArea = player ? areaAt(run.world, player.position) : null;
+  const isAtRoot = currentArea?.campaignRole === "FINAL_CONVERGENCE";
+  const endingEligible = (isAtRoot || meaningfulTurns >= 12 || run.currentTurn >= (run.endingWindow?.normalEligibleStart || 30) - 2)
+    && meaningfulTurns >= 8 && majorChoiceCount >= 3
     && (resolvedThreads > 0 || relationshipChanges >= 2 || Number(run.progressLevel || 0) > 0);
   run.emergentStory = {
     mode: "world_rule_driven",
@@ -722,6 +728,116 @@ function metricMatches(run, metric, condition) {
   if (!condition || typeof condition !== "object") return false;
   return (!Number.isFinite(condition.min) || actual >= condition.min)
     && (!Number.isFinite(condition.max) || actual <= condition.max);
+}
+
+const FINALE_AUTOPILOT_PRIORITY = Object.freeze([
+  "ENDING_REWEAVE_TOGETHER",
+  "ENDING_OPEN_FRONTIER",
+  "ENDING_WALK_BETWEEN_WORLDS",
+  "ENDING_KEEP_THE_PROMISE",
+  "ENDING_CUT_THE_CYCLE",
+  "ENDING_PRESERVE_THE_SCARS"
+]);
+
+function finaleAutopilotReady(run) {
+  const player = (run?.entities || []).find((entity) => entity.id === run.playerEntityId
+    && entity.active !== false && entity.kind === "player") || null;
+  return player && rootSystemGate(run).eligible
+    && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE"
+    ? player : null;
+}
+
+function preferredFinaleAutopilotEnding(run) {
+  if (!finaleAutopilotReady(run)) return null;
+  const mechanicallyViable = (run.endingCandidates || []).map((ending, authoredIndex) => {
+    const recipe = ending?.recipe || ending;
+    if (!recipe || ending?.emergency === true) return null;
+    const requiredLinks = recipe.requiredLinks || [];
+    const requiredRemoved = recipe.requiredRemoved || [];
+    const linksHaveEndpoints = requiredLinks.every((pair) => Array.isArray(pair) && pair.length === 2
+      && componentActive(run, pair[0]) && componentActive(run, pair[1]));
+    const removalsHaveEntities = requiredRemoved.every((componentId) => componentEntities(run, componentId).length > 0);
+    const requiredComponentsActive = (recipe.requiredActive || []).every((componentId) => componentActive(run, componentId));
+    const forbiddenLinksAbsent = (recipe.forbiddenLinks || []).every((pair) => !componentLinked(run, pair));
+    if (!linksHaveEndpoints || !removalsHaveEntities || !requiredComponentsActive || !forbiddenLinksAbsent) return null;
+    const progress = requiredLinks.filter((pair) => componentLinked(run, pair)).length
+      + requiredRemoved.filter((componentId) => componentRemoved(run, componentId)).length;
+    const metricsEligible = Object.entries(recipe.metricConditions || {})
+      .every(([metric, condition]) => metricMatches(run, metric, condition));
+    const priorityIndex = FINALE_AUTOPILOT_PRIORITY.indexOf(ending.id);
+    return {
+      ending,
+      recipe,
+      progress,
+      metricsEligible,
+      authoredIndex,
+      priorityIndex: priorityIndex === -1 ? FINALE_AUTOPILOT_PRIORITY.length : priorityIndex
+    };
+  }).filter(Boolean);
+  if (mechanicallyViable.length === 0) return null;
+
+  // Do not abandon a recipe the player has already started. With equal
+  // progress, choose a currently satisfiable success route, preferring the
+  // reconciliation ending so targetless keyboard play has one stable path.
+  const mostProgress = Math.max(...mechanicallyViable.map((candidate) => candidate.progress));
+  const progressed = mostProgress > 0
+    ? mechanicallyViable.filter((candidate) => candidate.progress === mostProgress)
+    : mechanicallyViable;
+  const metricEligible = progressed.filter((candidate) => candidate.metricsEligible);
+  const pool = metricEligible.length > 0 ? metricEligible : progressed;
+  return pool.sort((left, right) => left.priorityIndex - right.priorityIndex
+    || (left.ending.valence === "success" ? -1 : 0) - (right.ending.valence === "success" ? -1 : 0)
+    || left.authoredIndex - right.authoredIndex
+    || left.ending.id.localeCompare(right.ending.id))[0];
+}
+
+/**
+ * Missing, mechanically legal finale links in authored ending order.
+ *
+ * Targetless CONNECT normally builds combinations from nearby entities and
+ * truncates that Cartesian product to eight candidates. The seven tightly
+ * packed Root components can exhaust that budget before a required recipe
+ * pair (and the player was not in that candidate set at all). Keep the world
+ * and Root permission gates authoritative, but put the links that can actually
+ * complete a non-emergency ending ahead of incidental combinations.
+ */
+export function prioritizedFinaleConnectionPairs(run, maximumDistance = 5) {
+  const player = finaleAutopilotReady(run);
+  const preferred = preferredFinaleAutopilotEnding(run);
+  if (!player || !preferred
+    || (maximumDistance !== Infinity && !Number.isFinite(maximumDistance))
+    || maximumDistance < 0) return [];
+
+  const distance = (entity) => Math.abs(player.position.x - entity.position.x)
+    + Math.abs(player.position.y - entity.position.y);
+  const pairs = [];
+  for (const requiredPair of preferred.recipe.requiredLinks || []) {
+    if (!Array.isArray(requiredPair) || requiredPair.length !== 2 || componentLinked(run, requiredPair)) continue;
+    const left = componentEntities(run, requiredPair[0]).find((entity) => entity.active !== false) || null;
+    const right = componentEntities(run, requiredPair[1]).find((entity) => entity.active !== false) || null;
+    if (!left || !right || left.id === right.id
+      || distance(left) > maximumDistance || distance(right) > maximumDistance) continue;
+    pairs.push({ left, right, components: [...requiredPair], endingIds: [preferred.ending.id] });
+  }
+  return pairs;
+}
+
+export function prioritizedFinaleRemovalTargets(run, maximumDistance = 3) {
+  const player = finaleAutopilotReady(run);
+  const preferred = preferredFinaleAutopilotEnding(run);
+  if (!player || !preferred
+    || (maximumDistance !== Infinity && !Number.isFinite(maximumDistance))
+    || maximumDistance < 0) return [];
+  const distance = (entity) => Math.abs(player.position.x - entity.position.x)
+    + Math.abs(player.position.y - entity.position.y);
+  const removals = [];
+  for (const componentId of preferred.recipe.requiredRemoved || []) {
+    const target = componentEntities(run, componentId).find((entity) => entity.active !== false
+      && entity.state?.deleted !== true) || null;
+    if (!target || distance(target) > maximumDistance) continue;
+    removals.push({ target, component: componentId, endingIds: [preferred.ending.id] });
+  }
+  return removals;
 }
 
 function endingRecipeMatches(run, ending) {

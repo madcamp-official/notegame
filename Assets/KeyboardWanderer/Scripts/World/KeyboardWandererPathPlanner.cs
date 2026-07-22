@@ -171,7 +171,7 @@ namespace KeyboardWanderer.World
             for (int i = 0; i < view.Entities.Count; i++)
             {
                 EntityView entity = view.Entities[i];
-                if (entity.EntityId != view.PlayerEntityId && entity.Position == coord)
+                if (entity.EntityId != view.PlayerEntityId && entity.IsBlocking && entity.Position == coord)
                     return true;
             }
             return false;
@@ -254,8 +254,9 @@ namespace KeyboardWanderer.World
             for (int i = 0; i < run.entities.Length; i++)
             {
                 GameApiClient.EntitySnapshot entity = run.entities[i];
-                if (entity?.position != null &&
+                if (entity?.position != null && entity.blocking &&
                     !string.Equals(entity.id, run.playerEntityId, StringComparison.OrdinalIgnoreCase) &&
+                    entity.state?.disabled != true && entity.state?.defeated != true && entity.state?.fled != true &&
                     entity.position.x == coord.X && entity.position.y == coord.Y)
                     return true;
             }

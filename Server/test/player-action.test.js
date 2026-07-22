@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createCampaignBlueprint } from "../src/domain/campaign.js";
 import { createRunState } from "../src/domain/turn-engine.js";
 import { generateWorld } from "../src/domain/world.js";
-import { fallbackPlayerActionProposal, playerActionContext, resolvePlayerActionDestination, validatePlayerActionProposal } from "../src/llm/player-action.js";
+import { fallbackPlayerActionProposal, playerActionContext, playerActionRejectionReason, resolvePlayerActionDestination, validatePlayerActionProposal } from "../src/llm/player-action.js";
 
 function runFixture(seed = 91001) {
   const blueprint = createCampaignBlueprint({ worldSeed: seed, turnLimit: 40 });
@@ -43,4 +43,74 @@ test("structured attack proposals reject visible but non-adjacent targets before
   const fallback = fallbackPlayerActionProposal(context);
   assert.equal(fallback.kind, "DIALOGUE");
   assert.equal(fallback.requiresRoll, false);
+  assert.equal(fallback.rejectedAction.kind, "ATTACK");
+  assert.match(fallback.rejectedAction.reason, /가까이 이동/u);
+});
+
+test("structured attack rejection preserves target, distance, range, and recovery guidance", () => {
+  const run = runFixture(91006);
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const enemy = run.entities.find((entity) => entity.kind === "enemy" && entity.active);
+  enemy.position = { x: player.position.x + 2, y: player.position.y };
+  const context = playerActionContext(run, `${enemy.name}을 공격한다`);
+  const proposal = { kind: "ATTACK", targetEntityIds: [enemy.id], itemIds: [] };
+  const reason = playerActionRejectionReason(proposal, context, "PLAYER_ACTION_TARGET_INVALID");
+
+  assert.match(reason, new RegExp(enemy.name, "u"));
+  assert.match(reason, /2칸/u);
+  assert.match(reason, /공격 범위 1칸/u);
+  assert.match(reason, /가까이 이동/u);
+});
+
+test("deterministic natural-language fallback respects the requested movement direction", () => {
+  const run = runFixture(91003);
+  const context = playerActionContext(run, "오른쪽, 그러니까 동쪽으로 한 칸 이동할게");
+  const fallback = fallbackPlayerActionProposal(context);
+  assert.equal(fallback.kind, "MOVE");
+  assert.equal(fallback.destinationRef, "step.east");
+
+  const typoContext = playerActionContext(run, "동쪽으로 이돟한다");
+  const typoFallback = fallbackPlayerActionProposal(typoContext);
+  assert.equal(typoFallback.kind, "MOVE");
+  assert.equal(typoFallback.destinationRef, "step.east");
+});
+
+test("the complete accepted long message reaches player-action classification", () => {
+  const run = runFixture(91005);
+  const message = `${"가".repeat(900)} 마지막으로 동쪽으로 이동한다`;
+  const context = playerActionContext(run, message);
+
+  assert.equal(context.playerText, message);
+  assert.ok(context.playerText.length > 400);
+  const fallback = fallbackPlayerActionProposal(context);
+  assert.equal(fallback.kind, "MOVE");
+  assert.equal(fallback.destinationRef, "step.east");
+});
+
+test("deterministic fallback covers common interaction, negotiation, rest, and keyboard phrasing", () => {
+  const context = {
+    playerText: "",
+    spatialContext: { facing: "SOUTH" },
+    destinations: [{ ref: "step.south", name: "남쪽으로 한 걸음", distance: 1, direction: "SOUTH" }],
+    inventory: [],
+    visibleEntities: [
+      { id: "npc", name: "기록관", kind: "npc", distance: 1, direction: "EAST", disabled: false, hostile: false },
+      { id: "prop", name: "봉인 상자", kind: "prop", distance: 1, direction: "WEST", disabled: false, hostile: false }
+    ]
+  };
+  const classify = (text) => fallbackPlayerActionProposal({ ...context, playerText: text });
+  assert.equal(classify("기록관을 설득해서 협삽해 본다").kind, "NEGOTIATE");
+  assert.equal(classify("봉인 상자를 열어 확인해 본다").kind, "INTERACT");
+  assert.equal(classify("잠깐 숨 고르고 쉬자").kind, "REST");
+  assert.equal(classify("최근 선택을 되감아 줘").kind, "UNDO");
+  assert.equal(classify("주변의 적을 전부 공격한다").kind, "SELECT_ALL");
+});
+
+test("impossible traversal produces a concrete reason and a legal alternative", () => {
+  const run = runFixture(91004);
+  const proposal = fallbackPlayerActionProposal(playerActionContext(run, "벽을 뚫고 하늘을 날아 맵 밖으로 간다"));
+  assert.equal(proposal.kind, "DIALOGUE");
+  assert.equal(proposal.requiresRoll, false);
+  assert.equal(proposal.rejectedAction.kind, "IMPOSSIBLE_WORLD_ACTION");
+  assert.match(proposal.rejectedAction.reason, /이동하거나.*SEARCH/u);
 });

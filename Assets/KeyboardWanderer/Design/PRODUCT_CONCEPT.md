@@ -52,12 +52,15 @@ The Root gate requires all three access levels and the essential root-cause clue
 
 ## Actions and turns
 
-The client submits only:
+The server persists and replays three authoritative command envelopes:
 
 - `MOVE` with a destination. Safe travel changes navigation/discovery without D20 or campaign-turn consumption. Dangerous travel can stage the player and activate an encounter; the later meaningful action consumes the turn.
-- `USE_SKILL` with one of `COPY`, `DELETE`, `CONNECT`, `RESTORE`, or `UNDO`, plus validated targets. The server classifies it as `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, or `DEPLOYMENT` and commits exactly one meaningful turn.
+- `USE_SKILL` with one of `COPY`, `DELETE`, `CONNECT`, `RESTORE`, `UNDO`, `SEARCH`, or `SELECT_ALL`, plus validated targets. The server classifies it as `COMBAT`, `INVESTIGATION`, `NEGOTIATION`, or `DEPLOYMENT` and commits exactly one meaningful turn.
+- `NARRATIVE_CHOICE` for a server-sealed dialogue or attitude choice without a D20 roll.
 
-Attack, Interact, Negotiate, and Rest are not public skills or new input types. `playerNote` is optional flavor context. It cannot provide coordinates, make an illegal target legal, change a roll, grant access, erase debt, or choose an ending.
+Free-form text is an input channel, not a fourth authority envelope. `/v1/runs/:id/messages` classifies the complete utterance against only the current location, visible entities, owned items, and supplied destinations. The Rule Engine revalidates the bounded proposal; dialogue and attitude become `NARRATIVE_CHOICE`, while rolled actions become `USE_SKILL`. Attack, Interact, Negotiate, and Rest are internal normalized action proposals, not Administrator Keyboard skills or new persisted input types. Invalid or impossible attempts change no mechanical state and return a concrete reason and alternative. A deterministic semantic fallback preserves the same boundary when the model is missing or invalid.
+
+`playerNote` remains optional flavor context on a structured command. It cannot provide coordinates, make an illegal target legal, change a roll, grant access, erase debt, or choose an ending.
 
 The Rule Engine owns legality, paths, occupancy, D20, modifiers, damage, resources, facts, access, progression, debt changes, and endings. Undo appends a compensating event; it does not rewind turn numbers, rolls, immutable facts, or world geometry.
 
@@ -80,7 +83,7 @@ Technical debt is both a metric and a causal ledger. Each entry identifies its o
 
 Gemini is non-authoritative. It receives bounded IDs and state, returns small structured proposals or short narration, is schema/semantics validated, retries at most once, and falls back deterministically. It may vary scene phrasing, dialogue, reactions, and epilogue details that agree with committed facts. It may not create geometry, rolls, rewards, access levels, canonical facts, debt resolution, or an ending ID.
 
-The default cost profile is `gemini-2.5-flash-lite`, thinking budget 0, minimal context, small output, one bounded retry, and deterministic fallback. `GEMINI_API_KEY` exists only in the server environment.
+The default cost profile is `gemini-3.1-flash-lite`, minimum thinking level, minimal context, small structured output, at most one repair, and deterministic fallback. `GEMINI_API_KEY` exists only in the server environment.
 
 The Rule Engine selects `endingId` from committed state. Gemini writes only an epilogue inside that result.
 
@@ -88,9 +91,9 @@ The Rule Engine selects `endingId` from committed state. Gemini writes only an e
 
 - The sealed world is dominant; the interface never implies that the model builds a new map each turn.
 - One primary objective, at most two secondary objectives, and two or three recommended actions are visible.
-- MOVE and the five skills are explicit; unavailable skills remain disabled with a reason.
+- MOVE and the seven Administrator Keyboard skills are explicit; unavailable skills remain disabled with a reason.
 - Confirmation shows target, skill, turn consumption, and risk before commit.
 - Results appear as judgement, state changes, then two to four sentences of narration.
-- Optional `playerNote` never blocks an otherwise valid action.
+- Optional `playerNote` never blocks an otherwise valid structured action; free-form input always shows acceptance, processing, rejection, or completion feedback.
 - Administrator access, essential clue, and causal technical debt remain inspectable.
 - The reference screenshot contributes interaction feel only, never product content.

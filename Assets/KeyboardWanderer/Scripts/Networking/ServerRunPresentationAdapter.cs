@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Game.Client.Compatibility;
 using KeyboardWanderer.Core;
 using KeyboardWanderer.Gameplay;
 using KeyboardWanderer.Presentation;
@@ -67,7 +68,8 @@ namespace KeyboardWanderer.Networking
                 Experience = run.experience,
                 Gold = run.gold,
                 Pressure = run.pressure,
-                AdminAccess = Math.Max(0, Math.Min(3, run.adminLevel)),
+                AdminAccess = Math.Max(0, Math.Min(3,
+                    ServerContractCompatibility.ResolveProgressLevel(run.progressLevel, run.adminLevel))),
                 Health = playerMaxHealth > 0 ? playerHealth : fallback?.Health ?? run.health,
                 MaxHealth = playerMaxHealth > 0 ? playerMaxHealth : fallback?.MaxHealth ?? run.maxHealth,
                 EndingCode = run.endingCode ?? string.Empty,
@@ -226,6 +228,7 @@ namespace KeyboardWanderer.Networking
                 EntityKind gameplayKind = GameplayKindFor(kind);
                 bool active = source.state == null ||
                               (!source.state.disabled && !source.state.defeated && !source.state.fled &&
+                               !source.state.adminAccessResolved &&
                                (maxHealth <= 0 || health > 0));
                 EntityCapabilities capabilities = EntityCapabilityCatalog.Resolve(gameplayKind, active,
                     kind == RunPresentationEntityKind.Enemy, source.@protected, source.cloneable, source.assetId);

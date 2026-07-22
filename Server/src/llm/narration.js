@@ -13,7 +13,10 @@ const STORY_SEQUENCE_TYPES = new Set(["NARRATION", "MONOLOGUE", "DIALOGUE", "WOR
 const INTERVENTION_SKILLS = new Set(["COPY", "DELETE", "CONNECT", "RESTORE", "UNDO", "SEARCH", "SELECT_ALL"]);
 const RESOLUTION_SKILLS = new Set([...NARRATIVE_CHOICE_SKILLS, "INTERACT", "ATTACK", "MOVE", "NEGOTIATE", "REST", "USE_ITEM", "COMBINE"]);
 const METRIC_MECHANICAL_ASSERTION = /(?:\b(?:world[\s._-]*stability|world[\s._-]*autonomy|public[\s._-]*trust|technical[\s._-]*debt|companion[\s._-]*bond|turn[\s._-]*pressure)\b|세계\s*안정성|세계\s*자율성|공공\s*신뢰|기술\s*부채|동료\s*유대|턴\s*압박)/i;
-const NARRATIVE_MECHANICAL_ASSERTION = /(?:\bprogress\s*level\b|\badmin\s*access.{0,80}\b(?:grant(?:ed)?|gain(?:ed)?|unlock(?:ed)?)\b|\bmilestone\s*token.{0,80}\b(?:grant(?:ed)?|gain(?:ed)?|receive[ds]?|award(?:ed)?|unlock(?:ed)?)\b|\bfinale\s*(?:is\s*)?(?:resolved|completed|unlocked|confirmed)\b|\bending\s*(?:is\s*)?(?:chosen|confirmed|locked|reached)\b|\b(?:hp|health|focus|damage|turn|version|reward)\s*(?::|=|is|to|became|changed)?\s*[+-]?\d+\b|\bcoordinate\s*\(|\bposition\s*(?:is|=|became|changed)\b|진행\s*(?:레벨|단계).{0,40}(?:\d+|획득|상승|확정|부여)|관리자\s*권한.{0,60}(?:획득|지급|부여|해금)|이정표\s*(?:조각|토큰|증표).{0,60}(?:획득|지급|부여|해금)|피날레.{0,40}(?:해결|완료|해금|확정)|결말.{0,40}(?:선택|확정|도달|고정)|(?:체력|집중|피해|턴|버전|보상)\s*(?::|=|은|는|이|가)?\s*[+-]?\d+|좌표\s*\(|위치\s*(?:는|가|은|이)?\s*\()/i;
+const NARRATIVE_MECHANICAL_ASSERTION = /(?:\bprogress\s*level\b|\bmilestone\s*token.{0,80}\b(?:grant(?:ed)?|gain(?:ed)?|receive[ds]?|award(?:ed)?|unlock(?:ed)?)\b|\bfinale\s*(?:is\s*)?(?:resolved|completed|unlocked|confirmed)\b|\bending\s*(?:is\s*)?(?:chosen|confirmed|locked|reached)\b|\b(?:hp|health|focus|damage|turn|version|reward)\s*(?::|=|is|to|became|changed)?\s*[+-]?\d+\b|\bcoordinate\s*\(|\bposition\s*(?:is|=|became|changed)\b|진행\s*(?:레벨|단계).{0,40}(?:\d+|획득|상승|확정|부여)|이정표\s*(?:조각|토큰|증표).{0,60}(?:획득|지급|부여|해금)|피날레.{0,40}(?:해결|완료|해금|확정)|결말.{0,40}(?:선택|확정|도달|고정)|(?:체력|집중|피해|턴|버전|보상)\s*(?::|=|은|는|이|가)?\s*[+-]?\d+|좌표\s*\(|위치\s*(?:는|가|은|이)?\s*\()/i;
+const ADMIN_AUTHORITY_ASSERTION = /(?:\badmin\s*access.{0,80}\b(?:grant(?:ed)?|gain(?:ed)?|unlock(?:ed)?)\b|(?:관리자\s*)?권한.{0,60}(?:획득|확보|지급|부여|해금))/i;
+const ROOT_AUTHORITY_ASSERTION = /(?:(?:루트|root)\s*권한.{0,60}(?:활성화|열리|해금|드러|확보|획득))/iu;
+const PREMATURE_FINALE_ASSERTION = /(?:시스템|세계|코드리아).{0,50}(?:운명|근간|결말).{0,40}(?:결정|선택)/u;
 const AMBIENT_PERSISTENCE_ASSERTION = /(?:(?:깨끗이|완전히|영구적으로).{0,16}(?:사라|삭제|소거|제거|정화|복구|회복|치유|해결)|(?:정화|복구|회복|치유|해결)(?:됐|되었|되니|했다|완료))/i;
 const INVENTORY_ACQUISITION_ASSERTION = /(?:손에\s*(?:잡힌|넣었|들어온)|꺼내든\s*것|꺼냈다|건져냈다|주웠다|챙겼다|얻었다|획득했다|소지품에\s*(?:넣|추가))/u;
 const INVENTORY_USE_ASSERTION = /(?:(?:아이템|물건|도구|약|파편).{0,24}(?:사용했다|써버렸다|소모했다)|(?:사용한|소모한)\s*(?:아이템|물건|도구))/u;
@@ -42,7 +45,9 @@ function validateBase(input) {
   assert(Number.isInteger(input.turnNo) && input.turnNo >= 0 && input.turnNo <= 10000, 400, "NARRATION_CONTEXT_INVALID", "turnNo is invalid.");
   assert(Number.isInteger(input.remainingTurns) && input.remainingTurns >= 0 && input.remainingTurns <= 1000, 400, "NARRATION_CONTEXT_INVALID", "remainingTurns is invalid.");
   const area = boundedString(input.area, { name: "area", minimum: 1, maximum: 120 });
-  const intent = boundedString(input.intent, { name: "intent", minimum: 1, maximum: 800 });
+  // /messages accepts 1,000 characters and the complete authoritative intent
+  // must survive classification and audit. playerNote remains separately capped.
+  const intent = boundedString(input.intent, { name: "intent", minimum: 1, maximum: 1000 });
   const ability = boundedString(input.ability, { name: "ability", minimum: 2, maximum: 32 }).toLowerCase();
   assert(ABILITY_PATTERN.test(ability), 400, "NARRATION_CONTEXT_INVALID", "ability has an invalid format.");
   const resolutionMode = String(input.resolutionMode || "D20").toUpperCase();
@@ -53,7 +58,7 @@ function validateBase(input) {
     assert(Number.isInteger(input.d20) && input.d20 >= 1 && input.d20 <= 20, 400, "NARRATION_CONTEXT_INVALID", "d20 must be between 1 and 20.");
     assert(typeof input.outcome === "string" && OUTCOME_VALUES.has(input.outcome) && input.outcome !== "narrative", 400, "NARRATION_CONTEXT_INVALID", "outcome is invalid.");
   }
-  const normalizedAttempt = boundedString(input.normalizedAttempt, { name: "normalizedAttempt", minimum: 1, maximum: 800 });
+  const normalizedAttempt = boundedString(input.normalizedAttempt, { name: "normalizedAttempt", minimum: 1, maximum: 1000 });
   return { area, intent, ability, normalizedAttempt, resolutionMode };
 }
 
@@ -181,7 +186,7 @@ function validateStorySequence(value, context) {
     ? [{ type: "MONOLOGUE", speakerId: player?.id || null, text: context.body }, ...context.dialogue.map((item) => ({ type: "DIALOGUE", speakerId: item.speakerId, text: item.line }))]
     : value;
   if (!Array.isArray(source) || source.length < 1 || source.length > 8) throw new AppError(502, "LLM_STORY_SEQUENCE_INVALID", "storySequence must contain 1-8 ordered beats.");
-  return source.map((item) => {
+  const beats = source.map((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new AppError(502, "LLM_STORY_SEQUENCE_INVALID", "Each story beat must be an object.");
     exactKeys(item, ["type", "speakerId", "actionId", "text"], "LLM_STORY_SEQUENCE_INVALID", 502);
     const type = boundedString(item.type, { name: "storySequence.type", minimum: 1, maximum: 20, status: 502 }).toUpperCase();
@@ -191,13 +196,25 @@ function validateStorySequence(value, context) {
     if (type === "DIALOGUE" && (!speakerId || !context.allowedEntityIds.includes(speakerId) || speakerId === player?.id)) throw new AppError(502, "LLM_ENTITY_FORBIDDEN", "Dialogue must use a visible non-player speaker.");
     if (type === "MONOLOGUE" && speakerId && speakerId !== player?.id) throw new AppError(502, "LLM_ENTITY_FORBIDDEN", "Monologue can only belong to the player.");
     if (["NARRATION", "WORLD_ACTION"].includes(type) && speakerId !== null) throw new AppError(502, "LLM_STORY_SEQUENCE_INVALID", "Narration and world action cannot have a speaker.");
-    const allowedActionIds = new Set(context.sceneSequence.map((action) => action.actionId).filter(Boolean));
-    if (type === "WORLD_ACTION" && (!actionId || !allowedActionIds.has(actionId))) throw new AppError(502, "LLM_STORY_ACTION_FORBIDDEN", "World action must reference one confirmed server action.");
+    const allowedActions = new Map(context.sceneSequence
+      .filter((action) => action?.actionId)
+      .map((action) => [action.actionId, action]));
+    const referencedAction = actionId ? allowedActions.get(actionId) : null;
+    if (type === "WORLD_ACTION" && (!referencedAction || referencedAction.type === "DIALOGUE")) throw new AppError(502, "LLM_STORY_ACTION_FORBIDDEN", "World action must reference one confirmed non-dialogue server action.");
     if (type !== "WORLD_ACTION" && actionId !== null) throw new AppError(502, "LLM_STORY_SEQUENCE_INVALID", "Only world action beats may reference an actionId.");
     const text = koreanPlayerText(boundedString(item.text, { name: "storySequence.text", minimum: 1, maximum: 320, status: 502 }), "storySequence.text");
     validateNarrativeMechanicalClaims(text, "", context);
     return { type, speakerId, actionId, text };
   });
+  for (let index = 1; index < beats.length; index += 1) {
+    const previous = beats[index - 1].text.normalize("NFKC").replace(/\s+/gu, " ").trim();
+    const current = beats[index].text.normalize("NFKC").replace(/\s+/gu, " ").trim();
+    if (previous === current) {
+      throw new AppError(502, "LLM_STORY_SEQUENCE_REPETITIVE",
+        "Adjacent story beats must advance the scene instead of repeating identical text.");
+    }
+  }
+  return beats;
 }
 
 function validateNextIntervention(value, context) {
@@ -205,6 +222,7 @@ function validateNextIntervention(value, context) {
   if (!source || typeof source !== "object" || Array.isArray(source)) throw new AppError(502, "LLM_INTERVENTION_INVALID", "nextIntervention must be an object.");
   exactKeys(source, ["reason", "choices", "suggestedSkillIds"], "LLM_INTERVENTION_INVALID", 502);
   const reason = koreanPlayerText(boundedString(source.reason, { name: "nextIntervention.reason", minimum: 1, maximum: 220, status: 502 }), "nextIntervention.reason");
+  validateNarrativeMechanicalClaims(reason, "", context);
   const legacySkills = Array.isArray(source.suggestedSkillIds)
     ? [...new Set(source.suggestedSkillIds.map((skill) => String(skill).toUpperCase()))]
     : [];
@@ -216,6 +234,7 @@ function validateNextIntervention(value, context) {
     allowedDestinationRefs: context.readOnlyPlaces.map((place) => place.id),
     allowTravel: false
   });
+  for (const choice of choices) validateNarrativeMechanicalClaims(choice.text, "", context);
   const suggestedSkillIds = [...new Set(choices.filter((choice) => choice.choiceKind === "SKILL").map((choice) => choice.skillId))];
   return { reason, choices, suggestedSkillIds };
 }
@@ -223,14 +242,17 @@ function validateNextIntervention(value, context) {
 function validateNarrativeMechanicalClaims(summary, body, context) {
   const text = `${summary} ${body}`;
   if (METRIC_MECHANICAL_ASSERTION.test(text) || NARRATIVE_MECHANICAL_ASSERTION.test(text)) throw new AppError(502, "LLM_MECHANICS_CLAIM_FORBIDDEN", "Narration cannot assert protected mechanical state.");
+  const effects = context.confirmedEffects || [];
+  const hasEffect = (pattern) => effects.some((effect) => pattern.test(String(effect?.type || "")));
+  if (ADMIN_AUTHORITY_ASSERTION.test(text) && !hasEffect(/admin_access_acquired/i)) throw new AppError(502, "LLM_ADMIN_ACCESS_CLAIM_FORBIDDEN", "Narration cannot claim administrator access without a confirmed acquisition event.");
+  if (context.mode === "director" && context.progression?.rootSystemGate?.eligible !== true && ROOT_AUTHORITY_ASSERTION.test(text)) throw new AppError(502, "LLM_ROOT_ACCESS_CLAIM_FORBIDDEN", "Narration cannot activate Root authority while the authoritative gate is closed.");
+  if (context.mode === "director" && context.endingFactors === null && PREMATURE_FINALE_ASSERTION.test(text)) throw new AppError(502, "LLM_FINALE_CLAIM_FORBIDDEN", "Narration cannot offer a finale before the server resolves one.");
   if (/\bambient\b/i.test(context.normalizedAttempt || "") && AMBIENT_PERSISTENCE_ASSERTION.test(text)) throw new AppError(502, "LLM_AMBIENT_PERSISTENCE_FORBIDDEN", "Ambient narration cannot claim a persistent world result.");
   for (const match of text.matchAll(/(?:d20|주사위|판정)\s*[:=]?\s*(\d{1,2})/gi)) {
     if (Number(match[1]) !== context.d20) throw new AppError(502, "LLM_MECHANICS_CONTRADICTION", "Narration contradicted the authoritative D20 result.");
   }
   if (["failure", "critical_failure"].includes(context.outcome) && /(?:\b(?:the command|action|check)\s+(?:succeeds?|succeeded)\b|명령(?:은|이)?\s*성공|판정(?:은|이)?\s*성공)/i.test(text)) throw new AppError(502, "LLM_MECHANICS_CONTRADICTION", "Narration contradicted the authoritative outcome.");
   if (["success", "critical_success"].includes(context.outcome) && /(?:\b(?:the command|action|check)\s+(?:fails?|failed)\b|명령(?:은|이)?\s*실패|판정(?:은|이)?\s*실패)/i.test(text)) throw new AppError(502, "LLM_MECHANICS_CONTRADICTION", "Narration contradicted the authoritative outcome.");
-  const effects = context.confirmedEffects || [];
-  const hasEffect = (pattern) => effects.some((effect) => pattern.test(String(effect?.type || "")));
   if (!hasEffect(/inventory_item_acquired/i) && INVENTORY_ACQUISITION_ASSERTION.test(text)) throw new AppError(502, "LLM_INVENTORY_CLAIM_FORBIDDEN", "Narration claimed an item acquisition without a confirmed inventory event.");
   if (!hasEffect(/inventory_item_used/i) && INVENTORY_USE_ASSERTION.test(text)) throw new AppError(502, "LLM_INVENTORY_CLAIM_FORBIDDEN", "Narration claimed item use without a confirmed inventory event.");
   if (!hasEffect(/inventory_items_combined/i) && INVENTORY_COMBINE_ASSERTION.test(text)) throw new AppError(502, "LLM_INVENTORY_CLAIM_FORBIDDEN", "Narration claimed item combination without a confirmed inventory event.");
@@ -304,7 +326,7 @@ function validateDirectorOperation(operation, context) {
 export function createFallbackNarration(contextInput) {
   const context = contextInput?.mode ? contextInput : validateNarrationContext(contextInput);
   const outcomeText = {
-    critical_success: "!! 예상보다 선명한 흔적을 붙잡았어. 이 발견이 다음 장면을 크게 바꾸겠군.",
+    critical_success: "! 예상보다 선명한 흔적을 붙잡았어. 이 발견이 다음 장면을 크게 바꾸겠군.",
     success: "좋아, 분명한 변화가 생겼어. 이 흔적이 어디로 이어지는지 지켜보자.",
     partial_success: "변화는 만들었지만 찜찜한 반동이 남았어. 이 대가는 나중에 다시 돌아오겠군.",
     failure: "……아무것도 붙잡지 못했어. 괜히 힘만 빠졌군.",

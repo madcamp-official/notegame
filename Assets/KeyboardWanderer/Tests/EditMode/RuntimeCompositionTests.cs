@@ -10,12 +10,53 @@ using KeyboardWanderer.Presentation;
 using KeyboardWanderer.Runtime;
 using KeyboardWanderer.World;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 
 namespace KeyboardWanderer.Tests.EditMode
 {
     public sealed class RuntimeCompositionTests
     {
+        private static readonly Guid StandardDeleteEnemyId =
+            Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+        [Test]
+        public void TestStorageIsolation_RoutesPreferencesAndSavesAwayFromPlayerData()
+        {
+            Assert.That(KeyboardWandererTestStorage.IsActive, Is.True,
+                "Test prebuild setup must isolate storage before any fixture executes.");
+            const string serverRunIdKey = "keyboard-wanderer.server-run-id";
+            string resolvedKey = KeyboardWandererPreferences.ResolveKeyForEditorTest(serverRunIdKey);
+            string productionSavePath = System.IO.Path.Combine(
+                Application.persistentDataPath, "codria-save-v4.json");
+
+            Assert.That(resolvedKey, Is.Not.EqualTo(serverRunIdKey));
+            Assert.That(resolvedKey, Does.StartWith("keyboard-wanderer.test."));
+            Assert.That(LocalRunSaveService.SavePath, Is.Not.EqualTo(productionSavePath));
+            Assert.That(System.IO.Path.GetDirectoryName(LocalRunSaveService.SavePath),
+                Is.EqualTo(KeyboardWandererTestStorage.ActiveDirectory));
+
+            var sessionObject = new GameObject("Isolated Storage Regression");
+            try
+            {
+                var session = sessionObject.AddComponent<KeyboardWandererRunSessionController>();
+                session.RememberServerRun("isolated-regression-run");
+                LocalRunSaveService.Save(LocalTurnService.CreateDemo(7601));
+
+                Assert.That(KeyboardWandererPreferences.GetString(serverRunIdKey),
+                    Is.EqualTo("isolated-regression-run"));
+                Assert.That(System.IO.File.Exists(LocalRunSaveService.SavePath), Is.True);
+
+                session.DeleteSave();
+                Assert.That(KeyboardWandererPreferences.HasKey(serverRunIdKey), Is.False);
+                Assert.That(LocalRunSaveService.HasSave, Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(sessionObject);
+            }
+        }
+
         [Test]
         public void DiceOverlay_OnlySettlesOnAuthoritativeD20Range()
         {
@@ -43,7 +84,7 @@ namespace KeyboardWanderer.Tests.EditMode
         }
 
         [Test]
-        public void GameFlowStateMachine_SealedNarrativeChoiceBlocksDirectSkills()
+        public void GameFlowStateMachine_SealedNarrativeChoiceAllowsTravelButBlocksDirectSkills()
         {
             var flow = new GameFlowStateMachine();
             flow.Refresh(new GameFlowSignals(false, false, true, true, false, false,
@@ -51,7 +92,8 @@ namespace KeyboardWanderer.Tests.EditMode
 
             Assert.That(flow.Phase, Is.EqualTo(GameFlowPhase.AwaitingNarrativeChoice));
             Assert.That(flow.CanSelectNarrativeChoice, Is.True);
-            Assert.That(flow.CanIssueGameplayCommand, Is.False);
+            Assert.That(flow.CanIssueGameplayCommand, Is.True);
+            Assert.That(flow.CanIssueAbility(AbilityKind.Move), Is.True);
             Assert.That(flow.CanIssueAbility(AbilityKind.Search), Is.False);
         }
 
@@ -248,7 +290,9 @@ namespace KeyboardWanderer.Tests.EditMode
                 RunState state = LocalTurnService.CreateDemo(20260720L).CreateSnapshot();
                 EntityState player = state.Spatial.Entities.Single(entity => entity.EntityId == state.PlayerEntityId);
                 GridCoord enemyPosition = FindAvailableNeighbour(state, player.Position);
-                var enemy = new EntityState(Guid.NewGuid(), EntityKind.Enemy, "test.enemy", "테스트 적",
+                Assert.That(EnemyArchetypeCatalog.Resolve("test.enemy", state.WorldSeed,
+                        StandardDeleteEnemyId), Is.EqualTo(EnemyDependencyArchetype.Standard));
+                var enemy = new EntityState(StandardDeleteEnemyId, EntityKind.Enemy, "test.enemy", "테스트 적",
                     true, false, false, true, 4, state.Region.RegionId, enemyPosition);
                 Assert.That(state.Spatial.Register(enemy, out string registerError), Is.True, registerError);
                 var localService = new LocalTurnService(state, new SequenceD20Source(20));
@@ -291,6 +335,49 @@ namespace KeyboardWanderer.Tests.EditMode
 
                 Assert.That(availability.CanUse(AbilityKind.Delete, server, selection, null, 0), Is.True,
                     "서버 적 대상도 로컬과 같은 Delete 규칙을 사용해야 합니다.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void AbilityAvailability_LocalRootProcessMirrorsTheAuthoritativeSearchDependency()
+        {
+            var root = new GameObject("Root Process Availability Test");
+            try
+            {
+                var selection = root.AddComponent<KeyboardWandererSelectionController>();
+                var availability = root.AddComponent<KeyboardWandererAbilityAvailability>();
+                RunState state = LocalTurnService.CreateDemo(20260720L).CreateSnapshot();
+                EntityState player = state.Spatial.Entities.Single(entity => entity.EntityId == state.PlayerEntityId);
+                GridCoord enemyPosition = FindAvailableNeighbour(state, player.Position);
+                Guid enemyId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+                var enemy = new EntityState(enemyId, EntityKind.Enemy, "enemy.dragon.v1", "루트 프로세스",
+                    true, false, false, true, 4, state.Region.RegionId, enemyPosition);
+                Assert.That(state.Spatial.Register(enemy, out string registerError), Is.True, registerError);
+
+                var blockedService = new LocalTurnService(state, new SequenceD20Source(20));
+                RunPresentationModel blocked =
+                    new LocalRunPresentationAdapter().Capture(blockedService.CurrentView);
+                selection.ResetSelection(AbilityKind.Delete);
+                selection.SelectPrimary(enemyId);
+
+                Assert.That(blocked.FindEntity(enemyId).RequiredSkillId, Is.EqualTo("SEARCH"));
+                Assert.That(availability.CanUse(AbilityKind.Delete, blocked, selection, null, 0), Is.False,
+                    "Search 전 presentation availability가 RuleEngine보다 먼저 Delete를 막아야 합니다.");
+                Assert.That(availability.CanUse(AbilityKind.Search, blocked, selection, null, 0), Is.True);
+
+                RunState revealedState = blockedService.CreateSnapshot();
+                revealedState.AddCanonicalFact(EnemyArchetypeCatalog.RevealedFact(enemyId));
+                var revealedService = new LocalTurnService(revealedState, new SequenceD20Source(20));
+                RunPresentationModel revealed =
+                    new LocalRunPresentationAdapter().Capture(revealedService.CurrentView);
+
+                Assert.That(revealed.FindEntity(enemyId).RequiredSkillId, Is.Empty);
+                Assert.That(availability.CanUse(AbilityKind.Delete, revealed, selection, null, 0), Is.True,
+                    "Search fact 이후에는 동일한 대상의 Delete가 즉시 활성화돼야 합니다.");
             }
             finally
             {
@@ -422,17 +509,102 @@ namespace KeyboardWanderer.Tests.EditMode
         }
 
         [Test]
+        public void EntityVisualFactory_ClearsPooledAnimatorAndRestoresHostileHealthBars()
+        {
+            var root = new GameObject("Entity Visual Pool Test");
+            var texture = new Texture2D(1, 1);
+            Sprite sprite = null;
+            AnimatorOverrideController staleController = null;
+            try
+            {
+                Transform fixtures = new GameObject("Fixtures").transform;
+                fixtures.SetParent(root.transform, false);
+                Transform active = new GameObject("Active Entities").transform;
+                active.SetParent(root.transform, false);
+                Transform pool = new GameObject("Entity Pool").transform;
+                pool.SetParent(root.transform, false);
+                pool.gameObject.SetActive(false);
+
+                GameObject prefabObject = new GameObject("Entity Prefab", typeof(KeyboardWandererEntityView));
+                prefabObject.transform.SetParent(fixtures, false);
+                SpriteRenderer actor = new GameObject("Actor", typeof(SpriteRenderer), typeof(Animator))
+                    .GetComponent<SpriteRenderer>();
+                actor.transform.SetParent(prefabObject.transform, false);
+                actor.transform.localPosition = new Vector3(0.1f, 0.2f, 0f);
+                SpriteRenderer healthBack = new GameObject("Health Back", typeof(SpriteRenderer))
+                    .GetComponent<SpriteRenderer>();
+                healthBack.transform.SetParent(prefabObject.transform, false);
+                SpriteRenderer healthFill = new GameObject("Health Fill", typeof(SpriteRenderer))
+                    .GetComponent<SpriteRenderer>();
+                healthFill.transform.SetParent(prefabObject.transform, false);
+                TextMesh label = new GameObject("Finale Label", typeof(TextMesh)).GetComponent<TextMesh>();
+                label.transform.SetParent(prefabObject.transform, false);
+                KeyboardWandererEntityView prefab = prefabObject.GetComponent<KeyboardWandererEntityView>();
+                prefab.Configure(actor, healthBack, healthFill, label);
+
+                var factory = root.AddComponent<KeyboardWandererEntityVisualFactory>();
+                factory.Configure(prefab, active, pool);
+                sprite = Sprite.Create(texture, new Rect(0, 0, 1, 1), Vector2.one * 0.5f);
+
+                KeyboardWandererEntityView first = factory.Acquire("첫 적", true, sprite);
+                Animator animator = first.ActorRenderer.GetComponent<Animator>();
+                RuntimeAnimatorController baseController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                    "Assets/KeyboardWanderer/Animations/Player/Player.controller");
+                Assert.That(baseController, Is.Not.Null);
+                staleController = new AnimatorOverrideController(baseController);
+                animator.runtimeAnimatorController = staleController;
+                animator.enabled = true;
+                first.ActorRenderer.sprite = sprite;
+                first.ActorRenderer.color = Color.red;
+                first.ActorRenderer.flipX = true;
+                first.ActorRenderer.transform.localPosition = Vector3.one * 9f;
+                first.transform.localScale = Vector3.one * 0.4f;
+                Assert.That(first.HealthBack.activeSelf, Is.True);
+                Assert.That(first.HealthFill.activeSelf, Is.True);
+
+                factory.Release(first);
+                KeyboardWandererEntityView reused = factory.Acquire("재사용 NPC", false, sprite);
+
+                Assert.That(reused, Is.SameAs(first));
+                Assert.That(animator.runtimeAnimatorController, Is.Null,
+                    "이전 엔티티의 AnimatorController가 풀 재사용 뒤 남으면 안 됩니다.");
+                Assert.That(animator.enabled, Is.False);
+                Assert.That(reused.ActorRenderer.sprite, Is.Null);
+                Assert.That(reused.ActorRenderer.color, Is.EqualTo(Color.white));
+                Assert.That(reused.ActorRenderer.flipX, Is.False);
+                Assert.That(reused.ActorRenderer.transform.localPosition,
+                    Is.EqualTo(new Vector3(0.1f, 0.2f, 0f)));
+                Assert.That(reused.transform.localScale, Is.EqualTo(Vector3.one));
+                Assert.That(reused.HealthBack.activeSelf, Is.False);
+                Assert.That(reused.HealthFill.activeSelf, Is.False);
+
+                factory.Release(reused);
+                KeyboardWandererEntityView hostileAgain = factory.Acquire("다음 적", true, sprite);
+                Assert.That(hostileAgain.HealthBack.activeSelf, Is.True,
+                    "적 체력바는 풀에서 다시 꺼낼 때 즉시 활성 상태여야 합니다.");
+                Assert.That(hostileAgain.HealthFill.activeSelf, Is.True);
+            }
+            finally
+            {
+                if (staleController != null) UnityEngine.Object.DestroyImmediate(staleController);
+                if (sprite != null) UnityEngine.Object.DestroyImmediate(sprite);
+                UnityEngine.Object.DestroyImmediate(texture);
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
         public void SettingsController_OwnsPersistenceAndAppliesAuthoredAudioVolumes()
         {
             const string musicKey = "keyboard-wanderer.music-volume";
             const string sfxKey = "keyboard-wanderer.sfx-volume";
             const string gmKey = "keyboard-wanderer.gm-enabled";
-            bool hadMusic = PlayerPrefs.HasKey(musicKey);
-            bool hadSfx = PlayerPrefs.HasKey(sfxKey);
-            bool hadGm = PlayerPrefs.HasKey(gmKey);
-            float oldMusic = PlayerPrefs.GetFloat(musicKey, 0.65f);
-            float oldSfx = PlayerPrefs.GetFloat(sfxKey, 0.8f);
-            int oldGm = PlayerPrefs.GetInt(gmKey, 1);
+            bool hadMusic = KeyboardWandererPreferences.HasKey(musicKey);
+            bool hadSfx = KeyboardWandererPreferences.HasKey(sfxKey);
+            bool hadGm = KeyboardWandererPreferences.HasKey(gmKey);
+            float oldMusic = KeyboardWandererPreferences.GetFloat(musicKey, 0.65f);
+            float oldSfx = KeyboardWandererPreferences.GetFloat(sfxKey, 0.8f);
+            int oldGm = KeyboardWandererPreferences.GetInt(gmKey, 1);
             var root = new GameObject("Settings Controller Test");
             try
             {
@@ -458,8 +630,9 @@ namespace KeyboardWanderer.Tests.EditMode
             {
                 RestorePlayerPref(musicKey, hadMusic, oldMusic);
                 RestorePlayerPref(sfxKey, hadSfx, oldSfx);
-                if (hadGm) PlayerPrefs.SetInt(gmKey, oldGm); else PlayerPrefs.DeleteKey(gmKey);
-                PlayerPrefs.Save();
+                if (hadGm) KeyboardWandererPreferences.SetInt(gmKey, oldGm);
+                else KeyboardWandererPreferences.DeleteKey(gmKey);
+                KeyboardWandererPreferences.Save();
                 UnityEngine.Object.DestroyImmediate(root);
             }
         }
@@ -497,7 +670,8 @@ namespace KeyboardWanderer.Tests.EditMode
 
         private static void RestorePlayerPref(string key, bool existed, float value)
         {
-            if (existed) PlayerPrefs.SetFloat(key, value); else PlayerPrefs.DeleteKey(key);
+            if (existed) KeyboardWandererPreferences.SetFloat(key, value);
+            else KeyboardWandererPreferences.DeleteKey(key);
         }
     }
 }

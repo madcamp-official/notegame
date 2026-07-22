@@ -83,13 +83,15 @@ namespace KeyboardWanderer.Runtime
         }
 
         public bool CanIssueGameplayCommand =>
-            Phase == GameFlowPhase.AwaitingChoice || Phase == GameFlowPhase.AwaitingEncounterChoice;
+            Phase == GameFlowPhase.AwaitingChoice || Phase == GameFlowPhase.AwaitingEncounterChoice ||
+            Phase == GameFlowPhase.AwaitingNarrativeChoice;
 
         public bool CanSelectNarrativeChoice => Phase == GameFlowPhase.AwaitingNarrativeChoice;
 
         public bool CanIssueAbility(AbilityKind ability)
         {
             if (Phase == GameFlowPhase.AwaitingChoice) return true;
+            if (Phase == GameFlowPhase.AwaitingNarrativeChoice) return ability == AbilityKind.Move;
             return Phase == GameFlowPhase.AwaitingEncounterChoice && ability != AbilityKind.Move;
         }
 

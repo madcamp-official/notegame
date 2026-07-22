@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_MODEL, DEFAULT_MODEL_PROFILES, narrowSchemaForContext, VllmNarrator } from "../src/llm/vllm-director.js";
 import { DIRECTOR_RESPONSE_JSON_SCHEMA, FALLBACK_MODEL } from "../src/llm/narration.js";
+import { withLlmTurnBudget } from "../src/llm/request-budget.js";
 
 const context = {
   turnNo: 3,
@@ -131,4 +132,99 @@ test("missing base URL never performs a network request", async () => {
   const result = await narrator.narrate(context);
   assert.equal(calls, 0);
   assert.equal(result.fallbackUsed, true);
+});
+
+test("vLLM transport failures open a cooldown and allow only one half-open recovery probe", async () => {
+  let calls = 0;
+  let now = 1000;
+  let mode = "failure";
+  let releaseProbe;
+  const valid = { summary: "회복된 응답", body: "빗물이 깨진 등불 위로 조용히 흐른다.", dialogue: null, proposedOps: [] };
+  const narrator = new VllmNarrator({
+    baseUrl: "http://127.0.0.1:8000/v1",
+    timeoutMs: 500,
+    circuitCooldownMs: 1000,
+    clock: () => now,
+    logger: silentLogger,
+    fetchImpl: async () => {
+      calls += 1;
+      if (mode === "failure") throw new Error("connection refused");
+      if (mode === "probe") return new Promise((resolve) => { releaseProbe = () => resolve(responseWith(valid)); });
+      return responseWith(valid);
+    }
+  });
+  const failed = await narrator.narrate(context);
+  assert.equal(failed.fallbackUsed, true);
+  assert.equal(calls, 1);
+  mode = "success";
+  assert.equal((await narrator.narrate(context)).fallbackUsed, true);
+  assert.equal(calls, 1, "an open circuit must fail fast without another provider request");
+
+  now += 1000;
+  mode = "probe";
+  const recovery = narrator.narrate(context);
+  await new Promise((resolve) => setImmediate(resolve));
+  const concurrent = await narrator.narrate(context);
+  assert.equal(concurrent.fallbackUsed, true);
+  assert.equal(calls, 2, "only one half-open probe may reach vLLM");
+  releaseProbe();
+  assert.equal((await recovery).fallbackUsed, false);
+  mode = "success";
+  assert.equal((await narrator.narrate(context)).fallbackUsed, false);
+  assert.equal(calls, 3, "a successful probe must close the circuit");
+});
+
+test("turn-level vLLM call budgets cap semantic retries and abort at one overall deadline", async () => {
+  let calls = 0;
+  const invalidNarrator = new VllmNarrator({
+    baseUrl: "http://127.0.0.1:8000/v1",
+    timeoutMs: 500,
+    logger: silentLogger,
+    fetchImpl: async () => {
+      calls += 1;
+      return responseWith({ summary: "", body: "", dialogue: null, proposedOps: [] });
+    }
+  });
+  const budgeted = await withLlmTurnBudget({ timeoutMs: 200, maxCalls: 1 }, () => invalidNarrator.narrate(context));
+  assert.equal(budgeted.fallbackUsed, true);
+  assert.equal(calls, 1);
+
+  calls = 0;
+  const stalledNarrator = new VllmNarrator({
+    baseUrl: "http://127.0.0.1:8000/v1",
+    timeoutMs: 1000,
+    logger: silentLogger,
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+    }
+  });
+  const startedAt = Date.now();
+  const timedOut = await withLlmTurnBudget({ timeoutMs: 25, maxCalls: 6 }, () => stalledNarrator.narrate(context));
+  assert.equal(timedOut.fallbackUsed, true);
+  assert.equal(calls, 1);
+  assert.ok(Date.now() - startedAt < 250, "the overall turn deadline must pre-empt the longer provider timeout");
+  assert.equal((await stalledNarrator.narrate(context)).fallbackUsed, true);
+  assert.equal(calls, 1, "the deadline failure must open the provider circuit for the next turn");
+});
+
+test("vLLM provider concurrency is bounded across simultaneous turns", async () => {
+  let active = 0;
+  let maximumActive = 0;
+  const valid = { summary: "동시 요청 제한", body: "각 장면은 순서대로 안정적으로 처리된다.", dialogue: null, proposedOps: [] };
+  const narrator = new VllmNarrator({
+    baseUrl: "http://127.0.0.1:8000/v1",
+    maxConcurrentRequests: 2,
+    logger: silentLogger,
+    fetchImpl: async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      return responseWith(valid);
+    }
+  });
+  const results = await Promise.all(Array.from({ length: 6 }, () => narrator.narrate(context)));
+  assert.ok(results.every((result) => result.fallbackUsed === false));
+  assert.equal(maximumActive, 2);
 });

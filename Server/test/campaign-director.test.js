@@ -121,9 +121,52 @@ test("director validation rejects coordinates, unknown IDs, invalid assets and f
   const base = { summary: "요약", body: "서버가 판정한 결과가 적용됐다. 월드 geometry는 그대로 유지된다.", dialogue: [] };
   const ambientContext = { ...context, normalizedAttempt: "Delete ambient system residue with DELETE" };
   assert.throws(() => validateNarrationOutput({ ...base, body: "계절의 파편이 깨끗이 사라졌어. 시간의 주파수도 완전히 정화되었어.", proposedOps: [] }, ambientContext), /persistent world result/);
+  assert.throws(() => validateNarrationOutput({ ...base, body: "이제 시스템의 운명을 결정할 수 있는 권한을 확보했다. 마지막 선택만 내리면 된다.", proposedOps: [] }, context), /administrator access/u);
+  assert.throws(() => validateNarrationOutput({ ...base, body: "루트 권한이 담긴 마지막 데이터 블록이 활성화된다. 이제 문이 열리기 시작한다.", proposedOps: [] }, context), /Root authority/u);
+  assert.throws(() => validateNarrationOutput({
+    ...base,
+    proposedOps: [],
+    nextIntervention: {
+      reason: "시스템의 근간과 운명을 결정해야 한다.",
+      choices: [
+        { choiceId: "wait.cautiously", text: "조금 더 살펴본다.", choiceKind: "ATTITUDE", intentTag: "CAUTIOUS", resolutionMode: "NONE", skillId: null, targetEntityId: null, destinationRef: null },
+        { choiceId: "consider.context", text: "주변 기록의 의미를 차분히 생각한다.", choiceKind: "ATTITUDE", intentTag: "CURIOUS", resolutionMode: "NONE", skillId: null, targetEntityId: null, destinationRef: null }
+      ]
+    }
+  }, context), /finale/u);
   assert.throws(() => validateNarrationOutput({ ...base, proposedOps: [{ op: "SET_VISUAL_INTENT", summary: "불법 좌표", slotId: "missing", value: "x=999", x: 999, budgetCost: 0 }] }, context), /Unknown fields/);
   assert.throws(() => validateNarrationOutput({ ...base, proposedOps: [{ op: "ADD_NPC_MEMORY", summary: "없는 NPC", targetId: randomUUID(), budgetCost: 0 }] }, context), /outside the provided scene/);
+  assert.throws(() => validateNarrationOutput({
+    ...base,
+    storySequence: [
+      { type: "NARRATION", speakerId: null, actionId: null, text: "습지의 데이터 파편이 같은 빛으로 일렁인다." },
+      { type: "NARRATION", speakerId: null, actionId: null, text: "습지의 데이터 파편이 같은 빛으로 일렁인다." }
+    ],
+    proposedOps: []
+  }, context), /Adjacent story beats/u);
   const visibleNpcId = context.visibleEntities.find((item) => item.kind === "npc")?.id;
+  if (visibleNpcId) {
+    const dialogueActionId = randomUUID();
+    const dialogueContext = {
+      ...context,
+      sceneSequence: [{
+        actionId: dialogueActionId,
+        type: "DIALOGUE",
+        speakerId: visibleNpcId,
+        text: "이 선택의 의미를 다시 물어보세요."
+      }]
+    };
+    assert.throws(() => validateNarrationOutput({
+      ...base,
+      storySequence: [{
+        type: "WORLD_ACTION",
+        speakerId: null,
+        actionId: dialogueActionId,
+        text: "이 선택의 의미를 다시 물어보세요."
+      }],
+      proposedOps: []
+    }, dialogueContext), /non-dialogue server action/u);
+  }
   if (visibleNpcId) assert.throws(() => validateNarrationOutput({ ...base, proposedOps: [{ op: "CHANGE_AFFINITY", summary: "근거 없는 적대", targetId: visibleNpcId, delta: -3, budgetCost: 0 }] }, context), /requires consequence budget/);
   const endingContext = { ...context, remainingTurns: 3 };
   assert.throws(() => validateNarrationOutput({ ...base, proposedOps: [{ op: "START_QUEST", summary: "너무 늦은 장기 퀘스트", questTemplateId: "late", budgetCost: 0 }] }, endingContext), /final five turns/);

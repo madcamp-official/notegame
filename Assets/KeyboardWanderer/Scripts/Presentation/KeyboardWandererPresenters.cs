@@ -58,6 +58,12 @@ namespace KeyboardWanderer.Presentation
 
         public void Show() => IsDismissed = false;
 
+        public void ShowLast(int pageCount)
+        {
+            Page = Math.Max(0, pageCount - 1);
+            IsDismissed = false;
+        }
+
         public void Dismiss() => IsDismissed = true;
 
         public void Reset()

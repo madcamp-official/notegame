@@ -68,8 +68,16 @@ namespace KeyboardWanderer.Demo
             desired.x = Mathf.Clamp(desired.x, minX, maxX);
             desired.y = Mathf.Clamp(desired.y, minY, maxY);
             desired.z = targetCamera.transform.position.z;
+            Vector3 current = targetCamera.transform.position;
+            if (Vector3.SqrMagnitude(current - desired) <= 0.000001f && _velocity.sqrMagnitude <= 0.000001f)
+            {
+                if (current != desired)
+                    targetCamera.transform.position = desired;
+                _velocity = Vector3.zero;
+                return;
+            }
             targetCamera.transform.position = Vector3.SmoothDamp(
-                targetCamera.transform.position,
+                current,
                 desired,
                 ref _velocity,
                 followSmoothTime,

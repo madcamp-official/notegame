@@ -31,6 +31,10 @@ namespace KeyboardWanderer.World
         public bool HasMoveX;
         public bool HasMoveY;
         public bool HasMoveSpeed;
+        public bool AnimatorParametersInitialized;
+        public Vector2 AnimatorFacing;
+        public bool AnimatorMoving;
+        public bool AnimatorAttacking;
     }
 
     /// <summary>
@@ -92,12 +96,15 @@ namespace KeyboardWanderer.World
                 }
                 else
                 {
-                    visual.Root.transform.position = Vector3.Lerp(
-                        visual.Root.transform.position, visual.TargetPosition, smoothing);
+                    Vector3 current = visual.Root.transform.position;
+                    if (Vector3.SqrMagnitude(current - visual.TargetPosition) > 0.000001f)
+                        visual.Root.transform.position = Vector3.Lerp(current, visual.TargetPosition, smoothing);
                 }
 
                 int visualY = Mathf.FloorToInt((visual.Root.transform.position.y - mapOrigin.y) / tileSize);
-                visual.Renderer.sortingOrder = 500 - visualY * 4;
+                int sortingOrder = 500 - visualY * 4;
+                if (visual.Renderer.sortingOrder != sortingOrder)
+                    visual.Renderer.sortingOrder = sortingOrder;
                 bool playerAction = visual.IsPlayer && Time.unscaledTime < playerActionUntil;
                 bool hasOverride = playerActionOverrideFrames != null && playerActionOverrideFrames.Length > 0;
                 Sprite[] frames = visual.IsPlayer && walkingThisFrame
@@ -130,6 +137,10 @@ namespace KeyboardWanderer.World
             if (visual.HasMoveX) visual.Animator.SetFloat("MoveX", 0f);
             if (visual.HasMoveY) visual.Animator.SetFloat("MoveY", -1f);
             visual.Animator.SetFloat("MoveSpeed", 0f);
+            visual.AnimatorFacing = visual.Facing;
+            visual.AnimatorMoving = false;
+            visual.AnimatorAttacking = false;
+            visual.AnimatorParametersInitialized = true;
         }
 
         private void UpdatePlayerMovement(
@@ -164,17 +175,31 @@ namespace KeyboardWanderer.World
             bool usesAnimator = visual.Animator != null && visual.Animator.runtimeAnimatorController != null;
             if (usesAnimator && visual.IsPlayer)
             {
-                visual.Animator.SetFloat("MoveX", visual.Facing.x);
-                visual.Animator.SetFloat("MoveY", visual.Facing.y);
-                visual.Animator.SetBool("IsMoving", walkingThisFrame);
-                visual.Animator.SetBool("IsAttacking", !walkingThisFrame && Time.unscaledTime < playerActionUntil);
+                bool attacking = !walkingThisFrame && Time.unscaledTime < playerActionUntil;
+                bool facingChanged = !visual.AnimatorParametersInitialized || visual.AnimatorFacing != visual.Facing;
+                if (facingChanged)
+                {
+                    visual.Animator.SetFloat("MoveX", visual.Facing.x);
+                    visual.Animator.SetFloat("MoveY", visual.Facing.y);
+                }
+                if (!visual.AnimatorParametersInitialized || visual.AnimatorMoving != walkingThisFrame)
+                    visual.Animator.SetBool("IsMoving", walkingThisFrame);
+                if (!visual.AnimatorParametersInitialized || visual.AnimatorAttacking != attacking)
+                    visual.Animator.SetBool("IsAttacking", attacking);
+                RememberAnimatorState(visual, walkingThisFrame, attacking);
                 return;
             }
             if (usesAnimator)
             {
-                if (visual.HasMoveX) visual.Animator.SetFloat("MoveX", visual.Facing.x);
-                if (visual.HasMoveY) visual.Animator.SetFloat("MoveY", visual.Facing.y);
-                if (visual.HasMoveSpeed) visual.Animator.SetFloat("MoveSpeed", visual.IsWandering ? 1f : 0f);
+                if (!visual.AnimatorParametersInitialized || visual.AnimatorFacing != visual.Facing)
+                {
+                    if (visual.HasMoveX) visual.Animator.SetFloat("MoveX", visual.Facing.x);
+                    if (visual.HasMoveY) visual.Animator.SetFloat("MoveY", visual.Facing.y);
+                }
+                if (visual.HasMoveSpeed &&
+                    (!visual.AnimatorParametersInitialized || visual.AnimatorMoving != visual.IsWandering))
+                    visual.Animator.SetFloat("MoveSpeed", visual.IsWandering ? 1f : 0f);
+                RememberAnimatorState(visual, visual.IsWandering, false);
                 return;
             }
             if (frames == null || frames.Length == 0)
@@ -187,19 +212,32 @@ namespace KeyboardWanderer.World
                 frame, visual.DesiredSize);
         }
 
+        private static void RememberAnimatorState(KeyboardWandererEntityVisualState visual,
+            bool moving, bool attacking)
+        {
+            visual.AnimatorFacing = visual.Facing;
+            visual.AnimatorMoving = moving;
+            visual.AnimatorAttacking = attacking;
+            visual.AnimatorParametersInitialized = true;
+        }
+
         private static void UpdateSelectionTint(Guid id, KeyboardWandererEntityVisualState visual,
             KeyboardWandererSelectionController selection)
         {
             bool selected = selection.SelectedTarget == id || selection.SelectedSecondaryTarget == id;
+            if (!selected)
+            {
+                if (visual.Renderer.color != visual.BaseColor)
+                    visual.Renderer.color = visual.BaseColor;
+                return;
+            }
             float pulse = 0.78f + Mathf.Sin(Time.unscaledTime * 7f) * 0.18f;
             Color selectionColor = selection.Ability == AbilityKind.Delete
                 ? new Color(1f, 0.16f, 0.12f, 1f)
                 : selection.Ability == AbilityKind.Restore
                     ? new Color(0.2f, 0.95f, 1f, 1f)
                     : new Color(1f, 0.82f, 0.25f, 1f);
-            visual.Renderer.color = selected
-                ? Color.Lerp(visual.BaseColor, selectionColor, pulse)
-                : visual.BaseColor;
+            visual.Renderer.color = Color.Lerp(visual.BaseColor, selectionColor, pulse);
         }
 
         private static void UpdateAttachedVisuals(KeyboardWandererEntityVisualState visual)
@@ -207,14 +245,19 @@ namespace KeyboardWanderer.World
             if (visual.HealthBack != null && visual.HealthFill != null)
             {
                 Vector3 position = visual.Root.transform.position + new Vector3(0f, 0.66f, -0.1f);
-                visual.HealthBack.transform.position = position;
+                if (visual.HealthBack.transform.position != position)
+                    visual.HealthBack.transform.position = position;
                 float ratio = visual.HealthFill.transform.localScale.x / 0.74f;
-                visual.HealthFill.transform.position =
-                    position + new Vector3(-0.39f * (1f - ratio), 0f, -0.01f);
+                Vector3 fillPosition = position + new Vector3(-0.39f * (1f - ratio), 0f, -0.01f);
+                if (visual.HealthFill.transform.position != fillPosition)
+                    visual.HealthFill.transform.position = fillPosition;
             }
             if (visual.RootComponentLabel != null)
-                visual.RootComponentLabel.transform.position =
-                    visual.Root.transform.position + new Vector3(0f, -0.72f, -0.2f);
+            {
+                Vector3 labelPosition = visual.Root.transform.position + new Vector3(0f, -0.72f, -0.2f);
+                if (visual.RootComponentLabel.transform.position != labelPosition)
+                    visual.RootComponentLabel.transform.position = labelPosition;
+            }
         }
 
         private static Sprite[] DirectionalFrames(Vector2 facing, bool attacking, Sprite[] fallback,

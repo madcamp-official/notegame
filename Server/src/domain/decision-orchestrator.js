@@ -3,17 +3,7 @@ import { applyScenePlan } from "./consequence-resolver.js";
 import { resolveSafeTravel } from "./turn-engine.js";
 import { createFallbackScenePlan, validateScenePlan } from "../llm/scene-director.js";
 
-export async function planDecisionScene({ narrator, run, decisionType, navigation = null, turn = null, logger = console }) {
-  const bundle = buildConsequenceCandidates(run, { decisionType, navigation, turn });
-  let rawPlan;
-  try {
-    rawPlan = typeof narrator?.planScene === "function"
-      ? await narrator.planScene(bundle.context)
-      : createFallbackScenePlan(bundle.context);
-  } catch (error) {
-    logger?.warn?.({ event: "scene_director_fallback", category: error?.code || "unexpected" });
-    rawPlan = createFallbackScenePlan(bundle.context);
-  }
+function finalizeSceneDecision({ run, bundle, rawPlan, logger }) {
   let plan;
   try {
     const validated = validateScenePlan({ sceneGoal: rawPlan.sceneGoal, selectedActionIds: rawPlan.selectedActionIds || [], proposedActions: rawPlan.proposedActions || [], dialogue: rawPlan.dialogue || [] }, bundle.context);
@@ -27,6 +17,25 @@ export async function planDecisionScene({ narrator, run, decisionType, navigatio
   return { context: bundle.context, candidates: bundle.candidates, plan };
 }
 
+export function planDeterministicDecisionScene({ run, decisionType, navigation = null, turn = null, logger = console }) {
+  const bundle = buildConsequenceCandidates(run, { decisionType, navigation, turn });
+  return finalizeSceneDecision({ run, bundle, rawPlan: createFallbackScenePlan(bundle.context), logger });
+}
+
+export async function planDecisionScene({ narrator, run, decisionType, navigation = null, turn = null, logger = console }) {
+  const bundle = buildConsequenceCandidates(run, { decisionType, navigation, turn });
+  let rawPlan;
+  try {
+    rawPlan = typeof narrator?.planScene === "function"
+      ? await narrator.planScene(bundle.context)
+      : createFallbackScenePlan(bundle.context);
+  } catch (error) {
+    logger?.warn?.({ event: "scene_director_fallback", category: error?.code || "unexpected" });
+    rawPlan = createFallbackScenePlan(bundle.context);
+  }
+  return finalizeSceneDecision({ run, bundle, rawPlan, logger });
+}
+
 export function resolveTravelDecision({ run, request, d20Source, sceneDecision, now = new Date().toISOString() }) {
   const committed = resolveSafeTravel({ run, request, d20Source, now });
   const scene = applyScenePlan(committed.run, {
@@ -35,6 +44,12 @@ export function resolveTravelDecision({ run, request, d20Source, sceneDecision, 
     decisionType: "TRAVEL",
     now
   });
+  if (committed.run.storyEventDue) {
+    committed.run.storyEventSequence = Number(committed.run.storyEventSequence || 0) + 1;
+    committed.run.nextStoryEventDistance = Number(committed.run.travelDistance || 0) + 15 +
+      (Number.parseInt(committed.run.id.replace(/-/g, "").slice(0, 8), 16) + committed.run.storyEventSequence) % 6;
+    committed.run.storyEventDue = false;
+  }
   committed.navigation.sceneDecision = scene;
   committed.navigation.sceneSequence = scene.sceneSequence;
   committed.navigation.events = [...(committed.navigation.events || []), ...(committed.events || []), ...scene.events];
