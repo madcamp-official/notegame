@@ -3,6 +3,8 @@
   "rootNamespace": "KeyboardWanderer.Tests.PlayMode",
   "references": [
     "KeyboardWanderer.Runtime",
+    "Unity.InputSystem",
+    "Unity.InputSystem.TestFramework",
     "Unity.ugui",
     "Unity.TextMeshPro"
   ],

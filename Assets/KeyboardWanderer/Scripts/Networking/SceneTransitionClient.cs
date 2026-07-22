@@ -95,7 +95,7 @@ namespace KeyboardWanderer.Networking
     {
         public const string DefaultBaseUrl = "http://127.0.0.1:8787";
         private const string EndpointPath = "/v1/gm/scene-transitions";
-        private const int TimeoutSeconds = 12;
+        private const int TimeoutSeconds = 30;
 
         /// <summary>Outcome of a plan request. <see cref="Plan"/> is always non-null and validated.</summary>
         public sealed class Result
@@ -118,7 +118,7 @@ namespace KeyboardWanderer.Networking
 
         public SceneTransitionClient(string baseUrl = null)
         {
-            _baseUrl = (string.IsNullOrWhiteSpace(baseUrl) ? DefaultBaseUrl : baseUrl.Trim()).TrimEnd('/');
+            _baseUrl = KeyboardWandererEndpointResolver.ResolveBaseUrl(baseUrl, DefaultBaseUrl);
         }
 
         /// <summary>

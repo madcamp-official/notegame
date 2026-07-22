@@ -53,6 +53,32 @@ export function adminAccessLevel(levelOrId) {
   return ADMIN_ACCESS_LEVELS.find((item) => item.level === levelOrId || item.id === levelOrId) || null;
 }
 
+/**
+ * Return the administrator-access candidate that this entity may resolve now.
+ *
+ * The old campaign arc scheduler used `currentArcQuestion.order >= 2` as an
+ * indirect unlock. Emergent campaigns deliberately retire those questions as
+ * `legacy_disabled`, however, and therefore expose `currentArcQuestion = null`
+ * for the rest of the run. Basing a mechanical permission on that presentation
+ * object made every keyboard-targeted access anchor disappear forever.
+ *
+ * Access legality is fully described by authoritative state instead: the
+ * entity must still be active, bind the requested keyboard skill, agree with
+ * its sealed candidate record, and represent the next missing access level.
+ */
+export function eligibleAdminAccessCandidate(run, entity, skillId) {
+  if (!run || !entity || entity.active === false || !entity.state?.adminAccessLevelId) return null;
+  const normalizedSkillId = String(skillId || "").trim().toUpperCase();
+  const candidate = (run.adminAccessCandidates || []).find((item) => item.id === entity.state.candidateId);
+  if (!candidate || candidate.skillId !== normalizedSkillId
+    || candidate.accessLevelId !== entity.state.adminAccessLevelId) return null;
+
+  const acquired = new Set((run.adminAccessAcquisitionHistory || []).map((item) => item.accessLevelId));
+  if (acquired.has(candidate.accessLevelId)) return null;
+  const nextLevel = ADMIN_ACCESS_LEVELS.find((item) => !acquired.has(item.id));
+  return nextLevel?.id === candidate.accessLevelId ? candidate : null;
+}
+
 export function rootSystemGate(run) {
   const acquired = new Set((run.adminAccessAcquisitionHistory || []).map((item) => item.accessLevelId));
   const missingAdminAccessLevels = ADMIN_ACCESS_LEVELS.map((item) => item.id).filter((id) => !acquired.has(id));

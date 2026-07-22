@@ -23,6 +23,7 @@ namespace KeyboardWanderer.World
         private readonly MinimapPresenter _invalidation = new MinimapPresenter();
         private Texture2D _texture;
         private Sprite _sprite;
+        private Color32[] _pixels;
 
         public Sprite Sprite => _sprite;
         public string Signature => _invalidation.Signature;
@@ -53,6 +54,7 @@ namespace KeyboardWanderer.World
                 if (objectiveCoord.HasValue)
                     PaintMarker(objectiveCoord.Value, worldWidth, worldHeight, objectiveColor, 2);
                 PaintMarker(player, worldWidth, worldHeight, playerColor, 2);
+                _texture.SetPixels32(_pixels);
                 _texture.Apply(false, false);
             }
 
@@ -84,6 +86,7 @@ namespace KeyboardWanderer.World
                 wrapMode = TextureWrapMode.Clamp,
                 hideFlags = HideFlags.DontSave
             };
+            _pixels = new Color32[size * size];
             _sprite = Sprite.Create(_texture, new Rect(0f, 0f, size, size),
                 new Vector2(0.5f, 0.5f), size, 0, SpriteMeshType.FullRect);
             _sprite.name = "Runtime World Minimap";
@@ -99,7 +102,9 @@ namespace KeyboardWanderer.World
                 {
                     int worldX = Mathf.Clamp(px * worldWidth / _texture.width, 0, worldWidth - 1);
                     var coord = new GridCoord(worldX, worldY);
-                    _texture.SetPixel(px, py, tileColorAt == null ? Color.clear : tileColorAt(coord));
+                    _pixels[py * _texture.width + px] = tileColorAt == null
+                        ? (Color32)Color.clear
+                        : (Color32)tileColorAt(coord);
                 }
             }
         }
@@ -141,7 +146,7 @@ namespace KeyboardWanderer.World
                 int targetX = px + x;
                 int targetY = py + y;
                 if (targetX >= 0 && targetY >= 0 && targetX < _texture.width && targetY < _texture.height)
-                    _texture.SetPixel(targetX, targetY, color);
+                    _pixels[targetY * _texture.width + targetX] = color;
             }
         }
 
@@ -162,6 +167,7 @@ namespace KeyboardWanderer.World
                 if (Application.isPlaying) Destroy(_texture); else DestroyImmediate(_texture);
                 _texture = null;
             }
+            _pixels = null;
         }
     }
 }

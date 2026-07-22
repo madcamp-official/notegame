@@ -4,6 +4,7 @@ import { createApplication } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { FixedD20Source } from "../src/domain/turn-engine.js";
 import { MemoryStore } from "../src/store/memory-store.js";
+import { GeminiNarrator } from "../src/llm/gemini-narrator.js";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
@@ -43,6 +44,67 @@ class FakeNarrator {
   }
 }
 
+class DuplicateChoiceNarrator extends FakeNarrator {
+  async narrate(context) {
+    const base = await super.narrate(context);
+    const duplicateText = "잠시 멈춰 서서 주변 상황을 차분하게 살핀다.";
+    return {
+      ...base,
+      storySequence: [{
+        type: "NARRATION",
+        speakerId: null,
+        actionId: null,
+        text: "방금 선택의 여파가 가라앉고, 넙죽이는 다음 움직임을 정해야 한다."
+      }],
+      nextIntervention: {
+        reason: "다음 행동을 선택한다.",
+        choices: [
+          {
+            choiceId: "duplicate.wait",
+            text: duplicateText,
+            choiceKind: "ATTITUDE",
+            intentTag: "CAUTIOUS",
+            resolutionMode: "NONE",
+            skillId: null,
+            targetEntityId: null,
+            destinationRef: null
+          },
+          {
+            choiceId: "duplicate.observe",
+            text: duplicateText,
+            choiceKind: "DIALOGUE",
+            intentTag: "CURIOUS",
+            resolutionMode: "NONE",
+            skillId: null,
+            targetEntityId: null,
+            destinationRef: null
+          }
+        ]
+      }
+    };
+  }
+}
+
+class SlowSceneNarrator extends FakeNarrator {
+  constructor() {
+    super();
+    this.planSceneCalls = 0;
+  }
+
+  async planScene(context) {
+    this.planSceneCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return {
+      sceneGoal: "원격 장면 계획이 늦게 도착했다.",
+      selectedActionIds: [context.candidates[0].candidateId],
+      proposedActions: [],
+      dialogue: [],
+      fallbackUsed: false,
+      model: "slow-remote-scene-planner"
+    };
+  }
+}
+
 class StructuredActionNarrator extends FakeNarrator {
   async planPlayerAction(context) {
     return {
@@ -76,6 +138,61 @@ class MoveActionNarrator extends FakeNarrator {
     return {
       kind: "MOVE", targetEntityIds: [], itemIds: [], destinationRef: destination.ref,
       resultItem: null, reason: "입력 전체가 가까운 방향으로 이동하려는 시도다."
+    };
+  }
+}
+
+class MismatchedEncounterChoiceNarrator extends FakeNarrator {
+  constructor() {
+    super();
+    this.contexts = [];
+  }
+
+  async narrate(context) {
+    this.contexts.push(structuredClone(context));
+    const encounterTargetId = context.spatialContext?.activeEncounter?.sourceEntityId || null;
+    const enemy = context.visibleEntities.find((entity) => entity.id === encounterTargetId && entity.kind === "enemy");
+    const npc = context.visibleEntities.find((entity) => entity.kind === "npc");
+    if (!enemy || !npc) return super.narrate(context);
+    return {
+      summary: "적대 신호와 동료의 경고가 동시에 들린다",
+      body: `${enemy.name}의 적대 신호가 가까운 곳에서 요동친다. ${npc.name}은 넙죽이에게 성급히 움직이지 말라고 경고한다.`,
+      dialogue: [],
+      storySequence: [{
+        type: "NARRATION",
+        speakerId: null,
+        actionId: null,
+        text: `${enemy.name}의 신호와 ${npc.name}의 경고가 서로 다른 방향에서 겹쳐 들렸다.`
+      }],
+      nextIntervention: {
+        reason: "눈앞의 적대 신호에 어떻게 대응할지 선택한다.",
+        choices: [
+          {
+            choiceId: "choice.attack.delete",
+            text: `${enemy.name}에게 삭제 명령으로 직접 맞선다.`,
+            choiceKind: "SKILL",
+            intentTag: "ASSERTIVE",
+            resolutionMode: "D20",
+            skillId: "DELETE",
+            targetEntityId: npc.id,
+            destinationRef: null
+          },
+          {
+            choiceId: "choice.dialogue.ask",
+            text: `${npc.name}에게 방금 본 신호가 무엇인지 자세히 묻는다.`,
+            choiceKind: "DIALOGUE",
+            intentTag: "CURIOUS",
+            resolutionMode: "NONE",
+            skillId: null,
+            targetEntityId: npc.id,
+            destinationRef: null
+          }
+        ]
+      },
+      proposedOps: [],
+      elementalEffectId: null,
+      fallbackUsed: false,
+      model: "mismatched-encounter-choice-test"
     };
   }
 }
@@ -164,8 +281,8 @@ class ContinuityNarrator {
   }
 }
 
-async function startServer({ d20Source = new FixedD20Source(20), narrator = new FakeNarrator() } = {}) {
-  const config = loadConfig({ AUTH_MODE: "required", STORAGE: "memory", LOG_LEVEL: "silent" });
+async function startServer({ d20Source = new FixedD20Source(20), narrator = new FakeNarrator(), configEnv = {} } = {}) {
+  const config = loadConfig({ AUTH_MODE: "required", STORAGE: "memory", LOG_LEVEL: "silent", ...configEnv });
   const application = await createApplication({
     config,
     store: new MemoryStore(),
@@ -190,6 +307,36 @@ async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_
   const payload = response.status === 204 ? null : await response.json();
   return { response, payload };
 }
+
+test("duplicate generated choice text falls back before sealing instead of rolling back the selected turn", async (t) => {
+  const { application, baseUrl } = await startServer({ narrator: new DuplicateChoiceNarrator() });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST",
+    body: { title: "Choice seal fallback", worldSeed: 20260722, turnLimit: 40 }
+  })).payload.campaign;
+  const created = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, {
+    method: "POST",
+    body: {}
+  })).payload.run;
+  const choice = created.pendingChoiceSet.choices[0];
+
+  const selected = await jsonRequest(baseUrl, `/v1/runs/${created.id}/choices`, {
+    method: "POST",
+    body: {
+      choiceSetId: created.pendingChoiceSet.choiceSetId,
+      choiceId: choice.choiceId,
+      idempotencyKey: "duplicate-choice-seal-fallback-0001",
+      expectedRunVersion: created.version
+    }
+  });
+
+  assert.equal(selected.response.status, 201, JSON.stringify(selected.payload));
+  assert.equal(selected.payload.run.currentTurn, 1);
+  assert.equal(selected.payload.turn.narrative.fallbackUsed, true);
+  const texts = selected.payload.run.pendingChoiceSet.choices.map((item) => item.text);
+  assert.equal(new Set(texts).size, texts.length);
+});
 
 test("health and campaign endpoints expose deterministic previews while each run seals its own generated world", async (t) => {
   const { application, baseUrl } = await startServer();
@@ -257,6 +404,14 @@ test("health and campaign endpoints expose deterministic previews while each run
   assert.ok(runCreated.payload.run.pendingChoiceSet.choices.length >= 2);
   assert.ok(runCreated.payload.run.pendingChoiceSet.choices.some((choice) => choice.choiceKind !== "SKILL"));
 
+  const inheritedSeedRun = await jsonRequest(baseUrl, `/v1/campaigns/${campaignId}/runs`, {
+    method: "POST",
+    body: {}
+  });
+  assert.equal(inheritedSeedRun.response.status, 201);
+  assert.equal(inheritedSeedRun.payload.run.world.worldSeed, created.payload.campaign.world.worldSeed);
+  assert.equal(inheritedSeedRun.payload.run.world.layoutHash, created.payload.campaign.world.layoutHash);
+
   const hidden = await jsonRequest(baseUrl, `/v1/campaigns/${campaignId}`, { userId: OTHER_USER_ID });
   assert.equal(hidden.response.status, 404);
 });
@@ -286,6 +441,28 @@ test("ambient wander authoritatively moves visible NPCs on the grid", async (t) 
   }
 });
 
+test("ambient wander cannot mutate abandoned runs", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Terminal Wander", worldSeed: 22018, turnLimit: 40 }
+  })).payload.campaign;
+  const created = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, {
+    method: "POST", body: {}
+  })).payload.run;
+  const abandoned = (await jsonRequest(baseUrl, `/v1/runs/${created.id}/abandon`, {
+    method: "POST", body: { expectedRunVersion: created.version }
+  })).payload.run;
+  const before = structuredClone(await application.store.getRun(USER_ID, created.id));
+  const wandered = await jsonRequest(baseUrl, `/v1/runs/${created.id}/ambient-wander`, {
+    method: "POST",
+    body: { expectedRunVersion: abandoned.version, minX: 0, minY: 0, maxX: 159, maxY: 159 }
+  });
+  assert.equal(wandered.response.status, 409);
+  assert.equal(wandered.payload.error.code, "RUN_NOT_ACTIVE");
+  assert.deepEqual(await application.store.getRun(USER_ID, created.id), before);
+});
+
 test("turn submit is authoritative, versioned and idempotent without rebuilding the map", async (t) => {
   const { application, baseUrl } = await startServer();
   t.after(() => application.close());
@@ -309,6 +486,7 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   }
   target.position = { ...storedPlayer.position };
   target.state.hp = 5;
+  target.state.revealed = true;
   stored.pendingChoiceSet.choices[2] = {
     choiceId: "test.delete",
     text: "지금 길을 막는 존재에게 삭제 명령으로 경계를 분명히 한다.",
@@ -350,7 +528,7 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
     expectedRunVersion: run.version
   };
   const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, { method: "POST", body: choiceRequest });
-  assert.equal(first.response.status, 201);
+  assert.equal(first.response.status, 201, JSON.stringify(first.payload));
   assert.equal(first.payload.turn.d20, 20);
   assert.equal(first.payload.turn.outcome, "critical_success");
   assert.equal(first.payload.turn.dice.raw, 20);
@@ -383,9 +561,13 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
   assert.equal(first.payload.turn.actionContext, "COMBAT");
   const attackedTarget = first.payload.run.entities.find((entity) => entity.id === target.id);
-  assert.equal(attackedTarget.state.hp, 5);
-  assert.notEqual(attackedTarget.state.disabled, true);
-  assert.ok(first.payload.turn.events.some((event) => ["encounter_intervention", "ambient_fallback_applied"].includes(event.type)));
+  assert.equal(attackedTarget, undefined);
+  assert.ok(first.payload.turn.events.some((event) => event.type === "health_changed" && event.entityId === target.id && event.delta === -5 && event.hp === 0));
+  assert.ok(first.payload.turn.events.some((event) => event.type === "entity_removed" && event.entityId === target.id && event.reason === "combat_defeat"));
+  assert.equal(first.payload.turn.runtime.gameplayResult.result.damage, 5);
+  assert.equal(first.payload.turn.runtime.gameplayResult.result.destroyed, true);
+  assert.equal(first.payload.run.experience, 3);
+  assert.equal(first.payload.run.gold, 7);
   assert.equal(first.payload.run.abilityUsageHistory.length, 1);
   assert.equal(first.payload.run.directorState.decisionNo, 1);
 
@@ -415,7 +597,144 @@ test("turn submit is authoritative, versioned and idempotent without rebuilding 
   assert.equal(fetched.payload.turn.narrative.model, "fake-narrator");
 });
 
-test("sealed dialogue choices prepare but do not expose or apply D20 and survive ambient wander version changes", async (t) => {
+test("Root targetless skills reject out-of-range recipe targets without consuming state and DELETE binds threat at the boundary", async (t) => {
+  const { application, baseUrl } = await startServer({ d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST",
+    body: { title: "Root target orchestration", worldSeed: 7403, turnLimit: 40 }
+  })).payload.campaign;
+  const created = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, {
+    method: "POST",
+    body: {}
+  })).payload.run;
+  const stored = application.store.runs.get(created.id);
+  const player = stored.entities.find((entity) => entity.id === stored.playerEntityId);
+  const components = Object.fromEntries(stored.entities
+    .filter((entity) => entity.state?.finaleComponent)
+    .map((entity) => [entity.state.finaleComponent, entity]));
+  const staging = stored.world.validation.finaleInteractionAnchor;
+  assert.ok(player && components.anchor && components.safeguard && components.threat && staging);
+  player.position = { ...staging };
+  components.anchor.position = { ...player.position };
+  components.safeguard.position = { x: player.position.x + 6, y: player.position.y };
+  components.threat.position = { x: player.position.x + 4, y: player.position.y };
+  stored.adminAccessAcquisitionHistory = stored.adminAccessLevels.map((access, index) => ({
+    accessLevelId: access.id,
+    turnNo: index + 1
+  }));
+  stored.progressLevel = 3;
+  stored.progressTokens = stored.adminAccessLevels.map((access) => access.id);
+  stored.canonicalFacts.find((fact) => fact.subject === "collapse_origin"
+    && fact.predicate === "inside_admin_control_system").value = true;
+  stored.pendingChoiceSet = null;
+  stored.focus = 10;
+  application.store.runs.set(stored.id, stored);
+  const before = await application.store.getRun(USER_ID, stored.id);
+
+  const rejectedConnect = await jsonRequest(baseUrl, `/v1/runs/${stored.id}/actions`, {
+    method: "POST",
+    body: {
+      inputType: "USE_SKILL",
+      idempotencyKey: "root-connect-out-of-range-1",
+      expectedRunVersion: stored.version,
+      skillId: "CONNECT",
+      targetIds: []
+    }
+  });
+  assert.equal(rejectedConnect.response.status, 422);
+  assert.equal(rejectedConnect.payload.error.code, "OUT_OF_RANGE");
+  assert.match(rejectedConnect.payload.error.message, /connection targets must be within 5 tiles/i);
+  assert.deepEqual(await application.store.getRun(USER_ID, stored.id), before);
+
+  const rejectedDelete = await jsonRequest(baseUrl, `/v1/runs/${stored.id}/actions`, {
+    method: "POST",
+    body: {
+      inputType: "USE_SKILL",
+      idempotencyKey: "root-delete-out-of-range-1",
+      expectedRunVersion: stored.version,
+      skillId: "DELETE",
+      targetIds: []
+    }
+  });
+  assert.equal(rejectedDelete.response.status, 422);
+  assert.equal(rejectedDelete.payload.error.code, "OUT_OF_RANGE");
+  assert.match(rejectedDelete.payload.error.message, /Delete target must be within 3 tiles/i);
+  const afterRejections = await application.store.getRun(USER_ID, stored.id);
+  assert.deepEqual(afterRejections, before);
+  assert.equal(afterRejections.version, created.version);
+  assert.equal(afterRejections.currentTurn, created.currentTurn);
+  assert.equal(afterRejections.focus, 10);
+  assert.deepEqual(await application.store.listTurns(USER_ID, stored.id), []);
+
+  const boundary = application.store.runs.get(stored.id);
+  const boundaryPlayer = boundary.entities.find((entity) => entity.id === boundary.playerEntityId);
+  const boundaryThreat = boundary.entities.find((entity) => entity.state?.finaleComponent === "threat");
+  boundaryThreat.position = { x: boundaryPlayer.position.x + 3, y: boundaryPlayer.position.y };
+  application.store.runs.set(boundary.id, boundary);
+  const acceptedDelete = await jsonRequest(baseUrl, `/v1/runs/${stored.id}/actions`, {
+    method: "POST",
+    body: {
+      inputType: "USE_SKILL",
+      idempotencyKey: "root-delete-boundary-1",
+      expectedRunVersion: stored.version,
+      skillId: "DELETE",
+      targetIds: []
+    }
+  });
+  assert.equal(acceptedDelete.response.status, 201, JSON.stringify(acceptedDelete.payload));
+  assert.equal(acceptedDelete.payload.turn.request.targetEntityId, boundaryThreat.id);
+  assert.deepEqual(acceptedDelete.payload.turn.runtime.unity.events[0].targetIds, [boundaryThreat.id]);
+  assert.deepEqual(acceptedDelete.payload.run.abilityUsageHistory.at(-1).targetIds, [boundaryThreat.id]);
+  assert.ok(acceptedDelete.payload.turn.events.some((event) => event.type === "entity_removed"
+    && event.entityId === boundaryThreat.id));
+});
+
+test("a submitted prepared D20 must match the server roll for the current version", async (t) => {
+  const { application, baseUrl } = await startServer({ d20Source: new FixedD20Source(12) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Authoritative dice", worldSeed: 4132, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const skillChoice = run.pendingChoiceSet.choices.find((choice) => choice.choiceKind === "SKILL");
+  assert.ok(skillChoice);
+
+  const prepared = await jsonRequest(baseUrl, `/v1/runs/${run.id}/dice`, {
+    method: "POST", body: { expectedRunVersion: run.version }
+  });
+  assert.equal(prepared.response.status, 200);
+  assert.equal(prepared.payload.d20, 12);
+
+  const wrong = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
+    method: "POST",
+    body: {
+      choiceSetId: run.pendingChoiceSet.choiceSetId,
+      choiceId: skillChoice.choiceId,
+      idempotencyKey: "d20-mismatch-0001",
+      expectedRunVersion: run.version,
+      preparedD20: 20
+    }
+  });
+  assert.equal(wrong.response.status, 409);
+  assert.equal(wrong.payload.error.code, "D20_MISMATCH");
+  assert.equal((await jsonRequest(baseUrl, `/v1/runs/${run.id}`)).payload.run.version, run.version);
+
+  const accepted = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
+    method: "POST",
+    body: {
+      choiceSetId: run.pendingChoiceSet.choiceSetId,
+      choiceId: skillChoice.choiceId,
+      idempotencyKey: "d20-authority-0001",
+      expectedRunVersion: run.version,
+      preparedD20: prepared.payload.d20
+    }
+  });
+  assert.equal(accepted.response.status, 201, JSON.stringify(accepted.payload));
+  assert.equal(accepted.payload.turn.d20, prepared.payload.d20);
+});
+
+test("sealed dialogue choices do not prepare, expose, or apply D20 and survive ambient wander version changes", async (t) => {
   let preparedRolls = 0;
   const { application, baseUrl } = await startServer({
     d20Source: { roll() { preparedRolls += 1; return 20; } }
@@ -450,7 +769,7 @@ test("sealed dialogue choices prepare but do not expose or apply D20 and survive
   assert.equal(selected.payload.turn.resolutionMode, "NONE");
   assert.equal(selected.payload.turn.d20, null);
   assert.equal(selected.payload.turn.dice, null);
-  assert.equal(preparedRolls, 1);
+  assert.equal(preparedRolls, 0);
   assert.equal(selected.payload.turn.outcome, "narrative");
   assert.equal(selected.payload.turn.runtime.resolution.required, false);
   assert.equal(selected.payload.turn.runtime.resolution.roll, null);
@@ -470,7 +789,7 @@ test("sealed dialogue choices prepare but do not expose or apply D20 and survive
   assert.equal(replay.response.status, 200);
   assert.equal(replay.payload.fromIdempotencyCache, true);
   assert.equal(replay.payload.turn.id, selected.payload.turn.id);
-  assert.equal(preparedRolls, 1);
+  assert.equal(preparedRolls, 0);
 
   const stale = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
     method: "POST",
@@ -564,6 +883,136 @@ test("a free-form one-step destination resolves as an authoritative D20 MOVE", a
   assert.equal(result.payload.turn.runtime.unity.events[0].type, "MOVE");
 });
 
+test("a 1,000-character free-form action keeps the full intent and a bounded narration note", async (t) => {
+  const narrator = new MoveActionNarrator();
+  const { application, baseUrl } = await startServer({ narrator, d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Long Natural Action", worldSeed: 17041, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const suffix = "마지막으로 가까운 안전한 방향으로 한 걸음 이동한다";
+  const text = `${"가".repeat(1000 - suffix.length)}${suffix}`;
+  assert.equal(text.length, 1000);
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: { text, idempotencyKey: "freeform-long-move-0001", expectedRunVersion: run.version }
+  });
+  assert.equal(result.response.status, 201, JSON.stringify(result.payload));
+  assert.equal(result.payload.turn.request.intent, text);
+  assert.equal(result.payload.turn.request.narrativeChoice.text, text);
+  assert.ok(result.payload.turn.request.playerNote.length <= 400);
+  assert.match(result.payload.turn.request.playerNote, /한 걸음 이동한다$/u);
+  assert.equal(result.payload.turn.request.skillId, "MOVE");
+});
+
+test("seed 20260718 seals a mismatched DELETE choice onto the nearby active encounter enemy", async (t) => {
+  const narrator = new MismatchedEncounterChoiceNarrator();
+  const { application, baseUrl } = await startServer({ narrator, d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "CUA encounter target regression", worldSeed: 20260718, turnLimit: 40 }
+  })).payload.campaign;
+  const created = await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} });
+  const run = created.payload.run;
+  const suffix = "몬스터를 찾아 주변을 수색하고 적과 조우한다.";
+  const text = `${"가".repeat(133 - suffix.length)}${suffix}`;
+  assert.equal(text.length, 133);
+
+  const encountered = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: { text, idempotencyKey: "cua-target-repro-0001", expectedRunVersion: run.version }
+  });
+  assert.equal(encountered.response.status, 201, JSON.stringify(encountered.payload));
+  const encounter = encountered.payload.run.activeEncounter;
+  const encounterEntityId = encounter.sourceEntityId || encounter.entityId;
+  const enemy = encountered.payload.run.entities.find((entity) => entity.id === encounterEntityId);
+  const comment = encountered.payload.run.entities.find((entity) => entity.name === "코멘트");
+  const currentPlayer = encountered.payload.run.entities.find((entity) => entity.id === encountered.payload.run.playerEntityId);
+  assert(enemy && enemy.kind === "enemy" && enemy.capabilities.canDelete);
+  assert(comment && !comment.capabilities.canDelete);
+  assert.equal(encounter.sourceEntityId, enemy.id);
+  assert.ok(Math.abs(currentPlayer.position.x - enemy.position.x) + Math.abs(currentPlayer.position.y - enemy.position.y) <= 3);
+  assert.equal(encountered.payload.turn.selectedChoice.targetEntityId, enemy.id);
+  assert.equal(encountered.payload.run.npcMemories.some((memory) => memory.npcId === comment.id && memory.createdTurn === 1), false);
+
+  const contextEnemy = narrator.contexts[0].visibleEntities.find((entity) => entity.id === enemy.id);
+  assert.equal(contextEnemy.activeEncounterTarget, true);
+  assert.equal(contextEnemy.capabilities.canDelete, true);
+  assert.equal(narrator.contexts[0].spatialContext.activeEncounter.sourceEntityId, enemy.id);
+
+  const stored = application.store.runs.get(run.id);
+  // This seed may classify the forced encounter as a Root Process, for which
+  // the first legal response is SEARCH. Reveal it explicitly so this fixture
+  // isolates the separate contract it was written for: repairing a persisted
+  // DELETE choice whose target UUID was accidentally bound to the nearby NPC.
+  stored.entities.find((entity) => entity.id === enemy.id).state.revealed = true;
+  const corruptedDeleteChoice = stored.pendingChoiceSet.choices.find((choice) => choice.choiceId === "choice.attack.delete");
+  corruptedDeleteChoice.skillId = "DELETE";
+  corruptedDeleteChoice.intentTag = "ASSERTIVE";
+  corruptedDeleteChoice.targetEntityId = comment.id;
+  application.store.runs.set(run.id, stored);
+  const recovered = await jsonRequest(baseUrl, `/v1/runs/${run.id}`);
+  assert.equal(recovered.response.status, 200);
+  const deleteChoice = recovered.payload.run.pendingChoiceSet.choices.find((choice) => choice.choiceId === "choice.attack.delete");
+  const dialogueChoice = recovered.payload.run.pendingChoiceSet.choices.find((choice) => choice.choiceId === "choice.dialogue.ask");
+  assert.equal(deleteChoice.skillId, "DELETE");
+  assert.equal(deleteChoice.targetEntityId, enemy.id);
+  assert.match(deleteChoice.text, new RegExp(enemy.name));
+  assert.equal(dialogueChoice.targetEntityId, comment.id);
+
+  const selected = await jsonRequest(baseUrl, `/v1/runs/${run.id}/choices`, {
+    method: "POST",
+    body: {
+      choiceSetId: encountered.payload.run.pendingChoiceSet.choiceSetId,
+      choiceId: deleteChoice.choiceId,
+      idempotencyKey: "cua-target-delete-0001",
+      expectedRunVersion: recovered.payload.run.version
+    }
+  });
+  assert.equal(selected.response.status, 201, JSON.stringify(selected.payload));
+  assert.equal(selected.payload.turn.request.targetEntityId, enemy.id);
+  assert.ok(selected.payload.turn.events.some((event) => event.type === "health_changed" && event.entityId === enemy.id));
+});
+
+test("one HTTP turn shares an overall LLM deadline and remains playable through fallback", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Deadline Recovery", worldSeed: 17042, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  let calls = 0;
+  application.service.narrator = new GeminiNarrator({
+    apiKey: "deadline-test-key",
+    timeoutMs: 1000,
+    circuitCooldownMs: 1000,
+    logger: silentLogger,
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+    }
+  });
+  application.service.llmTurnDeadlineMs = 25;
+  application.service.llmTurnMaxCalls = 6;
+  const startedAt = Date.now();
+  const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: { text: "주변을 자세히 살펴본다", idempotencyKey: "deadline-recovery-0001", expectedRunVersion: run.version }
+  });
+  assert.equal(first.response.status, 201, JSON.stringify(first.payload));
+  assert.equal(first.payload.turn.narrative.fallbackUsed, true);
+  assert.equal(calls, 1);
+  assert.ok(Date.now() - startedAt < 500);
+
+  const second = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: { text: "잠시 기다리며 상황을 지켜본다", idempotencyKey: "deadline-recovery-0002", expectedRunVersion: first.payload.run.version }
+  });
+  assert.equal(second.response.status, 201, JSON.stringify(second.payload));
+  assert.equal(calls, 1, "the open circuit must make the next turn recover without another wait");
+});
+
 test("an impossible protected-item combination returns narrated failure instead of HTTP 422", async (t) => {
   const narrator = new ProtectedCombinationNarrator();
   const { application, baseUrl } = await startServer({ narrator, d20Source: new FixedD20Source(20) });
@@ -639,8 +1088,9 @@ test("committed LLM scene text remains in the bounded ledger supplied to the fol
   assert.ok(suppliedPriorLedger.narrativeFragments.some((fragment) => fragment.includes("청록 종소리 장면 표식 1")));
 });
 
-test("safe travel commits one butterfly-effect scene without consuming a campaign turn", async (t) => {
-  const { application, baseUrl } = await startServer();
+test("safe travel bypasses a slow remote planner and commits one deterministic butterfly-effect scene without consuming a campaign turn", async (t) => {
+  const narrator = new SlowSceneNarrator();
+  const { application, baseUrl } = await startServer({ narrator });
   t.after(() => application.close());
   const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
     method: "POST",
@@ -665,20 +1115,10 @@ test("safe travel commits one butterfly-effect scene without consuming a campaig
     expectedRunVersion: run.version,
     destination
   };
-  const blocked = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, { method: "POST", body: request });
-  assert.equal(blocked.response.status, 409);
-  assert.equal(blocked.payload.error.code, "CHOICE_REQUIRED");
-  assert.equal(blocked.payload.error.details.choiceSetId, run.pendingChoiceSet.choiceSetId);
-  const unchanged = (await jsonRequest(baseUrl, `/v1/runs/${run.id}`)).payload.run;
-  assert.equal(unchanged.version, run.version);
-  assert.equal(unchanged.pendingChoiceSet.choiceSetId, run.pendingChoiceSet.choiceSetId);
-  assert.deepEqual(unchanged.entities.find((entity) => entity.id === unchanged.playerEntityId).position, player.position);
-
-  const legacyRun = application.store.runs.get(run.id);
-  legacyRun.pendingChoiceSet = null;
-  application.store.runs.set(run.id, legacyRun);
   const first = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, { method: "POST", body: request });
   assert.equal(first.response.status, 201);
+  assert.equal(first.payload.run.pendingChoiceSet, null);
+  assert.ok(first.payload.run.choiceHistory.some((item) => item.type === "NARRATIVE_CHOICE_SKIPPED"));
   assert.equal(first.payload.navigation.campaignTurnConsumed, false);
   assert.equal(first.payload.run.currentTurn, 0);
   assert.equal(first.payload.navigation.campaignTurnBefore, 0);
@@ -686,14 +1126,68 @@ test("safe travel commits one butterfly-effect scene without consuming a campaig
   assert.equal(first.payload.run.version, 2);
   assert.equal(first.payload.navigation.sceneDecision.decisionNo, 1);
   assert.ok(first.payload.navigation.sceneSequence.length >= 1);
+  assert.equal(first.payload.navigation.narrative.summary, first.payload.navigation.sceneDecision.sceneGoal);
+  assert.equal(first.payload.navigation.narrative.fallbackUsed, true);
+  assert.match(first.payload.navigation.narrative.model, /^deterministic-scene-director-/);
   assert.equal(first.payload.run.directorState.decisionNo, 1);
   assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
+  assert.equal(narrator.planSceneCalls, 0, "non-consuming safe travel must never invoke the remote scene planner");
 
   const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, { method: "POST", body: request });
   assert.equal(replay.response.status, 200);
   assert.equal(replay.payload.fromIdempotencyCache, true);
   assert.equal(replay.payload.navigation.id, first.payload.navigation.id);
+  assert.deepEqual(replay.payload.navigation.narrative, first.payload.navigation.narrative);
   assert.equal(replay.payload.run.directorState.decisionNo, 1);
+  assert.equal(narrator.planSceneCalls, 0, "an idempotent replay must not invoke the remote scene planner");
+});
+
+test("free-form input remains valid after safe travel dismisses the optional choice set", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST",
+    body: { title: "Travel then free-form", worldSeed: 24680, turnLimit: 30 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const player = run.entities.find((entity) => entity.id === run.playerEntityId);
+  const occupied = new Set(run.entities.filter((entity) => entity.id !== player.id && entity.blocking)
+    .map((entity) => `${entity.position.x},${entity.position.y}`));
+  const tiles = decodeTiles(run.world);
+  const destination = [
+    { x: player.position.x + 1, y: player.position.y },
+    { x: player.position.x, y: player.position.y + 1 },
+    { x: player.position.x - 1, y: player.position.y },
+    { x: player.position.x, y: player.position.y - 1 }
+  ].find((point) => !occupied.has(`${point.x},${point.y}`) &&
+    point.x >= 0 && point.y >= 0 && point.x < run.world.width && point.y < run.world.height &&
+    !["wall", "water"].includes(run.world.tileLegend[tiles[point.y * run.world.width + point.x]]));
+  assert.ok(destination);
+
+  const moved = await jsonRequest(baseUrl, `/v1/runs/${run.id}/travel`, {
+    method: "POST",
+    body: {
+      inputType: "MOVE",
+      idempotencyKey: "travel-before-freeform-0001",
+      expectedRunVersion: run.version,
+      destination
+    }
+  });
+  assert.equal(moved.response.status, 201, JSON.stringify(moved.payload));
+  assert.equal(moved.payload.run.pendingChoiceSet, null);
+
+  const message = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: {
+      text: "주변의 균열을 살피고 동료에게 지금까지 확인한 사실을 설명한다.",
+      idempotencyKey: "freeform-after-travel-0001",
+      expectedRunVersion: moved.payload.run.version
+    }
+  });
+  assert.equal(message.response.status, 201, JSON.stringify(message.payload));
+  assert.equal(message.payload.run.currentTurn, 1);
+  assert.equal(message.payload.run.choiceHistory.at(-1).choiceId, "player.freeform");
+  assert.notEqual(message.payload.run.pendingChoiceSet, null);
 });
 
 test("abandon and resume require the current run version", async (t) => {
@@ -735,6 +1229,61 @@ test("localhost CORS is allowed and non-local browser origins are rejected", asy
 
   const remote = await fetch(`${baseUrl}/health`, { headers: { origin: "https://example.com" } });
   assert.equal(remote.status, 403);
+});
+
+test("HTTP guards close debug and public development tools by default", async (t) => {
+  const { application, baseUrl } = await startServer();
+  t.after(() => application.close());
+
+  const debug = await jsonRequest(baseUrl, "/v1/runs/not-a-run/debug");
+  assert.equal(debug.response.status, 404);
+  assert.equal(debug.payload.error.code, "ROUTE_NOT_FOUND");
+
+  const staticFile = await fetch(`${baseUrl}/public/test-client.html`);
+  assert.equal(staticFile.status, 404);
+  assert.equal((await staticFile.json()).error.code, "ROUTE_NOT_FOUND");
+
+  const arrayBody = await fetch(`${baseUrl}/v1/campaigns`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-user-id": USER_ID },
+    body: "[]"
+  });
+  assert.equal(arrayBody.status, 400);
+  assert.equal((await arrayBody.json()).error.code, "JSON_INVALID");
+
+  const oversized = await fetch(`${baseUrl}/v1/campaigns`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-user-id": USER_ID },
+    body: JSON.stringify({ title: "x".repeat(70 * 1024) })
+  });
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error.code, "BODY_TOO_LARGE");
+});
+
+test("public development tools require development opt-in and remain closed in production", async (t) => {
+  const development = await startServer({
+    configEnv: { NODE_ENV: "development", ENABLE_DEBUG_ROUTES: "true" }
+  });
+  t.after(() => development.application.close());
+
+  for (const name of ["test-client.html", "narrative-lab.html"]) {
+    const response = await fetch(`${development.baseUrl}/public/${name}`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /^text\/html/);
+  }
+
+  const production = await startServer({
+    configEnv: { NODE_ENV: "production", ENABLE_DEBUG_ROUTES: "true" }
+  });
+  t.after(() => production.application.close());
+
+  const publicPage = await fetch(`${production.baseUrl}/public/test-client.html`);
+  assert.equal(publicPage.status, 404);
+  assert.equal((await publicPage.json()).error.code, "ROUTE_NOT_FOUND");
+
+  const debug = await jsonRequest(production.baseUrl, "/v1/runs/not-a-run/debug");
+  assert.equal(debug.response.status, 404);
+  assert.equal(debug.payload.error.code, "ROUTE_NOT_FOUND");
 });
 
 test("GM narration endpoint has no state access and rejects mechanical operations", async (t) => {

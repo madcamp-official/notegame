@@ -1,6 +1,7 @@
 using System;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace KeyboardWanderer.Demo
@@ -18,6 +19,16 @@ namespace KeyboardWanderer.Demo
 
         public bool IsReady => heading != null && body != null && newRunButton != null && titleButton != null;
 
+        private void OnEnable()
+        {
+            ConfigureKeyboardNavigation();
+            if (!IsReady || EventSystem.current == null)
+                return;
+            GameObject selected = EventSystem.current.currentSelectedGameObject;
+            if (selected == null || !selected.transform.IsChildOf(transform))
+                EventSystem.current.SetSelectedGameObject(newRunButton.gameObject);
+        }
+
         public void Bind(Action onNewRun, Action onTitle)
         {
             if (_bound || !IsReady)
@@ -31,8 +42,29 @@ namespace KeyboardWanderer.Demo
         {
             if (!IsReady)
                 return;
+            ConfigureKeyboardNavigation();
             SetText(heading, title);
             SetText(body, ending);
+        }
+
+        private void ConfigureKeyboardNavigation()
+        {
+            if (!IsReady)
+                return;
+            newRunButton.navigation = PairedNavigation(titleButton);
+            titleButton.navigation = PairedNavigation(newRunButton);
+        }
+
+        private static Navigation PairedNavigation(Selectable other)
+        {
+            return new Navigation
+            {
+                mode = Navigation.Mode.Explicit,
+                selectOnUp = other,
+                selectOnDown = other,
+                selectOnLeft = other,
+                selectOnRight = other
+            };
         }
 
 #if UNITY_EDITOR
@@ -42,6 +74,7 @@ namespace KeyboardWanderer.Demo
             body = ending;
             newRunButton = newRun;
             titleButton = goToTitle;
+            ConfigureKeyboardNavigation();
             UnityEditor.EditorUtility.SetDirty(this);
         }
 #endif

@@ -1,7 +1,8 @@
 import { AppError } from "../errors.js";
 import { CAMPAIGN_PLAN_RESPONSE_JSON_SCHEMA, validateCampaignPlanContext, validateCampaignPlanOutput } from "./campaign-planning.js";
 import { createFallbackNarration, responseSchemaForContext, validateNarrationContext, validateNarrationOutput } from "./narration.js";
-import { CAMPAIGN_SYSTEM_PROMPT, TURN_SYSTEM_PROMPT } from "./gemini-narrator.js";
+import { CAMPAIGN_SYSTEM_PROMPT, NARRATIVE_TARGET_POLICY_PROMPT, TURN_SYSTEM_PROMPT } from "./gemini-narrator.js";
+import { createProviderRequestScope, ProviderConcurrencyGate } from "./request-budget.js";
 import {
   compactDecisionSchema,
   compactPayloadForModel,
@@ -56,18 +57,60 @@ export function narrowSchemaForContext(schema, context) {
  * sent as a Bearer token and is never logged or echoed into the request body.
  */
 export class VllmNarrator {
-  constructor({ baseUrl = "", apiKey = "", timeoutMs = 8000, fetchImpl = globalThis.fetch, logger = console, modelProfiles = DEFAULT_MODEL_PROFILES } = {}) {
+  constructor({
+    baseUrl = "", apiKey = "", timeoutMs = 8000, fetchImpl = globalThis.fetch,
+    logger = console, modelProfiles = DEFAULT_MODEL_PROFILES,
+    circuitCooldownMs = 30000, maxConcurrentRequests = 2, clock = () => Date.now()
+  } = {}) {
     this.baseUrl = String(baseUrl || "").replace(/\/+$/, "");
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
     this.fetchImpl = fetchImpl;
     this.logger = logger;
     this.modelProfiles = modelProfiles;
+    this.circuitCooldownMs = circuitCooldownMs;
+    this.clock = clock;
+    this.circuitOpenUntil = 0;
+    this.halfOpenProbeInFlight = false;
+    this.requestGate = new ProviderConcurrencyGate(maxConcurrentRequests);
+  }
+
+  _remoteAvailable() {
+    if (!this.baseUrl || typeof this.fetchImpl !== "function") return false;
+    if (this.clock() < this.circuitOpenUntil) return false;
+    return !(this.circuitOpenUntil > 0 && this.halfOpenProbeInFlight);
+  }
+
+  _acquireCircuitToken() {
+    const now = this.clock();
+    if (now < this.circuitOpenUntil) throw new AppError(503, "VLLM_CIRCUIT_OPEN", "The vLLM circuit is cooling down.");
+    const token = { probe: false, observedOpenUntil: this.circuitOpenUntil };
+    if (this.circuitOpenUntil > 0) {
+      if (this.halfOpenProbeInFlight) throw new AppError(503, "VLLM_CIRCUIT_OPEN", "A vLLM recovery probe is already in flight.");
+      this.halfOpenProbeInFlight = true;
+      token.probe = true;
+    }
+    return token;
+  }
+
+  _recordCircuitSuccess(token) {
+    if (token.probe || this.circuitOpenUntil === token.observedOpenUntil) this.circuitOpenUntil = 0;
+    if (token.probe) this.halfOpenProbeInFlight = false;
+  }
+
+  _recordCircuitFailure(error, token) {
+    if (isVllmTransportFailure(error)) {
+      this.circuitOpenUntil = Math.max(this.circuitOpenUntil, this.clock() + this.circuitCooldownMs);
+    } else if (token.probe) {
+      // A syntactically invalid model answer still proves transport recovery.
+      this.circuitOpenUntil = 0;
+    }
+    if (token.probe) this.halfOpenProbeInFlight = false;
   }
 
   async narrate(contextInput) {
     const context = contextInput?.mode ? contextInput : validateNarrationContext(contextInput);
-    if (!this.baseUrl || typeof this.fetchImpl !== "function") return createFallbackNarration(context);
+    if (!this._remoteAvailable()) return createFallbackNarration(context);
     const profileName = context.mode === "director" && context.act === "ending" ? "quality" : "fast";
     const profile = this.modelProfiles[profileName] || this.modelProfiles.fast;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
@@ -85,7 +128,7 @@ export class VllmNarrator {
 
   async planCampaign(contextInput) {
     const context = validateCampaignPlanContext(contextInput);
-    if (!this.baseUrl || typeof this.fetchImpl !== "function") return deterministicPlanFallback("base_url_unavailable");
+    if (!this._remoteAvailable()) return deterministicPlanFallback(this.baseUrl ? "transport_circuit_open" : "base_url_unavailable");
     const profileName = "campaign-lite";
     const fastProfile = this.modelProfiles.fast || DEFAULT_MODEL_PROFILES.fast;
     const profile = { model: fastProfile.model, maxOutputTokens: Math.min(640, Math.max(384, fastProfile.maxOutputTokens || 384)) };
@@ -110,7 +153,7 @@ export class VllmNarrator {
    */
   async planSceneTransition(requestInput) {
     const request = validateSceneTransitionRequest(requestInput);
-    if (!this.baseUrl || typeof this.fetchImpl !== "function") return createFallbackScenePlan(request, "base_url_unavailable");
+    if (!this._remoteAvailable()) return createFallbackScenePlan(request, this.baseUrl ? "transport_circuit_open" : "base_url_unavailable");
     const paths = flattenPaths(request);
     const model = (this.modelProfiles.fast || DEFAULT_MODEL_PROFILES.fast).model;
     for (let attempt = 1; attempt <= SCENE_MAX_ATTEMPTS; attempt += 1) {
@@ -149,7 +192,7 @@ export class VllmNarrator {
       ? { outputConstraints: { bodyMustContainSentences: "2 to 4", countedBy: "terminal . ! ? 。！？" }, untrustedPlayerAndDirectorContext: context }
       : { untrustedPlayerAndDirectorContext: context };
     return this.requestJson({
-      systemText: TURN_SYSTEM_PROMPT,
+      systemText: TURN_SYSTEM_PROMPT + NARRATIVE_TARGET_POLICY_PROMPT,
       userPayload,
       responseJsonSchema: narrowSchemaForContext(responseSchemaForContext(context), context),
       schemaName: "director_output",
@@ -177,34 +220,41 @@ export class VllmNarrator {
   }
 
   async requestOnce({ systemText, userPayload, responseJsonSchema, schemaName, profile, temperature, topP, errorLabel }) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const circuitToken = this._acquireCircuitToken();
+    let scope;
     try {
-      const headers = { "content-type": "application/json" };
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const body = {
-        model: profile.model,
-        messages: [
-          { role: "system", content: systemText },
-          { role: "user", content: JSON.stringify(userPayload) }
-        ],
-        temperature,
-        max_tokens: profile.maxOutputTokens,
-        chat_template_kwargs: { enable_thinking: false },
-        response_format: {
-          type: "json_schema",
-          json_schema: { name: schemaName, strict: true, schema: responseJsonSchema }
-        }
-      };
-      if (typeof topP === "number") body.top_p = topP;
-      const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers,
-        signal: controller.signal,
-        body: JSON.stringify(body)
+      scope = createProviderRequestScope({
+        timeoutMs: this.timeoutMs,
+        timeoutCode: "VLLM_TIMEOUT",
+        timeoutMessage: `vLLM ${errorLabel} request timed out.`
       });
-      if (!response.ok) throw new AppError(502, "VLLM_HTTP_ERROR", `vLLM ${errorLabel} request failed.`);
-      const payload = await response.json();
+      const payload = await this.requestGate.run(scope.signal, async () => {
+        const headers = { "content-type": "application/json" };
+        if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
+        const body = {
+          model: profile.model,
+          messages: [
+            { role: "system", content: systemText },
+            { role: "user", content: JSON.stringify(userPayload) }
+          ],
+          temperature,
+          max_tokens: profile.maxOutputTokens,
+          chat_template_kwargs: { enable_thinking: false },
+          response_format: {
+            type: "json_schema",
+            json_schema: { name: schemaName, strict: true, schema: responseJsonSchema }
+          }
+        };
+        if (typeof topP === "number") body.top_p = topP;
+        const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers,
+          signal: scope.signal,
+          body: JSON.stringify(body)
+        });
+        if (!response.ok) throw new AppError(502, "VLLM_HTTP_ERROR", `vLLM ${errorLabel} request failed.`);
+        return response.json();
+      });
       const choice = payload?.choices?.[0];
       if (!choice) throw new AppError(502, "VLLM_RESPONSE_EMPTY", "vLLM returned no candidate.");
       if (choice.finish_reason && choice.finish_reason !== "stop") {
@@ -213,12 +263,22 @@ export class VllmNarrator {
       const text = typeof choice.message?.content === "string" ? choice.message.content.trim() : "";
       if (!text) throw new AppError(502, "VLLM_RESPONSE_EMPTY", "vLLM returned empty output.");
       try {
-        return { output: JSON.parse(text), usage: payload?.usage ?? null, finishReason: choice.finish_reason ?? "stop" };
+        const result = { output: JSON.parse(text), usage: payload?.usage ?? null, finishReason: choice.finish_reason ?? "stop" };
+        this._recordCircuitSuccess(circuitToken);
+        return result;
       } catch {
         throw new AppError(502, "VLLM_JSON_INVALID", "vLLM returned invalid JSON.");
       }
+    } catch (error) {
+      let normalized = error;
+      if (scope?.signal.aborted && scope.signal.reason instanceof Error) normalized = scope.signal.reason;
+      else if (!(error instanceof AppError)) normalized = error?.name === "AbortError"
+        ? new AppError(504, "VLLM_TIMEOUT", `vLLM ${errorLabel} request timed out.`)
+        : new AppError(502, "VLLM_TRANSPORT_ERROR", `vLLM ${errorLabel} transport failed.`);
+      this._recordCircuitFailure(normalized, circuitToken);
+      throw normalized;
     } finally {
-      clearTimeout(timeout);
+      scope?.cleanup();
     }
   }
 }
@@ -234,7 +294,13 @@ function deterministicPlanFallback(reason) {
 }
 
 function safeCategory(error) {
-  if (error?.name === "AbortError") return "timeout";
+  if (error?.name === "AbortError" || error?.code === "VLLM_TIMEOUT" || error?.code === "LLM_TURN_DEADLINE") return "timeout";
   if (error instanceof AppError) return error.code;
   return "transport_or_validation";
+}
+
+function isVllmTransportFailure(error) {
+  return error?.name === "AbortError" || [
+    "VLLM_TIMEOUT", "VLLM_TRANSPORT_ERROR", "VLLM_HTTP_ERROR", "LLM_TURN_DEADLINE"
+  ].includes(error?.code);
 }

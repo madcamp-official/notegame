@@ -56,6 +56,12 @@ namespace KeyboardWanderer.Demo
         {
             if (_bound || controller == null || !IsReady)
                 return;
+            KeyboardWandererRuntimeFontProvider.ApplyTo(transform, dialogueView.StoryText?.font);
+            EnsureSafeAreaFitter(titleView.gameObject);
+            EnsureSafeAreaFitter(gameHudView.gameObject);
+            EnsureSafeAreaFitter(settingsView.gameObject);
+            EnsureSafeAreaFitter(pauseView.gameObject);
+            EnsureSafeAreaFitter(endingView.gameObject);
             titleView.Bind(controller.UiStartNewRun, controller.UiContinueRun, controller.UiOpenSettings);
             gameHudView.Bind(controller.UiSubmit);
             settingsView.Bind(controller.UiSetMusicVolume, controller.UiSetSfxVolume,
@@ -65,6 +71,12 @@ namespace KeyboardWanderer.Demo
             dialogueView.Bind(controller.UiAdvanceDialogue, controller.UiSelectNarrativeChoice, controller.UiSubmitPlayerMessage);
             skillBarView.Bind(controller.UiSetAbility);
             _bound = true;
+        }
+
+        private static void EnsureSafeAreaFitter(GameObject screenRoot)
+        {
+            if (screenRoot != null && screenRoot.GetComponent<KeyboardWandererSafeAreaFitter>() == null)
+                screenRoot.AddComponent<KeyboardWandererSafeAreaFitter>();
         }
 
         public void InitializeInventoryQuestOverlay(NinjaAdventureAssetManifest manifest,
@@ -155,7 +167,19 @@ namespace KeyboardWanderer.Demo
             dialogueView?.ReleaseChoiceInputLock();
         }
 
+        public void CompleteDialogueFreeformSubmission()
+        {
+            dialogueView?.CompleteFreeformSubmission();
+        }
+
+        public void ResetDialogueChoiceSession()
+        {
+            dialogueView?.ResetChoiceSession();
+        }
+
         public bool IsDialogueInputFocused => dialogueView != null && dialogueView.IsFreeformFocused;
+
+        public void FocusDialogueInput() => dialogueView?.FocusFreeformInput();
 
         public void MoveDialogueChoiceSelection(int direction)
         {

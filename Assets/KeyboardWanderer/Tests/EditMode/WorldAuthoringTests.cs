@@ -1,6 +1,9 @@
 using KeyboardWanderer.Demo;
+using KeyboardWanderer.Core;
 using KeyboardWanderer.Editor;
 using KeyboardWanderer.Gameplay;
+using KeyboardWanderer.Presentation;
+using KeyboardWanderer.World;
 using NUnit.Framework;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -61,6 +64,42 @@ namespace KeyboardWanderer.Tests.EditMode
             Assert.That(profile.TryGet("river_wetland", out KeyboardWandererWorldVisualProfile.BiomeVisual wetland), Is.True);
             Assert.That(wetland.DecorationDensity, Is.EqualTo(48));
             Object.DestroyImmediate(profile);
+        }
+
+        [Test]
+        public void MinimapRenderer_BatchedPixelUploadPreservesTerrainAndMarkers()
+        {
+            var root = new GameObject("Minimap Pixel Test");
+            try
+            {
+                var renderer = root.AddComponent<KeyboardWandererMinimapRenderer>();
+                var player = new GridCoord(1, 1);
+                var landmark = new GridCoord(7, 7);
+
+                Sprite sprite = renderer.Render(8, 8, "pixel-layout", 1, 2,
+                    player, null, null, null, null, string.Empty,
+                    new[] { landmark }, System.Array.Empty<RunPresentationEntity>(),
+                    coord => coord.X < 4 ? Color.red : Color.blue, out _);
+
+                Assert.That(sprite, Is.Not.Null);
+                Texture2D texture = sprite.texture;
+                Assert.That((Color32)texture.GetPixel(5, 40), Is.EqualTo((Color32)Color.red));
+                Assert.That((Color32)texture.GetPixel(70, 40), Is.EqualTo((Color32)Color.blue));
+
+                int playerX = player.X * texture.width / 8;
+                int playerY = player.Y * texture.height / 8;
+                Assert.That((Color32)texture.GetPixel(playerX, playerY),
+                    Is.EqualTo((Color32)new Color(0.2f, 0.95f, 1f, 1f)));
+
+                int landmarkX = landmark.X * texture.width / 8;
+                int landmarkY = landmark.Y * texture.height / 8;
+                Assert.That((Color32)texture.GetPixel(landmarkX, landmarkY),
+                    Is.EqualTo((Color32)new Color(1f, 0.55f, 0.18f, 1f)));
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
         }
     }
 }

@@ -55,6 +55,7 @@ test("Gemini adapter retries one semantically invalid response and sends bounded
   assert.equal(requestBody.generationConfig.maxOutputTokens, 1024);
   assert.equal(requestBody.generationConfig.responseMimeType, "application/json");
   assert.equal(requestBody.generationConfig.responseJsonSchema.additionalProperties, false);
+  assert.match(requestBody.systemInstruction.parts[0].text, /may be explicitly targeted/);
   assert.deepEqual(requestBody.generationConfig.responseJsonSchema.properties.proposedOps.items.properties.type.enum,
     ["ambient_cue", "fact_hint"]);
   assert.equal(requests[0].headers["x-goog-api-key"], "unit-test-token");
@@ -76,6 +77,51 @@ test("Gemini adapter performs only one retry then returns deterministic fallback
   assert.equal(result.fallbackUsed, true);
   assert.equal(result.model, FALLBACK_MODEL);
   assert.ok(result.body.length > 0);
+});
+
+test("Gemini transport timeout falls back immediately and opens a bounded circuit cooldown", async () => {
+  let calls = 0;
+  let now = 1000;
+  let mode = "timeout";
+  const narrator = new GeminiNarrator({
+    apiKey: "unit-test-token",
+    timeoutMs: 5,
+    circuitCooldownMs: 1000,
+    clock: () => now,
+    logger: silentLogger,
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      if (mode === "success") {
+        return responseWith({
+          summary: "깨진 등불 발견",
+          body: "빗물이 깨진 등불의 유리 위로 흘러내린다.",
+          dialogue: null,
+          proposedOps: [{ type: "ambient_cue", text: "잔잔한 빗소리가 들린다." }]
+        });
+      }
+      await new Promise((resolve, reject) => {
+        options.signal.addEventListener("abort", () => {
+          const error = new Error("timed out");
+          error.name = "AbortError";
+          reject(error);
+        }, { once: true });
+      });
+    }
+  });
+
+  const timedOut = await narrator.narrate(context);
+  assert.equal(timedOut.fallbackUsed, true);
+  assert.equal(calls, 1, "transport failures must not consume the semantic repair attempt");
+
+  mode = "success";
+  const duringCooldown = await narrator.narrate(context);
+  assert.equal(duringCooldown.fallbackUsed, true);
+  assert.equal(calls, 1, "subsequent planner/narrator calls must not wait behind an open circuit");
+
+  now += 1000;
+  const recovered = await narrator.narrate(context);
+  assert.equal(recovered.fallbackUsed, false);
+  assert.equal(calls, 2);
 });
 
 test("missing API key never performs a network request", async () => {

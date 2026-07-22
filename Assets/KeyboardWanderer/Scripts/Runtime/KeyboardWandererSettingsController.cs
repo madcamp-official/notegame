@@ -1,3 +1,4 @@
+using System.Collections;
 using KeyboardWanderer.Demo;
 using UnityEngine;
 
@@ -13,10 +14,14 @@ namespace KeyboardWanderer.Runtime
         private const string MusicVolumeKey = "keyboard-wanderer.music-volume";
         private const string SfxVolumeKey = "keyboard-wanderer.sfx-volume";
         private const string GmEnabledKey = "keyboard-wanderer.gm-enabled";
+        private const float SaveDebounceSeconds = 0.25f;
 
         [SerializeField] private KeyboardWandererAudioController audioController;
 
         private bool _loaded;
+        private bool _saveDirty;
+        private Coroutine _saveCoroutine;
+        private float _saveDueAt;
 
         public float MusicVolume { get; private set; } = 0.65f;
         public float SfxVolume { get; private set; } = 0.8f;
@@ -54,31 +59,82 @@ namespace KeyboardWanderer.Runtime
         {
             EnsureLoaded();
             GmEnabled = value;
-            Save();
+            StageAndScheduleSave();
         }
 
         private void EnsureLoaded()
         {
             if (_loaded)
                 return;
-            MusicVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(MusicVolumeKey, 0.65f));
-            SfxVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(SfxVolumeKey, 0.8f));
-            GmEnabled = PlayerPrefs.GetInt(GmEnabledKey, 1) != 0;
+            MusicVolume = Mathf.Clamp01(KeyboardWandererPreferences.GetFloat(MusicVolumeKey, 0.65f));
+            SfxVolume = Mathf.Clamp01(KeyboardWandererPreferences.GetFloat(SfxVolumeKey, 0.8f));
+            GmEnabled = KeyboardWandererPreferences.GetInt(GmEnabledKey, 1) != 0;
             _loaded = true;
         }
 
         private void SaveAndApply()
         {
-            Save();
+            StageAndScheduleSave();
             ApplyAudioVolumes();
         }
 
-        private void Save()
+        private void StageAndScheduleSave()
         {
-            PlayerPrefs.SetFloat(MusicVolumeKey, MusicVolume);
-            PlayerPrefs.SetFloat(SfxVolumeKey, SfxVolume);
-            PlayerPrefs.SetInt(GmEnabledKey, GmEnabled ? 1 : 0);
-            PlayerPrefs.Save();
+            KeyboardWandererPreferences.SetFloat(MusicVolumeKey, MusicVolume);
+            KeyboardWandererPreferences.SetFloat(SfxVolumeKey, SfxVolume);
+            KeyboardWandererPreferences.SetInt(GmEnabledKey, GmEnabled ? 1 : 0);
+            _saveDirty = true;
+
+            // Edit Mode utilities are not allowed to start coroutines and historically
+            // expect persistence to be synchronous. Runtime slider drags, however, can
+            // fire dozens of changes per second; debounce only the native disk flush.
+            if (!Application.isPlaying || !isActiveAndEnabled)
+            {
+                FlushPreferences();
+                return;
+            }
+            _saveDueAt = Time.realtimeSinceStartup + SaveDebounceSeconds;
+            if (_saveCoroutine == null)
+                _saveCoroutine = StartCoroutine(FlushAfterQuietPeriod());
+        }
+
+        private IEnumerator FlushAfterQuietPeriod()
+        {
+            // Keep one coroutine alive while the slider moves instead of allocating and
+            // cancelling a new delayed-yield object for every onValueChanged callback.
+            while (Time.realtimeSinceStartup < _saveDueAt)
+                yield return null;
+            _saveCoroutine = null;
+            FlushPreferences();
+        }
+
+        private void FlushPreferences()
+        {
+            if (_saveCoroutine != null)
+            {
+                StopCoroutine(_saveCoroutine);
+                _saveCoroutine = null;
+            }
+            if (!_saveDirty)
+                return;
+            KeyboardWandererPreferences.Save();
+            _saveDirty = false;
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused)
+                FlushPreferences();
+        }
+
+        private void OnApplicationQuit()
+        {
+            FlushPreferences();
+        }
+
+        private void OnDisable()
+        {
+            FlushPreferences();
         }
 
         private void ApplyAudioVolumes()

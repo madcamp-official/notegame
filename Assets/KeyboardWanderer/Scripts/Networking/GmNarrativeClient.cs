@@ -92,7 +92,7 @@ namespace KeyboardWanderer.Networking
 
         public GmNarrativeClient(string endpoint = null)
         {
-            _endpoint = string.IsNullOrWhiteSpace(endpoint) ? DefaultEndpoint : endpoint.Trim();
+            _endpoint = KeyboardWandererEndpointResolver.ResolveGmEndpoint(endpoint, DefaultEndpoint);
         }
 
         public IEnumerator RequestNarrative(
