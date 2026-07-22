@@ -14,6 +14,8 @@ import { addUnityContractAliases } from "../compat/unityContract.js";
 const MAX_BODY_BYTES = 64 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,96}$/;
+const CLIENT_INPUT_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
+const CLIENT_INPUT_SESSION_PATTERN = /^[a-f0-9]{32}$/i;
 
 export function createRequestHandler({ service, config, logger = console }) {
   const developmentToolsEnabled = config.enableDebugRoutes === true && config.environment === "development";
@@ -21,6 +23,12 @@ export function createRequestHandler({ service, config, logger = console }) {
     const startedAt = Date.now();
     const suppliedRequestId = request.headers["x-request-id"];
     const requestId = typeof suppliedRequestId === "string" && REQUEST_ID_PATTERN.test(suppliedRequestId) ? suppliedRequestId : randomUUID();
+    const suppliedClientInputId = request.headers["x-client-input-id"];
+    const suppliedClientInputSession = request.headers["x-client-input-session"];
+    const clientInputId = typeof suppliedClientInputId === "string" && CLIENT_INPUT_ID_PATTERN.test(suppliedClientInputId)
+      ? suppliedClientInputId : null;
+    const clientInputSession = typeof suppliedClientInputSession === "string" && CLIENT_INPUT_SESSION_PATTERN.test(suppliedClientInputSession)
+      ? suppliedClientInputSession : null;
     setBaseHeaders(response, requestId);
 
     try {
@@ -108,6 +116,8 @@ export function createRequestHandler({ service, config, logger = console }) {
       logger?.info?.({
         event: "http_request",
         requestId,
+        clientInputId,
+        clientInputSession,
         method: request.method,
         path: safePath(request.url),
         status: response.statusCode,
@@ -134,7 +144,7 @@ function applyCors(request, response, config) {
   response.setHeader("access-control-allow-origin", allowedOrigin);
   response.setHeader("vary", "Origin");
   response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  response.setHeader("access-control-allow-headers", "content-type,idempotency-key,x-user-id,x-request-id");
+  response.setHeader("access-control-allow-headers", "content-type,idempotency-key,x-user-id,x-request-id,x-client-input-id,x-client-input-session");
   response.setHeader("access-control-max-age", "600");
 }
 

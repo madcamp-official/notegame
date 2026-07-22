@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using Game.Client.UI;
 using KeyboardWanderer.Demo;
@@ -593,6 +594,30 @@ namespace KeyboardWanderer.Tests.PlayMode
                 for (int i = 0; i < existingControllers.Length; i++)
                     if (existingControllers[i] != null)
                         existingControllers[i].enabled = existingControllerStates[i];
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator InputAudit_WritesPressedAndReleasedGameKeysToSessionJsonl()
+        {
+            long before = KeyboardWandererInputAudit.CurrentInputId;
+            Press(_keyboard.wKey);
+            InvokeReadKeyboard();
+            Release(_keyboard.wKey);
+            InvokeReadKeyboard();
+            yield return null;
+
+            Assert.That(KeyboardWandererInputAudit.CurrentInputId, Is.GreaterThan(before));
+            Assert.That(KeyboardWandererInputAudit.CurrentLogPath, Is.Not.Null.And.Not.Empty);
+            Assert.That(File.Exists(KeyboardWandererInputAudit.CurrentLogPath), Is.True);
+            using (var stream = new FileStream(KeyboardWandererInputAudit.CurrentLogPath,
+                       FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var reader = new StreamReader(stream))
+            {
+                string jsonl = reader.ReadToEnd();
+                Assert.That(jsonl, Does.Contain("\"control\":\"W\""));
+                Assert.That(jsonl, Does.Contain("\"phase\":\"Pressed\""));
+                Assert.That(jsonl, Does.Contain("\"phase\":\"Released\""));
             }
         }
 
