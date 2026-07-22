@@ -65,7 +65,8 @@ namespace KeyboardWanderer.Demo
             titleView.Bind(controller.UiStartNewRun, controller.UiContinueRun, controller.UiOpenSettings);
             gameHudView.Bind(controller.UiSubmit);
             settingsView.Bind(controller.UiSetMusicVolume, controller.UiSetSfxVolume,
-                controller.UiSetGmEnabled, controller.UiCloseSettings, controller.UiDeleteSave);
+                controller.UiSetGmEnabled, controller.UiSetGeminiApiKey,
+                controller.UiCloseSettings, controller.UiDeleteSave);
             pauseView.Bind(controller.UiResume, controller.UiOpenSettingsFromPause, controller.UiShowTitle);
             endingView.Bind(controller.UiStartNewRun, controller.UiShowTitle);
             dialogueView.Bind(controller.UiAdvanceDialogue, controller.UiSelectNarrativeChoice, controller.UiSubmitPlayerMessage);
@@ -196,9 +197,9 @@ namespace KeyboardWanderer.Demo
             tutorialView?.Present(page, objective);
         }
 
-        public void PresentSettings(float musicVolume, float sfxVolume, bool gmEnabled)
+        public void PresentSettings(float musicVolume, float sfxVolume, bool gmEnabled, string geminiApiKey)
         {
-            settingsView?.Present(musicVolume, sfxVolume, gmEnabled);
+            settingsView?.Present(musicVolume, sfxVolume, gmEnabled, geminiApiKey);
         }
 
         public void SetCopyPasteMode(bool pasteMode)

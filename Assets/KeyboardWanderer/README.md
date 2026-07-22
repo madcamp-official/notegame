@@ -77,4 +77,4 @@ Attack, Interact, Negotiate, Rest는 관리자 키보드 단축키나 별도 저
 
 저장은 seed/version/`layoutHash`, 위치, 아홉 비트, 권한 획득 근거, `majorChoices`, `regionOutcomes`, `npcRelationships`, `canonicalFacts`, `unresolvedHooks`, `abilityUsageHistory`, `adminAccessAcquisitionHistory`, `technicalDebtEntries`를 왕복해야 합니다.
 
-Gemini 기본 프로필은 비용 절감을 위해 `gemini-3.1-flash-lite`, 최소 thinking level, 작은 구조화 출력, 최대 1회 repair와 결정적 폴백을 사용합니다. API 키는 Unity나 저장 파일이 아니라 서버 환경 변수 `GEMINI_API_KEY`에만 둡니다.
+Gemini 기본 프로필은 비용 절감을 위해 `gemini-3.1-flash-lite`, 최소 thinking level, 작은 구조화 출력, 최대 1회 repair와 결정적 폴백을 사용합니다. 타이틀의 설정 화면에서 API 키를 입력하면 이 기기의 `PlayerPrefs`에 저장되어 로컬 서버 요청에 적용됩니다. 입력하지 않으면 서버 환경 변수 `GEMINI_API_KEY`를 사용합니다.

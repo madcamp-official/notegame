@@ -187,6 +187,7 @@ namespace KeyboardWanderer.Demo
         private float MusicVolume => _settingsController != null ? _settingsController.MusicVolume : 0.65f;
         private float SfxVolume => _settingsController != null ? _settingsController.SfxVolume : 0.8f;
         private bool GmEnabled => _settingsController == null || _settingsController.GmEnabled;
+        private string GeminiApiKey => _settingsController?.GeminiKey ?? string.Empty;
         internal bool OptionalNarrativePending => _gmPending;
         private bool TurnPending => _serverPending || _choiceSubmissionPending ||
                                     (_turnCoordinator != null && _turnCoordinator.IsPending);
@@ -506,7 +507,8 @@ namespace KeyboardWanderer.Demo
             _inputRouter?.SetUiOverlayMode(_screenMode != ScreenMode.Playing || _showPause || ended ||
                                             (_sceneUi?.IsInventoryQuestOverlayOpen ?? false));
             _hudPresenter.PresentScreen(_screenMode == ScreenMode.Title, _screenMode == ScreenMode.Settings,
-                _screenMode == ScreenMode.Playing, _showPause, ended, MusicVolume, SfxVolume, GmEnabled);
+                _screenMode == ScreenMode.Playing, _showPause, ended, MusicVolume, SfxVolume, GmEnabled,
+                GeminiApiKey);
             long nextSeed = _runSessionController != null ? _runSessionController.NextSeed : 20260718L;
             _sceneUi.PresentTitle(CampaignCatalog.CampaignTitle,
                 "관리자 키보드로 붕괴한 코드리아를 복구하는 탐험 RPG",
@@ -1126,6 +1128,13 @@ namespace KeyboardWanderer.Demo
         {
             AuditUi("SetGmEnabled", value.ToString());
             _settingsController?.SetGmEnabled(value);
+        }
+
+        public void UiSetGeminiApiKey(string value)
+        {
+            AuditUi("SetGeminiApiKey", string.IsNullOrWhiteSpace(value) ? "cleared" : "configured");
+            _settingsController?.SetGeminiApiKey(value);
+            PublishPresentationState(PresentationChange.Screen);
         }
 
         private bool CanSubmitCurrentSelection()

@@ -96,6 +96,13 @@ export class GameService {
     this.llmTurnMaxCalls = llmTurnMaxCalls;
   }
 
+  withGeminiApiKey(apiKey, work) {
+    if (typeof this.narrator?.withApiKey === "function") {
+      return this.narrator.withApiKey(apiKey, work);
+    }
+    return work();
+  }
+
   _runLlmTurn(work) {
     return withLlmTurnBudget({
       timeoutMs: this.llmTurnDeadlineMs,

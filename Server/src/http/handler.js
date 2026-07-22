@@ -58,58 +58,65 @@ export function createRequestHandler({ service, config, logger = console }) {
         return;
       }
 
-      const ownerId = resolveOwner(request, config);
-      let match;
-      if (path === "/v1/campaigns" && request.method === "POST") {
-        const campaign = await service.createCampaign(ownerId, await readCreationJson(request));
-        sendJson(response, campaign.fromIdempotencyCache ? 200 : 201, { campaign });
-      } else if (path === "/v1/campaigns" && request.method === "GET") {
-        sendJson(response, 200, { campaigns: await service.listCampaigns(ownerId) });
-      } else if ((match = path.match(/^\/v1\/campaigns\/([^/]+)$/)) && request.method === "GET") {
-        sendJson(response, 200, { campaign: await service.getCampaign(ownerId, decodeURIComponent(match[1])) });
-      } else if ((match = path.match(/^\/v1\/campaigns\/([^/]+)\/runs$/)) && request.method === "POST") {
-        const run = await service.createRun(ownerId, decodeURIComponent(match[1]), await readCreationJson(request));
-        sendJson(response, run.fromIdempotencyCache ? 200 : 201, { run });
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)$/)) && request.method === "GET") {
-        sendJson(response, 200, { run: await service.getRun(ownerId, decodeURIComponent(match[1])) });
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/debug$/)) && request.method === "GET") {
-        if (!developmentToolsEnabled) throw new AppError(404, "ROUTE_NOT_FOUND", "Route was not found.");
-        sendJson(response, 200, await service.getRunDebug(ownerId, decodeURIComponent(match[1])));
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/inventory$/)) && request.method === "POST") {
-        sendJson(response, 200, await service.mutateInventory(ownerId, decodeURIComponent(match[1]), await readJson(request)));
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/ambient-wander$/)) && request.method === "POST") {
-        sendJson(response, 200, await service.ambientWander(ownerId, decodeURIComponent(match[1]), await readJson(request)));
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/dice$/)) && request.method === "POST") {
-        sendJson(response, 200, await service.prepareD20(ownerId, decodeURIComponent(match[1]), await readJson(request)));
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/(?:actions|turns)$/)) && request.method === "POST") {
-        const result = await service.submitTurn(ownerId, decodeURIComponent(match[1]), await readJson(request));
-        sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/choices$/)) && request.method === "POST") {
-        const result = await service.submitChoice(ownerId, decodeURIComponent(match[1]), await readJson(request));
-        sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/messages$/)) && request.method === "POST") {
-        const result = await service.submitPlayerMessage(ownerId, decodeURIComponent(match[1]), await readJson(request));
-        sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/(?:travel|navigation)$/)) && request.method === "POST") {
-        const result = await service.travel(ownerId, decodeURIComponent(match[1]), await readJson(request));
-        sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/turns$/)) && request.method === "GET") {
-        sendJson(response, 200, { turns: await service.listTurns(ownerId, decodeURIComponent(match[1])) });
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/turns\/(\d+)$/)) && request.method === "GET") {
-        const turnNo = Number(match[2]);
-        if (!Number.isSafeInteger(turnNo) || turnNo < 1) throw new AppError(400, "TURN_NUMBER_INVALID", "turnNo must be a positive integer.");
-        sendJson(response, 200, { turn: await service.getTurn(ownerId, decodeURIComponent(match[1]), turnNo) });
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/abandon$/)) && request.method === "POST") {
-        sendJson(response, 200, { run: await service.abandonRun(ownerId, decodeURIComponent(match[1]), await readJson(request)) });
-      } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/resume$/)) && request.method === "POST") {
-        sendJson(response, 200, { run: await service.resumeRun(ownerId, decodeURIComponent(match[1]), await readJson(request)) });
-      } else if (path === "/v1/gm/narrate" && request.method === "POST") {
-        sendJson(response, 200, await service.narrate(await readJson(request)));
-      } else if (path === "/v1/gm/scene-transitions" && request.method === "POST") {
-        sendJson(response, 200, await service.planSceneTransition(await readJson(request)));
-      } else {
-        throw new AppError(404, "ROUTE_NOT_FOUND", "Route was not found.");
-      }
+      const routeRequest = async () => {
+        const ownerId = resolveOwner(request, config);
+        let match;
+        if (path === "/v1/campaigns" && request.method === "POST") {
+          const campaign = await service.createCampaign(ownerId, await readCreationJson(request));
+          sendJson(response, campaign.fromIdempotencyCache ? 200 : 201, { campaign });
+        } else if (path === "/v1/campaigns" && request.method === "GET") {
+          sendJson(response, 200, { campaigns: await service.listCampaigns(ownerId) });
+        } else if ((match = path.match(/^\/v1\/campaigns\/([^/]+)$/)) && request.method === "GET") {
+          sendJson(response, 200, { campaign: await service.getCampaign(ownerId, decodeURIComponent(match[1])) });
+        } else if ((match = path.match(/^\/v1\/campaigns\/([^/]+)\/runs$/)) && request.method === "POST") {
+          const run = await service.createRun(ownerId, decodeURIComponent(match[1]), await readCreationJson(request));
+          sendJson(response, run.fromIdempotencyCache ? 200 : 201, { run });
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)$/)) && request.method === "GET") {
+          sendJson(response, 200, { run: await service.getRun(ownerId, decodeURIComponent(match[1])) });
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/debug$/)) && request.method === "GET") {
+          if (!developmentToolsEnabled) throw new AppError(404, "ROUTE_NOT_FOUND", "Route was not found.");
+          sendJson(response, 200, await service.getRunDebug(ownerId, decodeURIComponent(match[1])));
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/inventory$/)) && request.method === "POST") {
+          sendJson(response, 200, await service.mutateInventory(ownerId, decodeURIComponent(match[1]), await readJson(request)));
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/ambient-wander$/)) && request.method === "POST") {
+          sendJson(response, 200, await service.ambientWander(ownerId, decodeURIComponent(match[1]), await readJson(request)));
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/dice$/)) && request.method === "POST") {
+          sendJson(response, 200, await service.prepareD20(ownerId, decodeURIComponent(match[1]), await readJson(request)));
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/(?:actions|turns)$/)) && request.method === "POST") {
+          const result = await service.submitTurn(ownerId, decodeURIComponent(match[1]), await readJson(request));
+          sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/choices$/)) && request.method === "POST") {
+          const result = await service.submitChoice(ownerId, decodeURIComponent(match[1]), await readJson(request));
+          sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/messages$/)) && request.method === "POST") {
+          const result = await service.submitPlayerMessage(ownerId, decodeURIComponent(match[1]), await readJson(request));
+          sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/(?:travel|navigation)$/)) && request.method === "POST") {
+          const result = await service.travel(ownerId, decodeURIComponent(match[1]), await readJson(request));
+          sendJson(response, result.fromIdempotencyCache ? 200 : 201, result);
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/turns$/)) && request.method === "GET") {
+          sendJson(response, 200, { turns: await service.listTurns(ownerId, decodeURIComponent(match[1])) });
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/turns\/(\d+)$/)) && request.method === "GET") {
+          const turnNo = Number(match[2]);
+          if (!Number.isSafeInteger(turnNo) || turnNo < 1) throw new AppError(400, "TURN_NUMBER_INVALID", "turnNo must be a positive integer.");
+          sendJson(response, 200, { turn: await service.getTurn(ownerId, decodeURIComponent(match[1]), turnNo) });
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/abandon$/)) && request.method === "POST") {
+          sendJson(response, 200, { run: await service.abandonRun(ownerId, decodeURIComponent(match[1]), await readJson(request)) });
+        } else if ((match = path.match(/^\/v1\/runs\/([^/]+)\/resume$/)) && request.method === "POST") {
+          sendJson(response, 200, { run: await service.resumeRun(ownerId, decodeURIComponent(match[1]), await readJson(request)) });
+        } else if (path === "/v1/gm/narrate" && request.method === "POST") {
+          sendJson(response, 200, await service.narrate(await readJson(request)));
+        } else if (path === "/v1/gm/scene-transitions" && request.method === "POST") {
+          sendJson(response, 200, await service.planSceneTransition(await readJson(request)));
+        } else {
+          throw new AppError(404, "ROUTE_NOT_FOUND", "Route was not found.");
+        }
+      };
+      const geminiApiKey = resolveGeminiApiKey(request);
+      if (typeof service.withGeminiApiKey === "function")
+        await service.withGeminiApiKey(geminiApiKey, routeRequest);
+      else
+        await routeRequest();
     } catch (error) {
       handleError(response, error, requestId, logger);
     } finally {
@@ -144,8 +151,19 @@ function applyCors(request, response, config) {
   response.setHeader("access-control-allow-origin", allowedOrigin);
   response.setHeader("vary", "Origin");
   response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  response.setHeader("access-control-allow-headers", "content-type,idempotency-key,x-user-id,x-request-id,x-client-input-id,x-client-input-session");
+  response.setHeader("access-control-allow-headers", "content-type,idempotency-key,x-user-id,x-request-id,x-client-input-id,x-client-input-session,x-gemini-api-key");
   response.setHeader("access-control-max-age", "600");
+}
+
+function resolveGeminiApiKey(request) {
+  const value = request.headers["x-gemini-api-key"];
+  if (value === undefined) return "";
+  if (typeof value !== "string")
+    throw new AppError(400, "GEMINI_API_KEY_INVALID", "x-gemini-api-key must be a single header value.");
+  const normalized = value.trim();
+  if (normalized.length > 256 || /[\r\n]/u.test(normalized))
+    throw new AppError(400, "GEMINI_API_KEY_INVALID", "x-gemini-api-key is invalid.");
+  return normalized;
 }
 
 function resolveOwner(request, config) {

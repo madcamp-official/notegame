@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { AppError } from "../errors.js";
 import { CAMPAIGN_PLAN_RESPONSE_JSON_SCHEMA, validateCampaignPlanContext, validateCampaignPlanOutput } from "./campaign-planning.js";
 import { createFallbackNarration, responseSchemaForContext, validateNarrationContext, validateNarrationOutput } from "./narration.js";
@@ -57,14 +58,30 @@ export class GeminiNarrator {
     this.clock = clock;
     this.circuitOpenUntil = 0;
     this.requestGate = new ProviderConcurrencyGate(maxConcurrentRequests);
+    this.apiKeyContext = new AsyncLocalStorage();
+  }
+
+  withApiKey(apiKey, operation) {
+    if (typeof operation !== "function") throw new TypeError("operation must be a function.");
+    const normalized = typeof apiKey === "string" ? apiKey.trim() : "";
+    return this.apiKeyContext.run(normalized || null, operation);
+  }
+
+  _activeApiKey() {
+    return this.apiKeyContext.getStore() || this.apiKey;
   }
 
   _remoteAvailable() {
-    return Boolean(this.apiKey) && typeof this.fetchImpl === "function" && this.clock() >= this.circuitOpenUntil;
+    const scopedKey = this.apiKeyContext.getStore();
+    return Boolean(scopedKey || this.apiKey) && typeof this.fetchImpl === "function" &&
+      (Boolean(scopedKey) || this.clock() >= this.circuitOpenUntil);
   }
 
   _recordFailure(error) {
     if (!isTransportFailure(error)) return false;
+    // A bad player-supplied key must stop only its own request. It must neither
+    // open nor inherit the circuit that protects the server environment key.
+    if (this.apiKeyContext.getStore()) return true;
     this.circuitOpenUntil = Math.max(this.circuitOpenUntil, this.clock() + this.circuitCooldownMs);
     return true;
   }
@@ -100,7 +117,7 @@ export class GeminiNarrator {
 
   async planCampaign(contextInput) {
     const context = validateCampaignPlanContext(contextInput);
-    if (!this._remoteAvailable()) return deterministicPlanFallback(this.apiKey ? "transport_circuit_open" : "api_key_unavailable");
+    if (!this._remoteAvailable()) return deterministicPlanFallback(this._activeApiKey() ? "transport_circuit_open" : "api_key_unavailable");
     const profileName = "campaign-lite";
     const fastProfile = this.modelProfiles.fast || DEFAULT_MODEL_PROFILES.fast;
     const profile = { model: fastProfile.model, maxOutputTokens: Math.min(1536, Math.max(1024, fastProfile.maxOutputTokens || 1024)) };
@@ -391,12 +408,13 @@ export class GeminiNarrator {
       timeoutCode: "GEMINI_TIMEOUT",
       timeoutMessage: `Gemini ${errorLabel} request timed out.`
     });
+    const apiKey = this._activeApiKey();
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(profile.model)}:generateContent`;
       const { response, payload } = await this.requestGate.run(scope.signal, async () => {
         const response = await this.fetchImpl(endpoint, {
           method: "POST",
-          headers: { "content-type": "application/json", "x-goog-api-key": this.apiKey },
+          headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
           signal: scope.signal,
           body: JSON.stringify({
             systemInstruction: {

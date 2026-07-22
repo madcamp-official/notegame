@@ -13,7 +13,7 @@ namespace KeyboardWanderer.Networking
 {
     /// <summary>
     /// REST client for the server-authoritative campaign/run/turn flow.
-    /// It deliberately contains no model key and treats every response as untrusted data.
+    /// A player-supplied Gemini key may be attached as a request-only header; responses remain untrusted data.
     /// </summary>
     public sealed class GameApiClient
     {
@@ -1549,11 +1549,13 @@ namespace KeyboardWanderer.Networking
 
         private readonly string _baseUrl;
         private readonly string _userId;
+        private readonly Func<string> _geminiApiKey;
 
-        public GameApiClient(string baseUrl = null, string userId = null)
+        public GameApiClient(string baseUrl = null, string userId = null, Func<string> geminiApiKey = null)
         {
             _baseUrl = KeyboardWandererEndpointResolver.ResolveBaseUrl(baseUrl, DefaultBaseUrl);
             _userId = string.IsNullOrWhiteSpace(userId) ? null : userId.Trim();
+            _geminiApiKey = geminiApiKey ?? (() => KeyboardWandererGeminiKeyStore.Current);
         }
 
         public IEnumerator CheckHealth(Action<Result<bool>> completed)
@@ -1936,6 +1938,9 @@ namespace KeyboardWanderer.Networking
                 ApplyIdempotencyKey(request, idempotencyKey);
                 if (_userId != null)
                     request.SetRequestHeader("x-user-id", _userId);
+                string geminiApiKey = _geminiApiKey?.Invoke();
+                if (!string.IsNullOrWhiteSpace(geminiApiKey))
+                    request.SetRequestHeader("x-gemini-api-key", geminiApiKey.Trim());
                 if (clientInputId > 0)
                 {
                     request.SetRequestHeader("x-client-input-id", clientInputId.ToString(CultureInfo.InvariantCulture));

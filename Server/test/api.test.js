@@ -69,6 +69,18 @@ class FakeNarrator {
   }
 }
 
+class ScopedKeyNarrator extends FakeNarrator {
+  constructor() {
+    super();
+    this.keys = [];
+  }
+
+  withApiKey(apiKey, work) {
+    this.keys.push(apiKey);
+    return work();
+  }
+}
+
 class DuplicateChoiceNarrator extends FakeNarrator {
   async narrate(context) {
     const base = await super.narrate(context);
@@ -321,10 +333,11 @@ async function startServer({ d20Source = new FixedD20Source(20), narrator = new 
   return { application, store, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
-async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_ID, origin } = {}) {
+async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_ID, origin, geminiApiKey } = {}) {
   const headers = { "x-user-id": userId };
   if (body !== undefined) headers["content-type"] = "application/json";
   if (origin) headers.origin = origin;
+  if (geminiApiKey) headers["x-gemini-api-key"] = geminiApiKey;
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers,
@@ -333,6 +346,21 @@ async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_
   const payload = response.status === 204 ? null : await response.json();
   return { response, payload };
 }
+
+test("HTTP requests scope a player-provided Gemini key to the narrator", async (t) => {
+  const narrator = new ScopedKeyNarrator();
+  const { application, baseUrl } = await startServer({ narrator });
+  t.after(() => application.close());
+
+  const created = await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST",
+    geminiApiKey: "player-request-token",
+    body: { title: "Scoped key", worldSeed: 20260722, turnLimit: 40 }
+  });
+
+  assert.equal(created.response.status, 201);
+  assert.deepEqual(narrator.keys, ["player-request-token"]);
+});
 
 test("duplicate generated choice text falls back before sealing instead of rolling back the selected turn", async (t) => {
   const { application, baseUrl } = await startServer({ narrator: new DuplicateChoiceNarrator() });

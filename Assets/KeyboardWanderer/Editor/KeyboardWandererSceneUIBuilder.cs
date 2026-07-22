@@ -25,6 +25,56 @@ namespace KeyboardWanderer.Editor
         private static TMP_FontAsset _font;
         private static NinjaAdventureAssetManifest _assets;
 
+        [MenuItem("Keyboard Wanderer/Upgrade Settings Gemini Key Input")]
+        public static void UpgradeSettingsGeminiKeyInput()
+        {
+            _font = LoadDefaultFont();
+            GameObject root = PrefabUtility.LoadPrefabContents(ScreenFolderPath("SettingsScreen.prefab"));
+            try
+            {
+                Transform card = root.transform.Find("Settings Card");
+                KeyboardWandererSettingsView view = root.GetComponent<KeyboardWandererSettingsView>();
+                if (card == null || view == null)
+                    throw new UnityException("SettingsScreen prefab is missing its authored card or view.");
+
+                DestroyChild(card, "Gemini API Key Label");
+                DestroyChild(card, "Gemini API Key Input");
+                DestroyChild(card, "Gemini API Key Status");
+
+                SetAnchors(card, "Settings Heading", new Vector2(0.08f, 0.86f), new Vector2(0.92f, 0.96f));
+                SetAnchors(card, "Music Label", new Vector2(0.10f, 0.73f), new Vector2(0.90f, 0.80f));
+                SetAnchors(card, "Music Slider", new Vector2(0.10f, 0.67f), new Vector2(0.90f, 0.71f));
+                SetAnchors(card, "Sfx Label", new Vector2(0.10f, 0.57f), new Vector2(0.90f, 0.64f));
+                SetAnchors(card, "Sfx Slider", new Vector2(0.10f, 0.51f), new Vector2(0.90f, 0.55f));
+                SetAnchors(card, "GM Toggle", new Vector2(0.10f, 0.41f), new Vector2(0.90f, 0.48f));
+                SetAnchors(card, "Settings Back Button", new Vector2(0.10f, 0.055f), new Vector2(0.47f, 0.13f));
+                SetAnchors(card, "Delete Save Button", new Vector2(0.53f, 0.055f), new Vector2(0.90f, 0.13f));
+
+                RectTransform labelRect = TextRect(card, "Gemini API Key Label",
+                    new Vector2(0.10f, 0.325f), new Vector2(0.90f, 0.39f),
+                    "Gemini API Key", 16, Parchment, TextAnchor.MiddleLeft);
+                TMP_InputField input = GeminiApiKeyInputRect(card);
+                RectTransform statusRect = TextRect(card, "Gemini API Key Status",
+                    new Vector2(0.10f, 0.15f), new Vector2(0.90f, 0.205f),
+                    "키 없음 · 서버 환경 키 사용", 12, Muted, TextAnchor.MiddleLeft);
+                labelRect.SetSiblingIndex(6);
+                input.transform.SetSiblingIndex(7);
+                statusRect.SetSiblingIndex(8);
+
+                view.Configure(card.Find("Music Slider").GetComponent<Slider>(),
+                    card.Find("Sfx Slider").GetComponent<Slider>(),
+                    card.Find("GM Toggle").GetComponent<Toggle>(), input,
+                    statusRect.GetComponent<TMP_Text>(),
+                    card.Find("Settings Back Button").GetComponent<Button>(),
+                    card.Find("Delete Save Button").GetComponent<Button>());
+                PrefabUtility.SaveAsPrefabAsset(root, ScreenFolderPath("SettingsScreen.prefab"));
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
         [MenuItem("Keyboard Wanderer/Rebuild Authored Scene UI")]
         public static void Build()
         {
@@ -809,6 +859,45 @@ namespace KeyboardWanderer.Editor
             ButtonRect(card, "Settings Back Button", "돌아가기", new Vector2(0.10f, 0.10f), new Vector2(0.47f, 0.18f), Gold, Ink, "Settings Back Label");
             ButtonRect(card, "Delete Save Button", "이어하기 기록 삭제", new Vector2(0.53f, 0.10f), new Vector2(0.90f, 0.18f), Raised, Parchment, "Delete Save Label");
             root.gameObject.SetActive(false);
+        }
+
+        private static TMP_InputField GeminiApiKeyInputRect(Transform parent)
+        {
+            RectTransform root = PanelRect(parent, "Gemini API Key Input",
+                new Vector2(0.10f, 0.215f), new Vector2(0.90f, 0.315f),
+                Vector2.zero, Vector2.zero, Ink);
+            AddOutline(root.gameObject, new Color(Gold.r, Gold.g, Gold.b, 0.65f), 1f);
+            TMP_InputField input = root.gameObject.AddComponent<TMP_InputField>();
+            input.targetGraphic = root.GetComponent<Image>();
+            input.contentType = TMP_InputField.ContentType.Password;
+            input.inputType = TMP_InputField.InputType.Password;
+            input.lineType = TMP_InputField.LineType.SingleLine;
+            input.characterLimit = 256;
+            input.asteriskChar = '•';
+
+            RectTransform viewport = RectObject(root, "Text Area", Vector2.zero, Vector2.one,
+                new Vector2(12f, 5f), new Vector2(-12f, -5f));
+            viewport.gameObject.AddComponent<RectMask2D>();
+            RectTransform placeholderRect = TextRect(viewport, "Placeholder", Vector2.zero, Vector2.one,
+                "Google AI Studio 키를 붙여넣으세요", 14, Muted, TextAnchor.MiddleLeft);
+            RectTransform textRect = TextRect(viewport, "Text", Vector2.zero, Vector2.one,
+                string.Empty, 14, Parchment, TextAnchor.MiddleLeft);
+            TMP_Text placeholder = placeholderRect.GetComponent<TMP_Text>();
+            placeholder.fontStyle = FontStyles.Italic;
+            input.textViewport = viewport;
+            input.placeholder = placeholder;
+            input.textComponent = textRect.GetComponent<TMP_Text>();
+            return input;
+        }
+
+        private static void SetAnchors(Transform parent, string childName, Vector2 min, Vector2 max)
+        {
+            RectTransform rect = parent.Find(childName) as RectTransform;
+            if (rect == null) throw new UnityException("Settings child is missing: " + childName);
+            rect.anchorMin = min;
+            rect.anchorMax = max;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
         }
 
         private static void BuildPause(Transform canvas)

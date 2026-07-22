@@ -83,7 +83,7 @@ Technical debt is both a metric and a causal ledger. Each entry identifies its o
 
 Gemini is non-authoritative. It receives bounded IDs and state, returns small structured proposals or short narration, is schema/semantics validated, retries at most once, and falls back deterministically. It may vary scene phrasing, dialogue, reactions, and epilogue details that agree with committed facts. It may not create geometry, rolls, rewards, access levels, canonical facts, debt resolution, or an ending ID.
 
-The default cost profile is `gemini-3.1-flash-lite`, minimum thinking level, minimal context, small structured output, at most one repair, and deterministic fallback. `GEMINI_API_KEY` exists only in the server environment.
+The default cost profile is `gemini-3.1-flash-lite`, minimum thinking level, minimal context, small structured output, at most one repair, and deterministic fallback. A player may supply a Gemini key from the title settings; Unity stores it in local PlayerPrefs and forwards it as a request-only header. When absent, the server uses `GEMINI_API_KEY`. The server never persists or returns either key.
 
 The Rule Engine selects `endingId` from committed state. Gemini writes only an epilogue inside that result.
 

@@ -142,6 +142,30 @@ test("missing API key never performs a network request", async () => {
   assert.match(result.body, /[가-힣]/);
 });
 
+test("a request-scoped player API key overrides the server key without entering the payload", async () => {
+  const requests = [];
+  const narrator = new GeminiNarrator({
+    apiKey: "server-default-token",
+    logger: silentLogger,
+    fetchImpl: async (_url, options) => {
+      requests.push(options);
+      return responseWith({
+        summary: "깨진 등불 발견",
+        body: "빗물이 깨진 등불의 유리 위로 흘러내린다.",
+        dialogue: null,
+        proposedOps: [{ type: "ambient_cue", text: "잔잔한 빗소리가 들린다." }]
+      });
+    }
+  });
+
+  const result = await narrator.withApiKey("player-provided-token", () => narrator.narrate(context));
+
+  assert.equal(result.fallbackUsed, false);
+  assert.equal(requests[0].headers["x-goog-api-key"], "player-provided-token");
+  assert.equal(requests[0].body.includes("player-provided-token"), false);
+  assert.equal(narrator._activeApiKey(), "server-default-token");
+});
+
 test("an invalid rolled proposal is preserved as a narrated rejection instead of phantom success", async () => {
   const keyboardId = "11111111-1111-4111-8111-111111111111";
   const narrator = new GeminiNarrator({
