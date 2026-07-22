@@ -45,7 +45,7 @@ const SUCCESS_OUTCOMES = new Set(["partial_success", "success", "critical_succes
 const STORY_EVENT_MIN_DISTANCE = 15;
 const STORY_EVENT_DISTANCE_RANGE = 6;
 
-function storyEventInterval(run, sequence) {
+export function storyEventInterval(run, sequence) {
   return STORY_EVENT_MIN_DISTANCE + (createHash("sha256")
     .update(`${run.resolutionSeed}|${run.id}|story-event:${sequence}`)
     .digest().readUInt32BE(0) % STORY_EVENT_DISTANCE_RANGE);
@@ -1056,7 +1056,6 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
     encounter = { reason: trigger.reason, sourceEntityId: trigger.sourceEntityId, requestedDestination: clone(request.destination), triggerPosition: clone(triggerPosition), stagingPosition };
   }
   const run = clone(originalRun);
-  const explorationCheckpoint = String(request.idempotencyKey || "").startsWith("unity-event-");
   if (run.pendingChoiceSet) {
     run.choiceHistory ||= [];
     run.choiceHistory.push({ type: "NARRATIVE_CHOICE_SKIPPED", choiceSetId: run.pendingChoiceSet.choiceSetId,
@@ -1079,7 +1078,11 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
   run.travelTimeUnits = (run.travelTimeUnits || 0) + path.cost;
   run.travelTime = run.travelTimeUnits;
   run.travelDistance = (run.travelDistance || 0) + Math.max(0, path.path.length - 1);
-  run.storyEventDue = !encounter && (explorationCheckpoint || run.travelDistance >= nextStoryDistance);
+  // Every travel command commits authoritative coordinates, but scene work is
+  // scheduled only by the server-owned 15-20 tile checkpoint.  Request naming
+  // must never force an event: retries and different clients then observe the
+  // same cadence for the same run.
+  run.storyEventDue = !encounter && run.travelDistance >= nextStoryDistance;
   const traversedAreaIds = [...new Set(path.path.map((position) => areaAt(run.world, position).id))];
   for (const areaId of traversedAreaIds) if (!run.discoveredAreaIds.includes(areaId)) run.discoveredAreaIds.push(areaId);
   const reachedPois = run.world.points.filter((item) => path.path.some((position) => manhattan(item, position) <= 2)).map((item) => item.id);
@@ -1123,6 +1126,9 @@ export function resolveSafeTravel({ run: originalRun, request, now = new Date().
     reachedPoiIds: reachedPois,
     travelTimeUnits: path.cost,
     cumulativeTravelTimeUnits: run.travelTimeUnits,
+    travelDistance: run.travelDistance,
+    storyEventTriggered: run.storyEventDue,
+    nextStoryEventDistance: nextStoryDistance,
     encounterOpened: Boolean(encounter),
     encounter: run.activeEncounter ? clone(run.activeEncounter) : null,
     campaignTurnConsumed: false,
@@ -3302,6 +3308,8 @@ export function publicRun(run) {
     travelTime: run.travelTime || 0,
     travelTimeUnits: run.travelTimeUnits || 0,
     travelDistance: run.travelDistance || 0,
+    nextStoryEventDistance: run.nextStoryEventDistance || 0,
+    storyEventSequence: run.storyEventSequence || 0,
     visitedPoiIds: run.visitedPoiIds,
     discoveredAreaIds: run.discoveredAreaIds,
     activeEncounter: run.activeEncounter ? clone(run.activeEncounter) : null,

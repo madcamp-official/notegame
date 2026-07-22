@@ -281,6 +281,32 @@ namespace KeyboardWanderer.Tests.EditMode
         }
 
         [Test]
+        public void ScheduledExplorationStory_ContinuesWithMovementInsteadOfOpeningGenericChoices()
+        {
+            var navigation = new GameApiClient.NavigationSnapshot
+            {
+                pathCost = 1,
+                campaignTurnConsumed = false,
+                storyEventTriggered = true,
+                narrative = new GameApiClient.NarrativeSnapshot
+                {
+                    body = "사라진 길의 데이터 잔향이 북쪽 통로로 이어진다."
+                }
+            };
+
+            TurnPresentationResult result = ServerTurnPresentationAdapter.FromNavigation(
+                navigation, new GameApiClient.RunSnapshot { protagonistName = "넙죽이" },
+                0, 4, 5, false, null, true, true, "넙죽이");
+
+            Assert.That(result.ContinuesWithMovement, Is.True);
+            Assert.That(result.NarrativeChoices, Is.Empty,
+                "A distance checkpoint advances exploration story without forcing a choice modal.");
+            Assert.That(result.ChoiceSetId, Is.Empty);
+            Assert.That(result.NextInterventionReason, Does.Contain("계속 이동"));
+            Assert.That(result.Narrative, Does.Contain("북쪽 통로"));
+        }
+
+        [Test]
         public void ServerPresentationAdapter_PreservesSealedNarrativeChoiceTextAndMetadata()
         {
             var intervention = new GameApiClient.NextInterventionSnapshot
@@ -412,6 +438,8 @@ namespace KeyboardWanderer.Tests.EditMode
                 Assert.That(first, Is.Not.Null);
                 Assert.That(second, Is.Not.Null);
                 TMP_InputField freeform = strip.transform.Find("Freeform Input/Input").GetComponent<TMP_InputField>();
+                Button submit = strip.transform.Find("Freeform Input/Send").GetComponent<Button>();
+                TMP_Text confirm = submit.transform.Find("Label").GetComponent<TMP_Text>();
                 Assert.That(freeform.transform.parent.parent, Is.EqualTo(strip.transform),
                     "자연어 입력은 선택지와 같은 확장 패널의 예약된 입력 행에 있어야 합니다.");
                 Assert.That(freeform.characterLimit, Is.EqualTo(1000),
@@ -438,6 +466,11 @@ namespace KeyboardWanderer.Tests.EditMode
                     "전송 직후에는 권위 응답이 아직 없으므로 작성한 문장을 보존해야 합니다.");
                 Assert.That(freeform.interactable, Is.False);
                 view.ReleaseChoiceInputLock();
+                Assert.That(freeform.interactable, Is.True,
+                    "실패 응답은 다음 프레젠테이션 프레임을 기다리지 않고 입력창을 즉시 복구해야 합니다.");
+                Assert.That(submit.interactable, Is.True,
+                    "실패 응답 뒤 전송 버튼이 처리 중 상태로 남으면 같은 입력을 재시도할 수 없습니다.");
+                Assert.That(confirm.text, Is.EqualTo("전송"));
                 view.PresentChoices(true, choices, true);
                 Assert.That(freeform.interactable, Is.True);
                 Assert.That(freeform.text, Is.EqualTo(submittedMessage),

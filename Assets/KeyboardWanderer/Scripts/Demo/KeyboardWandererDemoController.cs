@@ -107,6 +107,7 @@ namespace KeyboardWanderer.Demo
         private string _cachedDialogueNarrative = string.Empty;
         private string _cachedDialogueInterventionReason = string.Empty;
         private bool _cachedDialogueEncounterMoveRequired;
+        private bool _cachedDialogueContinuesWithMovement;
         private string[] _cachedDialoguePages = Array.Empty<string>();
         private string _cachedDialogueSignature = string.Empty;
         private int _dialoguePageCacheRevision;
@@ -143,6 +144,10 @@ namespace KeyboardWanderer.Demo
         private bool _showPause;
         private float _pauseStartedAt;
         private bool _playerWalking;
+        private bool _lastPresentationContinuesWithMovement;
+        private bool _directionalInputHeld;
+        private bool _hasBufferedDirectionalMove;
+        private Vector2Int _bufferedMoveDirection;
         private bool _reopenDialogueAfterWalk;
         private bool _runEndCutscenePlayed;
         private bool _suppressDialogueReopenAfterWalk;
@@ -846,6 +851,7 @@ namespace KeyboardWanderer.Demo
                 : Array.Empty<string>();
             _cachedDialogueInterventionReason = _lastNextInterventionReason ?? string.Empty;
             _cachedDialogueEncounterMoveRequired = _encounterMoveRequired;
+            _cachedDialogueContinuesWithMovement = _lastPresentationContinuesWithMovement;
             _hasDialoguePageCache = true;
             _dialoguePageCacheRevision++;
             return _cachedDialoguePages;
@@ -868,7 +874,8 @@ namespace KeyboardWanderer.Demo
             if (!_hasDialoguePageCache || source != _cachedDialoguePageSource ||
                 !string.Equals(_cachedDialogueInterventionReason, _lastNextInterventionReason ?? string.Empty,
                     StringComparison.Ordinal) ||
-                _cachedDialogueEncounterMoveRequired != _encounterMoveRequired)
+                _cachedDialogueEncounterMoveRequired != _encounterMoveRequired ||
+                _cachedDialogueContinuesWithMovement != _lastPresentationContinuesWithMovement)
                 return false;
 
             switch (source)
@@ -923,6 +930,8 @@ namespace KeyboardWanderer.Demo
         private string InterventionPageText()
         {
             string reason = _lastNextInterventionReason.Trim();
+            if (_lastPresentationContinuesWithMovement)
+                return reason + "\n\nWASD로 다음 흔적을 향해 계속 이동하세요.";
             if (_encounterMoveRequired)
                 return reason + "\n\n어떤 방식으로 개입할까? 위의 선택지를 골라 주세요.";
             return reason + "\n\n어디로 이동하거나, 어떤 방식으로 개입할까? 위의 선택지를 골라 주세요.";
@@ -930,12 +939,15 @@ namespace KeyboardWanderer.Demo
 
         private bool IsInterventionPage(int page, int pageCount)
         {
-            return !string.IsNullOrWhiteSpace(_lastNextInterventionReason) &&
+            return !_lastPresentationContinuesWithMovement &&
+                   !string.IsNullOrWhiteSpace(_lastNextInterventionReason) &&
                    pageCount > 0 && page == pageCount - 1;
         }
 
         private NarrativeChoiceOption[] CurrentNarrativeChoices()
         {
+            if (_lastPresentationContinuesWithMovement)
+                return Array.Empty<NarrativeChoiceOption>();
             if (_lastNarrativeChoices != null && _lastNarrativeChoices.Length > 0)
                 return _lastNarrativeChoices;
             return ServerTurnPresentationAdapter.BuildNarrativeChoices(null,
@@ -1256,6 +1268,7 @@ namespace KeyboardWanderer.Demo
             _inputRouter.QuestRequested += UiToggleQuests;
             _inputRouter.WorldClickRequested += HandleMapClick;
             _inputRouter.DirectionalMoveRequested += HandleDirectionalMoveRequested;
+            _inputRouter.DirectionalMoveReleased += HandleDirectionalMoveReleased;
             _inputRouter.NaturalLanguageRequested += HandleNaturalLanguageRequested;
         }
 
@@ -1276,6 +1289,7 @@ namespace KeyboardWanderer.Demo
             _inputRouter.QuestRequested -= UiToggleQuests;
             _inputRouter.WorldClickRequested -= HandleMapClick;
             _inputRouter.DirectionalMoveRequested -= HandleDirectionalMoveRequested;
+            _inputRouter.DirectionalMoveReleased -= HandleDirectionalMoveReleased;
             _inputRouter.NaturalLanguageRequested -= HandleNaturalLanguageRequested;
             _inputRouter = null;
         }
@@ -1614,19 +1628,44 @@ namespace KeyboardWanderer.Demo
 
         private void HandleDirectionalMoveRequested(Vector2Int direction)
         {
+            _directionalInputHeld = true;
+            if (Mathf.Abs(direction.x) + Mathf.Abs(direction.y) != 1)
+            {
+                ClearBufferedDirectionalMove();
+                RejectBlockedGameplayInput("한 번에 상하좌우 한 방향으로만 이동할 수 있습니다.");
+                return;
+            }
+            // Optional narrative choices must not steal the primary movement keys.
+            // A fresh WASD press explicitly hands control back to exploration before
+            // the flow-state ability guard is evaluated.
+            if (_flowStateMachine.Phase == GameFlowPhase.AwaitingNarrativeChoice ||
+                IsVisibleInterventionPage())
+                DismissNarrativeChoicesForGameplay();
+            if (_lastPresentationContinuesWithMovement && !_dialoguePresenter.IsDismissed)
+                DismissNarrativeChoicesForGameplay();
             string blocked = AbilityInputBlockReason(AbilityKind.Move);
             if (!string.IsNullOrEmpty(blocked) || _service?.CurrentView == null)
             {
+                if (_service?.CurrentView != null &&
+                    (_playerWalking || TurnPending || _flowStateMachine.Phase == GameFlowPhase.Traveling ||
+                     _flowStateMachine.Phase == GameFlowPhase.ResolvingChoice ||
+                     (_lastPresentationContinuesWithMovement &&
+                      (_flowStateMachine.Phase == GameFlowPhase.PresentingStory || WorldPresentationPlaying))))
+                {
+                    _bufferedMoveDirection = direction;
+                    _hasBufferedDirectionalMove = true;
+                    _selectionController?.Reject("연속 이동 예약 · 현재 칸이 끝나면 다음 방향으로 이어갑니다.");
+                    PublishPresentationState(PresentationChange.Hud | PresentationChange.Selection);
+                    Debug.Log("[KW.Input] event=DirectionalMove result=buffered direction=" + direction);
+                    return;
+                }
+                ClearBufferedDirectionalMove();
                 Debug.LogWarning("[KW.Input] event=DirectionalMove result=blocked reason=" +
                                  (string.IsNullOrEmpty(blocked) ? "run-not-ready" : blocked));
                 RejectBlockedGameplayInput(null);
                 return;
             }
-            if (Mathf.Abs(direction.x) + Mathf.Abs(direction.y) != 1)
-            {
-                RejectBlockedGameplayInput("한 번에 상하좌우 한 방향으로만 이동할 수 있습니다.");
-                return;
-            }
+            _hasBufferedDirectionalMove = false;
             RunView view = _service.CurrentView;
             if (!TryGetPlayerPosition(view, out GridCoord player))
             {
@@ -1654,6 +1693,28 @@ namespace KeyboardWanderer.Demo
             PublishPresentationState(PresentationChange.Hud | PresentationChange.Selection);
             Debug.Log("[KW.Input] event=DirectionalMove result=submitted destination=" + destination);
             SubmitImmediately();
+        }
+
+        private void HandleDirectionalMoveReleased()
+        {
+            _directionalInputHeld = false;
+            ClearBufferedDirectionalMove();
+        }
+
+        private void ClearBufferedDirectionalMove()
+        {
+            _hasBufferedDirectionalMove = false;
+            _bufferedMoveDirection = Vector2Int.zero;
+        }
+
+        private void SubmitBufferedDirectionalMoveIfReady()
+        {
+            if (!_directionalInputHeld || !_hasBufferedDirectionalMove || TurnPending ||
+                _scenePlaybackCoroutine != null || _sceneSequencePlayer?.IsPlaying == true)
+                return;
+            Vector2Int direction = _bufferedMoveDirection;
+            _hasBufferedDirectionalMove = false;
+            HandleDirectionalMoveRequested(direction);
         }
 
         private void HandleNaturalLanguageRequested()
@@ -2156,6 +2217,8 @@ namespace KeyboardWanderer.Demo
             EnsureRuntimeClients();
             GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
             int turnBeforeSubmit = _serverRun.currentTurn;
+            TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPositionBefore);
+            string layoutHashBefore = _serverRun.world?.layoutHash;
 
             _choiceSubmissionPending = true;
             _pendingNarrativeChoiceLabel = string.Empty;
@@ -2168,7 +2231,7 @@ namespace KeyboardWanderer.Demo
             Debug.Log("[KW.Message] event=Submitted runId=" + _serverRun.id + " turn=" +
                       turnBeforeSubmit + " chars=" + text.Length);
 
-            GameApiClient.Result<GameApiClient.CommittedTurn> result = null;
+            GameApiClient.Result<GameApiClient.CommittedPlayerMessage> result = null;
             yield return _gameApi.SubmitPlayerMessage(_serverRun.id, text, idempotencyKey,
                 expectedVersion, _preparedD20, value => result = value);
 
@@ -2190,7 +2253,19 @@ namespace KeyboardWanderer.Demo
                 yield break;
             }
 
-            GameApiClient.CommittedTurn committed = result.Value;
+            GameApiClient.CommittedPlayerMessage committed = result.Value;
+            if (committed.Navigation != null)
+            {
+                CancelPendingDiceRoll();
+                _serverPending = false;
+                _gmPending = false;
+                _choiceSubmissionPending = false;
+                ClearPlayerMessageSubmission();
+                _sceneUi?.CompleteDialogueFreeformSubmission();
+                ApplyNaturalLanguageNavigation(committed, text, playerPositionBefore,
+                    turnBeforeSubmit, layoutHashBefore);
+                yield break;
+            }
             yield return ResolvePendingDiceRoll(committed.Turn?.dice?.raw ?? 0);
             _serverPending = false;
             _gmPending = false;
@@ -2212,6 +2287,59 @@ namespace KeyboardWanderer.Demo
             Debug.Log("[KW.Message] event=Resolved runId=" + _serverRun.id + " turnBefore=" +
                       turnBeforeSubmit + " turnAfter=" + _serverRun.currentTurn + " fallback=" +
                       (committed.Turn?.narrative?.fallbackUsed ?? true));
+            PlaySfx(AssetClip("UiAcceptSound"));
+            PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue |
+                                     PresentationChange.Minimap | PresentationChange.Selection);
+        }
+
+        private void ApplyNaturalLanguageNavigation(GameApiClient.CommittedPlayerMessage committed,
+            string text, GridCoord playerPositionBefore, int campaignTurnBefore, string layoutHashBefore)
+        {
+            GameApiClient.NavigationSnapshot navigation = committed.Navigation;
+            _serverRun = committed.Run;
+            SyncEncounterStateFromServer();
+            SyncRestorableCandidateFromServer();
+            bool encounterOpened = navigation.encounterOpened || IsOpenServerEncounter(_serverRun.activeEncounter);
+            GameApiClient.PositionSnapshot encounterStaging = navigation.encounter?.stagingPosition ??
+                                                                navigation.stagingPosition ??
+                                                                navigation.activeEncounter?.stagingPosition ??
+                                                                _serverRun.activeEncounter?.stagingPosition;
+            _encounterMoveRequired = encounterOpened;
+            _encounterReason = FirstNonEmpty(navigation.encounter?.reason, navigation.encounterReason,
+                navigation.activeEncounter?.reason, _serverRun.activeEncounter?.reason);
+            _encounterStagingCoord = encounterStaging == null
+                ? (GridCoord?)null
+                : new GridCoord(encounterStaging.x, encounterStaging.y);
+            GameApiClient.PositionSnapshot requested = navigation.requestedDestination ?? navigation.to;
+            var requestedCoord = new GridCoord(requested.x, requested.y);
+            bool invariantHeld = !navigation.campaignTurnConsumed &&
+                                 navigation.campaignTurnBefore == campaignTurnBefore &&
+                                 navigation.campaignTurnAfter == campaignTurnBefore &&
+                                 _serverRun.currentTurn == campaignTurnBefore &&
+                                 string.Equals(layoutHashBefore, _serverRun.world?.layoutHash,
+                                     StringComparison.Ordinal);
+            ApplyTurnPresentation(ServerTurnPresentationAdapter.FromNavigation(
+                navigation, _serverRun, campaignTurnBefore, requestedCoord.X, requestedCoord.Y,
+                encounterOpened, _encounterReason, invariantHeld, GmEnabled,
+                PlayerDisplayName(_service.CurrentView)), true);
+            RecoverPendingChoiceSet(_serverRun.pendingChoiceSet, false);
+            TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPositionAfter);
+            List<GridCoord> visualPath = _pathPlanner.FindServerVisualPath(
+                navigation, _serverRun, playerPositionBefore, playerPositionAfter);
+            BeginPlayerPathAnimation(visualPath, _service.CurrentView, true);
+            SyncServerEntityVisuals(_serverRun);
+            QueueServerSceneSequence(navigation.sceneSequence);
+            _selectionController.ClearToCoord(encounterOpened ? _encounterStagingCoord : null);
+            UpdateSelectionVisual(_service.CurrentView);
+            _runSessionController?.RememberServerRun(_serverRun.id);
+            _serverStatus = encounterOpened
+                ? "자연어 이동 중 조우 발생 · 다음 행동을 선택하세요"
+                : committed.FromIdempotencyCache ? "자연어 이동 멱등 응답" : "자연어 목적지 이동 완료";
+            AddLog("플레이어 이동 · " + text);
+            Debug.Log("[KW.Message] event=NavigationResolved runId=" + _serverRun.id +
+                      " turn=" + campaignTurnBefore + " from=(" + playerPositionBefore.X + "," +
+                      playerPositionBefore.Y + ") to=(" + playerPositionAfter.X + "," +
+                      playerPositionAfter.Y + ") requestedArea=" + navigation.enteredAreaId);
             PlaySfx(AssetClip("UiAcceptSound"));
             PublishPresentationState(PresentationChange.Hud | PresentationChange.Dialogue |
                                      PresentationChange.Minimap | PresentationChange.Selection);
@@ -2279,6 +2407,9 @@ namespace KeyboardWanderer.Demo
             CancelOptionalNarrativeRequest();
             ClearPlayerMessageSubmission();
             _playerWalking = false;
+            _lastPresentationContinuesWithMovement = false;
+            _directionalInputHeld = false;
+            ClearBufferedDirectionalMove();
             _reopenDialogueAfterWalk = false;
             _suppressDialogueReopenAfterWalk = false;
             _preparedD20 = 0;
@@ -2574,6 +2705,12 @@ namespace KeyboardWanderer.Demo
                 case "DESTINATION_OCCUPIED": return "선택한 타일에는 이미 다른 대상이 있습니다.";
                 case "PATH_BLOCKED":
                 case "TRAVEL_PATH_BLOCKED": return "그 위치까지 이동할 수 있는 길이 없습니다.";
+                case "ROOT_SYSTEM_ACCESS_DENIED":
+                    return "루트 시스템은 아직 봉인되어 있습니다. 관리자 권한 3단계와 내부 붕괴 단서를 모두 확보해야 합니다.";
+                case "ENCOUNTER_ACTION_REQUIRED":
+                    return "현재 조우를 먼저 해결해야 다른 지역으로 이동할 수 있습니다.";
+                case "DESTINATION_AREA_MISMATCH":
+                    return "목적지와 지역 정보가 일치하지 않아 이동을 중단했습니다. 지도를 다시 동기화해 주세요.";
                 case "UNDO_NOT_AVAILABLE": return "되돌릴 수 있는 행동 기록이 부족합니다.";
                 case "RESTORE_NOT_AVAILABLE": return "지금 복구할 수 있는 상태가 없습니다.";
                 case "CHOICE_REQUIRED": return "이야기 선택이 남아 있습니다. 표시된 선택지를 고르거나 T로 직접 입력해 주세요.";
@@ -2664,6 +2801,7 @@ namespace KeyboardWanderer.Demo
                                  string.Equals(layoutHashBefore, _serverRun.world?.layoutHash, StringComparison.Ordinal);
             string actorName = PlayerDisplayName(_service.CurrentView);
             bool oneTileMovement = playerPositionBefore.ManhattanDistance(destinationCoord) == 1;
+            bool presentTravelEvent = encounterOpened || navigation?.storyEventTriggered == true;
             ApplyTurnPresentation(ServerTurnPresentationAdapter.FromNavigation(
                 navigation,
                 _serverRun,
@@ -2674,23 +2812,33 @@ namespace KeyboardWanderer.Demo
                 _encounterReason,
                 invariantHeld,
                 GmEnabled,
-                actorName), !oneTileMovement);
+                actorName), !oneTileMovement || presentTravelEvent);
             RecoverPendingChoiceSet(_serverRun.pendingChoiceSet, false);
             SyncRestorableCandidateFromServer();
             TryGetPlayerPosition(_service.CurrentView, out GridCoord playerPositionAfter);
             List<GridCoord> visualPath = _pathPlanner.FindServerVisualPath(
                 navigation, _serverRun, playerPositionBefore, playerPositionAfter);
-            BeginPlayerPathAnimation(visualPath, _service.CurrentView, !oneTileMovement);
+            BeginPlayerPathAnimation(visualPath, _service.CurrentView,
+                !oneTileMovement || presentTravelEvent);
             SyncServerEntityVisuals(_serverRun);
-            if (!oneTileMovement)
+            if (!oneTileMovement || presentTravelEvent)
                 QueueServerSceneSequence(navigation?.sceneSequence);
             _selectionController.ClearToCoord(encounterOpened ? _encounterStagingCoord : null);
             UpdateSelectionVisual(_service.CurrentView);
             _runSessionController?.RememberServerRun(_serverRun.id);
             _serverStatus = encounterOpened
                 ? "ACTIVE ENCOUNTER · 다음 행동은 의미 턴"
-                : committed.FromIdempotencyCache ? "탐색 이동 멱등 응답" : "안전 탐색 이동 완료 · 턴 유지";
+                : committed.FromIdempotencyCache ? "탐색 이동 멱등 응답"
+                : navigation != null && navigation.storyEventTriggered
+                    ? "탐색 사건 발생 · 서버 판정 완료"
+                    : "안전 탐색 이동 완료 · 다음 사건까지 " + StepsUntilStoryEvent(_serverRun) + "칸";
             PlaySfx(AssetClip("UiAcceptSound"));
+        }
+
+        private static int StepsUntilStoryEvent(GameApiClient.RunSnapshot run)
+        {
+            if (run == null) return 0;
+            return Mathf.Max(0, run.nextStoryEventDistance - run.travelDistance);
         }
 
         private IEnumerator ResyncServerRun()
@@ -2806,6 +2954,9 @@ namespace KeyboardWanderer.Demo
             _nextAmbientWanderAt = Time.unscaledTime + AmbientWanderInterval;
             ClearPlayerMessageSubmission();
             _playerWalking = false;
+            _lastPresentationContinuesWithMovement = false;
+            _directionalInputHeld = false;
+            ClearBufferedDirectionalMove();
             _reopenDialogueAfterWalk = false;
             _runEndCutscenePlayed = false;
             _suppressDialogueReopenAfterWalk = false;
@@ -3553,6 +3704,7 @@ namespace KeyboardWanderer.Demo
             {
                 _scenePlaybackCoroutine = null;
                 _pendingPresentationChanges |= PresentationChange.Dialogue;
+                SubmitBufferedDirectionalMoveIfReady();
             }
         }
 
@@ -3839,6 +3991,7 @@ namespace KeyboardWanderer.Demo
                           (_sceneUi == null ? "null" : "ready"));
             }
             _suppressDialogueReopenAfterWalk = false;
+            SubmitBufferedDirectionalMoveIfReady();
         }
 
         private bool TryGetPlayerVisual(RunView view, out KeyboardWandererEntityVisualState visual)
@@ -5847,6 +6000,7 @@ namespace KeyboardWanderer.Demo
             _lastNextInterventionReason = presentation.NextInterventionReason;
             _lastChoiceSetId = presentation.ChoiceSetId;
             _lastNarrativeChoices = presentation.NarrativeChoices ?? Array.Empty<NarrativeChoiceOption>();
+            _lastPresentationContinuesWithMovement = presentation.ContinuesWithMovement;
             if (!string.IsNullOrWhiteSpace(_lastChoiceSetId) && _lastNarrativeChoices.Length >= 2 &&
                 string.IsNullOrWhiteSpace(_lastNextInterventionReason))
                 _lastNextInterventionReason = "이야기가 잠시 멈췄다. 어떤 말이나 행동으로 다음 장면을 이어 갈까?";

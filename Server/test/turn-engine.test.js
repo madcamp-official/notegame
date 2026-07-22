@@ -9,6 +9,7 @@ import { capabilitiesFor } from "../src/domain/entity-capabilities.js";
 import { enemyArchetype } from "../src/domain/enemy-archetypes.js";
 import { detectIntentActions } from "../src/domain/intent.js";
 import { buildSkillTargetContext, planSkillTarget } from "../src/domain/skill-target-orchestrator.js";
+import { planDeterministicDecisionScene, resolveTravelDecision } from "../src/domain/decision-orchestrator.js";
 
 test("Korean investigation language maps to SEARCH rather than generic interaction", () => {
   assert.deepEqual(detectIntentActions("관리자 키보드로 숲의 균열을 조사해 본다"), ["search"]);
@@ -700,6 +701,54 @@ test("one-tile safe travel atomically invalidates the pending narrative choice w
   assert.equal(resolved.run.version, run.version + 1);
   assert.equal(run.pendingChoiceSet.choiceSetId, pendingChoiceSetId,
     "safe-travel resolution must not mutate the caller's pre-commit snapshot");
+});
+
+test("WASD-sized travel commits every tile but schedules scene work only at the seeded 15-20 tile checkpoint", () => {
+  const run = runFixture(4602);
+  const origin = structuredClone(run.entities.find((entity) => entity.id === run.playerEntityId).position);
+  const firstDestination = adjacentWalkable(run);
+  run.nextStoryEventDistance = run.travelDistance + 2;
+  const directorDecisionBefore = run.directorState.decisionNo;
+  const firstRequest = normalizeTravelRequest({
+    inputType: "MOVE",
+    idempotencyKey: "unity-event-wasd-step-0001",
+    expectedRunVersion: run.version,
+    destination: firstDestination
+  });
+  const first = resolveTravelDecision({ run, request: firstRequest, sceneDecision: null });
+
+  assert.deepEqual(first.run.entities.find((entity) => entity.id === run.playerEntityId).position,
+    firstDestination);
+  assert.equal(first.run.travelDistance, 1);
+  assert.equal(first.navigation.storyEventTriggered, false,
+    "an idempotency-key prefix must not force an early story event");
+  assert.deepEqual(first.navigation.sceneSequence, []);
+  assert.equal(first.navigation.narrative, null);
+  assert.equal(first.run.directorState.decisionNo, directorDecisionBefore,
+    "lightweight coordinate commits must not advance the scene director");
+
+  const secondRequest = normalizeTravelRequest({
+    inputType: "MOVE",
+    idempotencyKey: "unity-travel-wasd-step-0002",
+    expectedRunVersion: first.run.version,
+    destination: origin
+  });
+  const preview = resolveSafeTravel({ run: first.run, request: secondRequest });
+  assert.equal(preview.run.storyEventDue, true);
+  const sceneDecision = planDeterministicDecisionScene({
+    run: preview.run,
+    decisionType: "TRAVEL",
+    navigation: preview.navigation
+  });
+  const second = resolveTravelDecision({ run: first.run, request: secondRequest, sceneDecision });
+
+  assert.equal(second.navigation.storyEventTriggered, true);
+  assert.equal(second.run.storyEventSequence, 1);
+  assert.equal(second.run.directorState.decisionNo, directorDecisionBefore + 1);
+  assert.ok(second.navigation.sceneSequence.length >= 1);
+  const nextInterval = second.run.nextStoryEventDistance - second.run.travelDistance;
+  assert.ok(nextInterval >= 15 && nextInterval <= 20,
+    `the next server checkpoint must be 15-20 tiles away, got ${nextInterval}`);
 });
 
 test("long safe POI travel invalidates the pending choice and reaches its destination across a story checkpoint", () => {

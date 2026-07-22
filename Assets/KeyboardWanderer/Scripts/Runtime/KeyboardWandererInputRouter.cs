@@ -29,6 +29,7 @@ namespace KeyboardWanderer.Runtime
         public event Action QuestRequested;
         public event Action<Vector2> WorldClickRequested;
         public event Action<Vector2Int> DirectionalMoveRequested;
+        public event Action DirectionalMoveReleased;
         public event Action NaturalLanguageRequested;
         private bool _narrativeChoiceMode;
         private bool _narrativeOverlayMode;
@@ -159,7 +160,6 @@ namespace KeyboardWanderer.Runtime
 
             if (_narrativeChoiceMode)
             {
-                ResetDirectionalMovement(true);
                 // A visible sealed skill choice and the matching action-bar shortcut
                 // are two presentations of the same authoritative action. Dispatch
                 // the semantic ability once so the controller can submit that exact
@@ -179,6 +179,12 @@ namespace KeyboardWanderer.Runtime
                     PoiCycleRequested?.Invoke(1);
                     return;
                 }
+                // WASD always means world movement.  The controller dismisses this
+                // optional choice surface before committing the tile, while arrow
+                // keys remain available for explicit choice navigation.  Sharing W/S
+                // between these two meanings made movement appear unresponsive.
+                bool choiceCtrl = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed;
+                ReadDirectionalMovement(keyboard, choiceCtrl);
                 // Controller.Update can advance the final story page before this
                 // router's Update runs in the same frame. Never reuse that held
                 // Return/Space press to confirm a choice that only just became visible.
@@ -196,9 +202,9 @@ namespace KeyboardWanderer.Runtime
                 if (keyboard.digit2Key.wasPressedThisFrame) NarrativeChoiceRequested?.Invoke(1);
                 if (keyboard.digit3Key.wasPressedThisFrame) NarrativeChoiceRequested?.Invoke(2);
                 if (keyboard.digit4Key.wasPressedThisFrame) NarrativeChoiceRequested?.Invoke(3);
-                if (keyboard.upArrowKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame)
+                if (keyboard.upArrowKey.wasPressedThisFrame)
                     NarrativeChoiceMoveRequested?.Invoke(-1);
-                if (keyboard.downArrowKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame)
+                if (keyboard.downArrowKey.wasPressedThisFrame)
                     NarrativeChoiceMoveRequested?.Invoke(1);
                 if (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame ||
                     keyboard.spaceKey.wasPressedThisFrame)
@@ -343,8 +349,10 @@ namespace KeyboardWanderer.Runtime
 
             if (direction == Vector2Int.zero)
             {
+                bool wasHeld = _heldMoveDirection != Vector2Int.zero;
                 _heldMoveDirection = Vector2Int.zero;
                 _nextDirectionalMoveAt = 0f;
+                if (wasHeld) DirectionalMoveReleased?.Invoke();
                 return;
             }
 
@@ -365,10 +373,12 @@ namespace KeyboardWanderer.Runtime
 
         private void ResetDirectionalMovement(bool requireRelease)
         {
+            bool wasHeld = _heldMoveDirection != Vector2Int.zero;
             _heldMoveDirection = Vector2Int.zero;
             _nextDirectionalMoveAt = 0f;
             if (requireRelease)
                 _suppressDirectionalUntilRelease = true;
+            if (wasHeld) DirectionalMoveReleased?.Invoke();
         }
 
         internal static bool IsTextInputFocused()

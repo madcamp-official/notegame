@@ -283,16 +283,17 @@ class ContinuityNarrator {
 
 async function startServer({ d20Source = new FixedD20Source(20), narrator = new FakeNarrator(), configEnv = {} } = {}) {
   const config = loadConfig({ AUTH_MODE: "required", STORAGE: "memory", LOG_LEVEL: "silent", ...configEnv });
+  const store = new MemoryStore();
   const application = await createApplication({
     config,
-    store: new MemoryStore(),
+    store,
     narrator,
     d20Source,
     logger: silentLogger
   });
   await new Promise((resolve) => application.server.listen(0, "127.0.0.1", resolve));
   const address = application.server.address();
-  return { application, baseUrl: `http://127.0.0.1:${address.port}` };
+  return { application, store, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
 async function jsonRequest(baseUrl, path, { method = "GET", body, userId = USER_ID, origin } = {}) {
@@ -883,6 +884,73 @@ test("a free-form one-step destination resolves as an authoritative D20 MOVE", a
   assert.equal(result.payload.turn.runtime.unity.events[0].type, "MOVE");
 });
 
+test("a named Root System message uses authoritative travel and cannot fake arrival through a nearby step", async (t) => {
+  const { application, baseUrl } = await startServer({ narrator: new MoveActionNarrator(), d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Named Root travel", worldSeed: 17042, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const playerBefore = run.entities.find((entity) => entity.id === run.playerEntityId).position;
+
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, {
+    method: "POST",
+    body: {
+      text: "move to the Root System final convergence point",
+      idempotencyKey: "named-root-travel-0001",
+      expectedRunVersion: run.version
+    }
+  });
+
+  assert.equal(result.response.status, 422, JSON.stringify(result.payload));
+  assert.equal(result.payload.error.code, "ROOT_SYSTEM_ACCESS_DENIED");
+  const refreshed = (await jsonRequest(baseUrl, `/v1/runs/${run.id}`)).payload.run;
+  const playerAfter = refreshed.entities.find((entity) => entity.id === refreshed.playerEntityId).position;
+  assert.deepEqual(playerAfter, playerBefore);
+  assert.equal(refreshed.version, run.version);
+  assert.equal(refreshed.currentTurn, run.currentTurn);
+});
+
+test("an eligible named Root System message commits and replays one authoritative navigation", async (t) => {
+  const { application, store, baseUrl } = await startServer({ narrator: new MoveActionNarrator(), d20Source: new FixedD20Source(20) });
+  t.after(() => application.close());
+  const campaign = (await jsonRequest(baseUrl, "/v1/campaigns", {
+    method: "POST", body: { title: "Eligible Root travel", worldSeed: 17043, turnLimit: 40 }
+  })).payload.campaign;
+  const run = (await jsonRequest(baseUrl, `/v1/campaigns/${campaign.id}/runs`, { method: "POST", body: {} })).payload.run;
+  const authoritative = store.runs.get(run.id);
+  authoritative.adminAccessAcquisitionHistory = authoritative.adminAccessLevels
+    .map((access, index) => ({ accessLevelId: access.id, turnNo: index + 1 }));
+  authoritative.canonicalFacts.find((fact) => fact.subject === "collapse_origin").value = true;
+  const body = {
+    text: "루트 시스템 최종 수렴점으로 이동한다",
+    idempotencyKey: "eligible-root-travel-0001",
+    expectedRunVersion: run.version
+  };
+
+  const result = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, { method: "POST", body });
+
+  assert.equal(result.response.status, 201, JSON.stringify(result.payload));
+  assert.ok(result.payload.navigation);
+  assert.equal(result.payload.turn, undefined);
+  assert.equal(result.payload.navigation.campaignTurnConsumed, false);
+  assert.equal(result.payload.run.currentTurn, run.currentTurn);
+  assert.equal(result.payload.run.version, run.version + 1);
+  const finaleArea = result.payload.run.world.areas.find((area) => area.campaignRole === "FINAL_CONVERGENCE");
+  const requested = result.payload.navigation.requestedDestination;
+  assert.equal(requested.areaId, finaleArea.id);
+  assert.equal(requested.x >= finaleArea.bounds.x && requested.x < finaleArea.bounds.x + finaleArea.bounds.width, true);
+  assert.equal(requested.y >= finaleArea.bounds.y && requested.y < finaleArea.bounds.y + finaleArea.bounds.height, true);
+  const player = result.payload.run.entities.find((entity) => entity.id === result.payload.run.playerEntityId);
+  assert.deepEqual(player.position, { x: result.payload.navigation.to.x, y: result.payload.navigation.to.y });
+
+  const replay = await jsonRequest(baseUrl, `/v1/runs/${run.id}/messages`, { method: "POST", body });
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.payload));
+  assert.equal(replay.payload.fromIdempotencyCache, true);
+  assert.equal(replay.payload.navigation.id, result.payload.navigation.id);
+  assert.equal(replay.payload.run.version, result.payload.run.version);
+});
+
 test("a 1,000-character free-form action keeps the full intent and a bounded narration note", async (t) => {
   const narrator = new MoveActionNarrator();
   const { application, baseUrl } = await startServer({ narrator, d20Source: new FixedD20Source(20) });
@@ -1088,7 +1156,7 @@ test("committed LLM scene text remains in the bounded ledger supplied to the fol
   assert.ok(suppliedPriorLedger.narrativeFragments.some((fragment) => fragment.includes("청록 종소리 장면 표식 1")));
 });
 
-test("safe travel bypasses a slow remote planner and commits one deterministic butterfly-effect scene without consuming a campaign turn", async (t) => {
+test("one-tile safe travel bypasses all scene planners until the server distance checkpoint", async (t) => {
   const narrator = new SlowSceneNarrator();
   const { application, baseUrl } = await startServer({ narrator });
   t.after(() => application.close());
@@ -1124,12 +1192,12 @@ test("safe travel bypasses a slow remote planner and commits one deterministic b
   assert.equal(first.payload.navigation.campaignTurnBefore, 0);
   assert.equal(first.payload.navigation.campaignTurnAfter, 0);
   assert.equal(first.payload.run.version, 2);
-  assert.equal(first.payload.navigation.sceneDecision.decisionNo, 1);
-  assert.ok(first.payload.navigation.sceneSequence.length >= 1);
-  assert.equal(first.payload.navigation.narrative.summary, first.payload.navigation.sceneDecision.sceneGoal);
-  assert.equal(first.payload.navigation.narrative.fallbackUsed, true);
-  assert.match(first.payload.navigation.narrative.model, /^deterministic-scene-director-/);
-  assert.equal(first.payload.run.directorState.decisionNo, 1);
+  assert.equal(first.payload.navigation.storyEventTriggered, false);
+  assert.equal(first.payload.navigation.sceneDecision, null);
+  assert.deepEqual(first.payload.navigation.sceneSequence, []);
+  assert.equal(first.payload.navigation.narrative, null);
+  assert.equal(first.payload.run.directorState.decisionNo, 0);
+  assert.ok(first.payload.run.nextStoryEventDistance - first.payload.run.travelDistance >= 14);
   assert.equal(first.payload.run.world.layoutHash, run.world.layoutHash);
   assert.equal(narrator.planSceneCalls, 0, "non-consuming safe travel must never invoke the remote scene planner");
 
@@ -1137,8 +1205,8 @@ test("safe travel bypasses a slow remote planner and commits one deterministic b
   assert.equal(replay.response.status, 200);
   assert.equal(replay.payload.fromIdempotencyCache, true);
   assert.equal(replay.payload.navigation.id, first.payload.navigation.id);
-  assert.deepEqual(replay.payload.navigation.narrative, first.payload.navigation.narrative);
-  assert.equal(replay.payload.run.directorState.decisionNo, 1);
+  assert.deepEqual(replay.payload.navigation.sceneSequence, first.payload.navigation.sceneSequence);
+  assert.equal(replay.payload.run.directorState.decisionNo, 0);
   assert.equal(narrator.planSceneCalls, 0, "an idempotent replay must not invoke the remote scene planner");
 });
 

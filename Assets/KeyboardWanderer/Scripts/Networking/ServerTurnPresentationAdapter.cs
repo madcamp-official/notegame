@@ -247,6 +247,7 @@ namespace KeyboardWanderer.Networking
             bool narrativeEnabled,
             string playerName)
         {
+            bool movementStory = navigation?.storyEventTriggered == true && !encounterOpened;
             string outcome = encounterOpened ? "사건 발견" : invariantHeld ? "안전 이동" : "이동 상태 확인";
             string attempt = "고정 월드의 (" + destinationX + ", " + destinationY + ")까지 안전 경로로 이동";
             string explanation = encounterOpened
@@ -274,7 +275,9 @@ namespace KeyboardWanderer.Networking
                 nextInterventionReason = encounterOpened
                     ? FirstNonEmpty(run?.activeEncounter?.description,
                         "눈앞의 존재가 반응을 기다리고 있다. 어떤 방식으로 말을 걸거나 개입할까?")
-                    : "주변의 변화를 확인했다. 다음에는 어디로 이동하거나 어떤 방식으로 개입할까?";
+                    : movementStory
+                        ? "새로 드러난 흔적을 따라 계속 이동하세요. 다음 탐색 사건은 다시 15~20칸 뒤에 이어집니다."
+                        : "주변의 변화를 확인했다. 다음에는 어디로 이동하거나 어떤 방식으로 개입할까?";
             }
             string[] suggestedSkillIds = navigation?.narrative?.nextIntervention?.suggestedSkillIds;
             if (suggestedSkillIds == null || suggestedSkillIds.Length == 0)
@@ -282,8 +285,9 @@ namespace KeyboardWanderer.Networking
                     ? run.activeEncounter.suggestedSkillIds
                     : new[] { "SEARCH", "CONNECT" };
             GameApiClient.NextInterventionSnapshot intervention = navigation?.narrative?.nextIntervention;
-            NarrativeChoiceOption[] choices = BuildNarrativeChoices(intervention, suggestedSkillIds,
-                !encounterOpened);
+            NarrativeChoiceOption[] choices = movementStory
+                ? Array.Empty<NarrativeChoiceOption>()
+                : BuildNarrativeChoices(intervention, suggestedSkillIds, !encounterOpened);
 
             return new TurnPresentationResult(
                 0,
@@ -307,7 +311,8 @@ namespace KeyboardWanderer.Networking
                 suggestedSkillIds,
                 null,
                 IsValidSealedChoiceSet(intervention) ? intervention.choiceSetId : null,
-                choices);
+                choices,
+                continuesWithMovement: movementStory);
         }
 
         /// <summary>

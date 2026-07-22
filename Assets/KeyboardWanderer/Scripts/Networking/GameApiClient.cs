@@ -794,6 +794,8 @@ namespace KeyboardWanderer.Networking
             public int travelTime;
             public int travelTimeUnits;
             public int travelDistance;
+            public int nextStoryEventDistance;
+            public int storyEventSequence;
             public string[] visitedPoiIds;
             public string[] discoveredAreaIds;
             public RootGateSnapshot rootGate;
@@ -1354,6 +1356,9 @@ namespace KeyboardWanderer.Networking
             public int pathCost;
             public int travelTimeUnits;
             public int cumulativeTravelTimeUnits;
+            public int travelDistance;
+            public bool storyEventTriggered;
+            public int nextStoryEventDistance;
             public string enteredAreaId;
             public string enteredBiomeId;
             public string campaignRole;
@@ -1413,6 +1418,7 @@ namespace KeyboardWanderer.Networking
         private sealed class TurnEnvelope
         {
             public TurnSnapshot turn;
+            public NavigationSnapshot navigation;
             public RunSnapshot run;
             public bool fromIdempotencyCache;
         }
@@ -1503,6 +1509,23 @@ namespace KeyboardWanderer.Networking
             internal CommittedTurn(TurnSnapshot turn, RunSnapshot run, bool fromIdempotencyCache)
             {
                 Turn = turn;
+                Run = run;
+                FromIdempotencyCache = fromIdempotencyCache;
+            }
+        }
+
+        public sealed class CommittedPlayerMessage
+        {
+            public TurnSnapshot Turn { get; }
+            public NavigationSnapshot Navigation { get; }
+            public RunSnapshot Run { get; }
+            public bool FromIdempotencyCache { get; }
+
+            internal CommittedPlayerMessage(TurnSnapshot turn, NavigationSnapshot navigation,
+                RunSnapshot run, bool fromIdempotencyCache)
+            {
+                Turn = turn;
+                Navigation = navigation;
                 Run = run;
                 FromIdempotencyCache = fromIdempotencyCache;
             }
@@ -1776,17 +1799,17 @@ namespace KeyboardWanderer.Networking
         }
 
         public IEnumerator SubmitPlayerMessage(string runId, string text, string idempotencyKey,
-            long expectedRunVersion, Action<Result<CommittedTurn>> completed)
+            long expectedRunVersion, Action<Result<CommittedPlayerMessage>> completed)
         {
             yield return SubmitPlayerMessage(runId, text, idempotencyKey, expectedRunVersion, 0, completed);
         }
 
         public IEnumerator SubmitPlayerMessage(string runId, string text, string idempotencyKey,
-            long expectedRunVersion, int preparedD20, Action<Result<CommittedTurn>> completed)
+            long expectedRunVersion, int preparedD20, Action<Result<CommittedPlayerMessage>> completed)
         {
             if (string.IsNullOrWhiteSpace(text))
             {
-                completed?.Invoke(Result<CommittedTurn>.Failure(0, "PLAYER_MESSAGE_INVALID", "대화 내용을 입력해 주세요."));
+                completed?.Invoke(Result<CommittedPlayerMessage>.Failure(0, "PLAYER_MESSAGE_INVALID", "대화 내용을 입력해 주세요."));
                 yield break;
             }
             string body = "{\"text\":\"" + EscapeJson(text.Trim()) + "\"," +
@@ -1796,15 +1819,19 @@ namespace KeyboardWanderer.Networking
             yield return Send("POST", "/v1/runs/" + EscapePath(runId) + "/messages", body, raw =>
             {
                 TurnEnvelope envelope = raw.Success ? SafeParse<TurnEnvelope>(raw.Json) : null;
-                if (envelope?.turn == null || envelope.run == null)
+                bool hasTurn = !string.IsNullOrWhiteSpace(envelope?.turn?.id);
+                bool hasNavigation = !string.IsNullOrWhiteSpace(envelope?.navigation?.id);
+                if (envelope?.run == null || hasTurn == hasNavigation)
                 {
-                    completed?.Invoke(Result<CommittedTurn>.Failure(raw.StatusCode, raw.ErrorCode,
+                    completed?.Invoke(Result<CommittedPlayerMessage>.Failure(raw.StatusCode, raw.ErrorCode,
                         raw.Success ? "자연어 대화 결과를 해석할 수 없습니다." : raw.ErrorMessage, raw.CurrentVersion));
                     return;
                 }
                 PopulateTileCodes(envelope.run.world, raw.Json);
-                completed?.Invoke(Result<CommittedTurn>.Success(raw.StatusCode,
-                    new CommittedTurn(envelope.turn, envelope.run, envelope.fromIdempotencyCache)));
+                completed?.Invoke(Result<CommittedPlayerMessage>.Success(raw.StatusCode,
+                    new CommittedPlayerMessage(hasTurn ? envelope.turn : null,
+                        hasNavigation ? envelope.navigation : null, envelope.run,
+                        envelope.fromIdempotencyCache)));
             });
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using Game.Client.UI;
 using KeyboardWanderer.Demo;
@@ -179,6 +180,45 @@ namespace KeyboardWanderer.Tests.PlayMode
             Release(_keyboard.xKey);
             Assert.That(search, Is.EqualTo(1), "입력 중 F는 조사로 새어 나가면 안 됩니다.");
             Assert.That(restore, Is.EqualTo(1), "입력 중 X는 복구로 새어 나가면 안 됩니다.");
+        }
+
+        [Test]
+        public void WorldMode_WasdDispatchesFourOneTileDirectionsAndNeverLeaksFromTextInput()
+        {
+            var directions = new List<Vector2Int>();
+            int choiceMovement = 0;
+            int releases = 0;
+            _router.DirectionalMoveRequested += direction => directions.Add(direction);
+            _router.NarrativeChoiceMoveRequested += direction => choiceMovement += direction;
+            _router.DirectionalMoveReleased += () => releases++;
+
+            _router.SetNarrativeChoiceMode(true);
+            InvokeReadKeyboard();
+            PressAndRead(_keyboard.wKey);
+            PressAndRead(_keyboard.aKey);
+            PressAndRead(_keyboard.sKey);
+            PressAndRead(_keyboard.dKey);
+
+            CollectionAssert.AreEqual(new[]
+            {
+                Vector2Int.up, Vector2Int.left, Vector2Int.down, Vector2Int.right
+            }, directions, "WASD must map to exactly one cardinal tile per fresh key press.");
+            Assert.That(choiceMovement, Is.Zero,
+                "Visible choices use arrow keys; W/S must not silently change a choice instead of moving.");
+            Assert.That(releases, Is.EqualTo(4),
+                "Each released movement key must clear any queued continuation tile.");
+
+            EnsureEventSystem();
+            _inputObject = new GameObject("Focused WASD Text Input", typeof(RectTransform),
+                typeof(TMP_InputField), typeof(InputFocusTracker));
+            EventSystem.current.SetSelectedGameObject(_inputObject);
+            PressAndRead(_keyboard.wKey);
+            PressAndRead(_keyboard.aKey);
+            PressAndRead(_keyboard.sKey);
+            PressAndRead(_keyboard.dKey);
+
+            Assert.That(directions.Count, Is.EqualTo(4),
+                "WASD typed in the natural-language field must not move the world behind it.");
         }
 
         [Test]
