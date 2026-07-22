@@ -13,7 +13,11 @@ namespace KeyboardWanderer.Editor
 {
     public static class KeyboardWandererBuild
     {
-        private const string OutputPath = "Builds/NinjaAdventure.app";
+        public const string MacOutputPath = "Builds/NinjaAdventure.app";
+        public const string WindowsOutputPath =
+            "Builds/NinjaAdventure-Windows/NUPJUK-The-Last-Commit.exe";
+        public const string PortableProductFileName = "NUPJUK-The-Last-Commit";
+
         private const string AppIconPath =
             "Assets/KeyboardWanderer/Art/AppIcon/NinjaAdventureAppIcon.png";
         private const string FontLicensePath =
@@ -33,7 +37,27 @@ namespace KeyboardWanderer.Editor
         [MenuItem("Keyboard Wanderer/Build macOS Player")]
         public static void BuildMacOS()
         {
-            ConfigureReleasePlayerSettings();
+            BuildDesktopPlayer(BuildTarget.StandaloneOSX, MacOutputPath);
+        }
+
+        [MenuItem("Keyboard Wanderer/Build Windows x64 Player")]
+        public static void BuildWindows()
+        {
+            BuildDesktopPlayer(BuildTarget.StandaloneWindows64, WindowsOutputPath);
+        }
+
+        /// <summary>
+        /// Shared release entry point used by menu and distribution builds. The caller
+        /// must start Unity with the matching -buildTarget. Building two platforms in
+        /// one process can retain the first platform's UNITY_STANDALONE_* symbols.
+        /// </summary>
+        public static BuildReport BuildDesktopPlayer(BuildTarget buildTarget, string outputPath)
+        {
+            if (string.IsNullOrWhiteSpace(outputPath))
+                throw new ArgumentException("A desktop player output path is required.", nameof(outputPath));
+
+            EnsureTargetReady(buildTarget);
+            ConfigureReleasePlayerSettings(buildTarget);
 
             string[] scenes = EditorBuildSettings.scenes
                 .Where(scene => scene.enabled)
@@ -42,58 +66,89 @@ namespace KeyboardWanderer.Editor
             if (scenes.Length == 0)
                 throw new InvalidOperationException("At least one enabled build scene is required.");
 
+            string outputDirectory = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(outputDirectory))
+                Directory.CreateDirectory(outputDirectory);
+
             BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
                 scenes = scenes,
-                locationPathName = OutputPath,
-                target = BuildTarget.StandaloneOSX,
+                locationPathName = outputPath,
+                target = buildTarget,
+                targetGroup = BuildTargetGroup.Standalone,
                 options = BuildOptions.CleanBuildCache | BuildOptions.StrictMode
             });
             if (report.summary.result != BuildResult.Succeeded)
-                throw new InvalidOperationException($"macOS build failed: {report.summary.result}");
+                throw new BuildFailedException($"{buildTarget} build failed: {report.summary.result}");
 
-            InstallThirdPartyNotices();
-            SignAndVerifyLocalBuild();
-            Debug.Log($"Keyboard Wanderer macOS build complete: {OutputPath} ({report.summary.totalSize} bytes)");
+            InstallThirdPartyNotices(outputPath, buildTarget);
+            if (buildTarget == BuildTarget.StandaloneOSX)
+                SignAndVerifyLocalBuild(outputPath);
+            Debug.Log($"Keyboard Wanderer {buildTarget} build complete: {outputPath} " +
+                      $"({report.summary.totalSize} bytes)");
+            return report;
+        }
+
+        private static void EnsureTargetReady(BuildTarget buildTarget)
+        {
+            BuildTargetGroup group = BuildPipeline.GetBuildTargetGroup(buildTarget);
+            if (!BuildPipeline.IsBuildTargetSupported(group, buildTarget))
+            {
+                string module = buildTarget == BuildTarget.StandaloneWindows64
+                    ? "Windows Build Support (Mono), module id windows-mono"
+                    : "Mac Build Support";
+                throw new BuildFailedException(
+                    $"{buildTarget} is not installed. Add the Unity module: {module}.");
+            }
+
+            if (EditorUserBuildSettings.activeBuildTarget != buildTarget)
+            {
+                throw new BuildFailedException(
+                    $"Active target is {EditorUserBuildSettings.activeBuildTarget}, not {buildTarget}. " +
+                    $"Start a separate Unity process with -buildTarget {buildTarget} so platform " +
+                    "compiler symbols are reloaded before the build.");
+            }
         }
 
         /// <summary>
-        /// Keeps command-line, menu, and CI builds on the same release identity. macOS applies
-        /// its own icon mask, so the source asset deliberately remains a full-bleed square.
-        /// macOS uses its platform-specific x64ARM64 setting for a Universal player; the
-        /// resulting binary is verified again with lipo after the build.
+        /// Keeps command-line, menu, macOS, and Windows builds on one release identity.
+        /// macOS remains Universal while Windows is an x64 Mono player so it can be
+        /// cross-built from the team's macOS build host.
         /// </summary>
-        private static void ConfigureReleasePlayerSettings()
+        private static void ConfigureReleasePlayerSettings(BuildTarget buildTarget)
         {
             Texture2D icon = AssetDatabase.LoadAssetAtPath<Texture2D>(AppIconPath);
             if (icon == null)
                 throw new InvalidOperationException($"Release app icon is missing: {AppIconPath}");
 
-            NamedBuildTarget target = NamedBuildTarget.Standalone;
-            int[] iconSizes = PlayerSettings.GetIconSizes(target, IconKind.Application);
+            NamedBuildTarget namedTarget = NamedBuildTarget.Standalone;
+            int[] iconSizes = PlayerSettings.GetIconSizes(namedTarget, IconKind.Application);
             if (iconSizes == null || iconSizes.Length == 0)
-                throw new InvalidOperationException("Unity reported no macOS application icon slots.");
+                throw new InvalidOperationException("Unity reported no standalone application icon slots.");
 
-            PlayerSettings.SetIcons(target,
+            PlayerSettings.SetIcons(namedTarget,
                 Enumerable.Repeat(icon, iconSizes.Length).ToArray(), IconKind.Application);
-            #if UNITY_EDITOR && UNITY_STANDALONE_OSX
-                UnityEditor.OSXStandalone.UserBuildSettings.architecture =
-                    OSArchitecture.x64ARM64;
-            #endif
+#if UNITY_EDITOR_OSX
+            if (buildTarget == BuildTarget.StandaloneOSX)
+                UnityEditor.OSXStandalone.UserBuildSettings.architecture = OSArchitecture.x64ARM64;
+#endif
+            PlayerSettings.SetScriptingBackend(namedTarget, ScriptingImplementation.Mono2x);
             PlayerSettings.productName = ProductName;
             PlayerSettings.bundleVersion = ReleaseVersion;
-            PlayerSettings.SetApplicationIdentifier(target, BundleIdentifier);
-            // Unity 6 exposes the macOS CFBundleVersion through this platform-specific
-            // property. The legacy generic SetPropertyString path silently left release
-            // players at build number 0 even though the editor setting appeared written.
-            PlayerSettings.macOS.buildNumber = ReleaseBuildNumber;
+            PlayerSettings.SetApplicationIdentifier(namedTarget, BundleIdentifier);
+#if UNITY_EDITOR_OSX
+            if (buildTarget == BuildTarget.StandaloneOSX)
+                PlayerSettings.macOS.buildNumber = ReleaseBuildNumber;
+#endif
             AssetDatabase.SaveAssets();
         }
 
-        private static void InstallThirdPartyNotices()
+        private static void InstallThirdPartyNotices(string outputPath, BuildTarget buildTarget)
         {
-            string noticesDirectory = Path.Combine(OutputPath, "Contents", "Resources",
-                "ThirdPartyLicenses");
+            string noticesDirectory = buildTarget == BuildTarget.StandaloneOSX
+                ? Path.Combine(outputPath, "Contents", "Resources", "ThirdPartyLicenses")
+                : Path.Combine(Path.GetDirectoryName(outputPath) ?? string.Empty,
+                    "ThirdPartyLicenses");
             Directory.CreateDirectory(noticesDirectory);
             CopyNotice(FontLicensePath, noticesDirectory);
             CopyNotice(TmpFontLicensePath, noticesDirectory);
@@ -108,13 +163,7 @@ namespace KeyboardWanderer.Editor
             File.Copy(sourcePath, Path.Combine(destinationDirectory, Path.GetFileName(sourcePath)), true);
         }
 
-        /// <summary>
-        /// Unity seals a macOS app as part of BuildPipeline.BuildPlayer. Adding the human-readable
-        /// licenses afterward changes sealed resources, so the bundle must be signed again before
-        /// it is executable or eligible for distribution signing. The shared release script signs
-        /// nested Mach-O code from the inside out and performs strict recursive verification.
-        /// </summary>
-        private static void SignAndVerifyLocalBuild()
+        private static void SignAndVerifyLocalBuild(string outputPath)
         {
             if (Application.platform != RuntimePlatform.OSXEditor)
                 throw new PlatformNotSupportedException(
@@ -122,7 +171,7 @@ namespace KeyboardWanderer.Editor
 
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             string signingScript = Path.Combine(projectRoot, SigningScriptPath);
-            string appPath = Path.Combine(projectRoot, OutputPath);
+            string appPath = Path.GetFullPath(Path.Combine(projectRoot, outputPath));
             if (!File.Exists(signingScript))
                 throw new FileNotFoundException("macOS signing script is missing.", signingScript);
 

@@ -38,6 +38,7 @@ for script in \
   "$script_dir/Validate-Release-Pipeline.command"; do
   zsh -n "$script"
 done
+bash -n "$script_dir/distribute/build-and-package.sh"
 plutil -lint "$script_dir/NinjaAdventure.entitlements" >/dev/null
 if ! docker compose version >/dev/null 2>&1; then
   print -u2 "Docker Compose v2가 필요합니다."
@@ -108,12 +109,29 @@ done
 build_script="$project_root/Assets/KeyboardWanderer/Editor/KeyboardWandererBuild.cs"
 for build_contract in \
   'BuildOptions.CleanBuildCache | BuildOptions.StrictMode' \
-  'PlayerSettings.macOS.buildNumber = ReleaseBuildNumber;' \
-  'InstallThirdPartyNotices();' \
-  'SignAndVerifyLocalBuild();' \
+  'BuildTarget.StandaloneWindows64' \
+  'BuildPipeline.IsBuildTargetSupported' \
+  'InstallThirdPartyNotices(outputPath, buildTarget);' \
+  'SignAndVerifyLocalBuild(outputPath);' \
   'THIRD-PARTY-NOTICES.md'; do
   if ! rg -Fq "$build_contract" "$build_script"; then
     print -u2 "Unity 빌드 계약이 누락됐습니다: $build_contract"
+    exit 1
+  fi
+done
+
+distribution_script="$script_dir/distribute/build-and-package.sh"
+for distribution_contract in \
+  '-buildTarget StandaloneOSX' \
+  '-executeMethod DistBuilder.BuildMac' \
+  '-buildTarget StandaloneWindows64' \
+  '-executeMethod DistBuilder.BuildWindows' \
+  'WindowsStandaloneSupport' \
+  'PORTABLE_NAME="NUPJUK-The-Last-Commit"' \
+  'WINDOWS_EXE="$DIST/windows/$PORTABLE_NAME.exe"' \
+  'ditto -c -k --sequesterRsrc --keepParent'; do
+  if ! rg -Fq -- "$distribution_contract" "$distribution_script"; then
+    print -u2 "데스크톱 배포 계약이 누락됐습니다: $distribution_contract"
     exit 1
   fi
 done
@@ -198,7 +216,7 @@ if [[ "$validate_mutation_recovery" == "1" ]]; then
     exit 1
   fi
   env NINJA_ADVENTURE_APP="$regression_app" NINJA_CODESIGN_IDENTITY=- \
-    "$script_dir/Sign-and-Verify-macOS.command" >/dev/null
+    zsh "$script_dir/Sign-and-Verify-macOS.command" >/dev/null
   codesign --verify --deep --strict --verbose=2 "$regression_app"
 fi
 

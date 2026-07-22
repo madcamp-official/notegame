@@ -51,6 +51,18 @@ BuildSupport/distribute/build-and-package.sh
 - 배포용 터널 개인키를 `~/.ssh/notegame_tunnel` 에 두기 (아래 "비밀값" 참고)
 - 빌드 중에는 Unity 에디터로 이 프로젝트를 **닫아두기** (프로젝트 락 방지)
 
+macOS와 Windows 빌드는 서로 다른 Unity 프로세스로 실행됩니다. Unity는 활성
+빌드 타깃의 `UNITY_STANDALONE_*` 조건부 컴파일 심볼을 프로세스 안에서 유지할 수
+있으므로, 한 프로세스에서 두 플랫폼을 연속 빌드하면 잘못된 플랫폼 코드가 포함될 수
+있습니다. `build-and-package.sh`가 이 경계를 자동으로 보장합니다.
+
+실제 실행 파일은 두 OS 모두 파일시스템에 안전한 이름을 사용합니다.
+
+- macOS: `NUPJUK-The-Last-Commit.app`
+- Windows: `NUPJUK-The-Last-Commit.exe`
+
+게임 창과 타이틀 화면의 정식 표기는 `NUPJUK : The Last Commit`으로 유지됩니다.
+
 ---
 
 ## main 이 갱신될 때 (중요)
