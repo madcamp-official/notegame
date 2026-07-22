@@ -25,7 +25,7 @@ namespace KeyboardWanderer.Editor
             "BuildSupport/THIRD-PARTY-NOTICES.md";
         private const string SigningScriptPath =
             "BuildSupport/Sign-and-Verify-macOS.command";
-        private const string ProductName = "Ninja Adventure";
+        private const string ProductName = "NUPJUK : The Last Commit";
         private const string BundleIdentifier = "com.madcamp.ninjaadventure";
         private const string ReleaseVersion = "1.0.0";
         private const string ReleaseBuildNumber = "1";

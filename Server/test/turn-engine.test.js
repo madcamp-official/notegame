@@ -37,7 +37,17 @@ function runFixture(seed = 44, runId = randomUUID()) {
     ...createCampaignBlueprint({ worldSeed: seed, turnLimit: 30 }),
     world: generateWorld(seed)
   };
-  return createRunState({ campaign, ownerId: OWNER_ID, runId, now, resolutionSeed: "private-test-seed" });
+  const run = createRunState({ campaign, ownerId: OWNER_ID, runId, now, resolutionSeed: "private-test-seed" });
+  const tutorialEnemy = run.entities.find((item) => item.state?.tutorialEncounter === true);
+  if (tutorialEnemy) {
+    tutorialEnemy.position = structuredClone(tutorialEnemy.state.originPosition);
+    tutorialEnemy.state.slotId = tutorialEnemy.state.originSlotId;
+    tutorialEnemy.state.revealed = false;
+    tutorialEnemy.state.tutorialEncounter = false;
+  }
+  run.activeEncounter = null;
+  run.encounterHistory = [];
+  return run;
 }
 
 test("committed narrative keeps one authoritative page when the model repeats a confirmed action as narration", () => {

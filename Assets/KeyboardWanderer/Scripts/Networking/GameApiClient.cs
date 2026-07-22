@@ -1034,6 +1034,7 @@ namespace KeyboardWanderer.Networking
             public DialogueSnapshot[] dialogueDetails;
             public StorySequenceSnapshot[] storySequence;
             public NextInterventionSnapshot nextIntervention;
+            public bool continuesWithMovement;
             public string elementalEffectId;
             public ProposedOperationSnapshot[] proposedOps;
             public ProposedOperationSnapshot[] appliedOps;

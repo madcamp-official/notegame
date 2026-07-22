@@ -275,7 +275,7 @@ namespace KeyboardWanderer.Tests
             Assert.That(CampaignCatalog.WorldId, Is.EqualTo("WORLD_CODRIA"));
             Assert.That(CampaignCatalog.ProtagonistId, Is.EqualTo("PROTAGONIST_NUPJUKYI"));
             Assert.That(CampaignCatalog.AdministratorKeyboardId, Is.EqualTo("ARTIFACT_ADMIN_KEYBOARD"));
-            Assert.That(blueprint.Title, Is.EqualTo("Ninja Adventure"));
+            Assert.That(blueprint.Title, Is.EqualTo("NUPJUK : The Last Commit"));
             Assert.That(blueprint.WorldName, Is.EqualTo("코드리아"));
             Assert.That(blueprint.PlayerName, Is.EqualTo("넙죽이"));
             Assert.That(blueprint.PlayerAssetId, Is.EqualTo("player.ninja-green.v1"));

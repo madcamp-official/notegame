@@ -101,7 +101,7 @@ test("PostgreSQL creation replay survives restart and concurrent turns call the 
   const current = await application.service.getRun(OWNER_ID, run.id);
   const input = {
     choiceSetId: current.pendingChoiceSet.choiceSetId,
-    choiceId: "opening.listen",
+    choiceId: "opening.attack",
     idempotencyKey: "postgres-turn-concurrent-00001",
     expectedRunVersion: current.version
   };

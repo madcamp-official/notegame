@@ -365,6 +365,73 @@ namespace KeyboardWanderer.Tests.EditMode
         }
 
         [Test]
+        public void ServerPresentationAdapter_PreservesMandatoryOpeningAttackWithoutLegacyTravel()
+        {
+            var intervention = new GameApiClient.NextInterventionSnapshot
+            {
+                choiceSetId = "opening-choice-set",
+                choices = new[]
+                {
+                    new GameApiClient.NarrativeChoiceSnapshot
+                    {
+                        choiceId = "opening.attack",
+                        text = "R 키로 눈앞의 몬스터를 공격한다.",
+                        choiceKind = "SKILL",
+                        skillId = "DELETE",
+                        resolutionMode = "D20"
+                    }
+                }
+            };
+
+            NarrativeChoiceOption[] choices = ServerTurnPresentationAdapter.BuildNarrativeChoices(
+                intervention, new[] { "DELETE" }, true);
+
+            Assert.That(ServerTurnPresentationAdapter.IsValidSealedChoiceSet(intervention), Is.True);
+            Assert.That(choices, Has.Length.EqualTo(1));
+            Assert.That(choices[0].ChoiceId, Is.EqualTo("opening.attack"));
+            Assert.That(choices[0].SkillId, Is.EqualTo("DELETE"));
+        }
+
+        [Test]
+        public void ServerPresentationAdapter_TutorialResultReleasesChoicesAndRequiresMovement()
+        {
+            var turn = new GameApiClient.TurnSnapshot
+            {
+                narrative = new GameApiClient.NarrativeSnapshot
+                {
+                    body = "첫 전투가 끝나 길이 열렸다.",
+                    continuesWithMovement = true,
+                    nextIntervention = new GameApiClient.NextInterventionSnapshot
+                    {
+                        choiceSetId = "must-not-render",
+                        reason = "다음 선택",
+                        choices = new[]
+                        {
+                            new GameApiClient.NarrativeChoiceSnapshot
+                            {
+                                choiceId = "must-not-render.one", text = "잘못된 선택지",
+                                choiceKind = "DIALOGUE", resolutionMode = "NONE"
+                            },
+                            new GameApiClient.NarrativeChoiceSnapshot
+                            {
+                                choiceId = "must-not-render.two", text = "또 다른 잘못된 선택지",
+                                choiceKind = "ATTITUDE", resolutionMode = "NONE"
+                            }
+                        }
+                    }
+                }
+            };
+
+            TurnPresentationResult result = ServerTurnPresentationAdapter.FromTurn(
+                turn, new GameApiClient.RunSnapshot(), true);
+
+            Assert.That(result.ContinuesWithMovement, Is.True);
+            Assert.That(result.ChoiceSetId, Is.Empty);
+            Assert.That(result.NarrativeChoices, Is.Empty);
+            Assert.That(result.NextInterventionReason, Does.Contain("WASD"));
+        }
+
+        [Test]
         public void DialogueView_RendersFullChoiceTextAndLocksDuplicateClicks()
         {
             var root = new GameObject("Narrative Choice View", typeof(RectTransform));

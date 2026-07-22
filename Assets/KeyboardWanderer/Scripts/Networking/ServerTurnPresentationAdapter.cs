@@ -69,9 +69,14 @@ namespace KeyboardWanderer.Networking
             string[] authoritativeDialogue = NpcInvestigationDialogue(events);
             string[] generatedDialogue = GeneratedDialogue(turn.narrative, run);
             StorySequencePage[] storySequence = BuildStorySequence(turn.narrative, run, narrative);
-            GameApiClient.NextInterventionSnapshot intervention = turn.narrative?.nextIntervention;
-            NarrativeChoiceOption[] choices = BuildNarrativeChoices(intervention,
-                intervention?.suggestedSkillIds, !IsOpenEncounter(run?.activeEncounter));
+            bool movementStory = turn.narrative?.continuesWithMovement == true;
+            GameApiClient.NextInterventionSnapshot intervention = movementStory
+                ? null
+                : turn.narrative?.nextIntervention;
+            NarrativeChoiceOption[] choices = movementStory
+                ? Array.Empty<NarrativeChoiceOption>()
+                : BuildNarrativeChoices(intervention,
+                    intervention?.suggestedSkillIds, !IsOpenEncounter(run?.activeEncounter));
             var logs = new List<string>
             {
                 "D20 " + d20 + TurnPresentationText.Signed(modifier) + " vs " + difficulty + " · " + outcome,
@@ -104,11 +109,14 @@ namespace KeyboardWanderer.Networking
                 0.28f,
                 logs.ToArray(),
                 storySequence,
-                intervention?.reason,
+                movementStory
+                    ? "첫 전투가 끝나 길이 열렸습니다. WASD로 이동해 다음 사건을 찾으세요."
+                    : intervention?.reason,
                 intervention?.suggestedSkillIds,
                 turn.runtime?.gameplayResult?.fx?.effectId ?? turn.narrative?.elementalEffectId,
                 IsValidSealedChoiceSet(intervention) ? intervention.choiceSetId : null,
-                choices);
+                choices,
+                continuesWithMovement: movementStory);
         }
 
         public static StorySequencePage[] BuildStorySequence(GameApiClient.NarrativeSnapshot narrative,
@@ -338,7 +346,7 @@ namespace KeyboardWanderer.Networking
                         item.choiceKind, item.intentTag, item.skillId, item.destinationRef,
                         item.resolutionMode, item.targetEntityId));
                 }
-                if (sealedChoices.Count >= 2)
+                if (sealedChoices.Count >= 2 || IsMandatoryOpeningAttackChoice(sealedChoices))
                     return sealedChoices.ToArray();
             }
 
@@ -371,7 +379,10 @@ namespace KeyboardWanderer.Networking
         public static bool IsValidSealedChoiceSet(GameApiClient.NextInterventionSnapshot intervention)
         {
             if (string.IsNullOrWhiteSpace(intervention?.choiceSetId) || intervention.choices == null ||
-                intervention.choices.Length < 2 || intervention.choices.Length > 4) return false;
+                intervention.choices.Length < 1 || intervention.choices.Length > 4) return false;
+            if (intervention.choices.Length == 1 &&
+                !string.Equals(intervention.choices[0]?.choiceId, "opening.attack", StringComparison.Ordinal))
+                return false;
             var ids = new HashSet<string>(StringComparer.Ordinal);
             for (int i = 0; i < intervention.choices.Length; i++)
             {
@@ -380,6 +391,13 @@ namespace KeyboardWanderer.Networking
                     string.IsNullOrWhiteSpace(item.text) || !ids.Add(item.choiceId.Trim())) return false;
             }
             return true;
+        }
+
+        private static bool IsMandatoryOpeningAttackChoice(List<NarrativeChoiceOption> choices)
+        {
+            return choices.Count == 1 &&
+                   string.Equals(choices[0].ChoiceId, "opening.attack", StringComparison.Ordinal) &&
+                   string.Equals(choices[0].SkillId, "DELETE", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsOpenEncounter(GameApiClient.ActiveEncounterSnapshot encounter)

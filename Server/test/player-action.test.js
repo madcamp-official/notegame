@@ -8,11 +8,21 @@ import { fallbackPlayerActionProposal, playerActionContext, playerActionRejectio
 
 function runFixture(seed = 91001) {
   const blueprint = createCampaignBlueprint({ worldSeed: seed, turnLimit: 40 });
-  return createRunState({
+  const run = createRunState({
     campaign: { id: randomUUID(), ownerId: randomUUID(), title: "Player action fixture", turnLimit: 40, ...blueprint, world: generateWorld(seed) },
     ownerId: randomUUID(),
     resolutionSeed: `player-action-${seed}`
   });
+  const tutorialEnemy = run.entities.find((item) => item.state?.tutorialEncounter === true);
+  if (tutorialEnemy) {
+    tutorialEnemy.position = structuredClone(tutorialEnemy.state.originPosition);
+    tutorialEnemy.state.slotId = tutorialEnemy.state.originSlotId;
+    tutorialEnemy.state.revealed = false;
+    tutorialEnemy.state.tutorialEncounter = false;
+  }
+  run.activeEncounter = null;
+  run.encounterHistory = [];
+  return run;
 }
 
 test("player action context exposes a real area and legal one-step movement without leaking coordinates", () => {

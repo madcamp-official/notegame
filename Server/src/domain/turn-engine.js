@@ -9,7 +9,7 @@ import { applyScenePlan, sanitizePlayerFacingHookSummary } from "./consequence-r
 import { capabilitiesFor } from "./entity-capabilities.js";
 import { enemyArchetype } from "./enemy-archetypes.js";
 import { BOSS_CATALOG, CORE_NPC_CATALOG, MONSTER_CATALOG, NPC_CATALOG, monsterForAsset } from "./content-catalog.js";
-import { authoritativeNarrativeEntityIds, createInitialChoiceSet, reconcileNarrativeSkillChoices } from "./narrative-choices.js";
+import { authoritativeNarrativeEntityIds, createInitialChoiceSet, createOpeningCombatChoiceSet, reconcileNarrativeSkillChoices } from "./narrative-choices.js";
 import {
   ADMIN_ACCESS_LEVELS,
   ARTIFACT_ADMIN_KEYBOARD,
@@ -509,14 +509,17 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   for (let y = 0; y < world.height; y += 1) for (let x = 0; x < world.width; x += 1) if (tileAt(world, { x, y }) === TILE.ROAD) roadTiles.push({ x, y });
   const distanceFromRoad = (slot) => roadTiles.reduce((minimum, road) => Math.min(minimum, manhattan(slot, road)), Number.POSITIVE_INFINITY);
   const enemySlot = enemySlots.filter((slot) => !slot.tags.includes("admin_access_candidate")).sort((left, right) => distanceFromRoad(right) - distanceFromRoad(left) || left.id.localeCompare(right.id))[0];
-  const enemyNames = ["안개 슬라임", "가시 그림자", "황혼 포식자", "메아리 짐승", "잿빛 도깨비"];
-  const firstEnemyIndex = Math.abs(Number(campaign.worldSeed || 0)) % enemySlot.allowedAssetIds.length;
-  const firstEnemyAssetId = enemySlot.allowedAssetIds[firstEnemyIndex];
-  const firstMonster = monsterForAsset(firstEnemyAssetId);
-  entities.push(entity(deterministicUuid(`${runId}:enemy:first`), "enemy", firstEnemyAssetId, firstMonster?.name || enemyNames[Math.abs(Number(campaign.worldSeed || 0)) % enemyNames.length], enemySlot, true, false, false, {
-    hp: firstMonster?.hp || 5, maxHp: firstMonster?.hp || 5, speed: firstMonster?.speed || 2,
-    slotId: enemySlot.id, traits: [...(firstMonster?.traits || [])]
-  }));
+  // The first hostile is a stable, one-hit tutorial target. Later monsters keep
+  // their seeded catalog variety, but the opening must teach the same input and
+  // result on every world seed.
+  const firstMonster = MONSTER_CATALOG[0];
+  const firstEnemy = entity(deterministicUuid(`${runId}:enemy:first`), "enemy",
+    firstMonster.assetId, firstMonster.name, enemySlot, true, false, false, {
+      hp: 5, maxHp: 5, speed: firstMonster.speed,
+      slotId: enemySlot.id, traits: [...firstMonster.traits], revealed: true,
+      tutorialEncounter: true
+    });
+  entities.push(firstEnemy);
   const evidenceNames = {
     ADMIN_ACCESS_LEVEL_1: "관리자 권한 I 후보", ADMIN_ACCESS_LEVEL_2: "관리자 권한 II 후보", ADMIN_ACCESS_LEVEL_3: "관리자 권한 III 후보", STORY_REVELATION: "관리자 통제 시스템의 내부 기록"
   };
@@ -593,6 +596,17 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   }
   entities.push(...createDormantEntityPool(runId, world, entities));
   const openingPlayer = entities.find((item) => item.id === playerId);
+  const openingThreatPosition = DIRECTIONS
+    .map(([dx, dy]) => ({ x: openingPlayer.position.x + dx, y: openingPlayer.position.y + dy }))
+    .find((position) => isWalkable(world, position) &&
+      !entities.some((item) => item.active && item.id !== firstEnemy.id && samePoint(item.position, position)));
+  assert(openingThreatPosition, 500, "OPENING_MONSTER_APPROACH_BLOCKED",
+    "The opening tutorial monster needs one legal adjacent attack tile.");
+  firstEnemy.state.originSlotId = firstEnemy.state.slotId || null;
+  firstEnemy.state.originPosition = clone(firstEnemy.position);
+  firstEnemy.state.slotId = null;
+  firstEnemy.state.approachedPlayerAtOpening = true;
+  firstEnemy.position = clone(openingThreatPosition);
   const openingNpc = entities.filter((item) => item.kind === "npc" && item.active)
     .sort((left, right) => manhattan(left.position, openingPlayer.position) - manhattan(right.position, openingPlayer.position) || left.id.localeCompare(right.id))[0];
   assert(openingNpc, 500, "OPENING_NPC_MISSING", "A generated run needs one NPC to initiate the opening conversation.");
@@ -643,12 +657,37 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
   }];
   const openingArea = areaAt(world, playerEntity.position);
   const openingAreaName = openingArea.nameKo || openingArea.name || "낯선 지역";
-  const protagonistIntro = "당신은 관리자 키보드를 든 넙죽이. 길과 기록이 무너지는 세계 코드리아에 떨어졌지만, 무엇을 돕고 무엇을 외면하며 어디로 향할지는 아직 정해지지 않았다.";
-  const situationIntro = `넙죽이는 ${openingAreaName}에서 정신을 차렸다. 주변의 길 일부가 지워진 흔적 너머로, ${koreanSubject(openingNpc.name)} 넙죽이를 발견하고 먼저 다가왔다.`;
-  const openingLine = `잠깐, 넙죽이. 네가 관리자 키보드를 가진 사람 맞지? 이 근처의 길과 기록이 계속 사라지고 있어. 네가 이곳에 온 일과 관계가 있는지, 먼저 네 이야기를 듣고 싶어.`;
-  const pendingChoiceSet = createInitialChoiceSet({ runId, runVersion: 1, turnNo: 0, openingNpcId: openingNpc.id, openingNpcName: openingNpc.name });
+  const protagonistIntro = "당신은 관리자 키보드를 든 넙죽이. 길과 기록이 무너지는 세계 코드리아에 떨어졌고, 손에 든 키보드는 이 세계의 대상을 직접 편집할 수 있다.";
+  const situationIntro = `넙죽이가 ${openingAreaName}에서 정신을 차리자 ${firstEnemy.name}이 바로 앞을 가로막았다. ${koreanSubject(openingNpc.name)} 다급히 넙죽이 곁으로 달려왔다.`;
+  const openingLine = `설명은 나중에 할게! 관리자 키보드의 R 키는 눈앞의 적에게 삭제 명령을 내려 공격해. 지금 ${firstEnemy.name}을 향해 R을 눌러!`;
+  const pendingChoiceSet = createOpeningCombatChoiceSet({
+    runId,
+    runVersion: 1,
+    turnNo: 0,
+    monsterId: firstEnemy.id,
+    monsterName: firstEnemy.name
+  });
+  const openingEncounter = {
+    id: deterministicUuid(`${runId}:encounter:opening-tutorial`),
+    status: "active",
+    mode: "confrontation",
+    escalation: "stable",
+    kind: "COMBAT",
+    title: "관리자 키보드 첫 전투",
+    description: "R 키로 관리자 키보드의 삭제 명령을 내려 눈앞의 몬스터를 공격하세요.",
+    reason: "opening_keyboard_tutorial",
+    sourceEntityId: firstEnemy.id,
+    entityId: firstEnemy.id,
+    triggerPosition: clone(firstEnemy.position),
+    stagingPosition: clone(openingPlayer.position),
+    openedNavigationSequence: 0,
+    openedAt: now,
+    campaignTurnOpened: 0,
+    suggestedActionContexts: ["COMBAT"],
+    suggestedSkillIds: ["DELETE"]
+  };
   const openingNarrative = {
-    summary: `${openingNpc.name}의 첫 질문`,
+    summary: "관리자 키보드 첫 전투",
     body: `${protagonistIntro}\n\n${situationIntro}\n\n${openingLine}`,
     dialogue: [openingLine],
     dialogueDetails: [{ speakerId: openingNpc.id, line: openingLine }],
@@ -659,7 +698,7 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     ],
     nextIntervention: clone(pendingChoiceSet),
     proposedOps: [], appliedOps: [], rejectedOps: [], elementalEffectId: null,
-    fallbackUsed: false, model: "deterministic-opening-greeting-v1"
+    fallbackUsed: false, model: "deterministic-opening-combat-v1"
   };
   return {
     id: runId,
@@ -726,8 +765,8 @@ export function createRunState({ campaign, ownerId, runId = randomUUID(), resolu
     storyEventDue: false,
     visitedPoiIds: ["entry"],
     discoveredAreaIds: [entry.areaId],
-    activeEncounter: null,
-    encounterHistory: [],
+    activeEncounter: openingEncounter,
+    encounterHistory: [clone(openingEncounter)],
     world,
     playerEntityId: playerId,
     entities,
@@ -1395,7 +1434,10 @@ function prepare(run, request, skillSelection = null) {
       assert(finaleGateEligible(run) && areaAt(run.world, player.position).campaignRole === "FINAL_CONVERGENCE", 422, "FINALE_ACCESS_DENIED", "Finale component removal requires all three administrator access levels, the essential clue, and physical Root System entry.");
     }
     assert(manhattan(player.position, target.position) <= 3, 422, "OUT_OF_RANGE", "Delete target must be within 3 tiles.");
-    return { difficulty: 12, modifier: 3 + specialCost.modifierBonus, ...specialCost, target,
+    const committedCost = target.state?.tutorialEncounter === true
+      ? { ...specialCost, focusCost: 0 }
+      : specialCost;
+    return { difficulty: 12, modifier: 3 + committedCost.modifierBonus, ...committedCost, target,
       normalizedAttempt: `Apply decisive DELETE pressure to ${target.name} without assuming destruction` };
   }
 
@@ -2324,7 +2366,10 @@ function expireNarrativeState(run, turnNo, events, forceConvergence = false) {
   }
 }
 
-function updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events) {
+function updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events, tutorialAction = false) {
+  // The mandatory first attack demonstrates controls; it is not a moral or
+  // strategic choice and must not bias any later ending metric.
+  if (tutorialAction) return;
   const before = clone(run.metrics);
   const success = SUCCESS_OUTCOMES.has(outcome);
   const critical = outcome === "critical_success" || outcome === "critical_failure";
@@ -2334,7 +2379,10 @@ function updateCampaignMetrics(run, request, outcome, actionContext, turnNo, eve
   // Failed checks do not silently create or erase debt. Only an applied editing
   // operation (or an explicit repair of a ledger entry) changes technical debt.
   if (request.ability === "copy") run.metrics.worldAutonomy += 2;
-  if (request.ability === "delete") { run.metrics.worldStability += 2; run.metrics.worldAutonomy -= 1; }
+  if (request.ability === "delete") {
+    run.metrics.worldStability += 2;
+    run.metrics.worldAutonomy -= 1;
+  }
   if (request.ability === "connect") { run.metrics.worldAutonomy += 2; run.metrics.publicTrust += 2; run.metrics.companionBond += 1; }
   if (["restore", "undo"].includes(request.ability)) run.metrics.worldStability += 2;
   if (actionContext === "NEGOTIATION") { run.metrics.publicTrust += success ? 3 : -1; run.metrics.companionBond += success ? 2 : 0; }
@@ -2472,6 +2520,10 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   }
   const immutableLayout = fingerprint(publicWorld(originalRun.world));
   const preparation = prepare(originalRun, request, skillSelection);
+  const tutorialAction = preparation.target?.state?.tutorialEncounter === true &&
+    originalRun.currentTurn === 0 &&
+    originalRun.activeEncounter?.reason === "opening_keyboard_tutorial" &&
+    request.narrativeChoice?.choiceId === "opening.attack";
   // Targetless keyboard actions may be resolved by the authoritative selector.
   // From this point onward the committed request must describe what actually
   // happened, otherwise usage history and Unity presentation events incorrectly
@@ -2578,14 +2630,18 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     forcedOverride: request.forcedOverride === true
   });
   resolveEncounterLifecycle(run, openedEncounter, request, outcome, turnNo, now, events);
-  if (!successfulRewind) {
-    updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events);
+  if (tutorialAction) {
+    // Control onboarding must finish the real encounter without advancing debt
+    // thresholds, promises, finale recipes, or alignment metrics.
+  }
+  else if (!successfulRewind) {
+    updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events, tutorialAction);
     processNpcPromises(run, turnNo, events);
     triggerTechnicalDebtConsequences(run, turnNo, events);
     evaluateFinalePuzzle(run, turnNo, events);
   }
   else {
-    updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events);
+    updateCampaignMetrics(run, request, outcome, actionContext, turnNo, events, tutorialAction);
     processNpcPromises(run, turnNo, events);
     triggerTechnicalDebtConsequences(run, turnNo, events);
   }
@@ -2597,7 +2653,7 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
     .filter(Boolean);
   if (run.finalePuzzle?.status === "resolved") targetEvidenceKeys.push("FINALE_PUZZLE_RESOLVED");
   if (currentArea.regionAxis === ROOT_SYSTEM) targetEvidenceKeys.push("ROOT_SYSTEM_ENTERED");
-  if (!successfulRewind) advanceArcDirector(run, turnNo, events, {
+  if (!successfulRewind && !tutorialAction) advanceArcDirector(run, turnNo, events, {
       ability: request.ability, outcome, contextualActions: [actionContext.toLowerCase()], campaignRole,
       targetEvidenceKeys,
       eventTypes: events.map((item) => item.type)
@@ -2617,10 +2673,10 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
       intentTag: selectedChoiceRecord.intentTag
     });
   }
-  const directorPlan = successfulRewind
+  const directorPlan = successfulRewind || tutorialAction
     ? { appliedOps: [], rejectedOps: [], notices: [] }
     : applyDirectorOperations(run, directorOutput || { proposedOps: [] }, turnNo, budget, events);
-  const sceneResolution = !successfulRewind && sceneDecision ? applyScenePlan(run, {
+  const sceneResolution = !successfulRewind && !tutorialAction && sceneDecision ? applyScenePlan(run, {
     candidates: sceneDecision.candidates,
     plan: sceneDecision.plan,
     decisionType: "ACTION",
@@ -2634,8 +2690,8 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
       .filter((item) => typeof item === "string" && item.trim().length > 0)
       .map((item) => item.trim().slice(0, 240)).slice(0, 8);
   }
-  const ending = !successfulRewind ? storyDrivenEnding(run, request) : null;
-  if (!successfulRewind) expireNarrativeState(run, turnNo, events, Boolean(ending));
+  const ending = !successfulRewind && !tutorialAction ? storyDrivenEnding(run, request) : null;
+  if (!successfulRewind && !tutorialAction) expireNarrativeState(run, turnNo, events, Boolean(ending));
   run.version += 1;
   run.updatedAt = now;
   events.push(successfulRewind
@@ -2663,7 +2719,25 @@ export function resolveTurn({ run: originalRun, request, d20Source = new Determi
   assert(fingerprint(publicWorld(run.world)) === immutableLayout, 500, "WORLD_LAYOUT_MUTATED", "A turn attempted to mutate immutable world geometry.");
 
   const explanation = outcomeExplanation({ request, d20, score, outcome, preparation, intentAnalysis });
-  const narrative = normalizeCommittedNarrative(directorOutput, directorPlan, explanation, sceneResolution);
+  let narrative = normalizeCommittedNarrative(directorOutput, directorPlan, explanation, sceneResolution);
+  if (tutorialAction) {
+    narrative = {
+      ...narrative,
+      summary: "관리자 키보드 첫 공격 성공",
+      body: "R 키의 삭제 명령이 캐시 누수 슬라임에 적중했다. 막혀 있던 길이 열렸으니 이제 WASD로 직접 이동해 보자.",
+      dialogue: [],
+      storySequence: [
+        { type: "NARRATION", speakerId: null, actionId: null,
+          text: "삭제 명령이 캐시 누수 슬라임에 적중해 데이터 파편으로 흩어졌다." },
+        { type: "MONOLOGUE", speakerId: null, actionId: null,
+          text: "길이 열렸다. 이제 WASD를 계속 눌러 코드리아를 직접 탐색하자." }
+      ],
+      nextIntervention: null,
+      continuesWithMovement: true,
+      fallbackUsed: false,
+      model: "deterministic-opening-tutorial"
+    };
+  }
   persistCommittedNarrativeDigest(run, turnNo, narrative, directorOutput, {
     skillId: request.skillId,
     outcome,
@@ -3235,9 +3309,14 @@ export function publicRun(run) {
   // otherwise a consumed token can return after reconnect as a giant, targetable prop.
   const resolvedAdminCandidateIds = new Set((run.adminAccessAcquisitionHistory || [])
     .map((item) => item.candidateId).filter(Boolean));
+  const acquiredAccessLevels = new Set((run.adminAccessAcquisitionHistory || [])
+    .map((item) => item.accessLevelId).filter(Boolean));
+  const nextPublicAccessLevel = ADMIN_ACCESS_LEVELS.find((level) =>
+    !acquiredAccessLevels.has(level.id))?.id || null;
   const publicEntities = run.entities
     .filter((item) => item.active && item.state?.adminAccessResolved !== true
-      && !(item.state?.candidateId && resolvedAdminCandidateIds.has(item.state.candidateId)))
+      && !(item.state?.candidateId && resolvedAdminCandidateIds.has(item.state.candidateId))
+      && (!item.state?.adminAccessLevelId || item.state.adminAccessLevelId === nextPublicAccessLevel))
     .map((item) => ({ id: item.id, kind: item.kind, assetId: item.assetId, name: item.name, position: item.position, state: item.state, blocking: item.blocking, protected: item.protected, cloneable: item.cloneable, capabilities: capabilitiesFor(item) }));
   const player = publicEntities.find((item) => item.id === run.playerEntityId);
   const entityNames = new Map(publicEntities.map((item) => [item.id, item.name]));

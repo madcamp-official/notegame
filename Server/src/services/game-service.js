@@ -516,6 +516,15 @@ export class GameService {
     }
     const snapshot = await this.store.getRun(ownerId, runId);
     if (snapshot.version !== message.expectedRunVersion) throw new AppError(409, "RUN_VERSION_CONFLICT", "The run version is stale.", { currentVersion: snapshot.version });
+    if (snapshot.activeEncounter?.reason === "opening_keyboard_tutorial" &&
+        snapshot.pendingChoiceSet?.choices?.some((choice) => choice.choiceId === "opening.attack")) {
+      throw new AppError(409, "OPENING_TUTORIAL_ACTION_REQUIRED",
+        "첫 전투에서는 R 키로 관리자 키보드의 공격을 먼저 실행해야 합니다.", {
+          choiceSetId: snapshot.pendingChoiceSet.choiceSetId,
+          requiredChoiceId: "opening.attack",
+          requiredSkillId: "DELETE"
+        });
+    }
     if (isMonsterEncounterRequest(message.text)) {
       const request = playerMessageRequest({ run: snapshot, message, requestFingerprint: requestHash });
       request.narrativeChoice = {
@@ -859,7 +868,8 @@ function resolveAmbientWander(run, bounds, now) {
   const movedEntityIds = [];
   const directions = [[1, 0], [0, 1], [-1, 0], [0, -1]];
   const occupied = (point, exceptId) => run.entities.some((item) => item.active && item.blocking && item.id !== exceptId && item.position.x === point.x && item.position.y === point.y);
-  const npcs = run.entities.filter((item) => item.active && item.kind === "npc").sort((a, b) => a.id.localeCompare(b.id));
+  const npcs = run.entities.filter((item) => item.active && item.kind === "npc" &&
+    !item.state?.adminAccessLevelId).sort((a, b) => a.id.localeCompare(b.id));
   for (const npc of npcs) {
     if (npc.position.x < bounds.minX || npc.position.x > bounds.maxX || npc.position.y < bounds.minY || npc.position.y > bounds.maxY) continue;
     npc.state ||= {};

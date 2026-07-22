@@ -111,7 +111,7 @@ function deterministicSkillText(skillId, entity) {
   const name = String(entity?.name || "현재 대상").trim().slice(0, 72);
   return {
     COPY: `관리자 키보드로 “${name}”의 안전한 복제를 시도한다.`,
-    DELETE: `“${name}”에게 관리자 키보드의 삭제 명령으로 직접 맞선다.`,
+    DELETE: `R 키로 “${name}”에게 관리자 키보드의 삭제 명령을 내려 직접 공격한다.`,
     CONNECT: `관리자 키보드로 “${name}”와 직접 연결을 시도한다.`,
     RESTORE: `관리자 키보드로 “${name}”의 최근 손상을 복구한다.`,
     SEARCH: `관리자 키보드로 “${name}”의 숨은 의도와 약점을 조사한다.`
@@ -285,10 +285,12 @@ export function validateNarrativeChoices(value, {
   code = "LLM_INTERVENTION_INVALID",
   allowedEntityIds = [],
   allowedDestinationRefs = [],
-  allowTravel = true
+  allowTravel = true,
+  minimumChoices = 2,
+  requireNonSkill = true
 } = {}) {
-  if (!Array.isArray(value) || value.length < 2 || value.length > 4) {
-    throw new AppError(status, code, "choices must contain 2-4 options.");
+  if (!Array.isArray(value) || value.length < minimumChoices || value.length > 4) {
+    throw new AppError(status, code, `choices must contain ${minimumChoices}-4 options.`);
   }
   const entityIds = new Set(allowedEntityIds);
   const destinationRefs = new Set(allowedDestinationRefs);
@@ -322,7 +324,7 @@ export function validateNarrativeChoices(value, {
   });
   if (new Set(choices.map((choice) => choice.choiceId)).size !== choices.length) throw new AppError(status, code, "choiceId values must be unique within a choice set.");
   if (new Set(choices.map((choice) => choice.text)).size !== choices.length) throw new AppError(status, code, "Choice text must be meaningfully distinct.");
-  if (!choices.some((choice) => choice.choiceKind !== "SKILL")) throw new AppError(status, code, "At least one non-skill narrative choice is required.");
+  if (requireNonSkill && !choices.some((choice) => choice.choiceKind !== "SKILL")) throw new AppError(status, code, "At least one non-skill narrative choice is required.");
   return choices;
 }
 
@@ -352,6 +354,39 @@ export function choicesFromLegacySkills(skillIds = [], contextSkill = null) {
       destinationRef: null
     }))
   ].slice(0, 4);
+}
+
+/**
+ * A new run begins with one mandatory, mechanically real combat action.  The
+ * player learns that the keyboard is the world-editing artifact by using its R
+ * key before ordinary dialogue or exploration can begin.
+ */
+export function createOpeningCombatChoiceSet({
+  runId,
+  runVersion = 1,
+  turnNo = 0,
+  monsterId,
+  monsterName = "오염된 몬스터"
+}) {
+  return sealNarrativeIntervention({
+    reason: `${monsterName}이 길을 막았다. R 키로 관리자 키보드의 삭제 명령을 내려 첫 공격을 실행하세요.`,
+    choices: [{
+      choiceId: "opening.attack",
+      text: `R 키로 “${monsterName}”에게 관리자 키보드의 삭제 명령을 내려 공격한다.`,
+      choiceKind: "SKILL",
+      intentTag: "ASSERTIVE",
+      resolutionMode: "D20",
+      skillId: "DELETE",
+      targetEntityId: monsterId,
+      destinationRef: null
+    }]
+  }, {
+    runId,
+    turnNo,
+    runVersion,
+    allowedEntityIds: monsterId ? [monsterId] : [],
+    allowSingleSkillOnly: true
+  });
 }
 
 export function createInitialChoiceSet({ runId, runVersion = 1, turnNo = 0, openingNpcId = null, openingNpcName = "낯선 주민", reason = null }) {
@@ -399,6 +434,7 @@ export function sealNarrativeIntervention(intervention, {
   allowedEntityIds = [],
   allowedDestinationRefs = [],
   allowTravel = false,
+  allowSingleSkillOnly = false,
   authoritativeRun = null
 }) {
   assert(typeof runId === "string" && runId.length > 0, 500, "CHOICE_SEAL_INVALID", "A run ID is required to seal choices.");
@@ -412,7 +448,9 @@ export function sealNarrativeIntervention(intervention, {
     code: "CHOICE_SEAL_INVALID",
     allowedEntityIds,
     allowedDestinationRefs,
-    allowTravel
+    allowTravel,
+    minimumChoices: allowSingleSkillOnly ? 1 : 2,
+    requireNonSkill: !allowSingleSkillOnly
   });
   const payloadHash = fingerprint({ reason, choices, turnNo, runVersion });
   const choiceSetId = deterministicUuid(`${runId}:choice-set:${turnNo}:v${runVersion}:${payloadHash}`);

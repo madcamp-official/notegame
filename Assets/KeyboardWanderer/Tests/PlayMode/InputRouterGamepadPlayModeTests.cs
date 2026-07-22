@@ -311,11 +311,13 @@ namespace KeyboardWanderer.Tests.PlayMode
         public void ChoiceMode_MatchingSkillShortcutDispatchesAbilityWithoutConfirmingAChoiceTwice()
         {
             int search = 0;
+            int delete = 0;
             int confirmations = 0;
             int choiceMovement = 0;
             _router.AbilityRequested += ability =>
             {
                 if (ability == AbilityKind.Search) search++;
+                if (ability == AbilityKind.Delete) delete++;
             };
             _router.NarrativeChoiceConfirmRequested += () => confirmations++;
             _router.NarrativeChoiceMoveRequested += value => choiceMovement += value;
@@ -324,8 +326,13 @@ namespace KeyboardWanderer.Tests.PlayMode
             Press(_keyboard.fKey);
             InvokeReadKeyboard();
             Release(_keyboard.fKey);
+            Press(_keyboard.rKey);
+            InvokeReadKeyboard();
+            Release(_keyboard.rKey);
 
             Assert.That(search, Is.EqualTo(1));
+            Assert.That(delete, Is.EqualTo(1),
+                "첫 전투의 R 공격은 선택 확정과 중복되지 않고 정확히 한 번 전달돼야 합니다.");
             Assert.That(confirmations, Is.Zero);
             Assert.That(choiceMovement, Is.Zero);
         }

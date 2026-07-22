@@ -86,7 +86,7 @@ namespace KeyboardWanderer.Gameplay
     {
         public const string RulesVersion = "codria-campaign.v4";
         public const string CampaignId = "WORLD_CODRIA";
-        public const string CampaignTitle = "Ninja Adventure";
+        public const string CampaignTitle = "NUPJUK : The Last Commit";
         public const string WorldId = "WORLD_CODRIA";
         public const string WorldName = "코드리아";
         public const string ProtagonistId = "PROTAGONIST_NUPJUKYI";

@@ -179,6 +179,8 @@ namespace KeyboardWanderer.Demo
         private float _playerActionUntil;
         // 현재 스킬 시전 모션 프레임. null이면 방향별 기본 공격 모션을 쓴다(DELETE 등).
         private Sprite[] _playerActionFrames;
+        private bool _hasPendingImpactTargetPosition;
+        private Vector3 _pendingImpactTargetPosition;
 
         private float PlayerWalkSpeed => (authoringSettings != null ? authoringSettings.PlayerWalkSpeed : 4.2f) * 1.5f;
         private float MusicVolume => _settingsController != null ? _settingsController.MusicVolume : 0.65f;
@@ -510,7 +512,7 @@ namespace KeyboardWanderer.Demo
                 "NEXT SEED  " + nextSeed,
                 "넙죽이가 되어 여섯 지역을 탐험하세요.\n" +
                 "대상을 조사하고 적과 싸워 관리자 권한 3개를 되찾으면 루트 시스템의 결말이 열립니다.",
-                _serverStatus + " · Ninja Adventure CC0", _playerSprite, !_serverPending,
+                _serverStatus + " · NUPJUK : The Last Commit", _playerSprite, !_serverPending,
                 !_serverPending && _runSessionController != null && _runSessionController.HasContinue);
 
             if (_service == null)
@@ -1384,7 +1386,8 @@ namespace KeyboardWanderer.Demo
         private bool HasSealedNarrativeChoiceSet()
         {
             return !string.IsNullOrWhiteSpace(_lastChoiceSetId) &&
-                   _lastNarrativeChoices != null && _lastNarrativeChoices.Length >= 2;
+                   _lastNarrativeChoices != null &&
+                   (_lastNarrativeChoices.Length >= 2 || IsMandatoryOpeningAttackChoice());
         }
 
         private void HandlePauseRequested()
@@ -1551,6 +1554,31 @@ namespace KeyboardWanderer.Demo
                    _lastNarrativeChoices != null && _lastNarrativeChoices.Length > 0;
         }
 
+        private bool IsMandatoryOpeningAttackChoice()
+        {
+            if (_lastNarrativeChoices == null || _lastNarrativeChoices.Length != 1)
+                return false;
+            NarrativeChoiceOption choice = _lastNarrativeChoices[0];
+            return choice != null && choice.IsSkill &&
+                   string.Equals(choice.ChoiceId, "opening.attack", StringComparison.Ordinal) &&
+                   string.Equals(choice.SkillId, "DELETE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void RejectOpeningTutorialBypass()
+        {
+            const string guidance = "첫 전투를 먼저 끝내야 합니다. R 키로 눈앞의 몬스터를 공격하세요.";
+            if (_dialoguePresenter != null && _dialoguePresenter.IsDismissed)
+                ReopenPendingNarrativeChoice(guidance);
+            else
+            {
+                _selectionController?.Reject(guidance);
+                _choiceStatusMessage = guidance;
+                PlaySfx(AssetClip("UiCancelSound"));
+                PublishPresentationState(PresentationChange.Dialogue | PresentationChange.Hud |
+                                         PresentationChange.Selection);
+            }
+        }
+
         private void ReopenPendingNarrativeChoice(string playerMessage)
         {
             string[] pages = BuildDialoguePages(_lastNarrative);
@@ -1581,6 +1609,11 @@ namespace KeyboardWanderer.Demo
             if (!CanHandleGameplayInput())
             {
                 RejectBlockedGameplayInput(null);
+                return;
+            }
+            if (IsMandatoryOpeningAttackChoice())
+            {
+                RejectOpeningTutorialBypass();
                 return;
             }
             ClaimWorldNavigationInput();
@@ -1633,6 +1666,12 @@ namespace KeyboardWanderer.Demo
             {
                 ClearBufferedDirectionalMove();
                 RejectBlockedGameplayInput("한 번에 상하좌우 한 방향으로만 이동할 수 있습니다.");
+                return;
+            }
+            if (IsMandatoryOpeningAttackChoice())
+            {
+                ClearBufferedDirectionalMove();
+                RejectOpeningTutorialBypass();
                 return;
             }
             // Optional narrative choices must not steal the primary movement keys.
@@ -1720,6 +1759,11 @@ namespace KeyboardWanderer.Demo
         private void HandleNaturalLanguageRequested()
         {
             if (_screenMode != ScreenMode.Playing || TurnPending || _service == null) return;
+            if (IsMandatoryOpeningAttackChoice())
+            {
+                RejectOpeningTutorialBypass();
+                return;
+            }
             string[] pages = BuildDialoguePages(_lastNarrative);
             _naturalLanguageComposeMode = true;
             _dialoguePresenter.ShowLast(pages.Length);
@@ -1764,6 +1808,11 @@ namespace KeyboardWanderer.Demo
 
         private void HandleMapClick(Vector2 mousePosition)
         {
+            if (IsMandatoryOpeningAttackChoice())
+            {
+                RejectOpeningTutorialBypass();
+                return;
+            }
             ClaimWorldNavigationInput();
             string blocked = AbilityInputBlockReason(_selectionController.Ability);
             if (!string.IsNullOrEmpty(blocked))
@@ -2133,6 +2182,11 @@ namespace KeyboardWanderer.Demo
             GameApiClient.RunSnapshot runBeforeSubmit = _serverRun;
             int turnBeforeSubmit = _serverRun.currentTurn;
             bool requiresD20 = choice.RequiresD20;
+            if (string.Equals(choice.SkillId, "DELETE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(choice.SkillId, "SELECT_ALL", StringComparison.OrdinalIgnoreCase))
+                CapturePendingImpactTarget(choice.TargetEntityId);
+            else
+                _hasPendingImpactTargetPosition = false;
 
             _pendingNarrativeChoiceLabel = KeyboardWandererHudTextComposer.NarrativeChoicePlayerLabel(choice);
             _choiceSubmissionPending = true;
@@ -2512,6 +2566,10 @@ namespace KeyboardWanderer.Demo
         private IEnumerator SubmitServerAction(TurnRequest request)
         {
             EnsureRuntimeClients();
+            if (request.Ability == AbilityKind.Delete || request.Ability == AbilityKind.SelectAll)
+                CapturePendingImpactTarget(request.TargetEntityId);
+            else
+                _hasPendingImpactTargetPosition = false;
             _serverPending = true;
             _gmPending = true;
             yield return PreparePendingDiceRoll(request.ExpectedRunVersion);
@@ -6037,7 +6095,11 @@ namespace KeyboardWanderer.Demo
             if (!overwrite && HasSealedNarrativeChoiceSet()) return;
             NarrativeChoiceOption[] choices = ServerTurnPresentationAdapter.BuildNarrativeChoices(
                 pending, pending.suggestedSkillIds, !_encounterMoveRequired);
-            if (choices.Length < 2) return;
+            bool mandatoryOpeningAttack = choices.Length == 1 && choices[0] != null &&
+                                          choices[0].IsSkill &&
+                                          string.Equals(choices[0].ChoiceId, "opening.attack", StringComparison.Ordinal) &&
+                                          string.Equals(choices[0].SkillId, "DELETE", StringComparison.OrdinalIgnoreCase);
+            if (choices.Length < 2 && !mandatoryOpeningAttack) return;
             _lastChoiceSetId = pending.choiceSetId.Trim();
             _lastNarrativeChoices = choices;
             if (!string.IsNullOrWhiteSpace(pending.reason))
@@ -6052,14 +6114,31 @@ namespace KeyboardWanderer.Demo
         private IEnumerator PlayElementalAttackEffect(string effectId)
         {
             Sprite[] frames = _visualAssetLibrary?.GetElementalFrames(effectId);
-            if (frames == null || frames.Length == 0) yield break;
+            if (frames == null || frames.Length == 0)
+            {
+                _hasPendingImpactTargetPosition = false;
+                yield break;
+            }
             RunView view = _service?.CurrentView;
-            if (view == null || !TryGetPlayerVisual(view, out KeyboardWandererEntityVisualState player)) yield break;
+            if (view == null || !TryGetPlayerVisual(view, out KeyboardWandererEntityVisualState player))
+            {
+                _hasPendingImpactTargetPosition = false;
+                yield break;
+            }
 
             Vector3 position = player.Root.transform.position + new Vector3(player.Facing.x, player.Facing.y, 0f) * 0.75f;
-            if (_selectionController?.SelectedTarget is Guid targetId &&
+            string positionSource = "player-facing-fallback";
+            if (_hasPendingImpactTargetPosition)
+            {
+                position = _pendingImpactTargetPosition;
+                positionSource = "captured-target";
+            }
+            else if (_selectionController?.SelectedTarget is Guid targetId &&
                 _entityVisuals.TryGetValue(targetId, out KeyboardWandererEntityVisualState target) && target?.Root != null)
+            {
                 position = target.Root.transform.position;
+                positionSource = "live-target";
+            }
             if (_combatEffectOverlay == null)
             {
                 _combatEffectOverlay = GetComponent<KeyboardWandererCombatEffectOverlay>();
@@ -6069,6 +6148,28 @@ namespace KeyboardWanderer.Demo
             }
             yield return _combatEffectOverlay.PlayAndWait(frames, position + Vector3.up * 0.12f,
                 _visualAssetLibrary.GetElementalFrameRate(effectId));
+            Debug.Log("[KW.Combat] event=EffectTarget source=" + positionSource + " position=" + position);
+            _hasPendingImpactTargetPosition = false;
+        }
+
+        private void CapturePendingImpactTarget(Guid? targetId)
+        {
+            if (!targetId.HasValue)
+            {
+                _hasPendingImpactTargetPosition = false;
+                return;
+            }
+            CapturePendingImpactTarget(targetId.Value.ToString());
+        }
+
+        private void CapturePendingImpactTarget(string targetId)
+        {
+            KeyboardWandererEntityVisualState target = null;
+            _hasPendingImpactTargetPosition = Guid.TryParse(targetId, out Guid parsed) &&
+                                              _entityVisuals.TryGetValue(parsed, out target) &&
+                                              target?.Root != null;
+            if (_hasPendingImpactTargetPosition)
+                _pendingImpactTargetPosition = target.Root.transform.position;
         }
 
         /// <summary>
